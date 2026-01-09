@@ -1,0 +1,13 @@
+# Node
+node_modules/
+dist/
+
+# Laravel
+/vendor/
+/.env
+/storage/*.key
+/bootstrap/cache/
+
+# OS
+.DS_Store
+Thumbs.db
