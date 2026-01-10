@@ -45,6 +45,9 @@ export function Header({ user, hospital, role, onRoleChange, onHospitalChange }:
   const handleLogout = () => {
     logout();
     setShowAccountMenu(false);
+    // Since we are using React Router now, but logout might do a full refresh or we need to redirect
+    // The AuthProvider likely handles the state, but we might want to redirect to login if it doesn't automatically
+    window.location.href = '/'; 
   };
 
   return (

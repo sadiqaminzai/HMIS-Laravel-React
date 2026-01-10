@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -33,7 +34,6 @@ import { Reports } from './components/Reports';
 import { LicenseExpiryWarning } from './components/LicenseExpiryWarning';
 import { LicenseExpired } from './components/LicenseExpired';
 import { UserRole, Hospital } from './types';
-import { mockHospitals } from './data/mockData';
 import { useLicenseCheck } from './hooks/useLicenseCheck';
 import '../i18n/config';
 
@@ -51,10 +51,8 @@ function AppContent() {
   const { user, isAuthenticated, logout } = useAuth();
   const { hospitals, getHospital } = useHospitals();
   const [showLanding, setShowLanding] = useState(true);
-  const [currentPage, setCurrentPage] = useState('dashboard');
   const [currentHospital, setCurrentHospital] = useState<Hospital>(hospitals[0]);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
-  const [editPrescriptionData, setEditPrescriptionData] = useState<any>(null);
 
   // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
   // This can happen during hot reload
@@ -167,61 +165,6 @@ function AppContent() {
     doctorId: user.doctorId
   };
 
-  // Handle prescription editing
-  const handleEditPrescription = (prescription: any) => {
-    setEditPrescriptionData(prescription);
-    setCurrentPage('create-prescription');
-  };
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return <Dashboard role={currentRole} hospital={currentHospital} />;
-      case 'hospitals':
-        return <HospitalManagement />;
-      case 'doctors':
-        return <DoctorManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'patients':
-        return <PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />;
-      case 'manufacturers':
-        return <ManufacturerManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'medicines':
-        return <MedicineManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'medicine-types':
-        return <MedicineTypeManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'appointments':
-        return <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />;
-      case 'my-appointments':
-        return <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />;
-      case 'lab-tests':
-        return <LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.email} />;
-      case 'test-management':
-        return <TestManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'create-prescription':
-        return <PrescriptionCreate hospital={currentHospital} currentUser={currentUser} editPrescriptionData={editPrescriptionData} />;
-      case 'prescriptions':
-        return <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} onEditPrescription={handleEditPrescription} />;
-      case 'users':
-        return <UserManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'settings-users':
-        return <UserManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'settings-roles':
-        return <RoleManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'settings-permissions':
-        return <PermissionManagement hospital={currentHospital} userRole={currentRole} />;
-      case 'settings':
-        return <Settings />;
-      case 'settings-general':
-        return <GeneralSettings hospital={currentHospital} userRole={currentRole} />;
-      case 'contact-messages':
-        return <ContactMessages />;
-      case 'reports':
-        return <Reports hospital={currentHospital} userRole={currentRole} />;
-      default:
-        return <Dashboard role={currentRole} hospital={currentHospital} />;
-    }
-  };
-
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       
@@ -236,8 +179,6 @@ function AppContent() {
       
       <Sidebar
         role={currentRole}
-        currentPage={currentPage}
-        onNavigate={setCurrentPage}
         onLogout={logout}
       />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -249,7 +190,31 @@ function AppContent() {
           onHospitalChange={setCurrentHospital}
         />
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 dark:bg-gray-900 p-3">
-          {renderPage()}
+          <Routes>
+            <Route path="/" element={<Dashboard role={currentRole} hospital={currentHospital} />} />
+            <Route path="/hospitals" element={<HospitalManagement />} />
+            <Route path="/doctors" element={<DoctorManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/patients" element={<PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
+            <Route path="/manufacturers" element={<ManufacturerManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/medicines" element={<MedicineManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/medicine-types" element={<MedicineTypeManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/appointments" element={<AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
+            <Route path="/my-appointments" element={<AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
+            <Route path="/lab-tests" element={<LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.email} />} />
+            <Route path="/test-management" element={<TestManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/prescriptions/create" element={<PrescriptionCreate hospital={currentHospital} currentUser={currentUser} />} />
+            <Route path="/prescriptions" element={<PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
+            <Route path="/users" element={<UserManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/settings/users" element={<UserManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/settings/roles" element={<RoleManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/settings/permissions" element={<PermissionManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/general" element={<GeneralSettings hospital={currentHospital} userRole={currentRole} />} />
+            <Route path="/contact-messages" element={<ContactMessages />} />
+            <Route path="/reports" element={<Reports hospital={currentHospital} userRole={currentRole} />} />
+            {/* Fallback route */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
     </div>
@@ -264,8 +229,10 @@ export default function App() {
           <SettingsProvider>
             <LandingThemeProvider>
               <LandingLanguageProvider>
-                <Toaster richColors closeButton />
-                <AppContent />
+                <BrowserRouter>
+                  <Toaster richColors closeButton />
+                  <AppContent />
+                </BrowserRouter>
               </LandingLanguageProvider>
             </LandingThemeProvider>
           </SettingsProvider>

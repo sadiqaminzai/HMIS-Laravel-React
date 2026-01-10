@@ -10,17 +10,22 @@ import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
 
+import { useLocation, useNavigate } from 'react-router-dom';
+
 interface PrescriptionCreateProps {
   hospital: Hospital;
   currentUser: { id?: string; name: string; email: string; role: string };
-  editPrescriptionData?: any;
 }
 
 interface MedicineRow extends Medicine {
   rowId: string;
 }
 
-export function PrescriptionCreate({ hospital, currentUser, editPrescriptionData }: PrescriptionCreateProps) {
+export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreateProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const editPrescriptionData = location.state?.editPrescriptionData;
+
   // Hospital filtering for super_admin with "All Hospitals" support (but for create, we use currentHospital as the target)
   const userRole = currentUser.role as UserRole;
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
@@ -270,6 +275,7 @@ export function PrescriptionCreate({ hospital, currentUser, editPrescriptionData
     }
     
     alert('Prescription saved successfully!');
+    navigate('/prescriptions');
     // Reset form
     setSelectedPatient(null);
     setSelectedDoctor(null);

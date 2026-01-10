@@ -12,12 +12,12 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+import { useNavigate } from 'react-router-dom';
+
 interface PrescriptionListProps {
   hospital: Hospital;
   userRole: UserRole;
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
-  onEditPrescription?: (prescription: any) => void;
-  onNavigate?: (page: string, data?: any) => void;
 }
 
 type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'medicines';
@@ -34,7 +34,8 @@ const hexToRgb = (hex?: string): [number, number, number] | null => {
   ] : null;
 };
 
-export function PrescriptionList({ hospital, userRole, currentUser, onEditPrescription, onNavigate }: PrescriptionListProps) {
+export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
+  const navigate = useNavigate();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
@@ -500,7 +501,7 @@ export function PrescriptionList({ hospital, userRole, currentUser, onEditPrescr
                         </button>
                         {canEditPrescription(prescription) && (
                           <button
-                            onClick={() => onEditPrescription?.(prescription)}
+                            onClick={() => navigate('/prescriptions/create', { state: { editPrescriptionData: prescription } })}
                             className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
                             title="Edit"
                           >

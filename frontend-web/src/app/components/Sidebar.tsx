@@ -1,38 +1,35 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Users,
-  Package,
   LayoutDashboard,
-  Calendar,
   Building2,
+  Calendar,
   UserCheck,
-  Pill,
-  FileText,
-  ClipboardList,
   Stethoscope,
-  UserPlus,
-  SettingsIcon,
-  Hospital,
-  Sun,
-  Moon,
-  Globe,
+  Users,
+  TestTube,
+  FileText,
+  Package,
+  Factory,
+  Pill,
+  ClipboardList,
+  FilePlus,
+  List,
+  BarChart,
   Settings,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Package as PackageIcon,
-  FilePlus,
-  FileSpreadsheet,
-  Factory,
-  TestTube,
+  Sun,
+  Moon,
+  Globe,
   Sliders,
   MessageSquare,
-  List,
   UserCog,
   Shield,
   Key,
   LogOut,
-  BarChart,
+  Hospital
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
@@ -40,13 +37,11 @@ import { useTheme } from '../context/ThemeContext';
 
 interface SidebarProps {
   role: UserRole;
-  currentPage: string;
-  onNavigate: (page: string) => void;
   onLogout: () => void;
 }
 
 interface MenuItem {
-  id: string;
+  id: string; // This will now be the route path
   translationKey: string;
   icon: React.ReactNode;
   roles: UserRole[];
@@ -55,43 +50,43 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   {
-    id: 'dashboard',
+    id: '/',
     translationKey: 'nav.dashboard',
     icon: <LayoutDashboard className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist', 'lab_technician']
   },
   {
-    id: 'hospitals',
+    id: '/hospitals',
     translationKey: 'nav.hospitals',
     icon: <Building2 className="w-3.5 h-3.5" />,
     roles: ['super_admin']
   },
   {
-    id: 'my-appointments',
+    id: '/my-appointments',
     translationKey: 'nav.myAppointments',
     icon: <Calendar className="w-3.5 h-3.5" />,
     roles: ['doctor']
   },
   {
-    id: 'reception',
+    id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'receptionist'],
     subItems: [
       {
-        id: 'doctors',
+        id: '/doctors',
         translationKey: 'nav.doctors',
         icon: <Stethoscope className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'receptionist']
       },
       {
-        id: 'patients',
+        id: '/patients',
         translationKey: 'nav.patients',
         icon: <Users className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'receptionist']
       },
       {
-        id: 'appointments',
+        id: '/appointments',
         translationKey: 'nav.appointments',
         icon: <Calendar className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'receptionist']
@@ -99,19 +94,19 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'laboratory',
+    id: 'laboratory', // Group ID
     translationKey: 'nav.laboratory',
     icon: <TestTube className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'lab_technician'],
     subItems: [
       {
-        id: 'lab-tests',
+        id: '/lab-tests',
         translationKey: 'nav.labTests',
         icon: <FileText className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'lab_technician']
       },
       {
-        id: 'test-management',
+        id: '/test-management',
         translationKey: 'nav.testManagement',
         icon: <TestTube className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'lab_technician']
@@ -119,25 +114,25 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'pharmacy',
+    id: 'pharmacy', // Group ID
     translationKey: 'nav.pharmacy',
     icon: <Package className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'pharmacist'],
     subItems: [
       {
-        id: 'manufacturers',
+        id: '/manufacturers',
         translationKey: 'nav.manufacturers',
         icon: <Factory className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'pharmacist']
       },
       {
-        id: 'medicine-types',
+        id: '/medicine-types',
         translationKey: 'nav.medicineTypes',
         icon: <Pill className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'pharmacist']
       },
       {
-        id: 'medicines',
+        id: '/medicines',
         translationKey: 'nav.medicines',
         icon: <Pill className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'pharmacist']
@@ -145,19 +140,19 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'prescription-menu',
+    id: 'prescription-menu', // Group ID
     translationKey: 'nav.prescriptions',
     icon: <ClipboardList className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist'],
     subItems: [
       {
-        id: 'create-prescription',
+        id: '/prescriptions/create',
         translationKey: 'nav.createNew',
         icon: <FilePlus className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'doctor']
       },
       {
-        id: 'prescriptions',
+        id: '/prescriptions',
         translationKey: 'nav.viewAll',
         icon: <List className="w-3.5 h-3.5" />,
         roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist']
@@ -165,16 +160,20 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'reports',
+    id: '/reports',
     translationKey: 'nav.reports',
     icon: <BarChart className="w-3.5 h-3.5" />,
     roles: ['super_admin', 'admin', 'doctor']
   }
 ];
 
-export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProps) {
+export function Sidebar({ role, onLogout }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+  
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const visibleMenuItems = menuItems.filter(item => item.roles.includes(role));
@@ -187,46 +186,57 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
     );
   };
 
-  const handleNavigate = (pageId: string) => {
-    // Check if navigating to a non-pharmacy page
-    const isPharmacySubItem = ['manufacturers', 'medicine-types', 'medicines'].includes(pageId);
-    const isPrescriptionSubItem = ['create-prescription', 'prescriptions'].includes(pageId);
-    const isLaboratorySubItem = ['lab-tests', 'test-management'].includes(pageId);
-    const isReceptionSubItem = ['doctors', 'patients', 'appointments'].includes(pageId);
+  const handleNavigate = (path: string) => {
+    // Check if path is a group ID (no slash) - if so, don't navigate
+    if (!path.startsWith('/')) {
+      return;
+    }
     
+    // Auto-collapse logic based on path groups
     // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
-    if (!isPharmacySubItem && pageId !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
+    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines'].includes(path);
+    if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
     }
     
     // If navigating to a non-prescription page and prescription menu is expanded, collapse it
-    if (!isPrescriptionSubItem && pageId !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
+    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions'].includes(path);
+    if (!isPrescriptionSubItem && path !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'prescription-menu'));
     }
     
     // If navigating to a non-laboratory page and laboratory menu is expanded, collapse it
-    if (!isLaboratorySubItem && pageId !== 'laboratory' && expandedMenus.includes('laboratory')) {
+    const isLaboratorySubItem = ['/lab-tests', '/test-management'].includes(path);
+    if (!isLaboratorySubItem && path !== 'laboratory' && expandedMenus.includes('laboratory')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'laboratory'));
     }
     
     // If navigating to a non-reception page and reception menu is expanded, collapse it
-    if (!isReceptionSubItem && pageId !== 'reception' && expandedMenus.includes('reception')) {
+    const isReceptionSubItem = ['/doctors', '/patients', '/appointments'].includes(path);
+    if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
     }
     
-    onNavigate(pageId);
+    navigate(path);
   };
 
   const renderMenuItem = (item: MenuItem, isSubItem = false) => {
     const hasSubItems = item.subItems && item.subItems.length > 0;
     const isExpanded = expandedMenus.includes(item.id);
-    const isActive = currentPage === item.id || (hasSubItems && item.subItems?.some(sub => sub.id === currentPage));
+    
+    // Check active status
+    let isActive = false;
+    if (hasSubItems) {
+      isActive = item.subItems?.some(sub => sub.id === currentPath) || false;
+    } else {
+      isActive = item.id === currentPath;
+    }
 
     if (hasSubItems) {
       return (
         <div key={item.id}>
           <button
-            onClick={() => isCollapsed ? handleNavigate(item.id) : toggleMenu(item.id)}
+            onClick={() => isCollapsed ? undefined : toggleMenu(item.id)} // Group headers usually don't navigate when collapsed unless logic added
             className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
               isActive
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
@@ -249,7 +259,7 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
                   key={subItem.id}
                   onClick={() => handleNavigate(subItem.id)}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                    currentPage === subItem.id
+                    currentPath === subItem.id
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
@@ -269,7 +279,7 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
         key={item.id}
         onClick={() => handleNavigate(item.id)}
         className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-2'} ${isSubItem ? 'pl-6' : ''} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-          currentPage === item.id
+          currentPath === item.id
             ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
         }`}
@@ -390,9 +400,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
         {(role === 'super_admin' || role === 'admin') && (
           <div>
             <button
-              onClick={() => isCollapsed ? onNavigate('settings-general') : toggleMenu('settings')}
+              onClick={() => isCollapsed ? handleNavigate('/settings/general') : toggleMenu('settings')}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                ['settings-users', 'settings-roles', 'settings-permissions', 'settings-general', 'settings', 'contact-messages'].includes(currentPage)
+                ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings', '/contact-messages'].includes(currentPath)
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
@@ -409,9 +419,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
             {!isCollapsed && expandedMenus.includes('settings') && (
               <div className="mt-0.5 ml-4 space-y-0.5 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
                 <button
-                  onClick={() => handleNavigate('settings-general')}
+                  onClick={() => handleNavigate('/settings/general')}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                    currentPage === 'settings-general'
+                    currentPath === '/settings/general'
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
@@ -422,9 +432,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
                 {/* Contact Messages - ONLY FOR SUPER ADMIN */}
                 {role === 'super_admin' && (
                   <button
-                    onClick={() => handleNavigate('contact-messages')}
+                    onClick={() => handleNavigate('/contact-messages')}
                     className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                      currentPage === 'contact-messages'
+                      currentPath === '/contact-messages'
                         ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
@@ -434,9 +444,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
                   </button>
                 )}
                 <button
-                  onClick={() => handleNavigate('settings-users')}
+                  onClick={() => handleNavigate('/settings/users')}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                    currentPage === 'settings-users'
+                    currentPath === '/settings/users'
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
@@ -445,9 +455,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
                   <span>Users</span>
                 </button>
                 <button
-                  onClick={() => handleNavigate('settings-roles')}
+                  onClick={() => handleNavigate('/settings/roles')}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                    currentPage === 'settings-roles'
+                    currentPath === '/settings/roles'
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
@@ -456,9 +466,9 @@ export function Sidebar({ role, currentPage, onNavigate, onLogout }: SidebarProp
                   <span>Roles</span>
                 </button>
                 <button
-                  onClick={() => handleNavigate('settings-permissions')}
+                  onClick={() => handleNavigate('/settings/permissions')}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                    currentPage === 'settings-permissions'
+                    currentPath === '/settings/permissions'
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
