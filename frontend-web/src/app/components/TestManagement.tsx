@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
-import { Plus, Pencil, Trash2, Search, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, FileText } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, Pencil, Trash2, Search, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, FileText, Loader2, Eye, X } from 'lucide-react';
 import { TestTemplate, TestParameter, Hospital, UserRole } from '../types';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { mockTestTemplates as initialMockTestTemplates } from '../data/mockTestTemplates';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { mockHospitals } from '../data/mockData';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import {
+  fetchTestTemplates,
+  createTestTemplate,
+  updateTestTemplate,
+  deleteTestTemplate,
+} from '../../api/testTemplates';
 
 interface TestManagementProps {
   hospital: Hospital;
@@ -17,23 +22,41 @@ interface TestManagementProps {
 
 export function TestManagement({ hospital, userRole = 'admin' }: TestManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
-  const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
   const { t, i18n } = useTranslation();
-  const [tests, setTests] = useState<TestTemplate[]>(filterByHospital(initialMockTestTemplates));
+  const [tests, setTests] = useState<TestTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [selectedTest, setSelectedTest] = useState<TestTemplate | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sorting state
   const [sortField, setSortField] = useState<string>('testName');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // Update tests when hospital changes
-  React.useEffect(() => {
-    setTests(filterByHospital(initialMockTestTemplates));
-  }, [selectedHospitalId, isAllHospitals]);
+  // Load tests from API
+  const loadTests = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const hospitalFilter = isAllHospitals ? undefined : selectedHospitalId;
+      const result = await fetchTestTemplates(hospitalFilter, searchTerm || undefined);
+      setTests(result.data);
+    } catch (error) {
+      console.error('Failed to load tests:', error);
+      toast.error(i18n.language === 'en' ? 'Failed to load tests' : 'خطا در بارگذاری آزمایشات');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedHospitalId, isAllHospitals, searchTerm, i18n.language]);
+
+  // Fetch tests when hospital or search changes
+  useEffect(() => {
+    loadTests();
+  }, [loadTests]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -69,6 +92,11 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     setIsModalOpen(true);
   };
 
+  const handleViewTest = (test: TestTemplate) => {
+    setSelectedTest(test);
+    setIsViewModalOpen(true);
+  };
+
   const handleEditTest = (test: TestTemplate) => {
     setModalMode('edit');
     setSelectedTest(test);
@@ -85,19 +113,25 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     setIsModalOpen(true);
   };
 
-  const handleDeleteTest = (id: string) => {
+  const handleDeleteTest = async (id: string) => {
     if (window.confirm(t('common.delete') + '?')) {
-      setTests(tests.filter(t => t.id !== id));
-      toast.success(i18n.language === 'en' ? 'Test deleted' : 'تست حذف شد');
+      try {
+        await deleteTestTemplate(id);
+        setTests(tests.filter(t => t.id !== id));
+        toast.success(i18n.language === 'en' ? 'Test deleted' : 'تست حذف شد');
+      } catch (error) {
+        console.error('Failed to delete test:', error);
+        toast.error(i18n.language === 'en' ? 'Failed to delete test' : 'خطا در حذف آزمایش');
+      }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    const newTest: TestTemplate = {
-      id: modalMode === 'add' ? `test-${Date.now()}` : selectedTest!.id,
-      hospitalId: formData.hospitalId, // Use selected hospital from form
+    const payload = {
+      hospitalId: formData.hospitalId,
       testCode: formData.testCode,
       testName: formData.testName,
       testType: formData.testType,
@@ -109,20 +143,27 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       duration: '24 hours',
       instructions: '',
       status: formData.status,
-      createdAt: modalMode === 'add' ? new Date() : selectedTest!.createdAt,
-      createdBy: 'admin1',
     };
 
-    if (modalMode === 'add') {
-      setTests([...tests, newTest]);
-      toast.success(i18n.language === 'en' ? 'Test added' : 'تست اضافه شد');
-    } else {
-      setTests(tests.map(t => t.id === selectedTest!.id ? newTest : t));
-      toast.success(i18n.language === 'en' ? 'Test updated' : 'تست بروز شد');
+    try {
+      if (modalMode === 'add') {
+        const created = await createTestTemplate(payload);
+        setTests(prev => [created, ...prev]);
+        toast.success(i18n.language === 'en' ? 'Test added' : 'تست اضافه شد');
+      } else {
+        const updated = await updateTestTemplate(selectedTest!.id, payload);
+        setTests(prev => prev.map(t => t.id === selectedTest!.id ? updated : t));
+        toast.success(i18n.language === 'en' ? 'Test updated' : 'تست بروز شد');
+      }
+      setIsModalOpen(false);
+      resetForm();
+    } catch (error: any) {
+      console.error('Failed to save test:', error);
+      const message = error?.response?.data?.message || (i18n.language === 'en' ? 'Failed to save test' : 'خطا در ذخیره آزمایش');
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsModalOpen(false);
-    resetForm();
   };
 
   const addParameter = () => {
@@ -375,6 +416,13 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
+                          onClick={() => handleViewTest(test)}
+                          className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => handleEditTest(test)}
                           className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
                           title="Edit"
@@ -392,6 +440,17 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     </td>
                   </tr>
                 ))
+              ) : isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <div className="flex flex-col items-center justify-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
+                      <p className="text-sm font-medium">
+                        {i18n.language === 'en' ? 'Loading tests...' : 'در حال بارگذاری...'}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
@@ -644,8 +703,10 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium text-xs shadow-sm"
+                  disabled={isSubmitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors font-medium text-xs shadow-sm flex items-center justify-center gap-1.5"
                 >
+                  {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {modalMode === 'add' 
                     ? (i18n.language === 'en' ? 'Add Test' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة')
                     : (i18n.language === 'en' ? 'Update Test' : i18n.language === 'ps' ? 'تازه' : i18n.language === 'fa' ? 'بروز' : 'تحديث')
@@ -653,6 +714,160 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Modal */}
+      {isViewModalOpen && selectedTest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 flex items-center justify-between rounded-t-lg">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Eye className="w-4 h-4" />
+                  {i18n.language === 'en' ? 'Test Details' : 'جزئیات آزمایش'}
+                </h2>
+                <p className="text-xs text-blue-100 mt-0.5">{selectedTest.testCode}</p>
+              </div>
+              <button
+                onClick={() => setIsViewModalOpen(false)}
+                className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Test Name' : 'نام آزمایش'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.testName}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Test Type' : 'نوع آزمایش'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.testType}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Sample Type' : 'نوع نمونه'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.sampleType}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Price' : 'قیمت'}
+                  </p>
+                  <p className="text-sm font-semibold text-green-600 dark:text-green-400 mt-0.5">{selectedTest.price}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Category' : 'دسته‌بندی'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.category || 'Routine'}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    {i18n.language === 'en' ? 'Status' : 'وضعیت'}
+                  </p>
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium mt-0.5 ${
+                    selectedTest.status === 'active'
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
+                  }`}>
+                    {selectedTest.status === 'active' ? (i18n.language === 'en' ? 'Active' : 'فعال') : (i18n.language === 'en' ? 'Inactive' : 'غیرفعال')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Parameters */}
+              {selectedTest.parameters && selectedTest.parameters.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                    {i18n.language === 'en' ? 'Test Parameters' : 'پارامترهای آزمایش'} ({selectedTest.parameters.length})
+                  </h3>
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-100 dark:bg-gray-700">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">#</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            {i18n.language === 'en' ? 'Parameter' : 'پارامتر'}
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            {i18n.language === 'en' ? 'Unit' : 'واحد'}
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            {i18n.language === 'en' ? 'Normal Range' : 'محدوده طبیعی'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {selectedTest.parameters.map((param, index) => (
+                          <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{index + 1}</td>
+                            <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{param.parameterName}</td>
+                            <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{param.unit || '-'}</td>
+                            <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{param.normalRange || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Duration & Instructions */}
+              {(selectedTest.duration || selectedTest.instructions) && (
+                <div className="grid grid-cols-1 gap-3">
+                  {selectedTest.duration && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wide font-medium">
+                        {i18n.language === 'en' ? 'Expected Duration' : 'زمان انتظار'}
+                      </p>
+                      <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mt-0.5">{selectedTest.duration}</p>
+                    </div>
+                  )}
+                  {selectedTest.instructions && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-2.5 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-wide font-medium">
+                        {i18n.language === 'en' ? 'Instructions' : 'دستورالعمل'}
+                      </p>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">{selectedTest.instructions}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  handleEditTest(selectedTest);
+                }}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                {i18n.language === 'en' ? 'Edit' : 'ویرایش'}
+              </button>
+              <button
+                onClick={() => setIsViewModalOpen(false)}
+                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
+              >
+                {i18n.language === 'en' ? 'Close' : 'بستن'}
+              </button>
+            </div>
           </div>
         </div>
       )}

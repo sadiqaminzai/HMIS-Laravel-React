@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole } from '../types';
-import { mockUsers } from '../data/mockData';
+import api from '../../api/axios';
 
 interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
-  hospitalId: string;
+  hospitalId: string | null;
   doctorId?: string;
 }
 
@@ -24,46 +24,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  const clearAuth = () => {
+    setUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_token');
+    delete api.defaults.headers.common['Authorization'];
+  };
+
   // Check for existing session on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('auth_user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      setIsAuthenticated(true);
+    const storedToken = localStorage.getItem('auth_token');
+
+    if (storedToken) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+
+      api
+        .get('/me')
+        .then((response) => {
+          const authedUser = response.data.user as User;
+          setUser(authedUser);
+          setIsAuthenticated(true);
+          localStorage.setItem('auth_user', JSON.stringify(authedUser));
+        })
+        .catch(() => {
+          clearAuth();
+        });
+      return;
     }
+
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const foundUser = mockUsers.find(u => u.email === email && u.password === password);
-
-    if (foundUser) {
-      const userData: User = {
-        id: foundUser.id,
-        name: foundUser.name,
-        email: foundUser.email,
-        role: foundUser.role,
-        hospitalId: foundUser.hospitalId,
-        doctorId: (foundUser as any).doctorId,
-      };
-      
+    try {
+      const response = await api.post('/login', { email, password });
+      const { token, user: userData } = response.data;
       setUser(userData);
       setIsAuthenticated(true);
       localStorage.setItem('auth_user', JSON.stringify(userData));
-      
+      localStorage.setItem('auth_token', token);
+      // Optionally set default Authorization header for future requests
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       return { success: true };
-    } else {
-      return { success: false, error: 'Invalid email or password' };
+    } catch (error: any) {
+      let message = 'Login failed';
+      if (error.response && error.response.data && error.response.data.message) {
+        message = error.response.data.message;
+      }
+      return { success: false, error: message };
     }
   };
 
   const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem('auth_user');
+    api.post('/logout').catch(() => {
+      // Best-effort logout; ignore API errors here
+    });
+    clearAuth();
   };
 
   return (

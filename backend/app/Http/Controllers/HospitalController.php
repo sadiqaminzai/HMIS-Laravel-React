@@ -1,0 +1,109 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Hospital;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class HospitalController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = Hospital::query();
+
+        if ($request->filled('search')) {
+            $search = $request->string('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('slug', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $hospitals = $query->orderBy('name')->get()->map(fn ($hospital) => $this->withLogoUrl($hospital));
+
+        return response()->json($hospitals);
+    }
+
+    public function store(Request $request)
+    {
+        $this->authorizeSuperAdmin($request->user());
+
+                $data = $this->validatePayload($request);
+                $data['slug'] = $data['slug'] ?? Str::slug($data['name']);
+
+                if ($request->hasFile('logo')) {
+                    $data['logo_path'] = $request->file('logo')->store('logos', 'public');
+                }
+
+                $hospital = Hospital::create($data);
+
+                return response()->json($this->withLogoUrl($hospital), 201);
+    }
+
+    public function show(Hospital $hospital)
+    {
+        return response()->json($this->withLogoUrl($hospital));
+    }
+
+    public function update(Request $request, Hospital $hospital)
+    {
+        $this->authorizeSuperAdmin($request->user());
+
+        $data = $this->validatePayload($request, $hospital->id);
+
+        if ($request->hasFile('logo')) {
+            $data['logo_path'] = $request->file('logo')->store('logos', 'public');
+        }
+
+        $hospital->update($data);
+
+        return response()->json($this->withLogoUrl($hospital->fresh()));
+    }
+
+    public function destroy(Request $request, Hospital $hospital)
+    {
+        $this->authorizeSuperAdmin($request->user());
+
+        $hospital->delete();
+
+        return response()->json(['message' => 'Hospital deleted']);
+    }
+
+    private function authorizeSuperAdmin($user): void
+    {
+        if ($user->role !== 'super_admin') {
+            abort(403, 'Only super admins can manage hospitals');
+        }
+    }
+
+    private function validatePayload(Request $request, ?int $hospitalId = null): array
+    {
+        return $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'slug' => ['sometimes', 'string', 'max:255', 'unique:hospitals,slug,' . ($hospitalId ?? 'NULL')],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string'],
+            'logo' => ['nullable', 'image', 'max:2048'],
+            'settings' => ['nullable', 'array'],
+            'subscription_status' => ['sometimes', 'in:active,inactive,past_due'],
+            'code' => ['nullable', 'string', 'max:64', 'unique:hospitals,code,' . ($hospitalId ?? 'NULL')],
+            'license' => ['nullable', 'string', 'max:255'],
+            'license_issue_date' => ['nullable', 'date'],
+            'license_expiry_date' => ['nullable', 'date'],
+            'status' => ['required', 'in:active,suspended'],
+            'brand_color' => ['nullable', 'string', 'max:32'],
+        ]);
+    }
+
+    private function withLogoUrl(Hospital $hospital): Hospital
+    {
+        $hospital->logo_url = $hospital->logo_path
+            ? url(Storage::url($hospital->logo_path))
+            : null;
+        return $hospital;
+    }
+}

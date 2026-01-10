@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, Printer, Trash2, Search, Calendar, X, Edit, ArrowUp, ArrowDown, ArrowUpDown, FileText, FileSpreadsheet } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
-import { mockPrescriptions, mockPatients, mockDoctors, mockHospitals, mockMedicines } from '../data/mockData';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { Toast } from './Toast';
 import { instructionOptions } from '../data/mockData';
@@ -13,6 +12,11 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import { useNavigate } from 'react-router-dom';
+import { usePrescriptions } from '../context/PrescriptionContext';
+import { usePatients } from '../context/PatientContext';
+import { useDoctors } from '../context/DoctorContext';
+import { useHospitals } from '../context/HospitalContext';
+import { useMedicines } from '../context/MedicineContext';
 
 interface PrescriptionListProps {
   hospital: Hospital;
@@ -36,6 +40,11 @@ const hexToRgb = (hex?: string): [number, number, number] | null => {
 
 export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
   const navigate = useNavigate();
+  const { prescriptions, deletePrescription } = usePrescriptions();
+  const { patients } = usePatients();
+  const { doctors } = useDoctors();
+  const { hospitals: hospitalDirectory } = useHospitals();
+  const { medicines: inventory } = useMedicines();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
@@ -47,8 +56,8 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   
   // Apply hospital filter first
   const hospitalFiltered = React.useMemo(() => 
-    filterByHospital(mockPrescriptions),
-  [filterByHospital]);
+    filterByHospital(prescriptions),
+  [filterByHospital, prescriptions]);
   
   // Then apply doctor filter if applicable
   const doctorFiltered = React.useMemo(() => {
@@ -58,14 +67,14 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     return hospitalFiltered;
   }, [hospitalFiltered, userRole, currentUser]);
 
-  const [prescriptions, setPrescriptions] = useState(doctorFiltered);
+  const [visiblePrescriptions, setVisiblePrescriptions] = useState(doctorFiltered);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc'); // Default: newest first
 
   // Update prescriptions when filter dependencies change
   React.useEffect(() => {
-    setPrescriptions(doctorFiltered);
+    setVisiblePrescriptions(doctorFiltered);
   }, [doctorFiltered]);
 
   // Helper function to check if a prescription was created today
@@ -95,25 +104,43 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     return false;
   };
 
-  const filteredPrescriptions = prescriptions.filter(p =>
+  const filteredPrescriptions = visiblePrescriptions.filter(p =>
     p.prescriptionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.doctorName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleViewPrescription = (prescription: any) => {
-    const patient = mockPatients.find(p => p.id === prescription.patientId);
-    const doctor = mockDoctors.find(d => d.id === prescription.doctorId);
-    if (patient && doctor) {
+    const patient = prescription.patientId
+      ? patients.find(p => p.id === prescription.patientId)
+      : {
+          id: 'walkin',
+          patientId: prescription.walkInPatientId || 'WALKIN',
+          name: prescription.patientName,
+          age: prescription.patientAge,
+          gender: prescription.patientGender,
+          hospitalId: prescription.hospitalId,
+        };
+    const doctor = doctors.find(d => d.id === prescription.doctorId);
+    if (doctor) {
       setSelectedPrescription({ ...prescription, patient, doctor });
       setShowViewModal(true);
     }
   };
 
   const handlePrintPrescription = (prescription: any) => {
-    const patient = mockPatients.find(p => p.id === prescription.patientId);
-    const doctor = mockDoctors.find(d => d.id === prescription.doctorId);
-    if (patient && doctor) {
+    const patient = prescription.patientId
+      ? patients.find(p => p.id === prescription.patientId)
+      : {
+          id: 'walkin',
+          patientId: prescription.walkInPatientId || 'WALKIN',
+          name: prescription.patientName,
+          age: prescription.patientAge,
+          gender: prescription.patientGender,
+          hospitalId: prescription.hospitalId,
+        };
+    const doctor = doctors.find(d => d.id === prescription.doctorId);
+    if (doctor) {
       setSelectedPrescription({ ...prescription, patient, doctor });
       setShowPrint(true);
     }
@@ -166,7 +193,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       'Medicines Count': prescription.medicines.length,
       'Diagnosis': prescription.diagnosis?.replace(/<[^>]*>/g, '') || '',
       'Advice': prescription.advice?.replace(/<[^>]*>/g, '') || '',
-      'Hospital': mockHospitals.find(h => h.id === prescription.hospitalId)?.name || 'Unknown'
+      'Hospital': hospitalDirectory.find(h => h.id === prescription.hospitalId)?.name || 'Unknown'
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -215,8 +242,8 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   // Export Single Prescription to PDF
   const handleExportSinglePDF = (prescription: any) => {
     const doc = new jsPDF();
-    const hospitalInfo = mockHospitals.find(h => h.id === prescription.hospitalId) || hospital;
-    const patientInfo = mockPatients.find(p => p.id === prescription.patientId) || prescription.patient;
+    const hospitalInfo = hospitalDirectory.find(h => h.id === prescription.hospitalId) || hospital;
+    const patientInfo = patients.find(p => p.id === prescription.patientId) || prescription.patient;
     
     // Get brand color or use defaults
     const brandRgb = hexToRgb(hospitalInfo.brandColor);
@@ -281,7 +308,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
 
     // --- Medicines Table ---
     const tableBody = prescription.medicines.map((med: any) => {
-        const originalMed = mockMedicines.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
+        const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
         const medType = med.type || originalMed?.type || '';
         const displayName = medType && !med.medicineName.includes(medType)
           ? `${med.medicineName} ${medType}`
@@ -354,8 +381,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    setPrescriptions(prescriptions.filter(p => p.id !== selectedPrescription.id));
+  const confirmDelete = async () => {
+    if (!selectedPrescription) return;
+    await deletePrescription(selectedPrescription.id);
     setShowDeleteModal(false);
     setSelectedPrescription(null);
     setToast({ message: 'Prescription deleted successfully.', type: 'success' });
@@ -541,7 +569,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredPrescriptions.length}</span></span>
-          <span>Showing {sortedPrescriptions.length} of {prescriptions.length} prescriptions</span>
+          <span>Showing {sortedPrescriptions.length} of {visiblePrescriptions.length} prescriptions</span>
         </div>
       </div>
 
@@ -579,11 +607,17 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       {showPrint && selectedPrescription && (
         <PrescriptionPrint
           hospital={hospital}
-          patient={selectedPrescription.patient || mockPatients.find(p => p.id === selectedPrescription.patientId)}
-          doctor={selectedPrescription.doctor || mockDoctors.find(d => d.id === selectedPrescription.doctorId)}
+          patient={selectedPrescription.patient || patients.find(p => p.id === selectedPrescription.patientId)}
+          doctor={selectedPrescription.doctor || doctors.find(d => d.id === selectedPrescription.doctorId)}
           medicines={selectedPrescription.medicines.map((med: any) => {
-            const originalMed = mockMedicines.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
-            return { ...med, type: med.type || originalMed?.type };
+            const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
+            return {
+              ...med,
+              type: med.type || originalMed?.type || '',
+              genericName: originalMed?.genericName || med.genericName || '',
+              brandName: originalMed?.brandName || med.brandName || med.medicineName,
+              strength: med.strength || originalMed?.strength || ''
+            };
           })}
           advice={selectedPrescription.advice}
           prescriptionNumber={selectedPrescription.prescriptionNumber}
@@ -599,11 +633,17 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       {showViewModal && selectedPrescription && (
         <PrescriptionPrint
           hospital={hospital}
-          patient={selectedPrescription.patient || mockPatients.find(p => p.id === selectedPrescription.patientId)}
-          doctor={selectedPrescription.doctor || mockDoctors.find(d => d.id === selectedPrescription.doctorId)}
+          patient={selectedPrescription.patient || patients.find(p => p.id === selectedPrescription.patientId)}
+          doctor={selectedPrescription.doctor || doctors.find(d => d.id === selectedPrescription.doctorId)}
           medicines={selectedPrescription.medicines.map((med: any) => {
-            const originalMed = mockMedicines.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
-            return { ...med, type: med.type || originalMed?.type };
+            const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
+            return {
+              ...med,
+              type: med.type || originalMed?.type || '',
+              genericName: originalMed?.genericName || med.genericName || '',
+              brandName: originalMed?.brandName || med.brandName || med.medicineName,
+              strength: med.strength || originalMed?.strength || ''
+            };
           })}
           advice={selectedPrescription.advice}
           prescriptionNumber={selectedPrescription.prescriptionNumber}

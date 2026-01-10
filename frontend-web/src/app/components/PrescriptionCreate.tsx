@@ -1,11 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
 import { Hospital, Patient, Medicine, Doctor, UserRole } from '../types';
-import { mockPatients, mockMedicines, mockDoctors, mockManufacturers, mockHospitals, doseOptions, durationOptions, instructionOptions } from '../data/mockData';
+import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { useSettings } from '../context/SettingsContext';
 import { toast } from '../utils/toast';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { usePatients } from '../context/PatientContext';
+import { useDoctors } from '../context/DoctorContext';
+import { useMedicines } from '../context/MedicineContext';
+import { usePrescriptions } from '../context/PrescriptionContext';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
@@ -14,12 +18,19 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 interface PrescriptionCreateProps {
   hospital: Hospital;
-  currentUser: { id?: string; name: string; email: string; role: string };
+  currentUser: { id?: string; name: string; email: string; role: string; doctorId?: string };
 }
 
 interface MedicineRow extends Medicine {
   rowId: string;
 }
+
+const formatMedicineDisplay = (brand: string, generic?: string, type?: string, strength?: string, includeStrength: boolean = true) => {
+  const parts = [brand || '', generic ? `(${generic})` : null];
+  if (includeStrength && strength) parts.push(strength);
+  if (type) parts.push(type);
+  return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+};
 
 export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreateProps) {
   const location = useLocation();
@@ -29,8 +40,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   // Hospital filtering for super_admin with "All Hospitals" support (but for create, we use currentHospital as the target)
   const userRole = currentUser.role as UserRole;
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
-  const { settings } = useSettings();
+  const { settings, getDefaultToWalkIn } = useSettings();
+  const { patients } = usePatients();
+  const { doctors } = useDoctors();
+  const { medicines: inventory } = useMedicines();
+  const { addPrescription, updatePrescription } = usePrescriptions();
+
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
@@ -46,23 +61,55 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [walkInPatient, setWalkInPatient] = useState({
     name: '',
     age: '',
-    gender: 'Male'
+    gender: 'male'
   });
 
+  const walkInDefaultPatient = useMemo(
+    () => patients.find((p) => p.hospitalId === currentHospital.id && p.patientId?.toUpperCase().startsWith('WALKIN')),
+    [patients, currentHospital.id]
+  );
+
+  useEffect(() => {
+    if (userRole === 'super_admin' && editPrescriptionData?.hospitalId) {
+      setSelectedHospitalId(editPrescriptionData.hospitalId);
+    }
+  }, [userRole, editPrescriptionData?.hospitalId, setSelectedHospitalId]);
+
   const patientInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-assign logged-in doctor if user is a doctor
+  useEffect(() => {
+    if (currentUser.role === 'doctor' && currentUser.doctorId) {
+      // Compare as strings to ensure type consistency
+      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
+      if (loggedInDoctor) {
+        setSelectedDoctor(loggedInDoctor);
+      }
+    }
+  }, [currentUser.role, currentUser.doctorId, doctors]);
+
+  // Honor hospital-specific default walk-in preference from settings
+  useEffect(() => {
+    const defaultWalkIn = getDefaultToWalkIn(currentHospital.id) || settings.defaultToWalkIn || false;
+    setIsWalkIn(defaultWalkIn);
+    if (defaultWalkIn && walkInDefaultPatient) {
+      setSelectedPatient(walkInDefaultPatient);
+      setPatientSearch(walkInDefaultPatient.name);
+    }
+  }, [currentHospital.id, getDefaultToWalkIn, settings.defaultToWalkIn, walkInDefaultPatient]);
 
   // Populate form when editing existing prescription
   useEffect(() => {
     if (editPrescriptionData) {
       // Find and set the patient
-      const patient = mockPatients.find(p => p.id === editPrescriptionData.patientId);
+      const patient = patients.find(p => p.id === editPrescriptionData.patientId);
       if (patient) {
         setSelectedPatient(patient);
         setPatientSearch(patient.name);
       }
 
       // Find and set the doctor
-      const doctor = mockDoctors.find(d => d.id === editPrescriptionData.doctorId);
+      const doctor = doctors.find(d => d.id === editPrescriptionData.doctorId);
       if (doctor) {
         setSelectedDoctor(doctor);
       }
@@ -73,21 +120,19 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
       // Convert medicines to medicine rows
       const medicineRows: MedicineRow[] = editPrescriptionData.medicines.map((med: any) => {
-        // Find original medicine to get type if missing
-        const originalMed = mockMedicines.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
-        const medType = med.type || originalMed?.type || '';
-        
-        // Ensure display name has type suffix
-        const displayName = medType && !med.medicineName.includes(medType)
-          ? `${med.medicineName} ${medType}`
-          : med.medicineName;
+        const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
+        const medType = (med as any).type || (originalMed as any)?.type || '';
+        const brand = originalMed?.brandName || med.medicineName;
+        const generic = originalMed?.genericName;
+        const strength = originalMed?.strength || med.strength || '';
+        const displayName = formatMedicineDisplay(brand, generic, medType, strength, true);
 
         return {
           rowId: Date.now().toString() + Math.random().toString(),
           medicineId: med.medicineId || '',
           brandName: displayName,
-          genericName: '',
-          strength: med.strength || '',
+          genericName: generic || '',
+          strength,
           dose: med.dose || '1-0-1',
           duration: med.duration || '5 days',
           instruction: med.instruction || 'after_meal',
@@ -98,10 +143,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       
       setMedicines(medicineRows);
     }
-  }, [editPrescriptionData]);
+  }, [editPrescriptionData, patients, doctors, inventory]);
 
   // Filter patients based on search and current hospital
-  const filteredPatients = mockPatients.filter(p =>
+  const filteredPatients = patients.filter(p =>
     p.hospitalId === currentHospital.id &&
     (p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
      p.patientId.toLowerCase().includes(patientSearch.toLowerCase()))
@@ -119,7 +164,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     
     // Auto-fill doctor if patient has referred doctor
     if (patient.referredDoctorId) {
-      const doctor = mockDoctors.find(d => d.id === patient.referredDoctorId);
+      const doctor = doctors.find(d => d.id === patient.referredDoctorId);
       if (doctor) setSelectedDoctor(doctor);
     }
 
@@ -131,7 +176,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const handleWalkInConfirm = () => {
     if (!walkInPatient.name || !walkInPatient.age) {
-      alert('Please enter patient name and age');
+      toast.error('Please enter walk-in patient name and age');
       return;
     }
 
@@ -142,7 +187,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       patientId: 'WALKIN-' + Date.now().toString().slice(-6),
       name: walkInPatient.name,
       age: parseInt(walkInPatient.age),
-      gender: walkInPatient.gender as 'Male' | 'Female',
+      gender: walkInPatient.gender as Patient['gender'],
       contact: '',
       address: '',
       bloodGroup: '',
@@ -164,7 +209,22 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     setIsWalkIn(type === 'walkin');
     setSelectedPatient(null);
     setPatientSearch('');
-    setWalkInPatient({ name: '', age: '', gender: 'Male' });
+    setWalkInPatient({ name: '', age: '', gender: 'male' });
+    if (type === 'walkin' && walkInDefaultPatient) {
+      setSelectedPatient(walkInDefaultPatient);
+      setPatientSearch(walkInDefaultPatient.name);
+    }
+    
+    // Auto-assign logged-in doctor for walk-in patients if user is a doctor
+    if (type === 'walkin' && currentUser.role === 'doctor' && currentUser.doctorId) {
+      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
+      if (loggedInDoctor) {
+        setSelectedDoctor(loggedInDoctor);
+      }
+    } else if (type === 'walkin' && (currentUser.role === 'super_admin' || currentUser.role === 'admin')) {
+      // Clear doctor for admin/super_admin creating walk-in prescriptions
+      setSelectedDoctor(null);
+    }
   };
 
   const addMedicineRow = () => {
@@ -199,6 +259,16 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         }
         
         return updated;
+      }
+      return m;
+    }));
+  };
+
+  // Batch update multiple fields at once to avoid React state batching issues
+  const updateMedicineRowBatch = (rowId: string, updates: Partial<MedicineRow>) => {
+    setMedicines(medicines.map(m => {
+      if (m.rowId === rowId) {
+        return { ...m, ...updates };
       }
       return m;
     }));
@@ -250,39 +320,116 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     updateMedicineRow(rowId, 'brandName', searchTerm);
     
     // Auto-complete if exact match found
-    const medicine = mockMedicines.find(m =>
+    const medicine = inventory.find(m =>
       m.hospitalId === hospital.id &&
       m.status === 'active' &&
       m.brandName.toLowerCase() === searchTerm.toLowerCase()
     );
     
     if (medicine) {
-      const manufacturer = mockManufacturers.find(mf => mf.id === medicine.manufacturerId);
-      updateMedicineRow(rowId, 'medicineId', medicine.id);
-      const displayName = medicine.type 
-        ? `${medicine.brandName} (${medicine.genericName}) ${medicine.type}`
-        : `${medicine.brandName} (${medicine.genericName})`;
-      updateMedicineRow(rowId, 'brandName', displayName);
-      updateMedicineRow(rowId, 'strength', medicine.strength);
-      updateMedicineRow(rowId, 'type', medicine.type);
+      const medType = medicine.type || '';
+      const displayName = formatMedicineDisplay(medicine.brandName, medicine.genericName, medType, medicine.strength, true);
+      // Use batch update to ensure all fields are updated together
+      updateMedicineRowBatch(rowId, {
+        medicineId: medicine.id,
+        brandName: displayName,
+        genericName: medicine.genericName || '',
+        strength: medicine.strength || '',
+        type: medType
+      });
     }
   };
 
-  const handleSave = () => {
-    if (!selectedPatient || medicines.length === 0) {
-      alert('Please select a patient and add at least one medicine');
+  const handleSave = async () => {
+    if (medicines.length === 0) {
+      toast.error('Add at least one medicine');
       return;
     }
+
+    let patient: Patient | null = selectedPatient;
+
+    const isWalkInMode = isWalkIn || !selectedPatient;
+    if (isWalkInMode) {
+      if (!walkInPatient.name || !walkInPatient.age) {
+        toast.error('Enter walk-in patient name and age');
+        return;
+      }
+      patient = null; // force null so backend treats as walk-in
+    }
+
+    if (!patient && !isWalkInMode) {
+      toast.error('Please select a patient');
+      return;
+    }
+
+    const hospitalDoctors = doctors.filter((d) => d.hospitalId === currentHospital.id);
     
-    alert('Prescription saved successfully!');
+    // For walk-in patients created by admin/super_admin, doctor can be null
+    // For doctors, use logged-in doctor for walk-in prescriptions
+    const isAdminOrSuperAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
+    
+    let doctor = selectedDoctor;
+    
+    // If user is a doctor, ALWAYS use their associated doctor profile
+    if (currentUser.role === 'doctor' && currentUser.doctorId) {
+      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
+      if (loggedInDoctor) {
+        doctor = loggedInDoctor;
+      }
+    }
+    
+    // Fallback to first hospital doctor if no doctor selected (for non-admin users)
+    if (!doctor && !isAdminOrSuperAdmin) {
+      doctor = hospitalDoctors[0] || null;
+    }
+    
+    if (!doctor && !isAdminOrSuperAdmin) {
+      toast.error('Please select a doctor');
+      return;
+    }
+
+    const payloadMedicines = medicines.map((m) => ({
+      // Keep medicineId nullable so validation doesn't fail when a free-text brand is used
+      medicineId: m.medicineId || '',
+      medicineName: m.brandName,
+      strength: m.strength,
+      dose: m.dose || '1-0-1',
+      duration: m.duration || '5 days',
+      instruction: (m.instruction as any) || 'after_meal',
+      quantity: m.quantity || 0,
+      type: (m as any).type,
+    }));
+
+    const payload = {
+      hospitalId: currentHospital.id,
+      patientId: isWalkInMode ? null : patient?.id || null,
+      isWalkIn: isWalkInMode,
+      patientName: isWalkInMode ? walkInPatient.name : patient?.name || '',
+      patientAge: Number(isWalkInMode ? walkInPatient.age || 0 : patient?.age ?? 0),
+      patientGender: (isWalkInMode ? walkInPatient.gender : patient?.gender || 'other').toString().toLowerCase(),
+      doctorId: doctor?.id || null,
+      doctorName: doctor?.name || '',
+      diagnosis,
+      medicines: payloadMedicines,
+      advice,
+      createdBy: currentUser.name,
+    };
+
+    if (editPrescriptionData?.id) {
+      await updatePrescription({ id: editPrescriptionData.id, ...payload });
+    } else {
+      const created = await addPrescription(payload);
+      if (!created) return;
+    }
+
     navigate('/prescriptions');
-    // Reset form
     setSelectedPatient(null);
     setSelectedDoctor(null);
     setPatientSearch('');
     setMedicines([]);
     setDiagnosis('');
     setAdvice('');
+    setShowPrint(false);
   };
 
   const handlePrint = () => {
@@ -544,7 +691,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     medicine={medicine}
                     index={index}
                     hospital={hospital}
+                    medicineOptions={inventory}
                     onUpdate={updateMedicineRow}
+                    onUpdateBatch={updateMedicineRowBatch}
                     onRemove={removeMedicineRow}
                     onMedicineSearch={handleMedicineSearch}
                     onAddNew={addMedicineRow}
@@ -588,12 +737,17 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         <PrescriptionPrint
           hospital={hospital}
           patient={selectedPatient}
-          doctor={selectedDoctor || mockDoctors[0]}
-          medicines={medicines.map(m => ({
-            ...m,
-            medicineName: m.brandName,
-            type: m.type
-          }))}
+          doctor={selectedDoctor || doctors[0]}
+          medicines={medicines.map(m => {
+            const originalMed = inventory.find(med => med.id === m.medicineId);
+            return {
+              ...m,
+              medicineName: m.brandName,
+              type: m.type,
+              genericName: originalMed?.genericName || m.genericName || '',
+              brandName: originalMed?.brandName || m.brandName
+            };
+          })}
           diagnosis={diagnosis}
           advice={advice}
           prescriptionNumber={`RX-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`}
@@ -609,13 +763,15 @@ interface MedicineRowProps {
   medicine: MedicineRow;
   index: number;
   hospital: Hospital;
+  medicineOptions: Medicine[];
   onUpdate: (rowId: string, field: keyof MedicineRow, value: any) => void;
+  onUpdateBatch: (rowId: string, updates: Partial<MedicineRow>) => void;
   onRemove: (rowId: string) => void;
   onMedicineSearch: (rowId: string, searchTerm: string) => void;
   onAddNew: () => void;
 }
 
-function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, onMedicineSearch, onAddNew }: MedicineRowProps) {
+function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew }: MedicineRowProps) {
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -627,7 +783,7 @@ function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, o
     setSearchTerm(medicine.brandName);
   }, [medicine.brandName]);
 
-  const filteredMedicines = mockMedicines.filter(m =>
+  const filteredMedicines = medicineOptions.filter(m =>
     m.hospitalId === hospital.id &&
     m.status === 'active' &&
     searchTerm.length > 0 &&
@@ -679,15 +835,20 @@ function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, o
     }
   };
 
-  const handleSelectMedicine = (med: any) => {
-    const displayName = med.type 
-      ? `${med.brandName} (${med.genericName}) ${med.type}`
-      : `${med.brandName} (${med.genericName})`;
+  const handleSelectMedicine = (med: Medicine) => {
+    const medType = med.type || '';
+    const displayName = formatMedicineDisplay(med.brandName, med.genericName, medType, med.strength, true);
     setSearchTerm(displayName);
-    onUpdate(medicine.rowId, 'medicineId', med.id);
-    onUpdate(medicine.rowId, 'brandName', displayName);
-    onUpdate(medicine.rowId, 'strength', med.strength);
-    onUpdate(medicine.rowId, 'type', med.type);
+    
+    // Use batch update to ensure all fields are updated together
+    onUpdateBatch(medicine.rowId, {
+      medicineId: med.id,
+      brandName: displayName,
+      genericName: med.genericName || '',
+      strength: med.strength || '',
+      type: medType
+    });
+    
     setShowMedicineDropdown(false);
     // Focus on next field (dose)
     setTimeout(() => {
@@ -739,7 +900,6 @@ function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, o
               {filteredMedicines.length > 0 ? (
                 <div className="overflow-y-auto" style={{ maxHeight: '280px' }}>
                   {filteredMedicines.map((med, idx) => {
-                    const manufacturer = mockManufacturers.find(mf => mf.id === med.manufacturerId);
                     const isHighlighted = idx === highlightedIndex;
                     return (
                       <button
@@ -759,7 +919,7 @@ function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, o
                       >
                         <div className="font-semibold text-xs text-gray-900 dark:text-white">{med.brandName}</div>
                         <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                          {med.genericName} • {med.strength} • {manufacturer?.name}
+                          {med.genericName} • {med.strength}
                         </div>
                       </button>
                     );
@@ -781,8 +941,7 @@ function MedicineRowComponent({ medicine, index, hospital, onUpdate, onRemove, o
           value={medicine.strength}
           onChange={(e) => onUpdate(medicine.rowId, 'strength', e.target.value)}
           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white"
-          readOnly
-          placeholder="Auto-filled"
+          placeholder="Auto-filled or enter"
         />
       </td>
       <td className="py-0.5 px-2">

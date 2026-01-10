@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Pencil, Search, Shield, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
+import api from '../../api/axios';
 
 interface RoleManagementProps {
   hospital: Hospital;
@@ -9,95 +10,77 @@ interface RoleManagementProps {
 }
 
 interface Role {
-  id: string;
+  id: number;
   name: string;
   displayName: string;
   description: string;
-  permissions: string[];
+  permissions: number[];
   status: 'active' | 'inactive';
   isSystem?: boolean;
 }
 
-export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
-  const initialRoles: Role[] = [
-    {
-      id: '1',
-      name: 'super_admin',
-      displayName: 'Super Admin',
-      description: 'Full system access across all hospitals',
-      permissions: ['all'],
-      status: 'active',
-      isSystem: true
-    },
-    {
-      id: '2',
-      name: 'admin',
-      displayName: 'Admin',
-      description: 'Hospital administrator with full hospital access',
-      permissions: ['manage_users', 'manage_doctors', 'manage_patients', 'manage_prescriptions', 'manage_medicines', 'view_reports'],
-      status: 'active',
-      isSystem: true
-    },
-    {
-      id: '3',
-      name: 'doctor',
-      displayName: 'Doctor',
-      description: 'Medical doctor who creates prescriptions',
-      permissions: ['create_prescription', 'view_patients', 'view_medicines'],
-      status: 'active',
-      isSystem: true
-    },
-    {
-      id: '4',
-      name: 'pharmacist',
-      displayName: 'Pharmacist',
-      description: 'Pharmacy staff who manages medicines',
-      permissions: ['manage_medicines', 'view_prescriptions', 'dispense_medicines'],
-      status: 'active',
-      isSystem: true
-    },
-    {
-      id: '5',
-      name: 'staff',
-      displayName: 'Staff',
-      description: 'Reception and support staff',
-      permissions: ['register_patients', 'view_patients', 'schedule_appointments'],
-      status: 'active',
-      isSystem: true
-    }
-  ];
+interface PermissionOption {
+  id: number;
+  name: string;
+  displayName: string;
+  category: string;
+}
 
+export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
+  const canManage = userRole === 'super_admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-  const [roles, setRoles] = useState(initialRoles);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<PermissionOption[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     displayName: '',
     description: '',
-    permissions: [] as string[],
+    permissions: [] as number[],
     status: 'active' as const
   });
 
-  const availablePermissions = [
-    { id: 'manage_users', name: 'Manage Users', category: 'User Management' },
-    { id: 'manage_doctors', name: 'Manage Doctors', category: 'User Management' },
-    { id: 'manage_patients', name: 'Manage Patients', category: 'Patient Management' },
-    { id: 'register_patients', name: 'Register Patients', category: 'Patient Management' },
-    { id: 'view_patients', name: 'View Patients', category: 'Patient Management' },
-    { id: 'create_prescription', name: 'Create Prescription', category: 'Prescription' },
-    { id: 'view_prescriptions', name: 'View Prescriptions', category: 'Prescription' },
-    { id: 'manage_prescriptions', name: 'Manage Prescriptions', category: 'Prescription' },
-    { id: 'manage_medicines', name: 'Manage Medicines', category: 'Pharmacy' },
-    { id: 'view_medicines', name: 'View Medicines', category: 'Pharmacy' },
-    { id: 'dispense_medicines', name: 'Dispense Medicines', category: 'Pharmacy' },
-    { id: 'view_reports', name: 'View Reports', category: 'Reports' },
-    { id: 'manage_reports', name: 'Manage Reports', category: 'Reports' },
-    { id: 'schedule_appointments', name: 'Schedule Appointments', category: 'Appointments' },
-  ];
+  useEffect(() => {
+    loadPermissions();
+    loadRoles();
+  }, []);
+
+  const loadPermissions = async () => {
+    try {
+      const { data } = await api.get('/permissions', { params: { status: 'active' } });
+      const records: PermissionOption[] = data.data ?? data;
+      setPermissions(records.map((p) => ({
+        id: p.id,
+        name: p.name,
+        displayName: (p as any).display_name ?? p.displayName,
+        category: (p as any).category ?? '',
+      })));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load permissions');
+    }
+  };
+
+  const loadRoles = async () => {
+    try {
+      const { data } = await api.get('/roles');
+      const records: any[] = data.data ?? data;
+      setRoles(records.map((r) => ({
+        id: r.id,
+        name: r.name,
+        displayName: r.display_name ?? r.displayName,
+        description: r.description,
+        permissions: (r.permissions || []).map((p: any) => p.id),
+        status: r.status,
+        isSystem: r.is_system,
+      })));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load roles');
+    }
+  };
 
   const filteredRoles = roles.filter(r =>
     r.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -110,6 +93,10 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     : filteredRoles;
 
   const handleAdd = () => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage roles');
+      return;
+    }
     setFormData({
       name: '',
       displayName: '',
@@ -126,6 +113,10 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   };
 
   const handleEdit = (role: Role) => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage roles');
+      return;
+    }
     if (role.isSystem) {
       toast.warning('System roles cannot be edited.');
       return;
@@ -142,6 +133,10 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   };
 
   const handleDelete = (role: Role) => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage roles');
+      return;
+    }
     if (role.isSystem) {
       toast.warning('System roles cannot be deleted.');
       return;
@@ -150,49 +145,55 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     setShowDeleteModal(true);
   };
 
-  const handleSubmitAdd = (e: React.FormEvent) => {
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newRole: Role = {
-      id: `${roles.length + 1}`,
-      name: formData.name.toLowerCase().replace(/\s+/g, '_'),
-      displayName: formData.displayName,
-      description: formData.description,
-      permissions: formData.permissions,
-      status: formData.status,
-      isSystem: false
-    };
-    setRoles([...roles, newRole]);
-    setShowAddModal(false);
-    toast.success('Role added successfully.');
+    try {
+      await api.post('/roles', {
+        name: formData.name.toLowerCase().replace(/\s+/g, '_'),
+        display_name: formData.displayName,
+        description: formData.description,
+        status: formData.status,
+        permission_ids: formData.permissions,
+      });
+      setShowAddModal(false);
+      await loadRoles();
+      toast.success('Role added successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to add role');
+    }
   };
 
-  const handleSubmitEdit = (e: React.FormEvent) => {
+  const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedRoles = roles.map(r => {
-      if (r.id === selectedRole?.id) {
-        return {
-          ...r,
-          displayName: formData.displayName,
-          description: formData.description,
-          permissions: formData.permissions,
-          status: formData.status
-        };
-      }
-      return r;
-    });
-    setRoles(updatedRoles);
-    setShowEditModal(false);
-    toast.success('Role updated successfully.');
+    if (!selectedRole) return;
+    try {
+      await api.put(`/roles/${selectedRole.id}`, {
+        display_name: formData.displayName,
+        description: formData.description,
+        status: formData.status,
+        permission_ids: formData.permissions,
+      });
+      setShowEditModal(false);
+      await loadRoles();
+      toast.success('Role updated successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update role');
+    }
   };
 
-  const handleConfirmDelete = () => {
-    const updatedRoles = roles.filter(r => r.id !== selectedRole?.id);
-    setRoles(updatedRoles);
-    setShowDeleteModal(false);
-    toast.success('Role deleted successfully.');
+  const handleConfirmDelete = async () => {
+    if (!selectedRole) return;
+    try {
+      await api.delete(`/roles/${selectedRole.id}`);
+      setShowDeleteModal(false);
+      await loadRoles();
+      toast.success('Role deleted successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to delete role');
+    }
   };
 
-  const togglePermission = (permissionId: string) => {
+  const togglePermission = (permissionId: number) => {
     setFormData(prev => ({
       ...prev,
       permissions: prev.permissions.includes(permissionId)
@@ -201,13 +202,14 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     }));
   };
 
-  const groupedPermissions = availablePermissions.reduce((acc, perm) => {
-    if (!acc[perm.category]) {
-      acc[perm.category] = [];
+  const groupedPermissions = permissions.reduce((acc: Record<string, PermissionOption[]>, perm) => {
+    const category = perm.category || 'General';
+    if (!acc[category]) {
+      acc[category] = [];
     }
-    acc[perm.category].push(perm);
+    acc[category].push(perm);
     return acc;
-  }, {} as Record<string, typeof availablePermissions>);
+  }, {});
 
   return (
     <div className="space-y-3">
@@ -218,7 +220,8 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
         </div>
         <button
           onClick={handleAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+          disabled={!canManage}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-3.5 h-3.5" />
           Add Role
@@ -272,9 +275,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                     <span className="text-xs text-gray-600 dark:text-gray-400">{role.description}</span>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="text-xs text-gray-900 dark:text-white">
-                      {role.permissions.includes('all') ? 'All Permissions' : `${role.permissions.length} permissions`}
-                    </span>
+                    <span className="text-xs text-gray-900 dark:text-white">{role.permissions.length} permissions</span>
                   </td>
                   <td className="py-2 px-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs ${
@@ -294,22 +295,26 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        onClick={() => handleEdit(role)}
-                        className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                        title="Edit"
-                        disabled={role.isSystem}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(role)}
-                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                        title="Delete"
-                        disabled={role.isSystem}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                          {canManage && (
+                            <>
+                              <button
+                                onClick={() => handleEdit(role)}
+                                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                title="Edit"
+                                disabled={role.isSystem}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(role)}
+                                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                title="Delete"
+                                disabled={role.isSystem}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                     </div>
                   </td>
                 </tr>
@@ -386,7 +391,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                               onChange={() => togglePermission(perm.id)}
                               className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                             />
-                            <span className="text-xs text-gray-700 dark:text-gray-300">{perm.name}</span>
+                            <span className="text-xs text-gray-700 dark:text-gray-300">{perm.displayName || perm.name}</span>
                           </label>
                         ))}
                       </div>
@@ -455,20 +460,16 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
               <div className="mb-6">
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</label>
                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 max-h-48 overflow-y-auto">
-                  {selectedRole.permissions.includes('all') ? (
-                    <p className="text-xs text-gray-900 dark:text-white">All System Permissions</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedRole.permissions.map((permId) => {
-                        const perm = availablePermissions.find(p => p.id === permId);
-                        return perm ? (
-                          <span key={permId} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs">
-                            {perm.name}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedRole.permissions.map((permId) => {
+                      const perm = permissions.find(p => p.id === permId);
+                      return perm ? (
+                        <span key={permId} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs">
+                          {perm.displayName || perm.name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
                 </div>
               </div>
 

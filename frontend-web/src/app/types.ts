@@ -96,13 +96,9 @@ export interface Medicine {
   brandName: string;
   genericName: string;
   strength: string;
-  form: 'tablet' | 'capsule' | 'syrup' | 'injection' | 'cream' | 'drops';
   manufacturerId: string;
   medicineTypeId: string;
-  dosage?: string;
-  type?: string;
-  price?: number;
-  stock?: number;
+  type?: string; // human readable medicine type name (e.g., Tablet)
   status: 'active' | 'inactive';
   createdAt?: Date;
   createdBy?: string;
@@ -125,7 +121,9 @@ export interface Prescription {
   id: string;
   hospitalId: string;
   prescriptionNumber: string;
-  patientId: string;
+  patientId: string | null;
+  walkInPatientId?: string | null;
+  isWalkIn?: boolean;
   patientName: string;
   patientAge: number;
   patientGender: string;

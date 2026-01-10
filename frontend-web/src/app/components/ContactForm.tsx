@@ -3,6 +3,7 @@ import { Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLandingLanguage } from '../contexts/LandingLanguageContext';
 import { useLandingTheme } from '../contexts/LandingThemeContext';
+import api from '../../api/axios';
 
 export function ContactForm() {
   const { t } = useLandingLanguage();
@@ -81,36 +82,30 @@ export function ContactForm() {
 
     setLoading(true);
 
-    // Save to localStorage to simulate backend storage
-    const contactMessages = JSON.parse(localStorage.getItem('contactMessages') || '[]');
-    const newMessage = {
-      id: Date.now().toString(),
-      ...formData,
-      submittedAt: new Date().toISOString(),
-      status: 'unread',
-    };
-    contactMessages.push(newMessage);
-    localStorage.setItem('contactMessages', JSON.stringify(contactMessages));
+    try {
+      await api.post('/contact-messages', formData);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    toast.success(t('validation.success'));
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      subject: '',
-      message: '',
-    });
-    setErrors({
-      name: '',
-      email: '',
-      phone: '',
-      subject: '',
-      message: '',
-    });
-    setLoading(false);
+      toast.success(t('validation.success'));
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        subject: '',
+        message: '',
+      });
+      setErrors({
+        name: '',
+        email: '',
+        phone: '',
+        subject: '',
+        message: '',
+      });
+    } catch (err: any) {
+      const message = err?.response?.data?.message || t('validation.fixErrors');
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string) => {

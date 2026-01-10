@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Pencil, Search, Key, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
+import api from '../../api/axios';
 
 interface PermissionManagementProps {
   hospital: Hospital;
@@ -9,7 +10,7 @@ interface PermissionManagementProps {
 }
 
 interface Permission {
-  id: string;
+  id: number;
   name: string;
   displayName: string;
   category: string;
@@ -19,36 +20,7 @@ interface Permission {
 }
 
 export function PermissionManagement({ hospital, userRole }: PermissionManagementProps) {
-  const initialPermissions: Permission[] = [
-    // User Management
-    { id: '1', name: 'manage_users', displayName: 'Manage Users', category: 'User Management', description: 'Create, edit, and delete users', status: 'active', isSystem: true },
-    { id: '2', name: 'view_users', displayName: 'View Users', category: 'User Management', description: 'View user list and details', status: 'active', isSystem: true },
-    { id: '3', name: 'manage_doctors', displayName: 'Manage Doctors', category: 'User Management', description: 'Manage doctor profiles', status: 'active', isSystem: true },
-    
-    // Patient Management
-    { id: '4', name: 'manage_patients', displayName: 'Manage Patients', category: 'Patient Management', description: 'Full patient management access', status: 'active', isSystem: true },
-    { id: '5', name: 'register_patients', displayName: 'Register Patients', category: 'Patient Management', description: 'Register new patients', status: 'active', isSystem: true },
-    { id: '6', name: 'view_patients', displayName: 'View Patients', category: 'Patient Management', description: 'View patient information', status: 'active', isSystem: true },
-    
-    // Prescription
-    { id: '7', name: 'create_prescription', displayName: 'Create Prescription', category: 'Prescription', description: 'Create new prescriptions', status: 'active', isSystem: true },
-    { id: '8', name: 'view_prescriptions', displayName: 'View Prescriptions', category: 'Prescription', description: 'View prescription list', status: 'active', isSystem: true },
-    { id: '9', name: 'manage_prescriptions', displayName: 'Manage Prescriptions', category: 'Prescription', description: 'Full prescription management', status: 'active', isSystem: true },
-    
-    // Pharmacy
-    { id: '10', name: 'manage_medicines', displayName: 'Manage Medicines', category: 'Pharmacy', description: 'Manage medicine inventory', status: 'active', isSystem: true },
-    { id: '11', name: 'view_medicines', displayName: 'View Medicines', category: 'Pharmacy', description: 'View medicine list', status: 'active', isSystem: true },
-    { id: '12', name: 'dispense_medicines', displayName: 'Dispense Medicines', category: 'Pharmacy', description: 'Dispense medicines to patients', status: 'active', isSystem: true },
-    
-    // Reports
-    { id: '13', name: 'view_reports', displayName: 'View Reports', category: 'Reports', description: 'View system reports', status: 'active', isSystem: true },
-    { id: '14', name: 'manage_reports', displayName: 'Manage Reports', category: 'Reports', description: 'Create and manage reports', status: 'active', isSystem: true },
-    
-    // Appointments
-    { id: '15', name: 'schedule_appointments', displayName: 'Schedule Appointments', category: 'Appointments', description: 'Schedule patient appointments', status: 'active', isSystem: true },
-    { id: '16', name: 'manage_appointments', displayName: 'Manage Appointments', category: 'Appointments', description: 'Full appointment management', status: 'active', isSystem: true },
-  ];
-
+  const canManage = userRole === 'super_admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -56,7 +28,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<Permission | null>(null);
-  const [permissions, setPermissions] = useState(initialPermissions);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     displayName: '',
@@ -64,6 +36,28 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
     description: '',
     status: 'active' as const
   });
+
+  useEffect(() => {
+    loadPermissions();
+  }, []);
+
+  const loadPermissions = async () => {
+    try {
+      const { data } = await api.get('/permissions');
+      const records: any[] = data.data ?? data;
+      setPermissions(records.map((p) => ({
+        id: p.id,
+        name: p.name,
+        displayName: p.display_name ?? p.displayName,
+        category: p.category || 'General',
+        description: p.description ?? '',
+        status: p.status,
+        isSystem: p.is_system,
+      })));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load permissions');
+    }
+  };
 
   const categories = ['all', ...Array.from(new Set(permissions.map(p => p.category)))];
 
@@ -84,6 +78,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   }, {} as Record<string, Permission[]>);
 
   const handleAdd = () => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage permissions.');
+      return;
+    }
     setFormData({
       name: '',
       displayName: '',
@@ -100,6 +98,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   };
 
   const handleEdit = (permission: Permission) => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage permissions.');
+      return;
+    }
     if (permission.isSystem) {
       toast.warning('System permissions cannot be edited.');
       return;
@@ -116,6 +118,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   };
 
   const handleDelete = (permission: Permission) => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage permissions.');
+      return;
+    }
     if (permission.isSystem) {
       toast.warning('System permissions cannot be deleted.');
       return;
@@ -126,44 +132,53 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
 
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    const newPermission: Permission = {
-      id: `${permissions.length + 1}`,
+    api.post('/permissions', {
       name: formData.name.toLowerCase().replace(/\s+/g, '_'),
-      displayName: formData.displayName,
+      display_name: formData.displayName,
       category: formData.category,
       description: formData.description,
       status: formData.status,
-      isSystem: false
-    };
-    setPermissions([...permissions, newPermission]);
-    setShowAddModal(false);
-    toast.success('Permission added successfully.');
+    })
+      .then(() => {
+        toast.success('Permission added successfully.');
+        setShowAddModal(false);
+        loadPermissions();
+      })
+      .catch((err) => {
+        toast.error(err?.response?.data?.message || 'Failed to add permission');
+      });
   };
 
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedPermissions = permissions.map(p => {
-      if (p.id === selectedPermission?.id) {
-        return {
-          ...p,
-          displayName: formData.displayName,
-          category: formData.category,
-          description: formData.description,
-          status: formData.status
-        };
-      }
-      return p;
-    });
-    setPermissions(updatedPermissions);
-    setShowEditModal(false);
-    toast.success('Permission updated successfully.');
+    if (!selectedPermission) return;
+    api.put(`/permissions/${selectedPermission.id}`, {
+      display_name: formData.displayName,
+      category: formData.category,
+      description: formData.description,
+      status: formData.status,
+    })
+      .then(() => {
+        toast.success('Permission updated successfully.');
+        setShowEditModal(false);
+        loadPermissions();
+      })
+      .catch((err) => {
+        toast.error(err?.response?.data?.message || 'Failed to update permission');
+      });
   };
 
   const handleConfirmDelete = () => {
-    const updatedPermissions = permissions.filter(p => p.id !== selectedPermission?.id);
-    setPermissions(updatedPermissions);
-    setShowDeleteModal(false);
-    toast.success('Permission deleted successfully.');
+    if (!selectedPermission) return;
+    api.delete(`/permissions/${selectedPermission.id}`)
+      .then(() => {
+        toast.success('Permission deleted successfully.');
+        setShowDeleteModal(false);
+        loadPermissions();
+      })
+      .catch((err) => {
+        toast.error(err?.response?.data?.message || 'Failed to delete permission');
+      });
   };
 
   return (
@@ -175,7 +190,8 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
         </div>
         <button
           onClick={handleAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+          disabled={!canManage}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-3.5 h-3.5" />
           Add Permission
@@ -264,17 +280,17 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                           </button>
                           <button
                             onClick={() => handleEdit(permission)}
-                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Edit"
-                            disabled={permission.isSystem}
+                            disabled={permission.isSystem || !canManage}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(permission)}
-                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Delete"
-                            disabled={permission.isSystem}
+                            disabled={permission.isSystem || !canManage}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

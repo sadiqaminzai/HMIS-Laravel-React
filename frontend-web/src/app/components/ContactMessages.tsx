@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Eye, Trash2, MessageSquare, Phone, Calendar, CheckCircle2, XCircle, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import api from '../../api/axios';
 
 interface ContactMessage {
-  id: string;
+  id: number;
   name: string;
   email: string;
-  phone: string;
+  phone: string | null;
   subject: string;
   message: string;
-  submittedAt: string;
   status: 'unread' | 'read' | 'responded';
+  created_at: string;
 }
 
 export function ContactMessages() {
@@ -21,60 +22,64 @@ export function ContactMessages() {
 
   useEffect(() => {
     loadMessages();
-  }, []);
+  }, [filter, searchTerm]);
 
-  const loadMessages = () => {
-    const contactMessages = JSON.parse(localStorage.getItem('contactMessages') || '[]');
-    // Sort by submittedAt descending (newest first)
-    contactMessages.sort((a: ContactMessage, b: ContactMessage) => 
-      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-    );
-    setMessages(contactMessages);
-  };
+  const loadMessages = async () => {
+    try {
+      const params: Record<string, string> = {};
+      if (filter !== 'all') params.status = filter;
+      if (searchTerm) params.search = searchTerm;
 
-  const filteredMessages = messages.filter(msg => {
-    const matchesFilter = filter === 'all' ? true : msg.status === filter;
-    const matchesSearch = 
-      msg.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      msg.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      msg.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      msg.message.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesFilter && matchesSearch;
-  });
-
-  const handleView = (message: ContactMessage) => {
-    setSelectedMessage(message);
-    
-    // Mark as read
-    if (message.status === 'unread') {
-      const updatedMessages = messages.map(msg =>
-        msg.id === message.id ? { ...msg, status: 'read' as const } : msg
-      );
-      setMessages(updatedMessages);
-      localStorage.setItem('contactMessages', JSON.stringify(updatedMessages.reverse()));
+      const { data } = await api.get('/contact-messages', { params });
+      const records: ContactMessage[] = data.data ?? data;
+      setMessages(records);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to load messages';
+      toast.error(message);
     }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this message?')) {
-      const updatedMessages = messages.filter(msg => msg.id !== id);
-      setMessages(updatedMessages);
-      localStorage.setItem('contactMessages', JSON.stringify(updatedMessages.reverse()));
-      toast.success('Message deleted successfully');
-      if (selectedMessage?.id === id) {
-        setSelectedMessage(null);
+  const filteredMessages = messages; // filtering handled server-side
+
+  const handleView = async (message: ContactMessage) => {
+    setSelectedMessage(message);
+
+    if (message.status === 'unread') {
+      try {
+        await api.patch(`/contact-messages/${message.id}`, { status: 'read' });
+        setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'read' } : m)));
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || 'Failed to update status';
+        toast.error(msg);
       }
     }
   };
 
-  const markAsResponded = (id: string) => {
-    const updatedMessages = messages.map(msg =>
-      msg.id === id ? { ...msg, status: 'responded' as const } : msg
-    );
-    setMessages(updatedMessages);
-    localStorage.setItem('contactMessages', JSON.stringify(updatedMessages.reverse()));
-    toast.success('Marked as responded');
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this message?')) return;
+
+    try {
+      await api.delete(`/contact-messages/${id}`);
+      setMessages((prev) => prev.filter((msg) => msg.id !== id));
+      if (selectedMessage?.id === id) {
+        setSelectedMessage(null);
+      }
+      toast.success('Message deleted successfully');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to delete message';
+      toast.error(msg);
+    }
+  };
+
+  const markAsResponded = async (id: number) => {
+    try {
+      await api.patch(`/contact-messages/${id}`, { status: 'responded' });
+      setMessages((prev) => prev.map((msg) => (msg.id === id ? { ...msg, status: 'responded' } : msg)));
+      toast.success('Marked as responded');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to update status';
+      toast.error(msg);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -197,7 +202,7 @@ export function ContactMessages() {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <Calendar className="w-3 h-3" />
-                    {new Date(message.submittedAt).toLocaleDateString()} {new Date(message.submittedAt).toLocaleTimeString()}
+                    {new Date(message.created_at).toLocaleDateString()} {new Date(message.created_at).toLocaleTimeString()}
                   </div>
                 </div>
               ))
@@ -302,7 +307,7 @@ export function ContactMessages() {
                     Submitted At
                   </label>
                   <p className="text-sm text-gray-900 dark:text-white">
-                    {new Date(selectedMessage.submittedAt).toLocaleString()}
+                    {new Date(selectedMessage.created_at).toLocaleString()}
                   </p>
                 </div>
               </div>

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Image as ImageIcon, CreditCard, QrCode, Download, FileImage } from 'lucide-react';
-import { Hospital, UserRole } from '../types';
-import { mockPatients, mockDoctors } from '../data/mockData';
-import { Toast } from './Toast';
+import { Hospital, UserRole, Patient } from '../types';
+import { usePatients } from '../context/PatientContext';
+import { useDoctors } from '../context/DoctorContext';
+import { toast } from 'sonner';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useHospitals } from '../context/HospitalContext';
@@ -31,6 +32,9 @@ interface PatientManagementProps {
 
 export function PatientManagement({ hospital, userRole = 'admin', currentUser }: PatientManagementProps) {
   const { hospitals: contextHospitals } = useHospitals();
+  const { patients, addPatient, updatePatient, deletePatient } = usePatients();
+  const { doctors } = useDoctors();
+  const { getDefaultDoctorId, generatePatientId, loadHospitalSetting } = useSettings();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
@@ -40,10 +44,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showIdCardModal, setShowIdCardModal] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<any>(null);
-  
-  // Apply hospital filter first
-  const hospitalFiltered = React.useMemo(() => filterByHospital(mockPatients), [filterByHospital]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Apply hospital filter first from API data
+  const hospitalFiltered = React.useMemo(() => filterByHospital(patients), [patients, filterByHospital]);
 
   // Then apply doctor filter if applicable
   const doctorFiltered = React.useMemo(() => {
@@ -52,11 +57,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     }
     return hospitalFiltered;
   }, [hospitalFiltered, userRole, currentUser]);
-
-  const [patients, setPatients] = useState(doctorFiltered);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const { getDefaultDoctorId, getPatientIdConfig, generatePatientId } = useSettings();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('id');
@@ -64,25 +64,28 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
   // Form state
   const [formData, setFormData] = useState({
+    patientId: '',
     name: '',
     age: '',
-    gender: 'Male',
+    gender: 'male',
     phone: '',
     address: '',
     referredDoctorId: '',
     image: '',
+    imageFile: null as File | null,
+    status: 'active',
     hospitalId: currentHospital.id // Add hospital selection
   });
   
+    React.useEffect(() => {
+      loadHospitalSetting(currentHospital.id);
+    }, [currentHospital.id, loadHospitalSetting]);
+
+  const canManage = ['receptionist', 'admin', 'super_admin'].includes(userRole);
   // Check if user can delete (only admin and super_admin)
   const canDelete = userRole === 'admin' || userRole === 'super_admin';
 
-  // Update patients when filter dependencies change
-  React.useEffect(() => {
-    setPatients(doctorFiltered);
-  }, [doctorFiltered]);
-
-  const filteredPatients = patients.filter(p =>
+  const filteredPatients = doctorFiltered.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.phone.includes(searchTerm) ||
@@ -122,7 +125,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
   const getDoctorName = (doctorId?: string) => {
     if (!doctorId) return 'N/A';
-    const doctor = mockDoctors.find(d => d.id === doctorId);
+    const doctor = doctors.find(d => d.id === doctorId);
     return doctor ? doctor.name : 'N/A';
   };
 
@@ -187,7 +190,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       reader.onloadend = () => {
         const result = reader.result as string;
         setImagePreview(result);
-        setFormData({ ...formData, image: result });
+        setFormData({ ...formData, image: result, imageFile: file });
       };
       reader.readAsDataURL(file);
     }
@@ -197,46 +200,52 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     // Auto-populate with default doctor if configured
     const defaultDoctorId = getDefaultDoctorId(currentHospital.id) || '';
     setFormData({
+      patientId: '',
       name: '',
       age: '',
-      gender: 'Male',
+      gender: 'male',
       phone: '',
       address: '',
       referredDoctorId: defaultDoctorId,
       image: '',
+      imageFile: null,
+      status: 'active',
       hospitalId: currentHospital.id // Add hospital selection
     });
     setImagePreview(null);
     setShowAddModal(true);
   };
 
-  const handleView = (patient: any) => {
+  const handleView = (patient: Patient) => {
     setSelectedPatient(patient);
     setShowViewModal(true);
   };
 
-  const handleEdit = (patient: any) => {
+  const handleEdit = (patient: Patient) => {
     setSelectedPatient(patient);
     setFormData({
+      patientId: patient.patientId,
       name: patient.name,
-      age: patient.age.toString(),
+      age: patient.age?.toString() || '',
       gender: patient.gender,
       phone: patient.phone,
       address: patient.address,
       referredDoctorId: patient.referredDoctorId || '',
       image: patient.image || '',
+      imageFile: null,
+      status: patient.status || 'active',
       hospitalId: patient.hospitalId // Add hospital selection
     });
     setImagePreview(patient.image || null);
     setShowEditModal(true);
   };
 
-  const handleDelete = (patient: any) => {
+  const handleDelete = (patient: Patient) => {
     setSelectedPatient(patient);
     setShowDeleteModal(true);
   };
 
-  const handlePrintIdCard = (patient: any) => {
+  const handlePrintIdCard = (patient: Patient) => {
     setSelectedPatient(patient);
     setShowIdCardModal(true);
   };
@@ -252,10 +261,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       link.download = `${selectedPatient.name.replace(/\s+/g, '_')}_ID_Card.png`;
       link.href = dataUrl;
       link.click();
-      setToast({ message: 'ID Card image downloaded successfully.', type: 'success' });
+      toast.success('ID Card image downloaded successfully.');
     } catch (error) {
       console.error('Error generating image:', error);
-      setToast({ message: 'Failed to generate image', type: 'danger' });
+      toast.error('Failed to generate image');
     }
   };
 
@@ -274,63 +283,88 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       
       pdf.addImage(dataUrl, 'PNG', 0, 0, 85.6, 53.98);
       pdf.save(`${selectedPatient.name.replace(/\s+/g, '_')}_ID_Card.pdf`);
-      setToast({ message: 'ID Card PDF downloaded successfully.', type: 'success' });
+      toast.success('ID Card PDF downloaded successfully.');
     } catch (error) {
       console.error('Error generating PDF:', error);
-      setToast({ message: 'Failed to generate PDF', type: 'danger' });
+      toast.error('Failed to generate PDF');
     }
   };
 
-  const handleSubmitAdd = (e: React.FormEvent) => {
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newPatient = {
-      id: (patients.length + 1).toString(),
-      patientId: generatePatientId(formData.hospitalId, patients.length), // Use selected hospital from form
-      hospitalId: formData.hospitalId, // Use selected hospital from form
-      name: formData.name,
-      age: parseInt(formData.age, 10),
-      gender: formData.gender,
-      phone: formData.phone,
-      address: formData.address,
-      referredDoctorId: formData.referredDoctorId,
-      image: formData.image,
-      createdAt: new Date()
-    };
-    setPatients([...patients, newPatient]);
-    setShowAddModal(false);
-    setToast({ message: 'Patient added successfully.', type: 'success' });
+    if (!canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
+    const newPatientId = formData.patientId || generatePatientId(formData.hospitalId, patients.length);
+    try {
+      await addPatient({
+        hospitalId: formData.hospitalId,
+        patientId: newPatientId,
+        name: formData.name,
+        age: Number(formData.age),
+        gender: formData.gender as Patient['gender'],
+        phone: formData.phone,
+        address: formData.address,
+        referredDoctorId: formData.referredDoctorId || undefined,
+        status: formData.status as Patient['status'],
+        imageFile: formData.imageFile,
+      });
+      toast.success('Patient added successfully.');
+      setShowAddModal(false);
+      setImagePreview(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to add patient');
+    }
   };
 
-  const handleSubmitEdit = (e: React.FormEvent) => {
+  const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedPatients = patients.map(p => {
-      if (p.id === selectedPatient.id) {
-        return {
-          ...p,
-          name: formData.name,
-          age: parseInt(formData.age, 10),
-          gender: formData.gender,
-          phone: formData.phone,
-          address: formData.address,
-          referredDoctorId: formData.referredDoctorId,
-          image: formData.image,
-          hospitalId: formData.hospitalId
-        };
-      }
-      return p;
-    });
-    setPatients(updatedPatients);
-    setShowEditModal(false);
-    setToast({ message: 'Patient updated successfully.', type: 'success' });
+    if (!selectedPatient || !canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
+    try {
+      await updatePatient({
+        id: selectedPatient.id,
+        hospitalId: formData.hospitalId,
+        patientId: formData.patientId || selectedPatient.patientId,
+        name: formData.name,
+        age: Number(formData.age),
+        gender: formData.gender as Patient['gender'],
+        phone: formData.phone,
+        address: formData.address,
+        referredDoctorId: formData.referredDoctorId || undefined,
+        status: formData.status as Patient['status'],
+        imageFile: formData.imageFile,
+      });
+      toast.success('Patient updated successfully.');
+      setShowEditModal(false);
+      setImagePreview(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update patient');
+    }
   };
 
-  const confirmDelete = () => {
-    setPatients(patients.filter(p => p.id !== selectedPatient.id));
-    setShowDeleteModal(false);
-    setToast({ message: 'Patient deleted successfully.', type: 'danger' });
+  const confirmDelete = async () => {
+    if (!selectedPatient || !canDelete) {
+      toast.warning('Not allowed');
+      return;
+    }
+    try {
+      await deletePatient(selectedPatient.id);
+      toast.success('Patient deleted successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to delete patient');
+    } finally {
+      setShowDeleteModal(false);
+    }
   };
 
-  const hospitalDoctors = mockDoctors.filter(d => d.hospitalId === currentHospital.id);
+  const hospitalDoctors = React.useMemo(
+    () => doctors.filter(d => d.hospitalId === currentHospital.id),
+    [doctors, currentHospital.id]
+  );
   const defaultDoctorId = getDefaultDoctorId(currentHospital.id);
   const defaultDoctor = defaultDoctorId ? hospitalDoctors.find(d => d.id === defaultDoctorId) : null;
 
@@ -477,13 +511,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{patient.age}</td>
                     <td className="px-4 py-2">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        patient.gender === 'Male' 
+                        patient.gender === 'male' 
                           ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' 
-                          : patient.gender === 'Female'
+                          : patient.gender === 'female'
                             ? 'bg-pink-50 dark:bg-pink-900/20 text-pink-700 dark:text-pink-400'
                             : 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-400'
                       }`}>
-                        {patient.gender}
+                        {patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : ''}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{patient.phone}</td>
@@ -535,14 +569,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
           <span>Showing {sortedPatients.length} of {patients.length} patients</span>
         </div>
       </div>
-
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
 
       {/* Add/Edit Modal */}
       {(showAddModal || showEditModal) && (
@@ -643,9 +669,9 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                     required
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div>
@@ -762,13 +788,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                       ID: {selectedPatient.patientId}
                     </span>
                     <span className={`px-3 py-1 rounded text-sm font-bold uppercase tracking-wide border ${
-                      selectedPatient.gender === 'Male'
+                      selectedPatient.gender === 'male'
                         ? 'text-blue-700 border-blue-700 bg-blue-50'
-                        : selectedPatient.gender === 'Female'
+                        : selectedPatient.gender === 'female'
                           ? 'text-pink-700 border-pink-700 bg-pink-50'
                           : 'text-gray-700 border-gray-700 bg-gray-50'
                     }`}>
-                      {selectedPatient.gender}
+                      {selectedPatient.gender ? selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1) : ''}
                     </span>
                   </div>
                 </div>
@@ -875,13 +901,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     <div>
                       <div className="flex items-center gap-2">
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide shadow-sm ${
-                          selectedPatient.gender === 'Male'
+                          selectedPatient.gender === 'male'
                             ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 ring-1 ring-blue-600/20'
-                            : selectedPatient.gender === 'Female'
+                            : selectedPatient.gender === 'female'
                               ? 'bg-pink-100 dark:bg-pink-900/40 text-pink-700 dark:text-pink-400 ring-1 ring-pink-600/20'
                               : 'bg-gray-100 dark:bg-gray-900/40 text-gray-700 dark:text-gray-400 ring-1 ring-gray-600/20'
                         }`}>
-                          {selectedPatient.gender}
+                          {selectedPatient.gender ? selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1) : ''}
                         </span>
                         
                         {/* Status Badge */}

@@ -1,0 +1,9 @@
+Credentials to use:
+
+super_admin: superadmin@shifaascript.com / admin123
+admin: admin@shifaascript.com / admin123
+doctor: sarah.johnson@shifaascript.com / doctor123
+receptionist: receptionist@shifaascript.com / reception123
+pharmacist: pharmacist@shifaascript.com / pharmacy123
+lab_technician: labtech@shifaascript.com / lab123
+Next: start the API (php artisan serve), run the frontend (npm run dev), and log in with any of the above.

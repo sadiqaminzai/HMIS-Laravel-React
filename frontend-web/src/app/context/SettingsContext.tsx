@@ -1,12 +1,20 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import api from '../../api/axios';
 
 export type DateFormat = 'gregorian' | 'hijri_shamsi';
 
-interface PatientIdConfig {
+export interface PatientIdConfig {
   autoGenerate: boolean;
   prefix: string;
   startNumber: number;
   digits: number;
+}
+
+export interface HospitalSetting {
+  hospitalId: string;
+  defaultDoctorId?: string;
+  defaultToWalkIn: boolean;
+  patientIdConfig: PatientIdConfig;
 }
 
 interface Settings {
@@ -20,10 +28,11 @@ interface SettingsContextType {
   settings: Settings;
   updateSettings: (settings: Partial<Settings>) => void;
   getDefaultDoctorId: (hospitalId: string) => string | undefined;
-  setDefaultDoctorId: (hospitalId: string, doctorId: string) => void;
+  getDefaultToWalkIn: (hospitalId: string) => boolean;
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
-  setPatientIdConfig: (hospitalId: string, config: PatientIdConfig) => void;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
+  loadHospitalSetting: (hospitalId: string) => Promise<void>;
+  saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
 }
 
 const defaultPatientIdConfig: PatientIdConfig = {
@@ -45,10 +54,11 @@ const SettingsContext = createContext<SettingsContextType>({
   settings: defaultSettings,
   updateSettings: () => {},
   getDefaultDoctorId: () => undefined,
-  setDefaultDoctorId: () => {},
+  getDefaultToWalkIn: () => false,
   getPatientIdConfig: () => defaultPatientIdConfig,
-  setPatientIdConfig: () => {},
-  generatePatientId: () => 'P0001'
+  generatePatientId: () => 'P0001',
+  loadHospitalSetting: async () => {},
+  saveHospitalSetting: async () => {}
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
@@ -90,48 +100,73 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const getDefaultDoctorId = (hospitalId: string) => {
-    return settings.defaultDoctorId?.[hospitalId];
+  const [settingsByHospital, setSettingsByHospital] = useState<Record<string, HospitalSetting>>({});
+
+  const loadHospitalSetting = async (hospitalId: string) => {
+    if (!hospitalId) return;
+    if (settingsByHospital[hospitalId]) return;
+    try {
+      const { data } = await api.get(`/hospital-settings/${hospitalId}`);
+      setSettingsByHospital((prev) => ({
+        ...prev,
+        [hospitalId]: normalizeSetting(data)
+      }));
+    } catch (error) {
+      console.error('Failed to load hospital setting', error);
+    }
   };
 
-  const setDefaultDoctorId = (hospitalId: string, doctorId: string) => {
-    setSettings((prev) => {
-      const updated = {
-        ...prev,
-        defaultDoctorId: {
-          ...prev.defaultDoctorId,
-          [hospitalId]: doctorId,
-        },
-      };
-      try {
-        localStorage.setItem('app_settings', JSON.stringify(updated));
-      } catch (error) {
-        console.error('Error saving settings to localStorage:', error);
-      }
-      return updated;
-    });
+  const saveHospitalSetting = async (hospitalId: string, payload: Partial<HospitalSetting>) => {
+    const body: any = {};
+    if (payload.defaultDoctorId !== undefined) body.default_doctor_id = payload.defaultDoctorId || null;
+    if (payload.defaultToWalkIn !== undefined) body.default_to_walk_in = payload.defaultToWalkIn;
+    if (payload.patientIdConfig) {
+      body.patient_id_prefix = payload.patientIdConfig.prefix;
+      body.patient_id_start = payload.patientIdConfig.startNumber;
+      body.patient_id_digits = payload.patientIdConfig.digits;
+      body.auto_generate_patient_ids = payload.patientIdConfig.autoGenerate;
+    }
+
+    const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
+    setSettingsByHospital((prev) => ({
+      ...prev,
+      [hospitalId]: normalizeSetting(data)
+    }));
+  };
+
+  const normalizeSetting = (raw: any): HospitalSetting => {
+    return {
+      hospitalId: String(raw.hospital_id ?? raw.id ?? ''),
+      defaultDoctorId: raw.default_doctor_id ? String(raw.default_doctor_id) : undefined,
+      defaultToWalkIn: Boolean(raw.default_to_walk_in),
+      patientIdConfig: {
+        autoGenerate: raw.auto_generate_patient_ids ?? true,
+        prefix: raw.patient_id_prefix ?? 'P',
+        startNumber: Number(raw.patient_id_start ?? 1),
+        digits: Number(raw.patient_id_digits ?? 5),
+      },
+    };
+  };
+
+  const getHospitalSetting = (hospitalId: string): HospitalSetting => {
+    return settingsByHospital[hospitalId] || {
+      hospitalId,
+      defaultDoctorId: undefined,
+      defaultToWalkIn: false,
+      patientIdConfig: { ...defaultPatientIdConfig },
+    };
+  };
+
+  const getDefaultDoctorId = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).defaultDoctorId;
+  };
+
+  const getDefaultToWalkIn = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).defaultToWalkIn;
   };
 
   const getPatientIdConfig = (hospitalId: string): PatientIdConfig => {
-    return settings.patientIdConfig?.[hospitalId] || defaultPatientIdConfig;
-  };
-
-  const setPatientIdConfig = (hospitalId: string, config: PatientIdConfig) => {
-    setSettings((prev) => {
-      const updated = {
-        ...prev,
-        patientIdConfig: {
-          ...prev.patientIdConfig,
-          [hospitalId]: config,
-        },
-      };
-      try {
-        localStorage.setItem('app_settings', JSON.stringify(updated));
-      } catch (error) {
-        console.error('Error saving settings to localStorage:', error);
-      }
-      return updated;
-    });
+    return getHospitalSetting(hospitalId).patientIdConfig;
   };
 
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
@@ -144,11 +179,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     <SettingsContext.Provider value={{ 
       settings, 
       updateSettings, 
-      getDefaultDoctorId, 
-      setDefaultDoctorId,
+      getDefaultDoctorId,
+      getDefaultToWalkIn,
       getPatientIdConfig,
-      setPatientIdConfig,
-      generatePatientId
+      generatePatientId,
+      loadHospitalSetting,
+      saveHospitalSetting
     }}>
       {children}
     </SettingsContext.Provider>

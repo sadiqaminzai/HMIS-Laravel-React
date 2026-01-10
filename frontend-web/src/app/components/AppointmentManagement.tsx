@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Hospital, Appointment, UserRole, Patient, Doctor } from '../types';
-import { mockPatients, mockDoctors, mockHospitals } from '../data/mockData';
 import { Toast } from './Toast';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { formatDate, formatOnlyDate } from '../utils/date';
+import { usePatients } from '../context/PatientContext';
+import { useDoctors } from '../context/DoctorContext';
+import { useAppointments } from '../context/AppointmentContext';
+import { useHospitals } from '../context/HospitalContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -16,121 +19,15 @@ interface AppointmentManagementProps {
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
 }
 
-// Mock appointments data
-const generateMockAppointments = (hospitalId: string): Appointment[] => [
-  {
-    id: '1',
-    hospitalId,
-    appointmentNumber: 'APT-2026-001',
-    patientId: 'P001',
-    patientName: 'Ahmed Khan',
-    patientAge: 35,
-    patientGender: 'male',
-    doctorId: '1',
-    doctorName: 'Dr. John Smith',
-    appointmentDate: new Date('2026-01-08'),
-    appointmentTime: '10:00 AM',
-    reason: 'Regular Checkup',
-    status: 'cancelled',
-    notes: 'Patient requested cancellation',
-    createdAt: new Date(),
-    createdBy: 'admin1'
-  },
-  {
-    id: '2',
-    hospitalId,
-    appointmentNumber: 'APT-2026-002',
-    patientId: 'P002',
-    patientName: 'Fatima Ali',
-    patientAge: 28,
-    patientGender: 'female',
-    doctorId: '2',
-    doctorName: 'Dr. Sarah Johnson',
-    appointmentDate: new Date('2026-01-08'),
-    appointmentTime: '11:30 AM',
-    reason: 'Follow-up Consultation',
-    status: 'completed',
-    createdAt: new Date(),
-    createdBy: 'receptionist1'
-  },
-  {
-    id: '3',
-    hospitalId,
-    appointmentNumber: 'APT-2026-003',
-    patientId: 'P003',
-    patientName: 'Omar Hassan',
-    patientAge: 45,
-    patientGender: 'male',
-    doctorId: '1',
-    doctorName: 'Dr. John Smith',
-    appointmentDate: new Date('2026-01-07'),
-    appointmentTime: '02:00 PM',
-    reason: 'Blood Pressure Check',
-    status: 'completed',
-    notes: 'Patient stable',
-    createdAt: new Date(),
-    createdBy: 'receptionist1'
-  },
-  {
-    id: '4',
-    hospitalId,
-    appointmentNumber: 'APT-2026-004',
-    patientId: 'P004',
-    patientName: 'Zainab Malik',
-    patientAge: 32,
-    patientGender: 'female',
-    doctorId: '3',
-    doctorName: 'Dr. Michael Chen',
-    appointmentDate: new Date('2026-01-09'),
-    appointmentTime: '09:00 AM',
-    reason: 'Diabetes Follow-up',
-    status: 'scheduled',
-    notes: 'Bring previous lab reports',
-    createdAt: new Date(),
-    createdBy: 'receptionist1'
-  },
-  {
-    id: '5',
-    hospitalId,
-    appointmentNumber: 'APT-2026-005',
-    patientId: 'P005',
-    patientName: 'Ibrahim Siddiqui',
-    patientAge: 52,
-    patientGender: 'male',
-    doctorId: '1',
-    doctorName: 'Dr. John Smith',
-    appointmentDate: new Date('2026-01-09'),
-    appointmentTime: '10:30 AM',
-    reason: 'Cardiac Assessment',
-    status: 'scheduled',
-    createdAt: new Date(),
-    createdBy: 'receptionist1'
-  },
-  {
-    id: '6',
-    hospitalId,
-    appointmentNumber: 'APT-2026-006',
-    patientId: 'P002',
-    patientName: 'Fatima Ali',
-    patientAge: 28,
-    patientGender: 'female',
-    doctorId: '3',
-    doctorName: 'Dr. Michael Chen',
-    appointmentDate: new Date('2026-01-09'),
-    appointmentTime: '03:00 PM',
-    reason: 'General Consultation',
-    status: 'scheduled',
-    createdAt: new Date(),
-    createdBy: 'receptionist1'
-  }
-];
-
 export function AppointmentManagement({ hospital, userRole, currentUser }: AppointmentManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { patients } = usePatients();
+  const { doctors } = useDoctors();
+  const { appointments, refresh, addAppointment, updateAppointment, deleteAppointment } = useAppointments();
+  const { hospitals } = useHospitals();
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [appointments, setAppointments] = useState<Appointment[]>(generateMockAppointments(currentHospital.id));
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -144,36 +41,29 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [sortField, setSortField] = useState<string>('appointmentDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
+  const today = () => new Date().toISOString().split('T')[0];
+  const nowTime = () => {
+    const d = new Date();
+    return d.toTimeString().slice(0, 5); // HH:MM 24h
+  };
+
   const [formData, setFormData] = useState({
     patientId: '',
     doctorId: '',
-    appointmentDate: '',
-    appointmentTime: '',
+    appointmentDate: today(),
+    appointmentTime: nowTime(),
     reason: '',
     notes: '',
     hospitalId: currentHospital.id // Add hospital selection
   });
-
-  // Update appointments when hospital changes
   React.useEffect(() => {
-    if (isAllHospitals) {
-      // Load appointments from all hospitals with unique IDs
-      const allAppointments = mockHospitals.flatMap((h, hospitalIndex) => 
-        generateMockAppointments(h.id).map((appointment, appointmentIndex) => ({
-          ...appointment,
-          // Make IDs unique across hospitals by prefixing with hospital index
-          id: `${hospitalIndex}-${appointment.id}`
-        }))
-      );
-      setAppointments(allAppointments);
-    } else {
-      setAppointments(generateMockAppointments(currentHospital.id));
-    }
-  }, [currentHospital.id, isAllHospitals]);
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Get hospital-specific patients and doctors (or all if viewing all hospitals)
-  const hospitalPatients = filterByHospital(mockPatients);
-  const hospitalDoctors = filterByHospital(mockDoctors);
+  const hospitalPatients = filterByHospital(patients);
+  const hospitalDoctors = filterByHospital(doctors);
 
   // Filter appointments based on user role
   const getFilteredAppointments = () => {
@@ -259,7 +149,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       Time: apt.appointmentTime,
       Reason: apt.reason,
       Status: apt.status,
-      Hospital: mockHospitals.find(h => h.id === apt.hospitalId)?.name || 'Unknown'
+      Hospital: hospitals.find(h => h.id === apt.hospitalId)?.name || 'Unknown'
     })));
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "Appointments");
@@ -304,22 +194,25 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   const formatAppointmentNumber = (aptNumber: string) => {
-    // Format: APT-2026-001 -> APT-2026-00001
+    // Normalize to APT-{hospitalId}-{year}-{seq5}
     const parts = aptNumber.split('-');
+    if (parts.length >= 4) {
+      const hospitalId = parts[1];
+      const rawYear = parts[2];
+      const year = rawYear.slice(0, 4); // strip timestamp if present
+      const seq = parts[parts.length - 1];
+      return `APT-${hospitalId}-${year}-${seq.padStart(5, '0')}`;
+    }
     if (parts.length === 3) {
-      const num = parts[2];
-      return `${parts[0]}-${parts[1]}-${num.padStart(5, '0')}`;
+      const seq = parts[2];
+      return `${parts[0]}-${parts[1]}-${seq.padStart(5, '0')}`;
     }
     return aptNumber;
   };
 
   const formatPatientId = (patientId: string) => {
-    // Format: P004 -> P00004
-    if (patientId.startsWith('P')) {
-      const num = patientId.substring(1);
-      return `P${num.padStart(5, '0')}`;
-    }
-    return patientId;
+    const normalized = patientId.startsWith('P') ? patientId.substring(1) : patientId;
+    return normalized.padStart(5, '0');
   };
 
   const checkAvailability = (doctorId: string, dateStr: string, timeStr: string) => {
@@ -336,9 +229,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     }
     
     if (timeStr) {
-       if (timeStr < daySchedule.startTime || timeStr > daySchedule.endTime) {
-         return { available: false, reason: `Available hours: ${daySchedule.startTime} - ${daySchedule.endTime}` };
-       }
+      const from = daySchedule.startTime?.slice(0,5);
+      const to = daySchedule.endTime?.slice(0,5);
+      if (from && to && (timeStr < from || timeStr > to)) {
+        return { available: false, reason: `Available hours: ${from} - ${to}` };
+      }
     }
     return { available: true };
   };
@@ -350,30 +245,28 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       setToast({ message: availability.reason || 'Doctor not available', type: 'danger' });
       return;
     }
-
-    const newAppointment: Appointment = {
-      id: Date.now().toString(),
-      hospitalId: formData.hospitalId, // Use selected hospital from form
-      appointmentNumber: `APT-${new Date().getFullYear()}-${String(appointments.length + 1).padStart(3, '0')}`,
+    const patient = hospitalPatients.find(p => p.id === formData.patientId);
+    const appointmentDate = formData.appointmentDate || today();
+    const appointmentTime = formData.appointmentTime || nowTime();
+    addAppointment({
+      hospitalId: formData.hospitalId,
       patientId: formData.patientId,
-      patientName: hospitalPatients.find(p => p.id === formData.patientId)?.name || '',
-      patientAge: hospitalPatients.find(p => p.id === formData.patientId)?.age || 0,
-      patientGender: hospitalPatients.find(p => p.id === formData.patientId)?.gender || 'male',
       doctorId: formData.doctorId,
-      doctorName: hospitalDoctors.find(d => d.id === formData.doctorId)?.name || '',
-      appointmentDate: new Date(formData.appointmentDate),
-      appointmentTime: formData.appointmentTime,
+      appointmentDate,
+      appointmentTime,
       reason: formData.reason,
       status: 'scheduled',
       notes: formData.notes,
-      createdAt: new Date(),
-      createdBy: 'currentUser'
-    };
-    
-    setAppointments([newAppointment, ...appointments]);
-    setShowAddModal(false);
-    resetForm();
-    setToast({ message: 'Appointment scheduled successfully.', type: 'success' });
+      patientName: patient?.name,
+      patientAge: patient?.age,
+      patientGender: patient?.gender,
+    }).then(() => {
+      setShowAddModal(false);
+      resetForm();
+      setToast({ message: 'Appointment scheduled successfully.', type: 'success' });
+    }).catch((err: any) => {
+      setToast({ message: err?.response?.data?.message || 'Failed to schedule appointment.', type: 'danger' });
+    });
   };
 
   const handleEdit = () => {
@@ -386,51 +279,73 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       return;
     }
     
-    setAppointments(appointments.map(apt =>
-      apt.id === selectedAppointment.id
-        ? {
-            ...apt,
-            patientId: formData.patientId,
-            patientName: hospitalPatients.find(p => p.id === formData.patientId)?.name || '',
-            patientAge: hospitalPatients.find(p => p.id === formData.patientId)?.age || 0,
-            patientGender: hospitalPatients.find(p => p.id === formData.patientId)?.gender || 'male',
-            doctorId: formData.doctorId,
-            doctorName: hospitalDoctors.find(d => d.id === formData.doctorId)?.name || '',
-            appointmentDate: new Date(formData.appointmentDate),
-            appointmentTime: formData.appointmentTime,
-            reason: formData.reason,
-            notes: formData.notes
-          }
-        : apt
-    ));
-    
-    setShowEditModal(false);
-    setSelectedAppointment(null);
-    resetForm();
-    setToast({ message: 'Appointment updated successfully.', type: 'success' });
+    const patient = hospitalPatients.find(p => p.id === formData.patientId);
+    const appointmentDate = formData.appointmentDate || today();
+    const appointmentTime = formData.appointmentTime || nowTime();
+    updateAppointment({
+      id: selectedAppointment.id,
+      hospitalId: formData.hospitalId,
+      patientId: formData.patientId,
+      doctorId: formData.doctorId,
+      appointmentDate,
+      appointmentTime,
+      reason: formData.reason,
+      notes: formData.notes,
+      patientName: patient?.name,
+      patientAge: patient?.age,
+      patientGender: patient?.gender,
+      status: selectedAppointment.status,
+    }).then(() => {
+      setShowEditModal(false);
+      setSelectedAppointment(null);
+      resetForm();
+      setToast({ message: 'Appointment updated successfully.', type: 'success' });
+    }).catch((err: any) => {
+      setToast({ message: err?.response?.data?.message || 'Failed to update appointment.', type: 'danger' });
+    });
   };
 
   const handleDelete = () => {
     if (!selectedAppointment) return;
-    setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
-    setShowDeleteModal(false);
-    setSelectedAppointment(null);
-    setToast({ message: 'Appointment deleted successfully.', type: 'success' });
+    deleteAppointment(selectedAppointment.id)
+      .then(() => {
+        setShowDeleteModal(false);
+        setSelectedAppointment(null);
+        setToast({ message: 'Appointment deleted successfully.', type: 'success' });
+      })
+      .catch((err: any) => {
+        setToast({ message: err?.response?.data?.message || 'Failed to delete appointment.', type: 'danger' });
+      });
   };
 
   const handleStatusChange = (aptId: string, newStatus: Appointment['status']) => {
-    setAppointments(appointments.map(apt =>
-      apt.id === aptId ? { ...apt, status: newStatus } : apt
-    ));
-    setToast({ message: `Appointment marked as ${newStatus}.`, type: 'success' });
+    const target = appointments.find(a => a.id === aptId);
+    if (!target) return;
+
+    updateAppointment({
+      id: aptId,
+      status: newStatus,
+      hospitalId: target.hospitalId,
+      doctorId: target.doctorId,
+      patientId: target.patientId,
+      patientName: target.patientName,
+      patientAge: target.patientAge,
+      patientGender: target.patientGender,
+      appointmentDate: target.appointmentDate,
+      appointmentTime: target.appointmentTime,
+      reason: target.reason,
+      notes: target.notes,
+    })
+      .then(() => setToast({ message: `Appointment marked as ${newStatus}.`, type: 'success' }))
+      .catch((err: any) => setToast({ message: err?.response?.data?.message || 'Failed to update status.', type: 'danger' }));
   };
 
   const resetForm = () => {
     setFormData({
       patientId: '',
       doctorId: '',
-      appointmentDate: '',
-      appointmentTime: '',
+      appointmentDate: today(),
+      appointmentTime: nowTime(),
       reason: '',
       notes: '',
       hospitalId: currentHospital.id // Add hospital selection
@@ -551,7 +466,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
       {/* Appointments Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', minHeight: '360px' }}>
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -785,7 +700,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
-                    {mockHospitals.map(h => (
+                    {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
@@ -843,7 +758,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   )}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Time <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Time</label>
                   <input
                     type="time"
                     value={formData.appointmentTime}
@@ -853,7 +768,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         ? 'border-gray-300 dark:border-gray-600' 
                         : 'border-red-500 focus:ring-red-500'
                     } rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all`}
-                    required
                   />
                   {formData.appointmentTime && !checkAvailability(formData.doctorId, formData.appointmentDate, formData.appointmentTime).available && (
                     <p className="text-[10px] text-red-500 mt-0.5">

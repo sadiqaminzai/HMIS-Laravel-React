@@ -6,8 +6,15 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { HospitalProvider, useHospitals } from './context/HospitalContext';
+import { DoctorProvider } from './context/DoctorContext';
+import { PatientProvider } from './context/PatientContext';
+import { AppointmentProvider } from './context/AppointmentContext';
+import { ManufacturerProvider } from './context/ManufacturerContext';
+import { MedicineTypeProvider } from './context/MedicineTypeContext';
+import { MedicineProvider } from './context/MedicineContext';
 import { LandingThemeProvider } from './contexts/LandingThemeContext';
 import { LandingLanguageProvider } from './contexts/LandingLanguageContext';
+import { PrescriptionProvider } from './context/PrescriptionContext';
 import { LandingPage } from './components/LandingPage';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
@@ -51,7 +58,7 @@ function AppContent() {
   const { user, isAuthenticated, logout } = useAuth();
   const { hospitals, getHospital } = useHospitals();
   const [showLanding, setShowLanding] = useState(true);
-  const [currentHospital, setCurrentHospital] = useState<Hospital>(hospitals[0]);
+  const [currentHospital, setCurrentHospital] = useState<Hospital | null>(hospitals[0] || null);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
 
   // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
@@ -74,6 +81,9 @@ function AppContent() {
       if (updated && JSON.stringify(updated) !== JSON.stringify(currentHospital)) {
         setCurrentHospital(updated);
       }
+    } else if (hospitals.length > 0) {
+      // If nothing selected yet but hospitals loaded, pick the first as a safe default
+      setCurrentHospital(hospitals[0]);
     }
   }, [hospitals, getHospital, currentHospital]);
 
@@ -93,10 +103,10 @@ function AppContent() {
       // Super admin can access all hospitals, default to first one if not set
       // Only set initial default if we don't have one or if it's not in the list
       if (!currentHospital || !hospitals.find(h => h.id === currentHospital.id)) {
-        setCurrentHospital(hospitals[0]);
+        setCurrentHospital(hospitals[0] || null);
       }
     }
-  }, [user, hospitals]);
+  }, [user, hospitals, currentHospital]);
 
   // Hide landing page once user is authenticated
   useEffect(() => {
@@ -139,6 +149,18 @@ function AppContent() {
   // Show login if not authenticated
   if (!isAuthenticated || !user) {
     return <Login />;
+  }
+
+  // If hospitals haven't loaded yet, avoid rendering dependent UI
+  if (!currentHospital) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading hospitals...</p>
+        </div>
+      </div>
+    );
   }
 
   // Check if license is expired (only for non-super admin users)
@@ -191,8 +213,10 @@ function AppContent() {
         />
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 dark:bg-gray-900 p-3">
           <Routes>
-            <Route path="/" element={<Dashboard role={currentRole} hospital={currentHospital} />} />
-            <Route path="/hospitals" element={<HospitalManagement />} />
+            {/* Default to prescriptions list */}
+            <Route path="/" element={<Navigate to="/prescriptions" replace />} />
+            <Route path="/dashboard" element={<Dashboard role={currentRole} hospital={currentHospital} />} />
+            <Route path="/hospitals" element={<HospitalManagement userRole={currentRole} />} />
             <Route path="/doctors" element={<DoctorManagement hospital={currentHospital} userRole={currentRole} />} />
             <Route path="/patients" element={<PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
             <Route path="/manufacturers" element={<ManufacturerManagement hospital={currentHospital} userRole={currentRole} />} />
@@ -225,18 +249,32 @@ export default function App() {
   return (
     <ThemeProvider>
       <HospitalProvider>
-        <AuthProvider>
-          <SettingsProvider>
-            <LandingThemeProvider>
-              <LandingLanguageProvider>
-                <BrowserRouter>
-                  <Toaster richColors closeButton />
-                  <AppContent />
-                </BrowserRouter>
-              </LandingLanguageProvider>
-            </LandingThemeProvider>
-          </SettingsProvider>
-        </AuthProvider>
+        <DoctorProvider>
+          <PatientProvider>
+            <AuthProvider>
+              <SettingsProvider>
+                <LandingThemeProvider>
+                  <LandingLanguageProvider>
+                    <ManufacturerProvider>
+                      <MedicineTypeProvider>
+                        <MedicineProvider>
+                          <PrescriptionProvider>
+                            <AppointmentProvider>
+                              <BrowserRouter>
+                                <Toaster richColors closeButton />
+                                <AppContent />
+                              </BrowserRouter>
+                            </AppointmentProvider>
+                          </PrescriptionProvider>
+                        </MedicineProvider>
+                      </MedicineTypeProvider>
+                    </ManufacturerProvider>
+                  </LandingLanguageProvider>
+                </LandingThemeProvider>
+              </SettingsProvider>
+            </AuthProvider>
+          </PatientProvider>
+        </DoctorProvider>
       </HospitalProvider>
     </ThemeProvider>
   );

@@ -3,10 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useDoctors } from '../context/DoctorContext';
 import { Hospital, UserRole } from '../types';
-import { mockDoctors } from '../data/mockData';
-import { mockHospitals } from '../data/mockData';
-import { toast } from '../utils/toast';
+import { toast } from 'sonner';
 
 interface GeneralSettingsProps {
   hospital: Hospital;
@@ -32,14 +31,15 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { settings, updateSettings, getDefaultDoctorId, setDefaultDoctorId, getPatientIdConfig, setPatientIdConfig, generatePatientId } = useSettings();
-  const { updateHospital } = useHospitals();
+  const { settings, loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, generatePatientId } = useSettings();
+  const { hospitals } = useHospitals();
+  const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
   
   // Hospital selection state for super_admin
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>(hospital.id);
-  const selectedHospital = userRole === 'super_admin' 
-    ? mockHospitals.find(h => h.id === selectedHospitalId) || hospital
+  const selectedHospital = userRole === 'super_admin'
+    ? hospitals.find(h => h.id === selectedHospitalId) || hospital
     : hospital;
   
   // Timezone state
@@ -57,51 +57,42 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   });
 
   // Get doctors for currently selected hospital
-  const hospitalDoctors = mockDoctors.filter(d => d.hospitalId === selectedHospital.id);
+  const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
 
   useEffect(() => {
-    const defaultDoctor = getDefaultDoctorId(selectedHospital.id);
-    setSelectedDoctorId(defaultDoctor || '');
-    
-    // Load patient ID config
-    const config = getPatientIdConfig(selectedHospital.id);
-    setPatientIdConfigState(config);
-    
-    // Set timezone and calendar
-    setTimezone(selectedHospital.timezone || 'Asia/Kabul');
-    setCalendarType(selectedHospital.calendarType || 'gregorian');
-  }, [selectedHospital.id, getDefaultDoctorId, getPatientIdConfig, selectedHospital.timezone, selectedHospital.calendarType]);
+    loadHospitalSetting(selectedHospital.id).then(() => {
+      const defaultDoctor = getDefaultDoctorId(selectedHospital.id);
+      setSelectedDoctorId(defaultDoctor || '');
+
+      const config = getPatientIdConfig(selectedHospital.id);
+      setPatientIdConfigState(config);
+
+      setTimezone(selectedHospital.timezone || 'Asia/Kabul');
+      setCalendarType(selectedHospital.calendarType || 'gregorian');
+    });
+  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig]);
 
   const handleSaveDefaultDoctor = () => {
-    if (selectedDoctorId) {
-      setDefaultDoctorId(selectedHospital.id, selectedDoctorId);
-      toast.success('Default doctor saved successfully');
-    } else {
-      // Clear default doctor
-      setDefaultDoctorId(selectedHospital.id, '');
-      toast.success('Default doctor cleared');
-    }
+    saveHospitalSetting(selectedHospital.id, { defaultDoctorId: selectedDoctorId || undefined })
+      .then(() => toast.success(selectedDoctorId ? 'Default doctor saved successfully' : 'Default doctor cleared'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save default doctor'));
   };
 
   const handleSavePatientIdConfig = () => {
-    setPatientIdConfig(selectedHospital.id, patientIdConfig);
-    toast.success('Patient ID settings saved successfully');
+    saveHospitalSetting(selectedHospital.id, { patientIdConfig })
+      .then(() => toast.success('Patient ID settings saved successfully'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save patient ID settings'));
   };
 
   const handleSaveTimezone = () => {
-    const updatedHospital = { ...selectedHospital, timezone, calendarType };
-    updateHospital(updatedHospital);
-    toast.success(`Date & Time settings updated`);
+    toast.warning('Timezone/Calendar settings not yet wired to backend');
   };
 
   const handleWalkInToggle = () => {
-    const newValue = !settings.defaultToWalkIn;
-    updateSettings({ defaultToWalkIn: newValue });
-    toast.success(
-      newValue 
-        ? 'Walk-in patient mode enabled by default' 
-        : 'Search patient mode enabled by default'
-    );
+    const newValue = !getDefaultToWalkIn(selectedHospital.id);
+    saveHospitalSetting(selectedHospital.id, { defaultToWalkIn: newValue })
+      .then(() => toast.success(newValue ? 'Walk-in patient mode enabled by default' : 'Search patient mode enabled by default'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to update walk-in mode'));
   };
 
   const selectedDoctor = hospitalDoctors.find(d => d.id === selectedDoctorId);
@@ -109,6 +100,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   // Generate preview of patient ID
   const previewPatientId = generatePatientId(selectedHospital.id, 0);
   const previewNextId = generatePatientId(selectedHospital.id, 1);
+  const defaultToWalkIn = getDefaultToWalkIn(selectedHospital.id);
 
   return (
     <div className="space-y-3">
@@ -129,7 +121,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             onChange={(e) => setSelectedHospitalId(e.target.value)}
             className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
           >
-            {mockHospitals.map(h => (
+            {hospitals.map(h => (
               <option key={h.id} value={h.id}>{h.name}</option>
             ))}
           </select>
@@ -161,7 +153,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 <option value="">-- No Default Doctor --</option>
                 {hospitalDoctors.map(doctor => (
                   <option key={doctor.id} value={doctor.id}>
-                    Dr. {doctor.name} - {doctor.specialty}
+                    Dr. {doctor.name} - {doctor.specialization}
                   </option>
                 ))}
               </select>
@@ -364,7 +356,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 onClick={handleWalkInToggle}
                 className={`
                   relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
-                  ${settings.defaultToWalkIn
+                  ${defaultToWalkIn
                     ? 'bg-purple-600'
                     : 'bg-gray-300 dark:bg-gray-600'
                   }
@@ -373,7 +365,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 <span
                   className={`
                     inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                    ${settings.defaultToWalkIn ? 'translate-x-6' : 'translate-x-1'}
+                    ${defaultToWalkIn ? 'translate-x-6' : 'translate-x-1'}
                   `}
                 />
               </button>
@@ -381,23 +373,23 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
             {/* Status Display */}
             <div className={`p-2 rounded-lg border ${
-              settings.defaultToWalkIn
+              defaultToWalkIn
                 ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800'
                 : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
             }`}>
               <p className={`text-xs font-semibold ${
-                settings.defaultToWalkIn
+                defaultToWalkIn
                   ? 'text-purple-700 dark:text-purple-300'
                   : 'text-blue-700 dark:text-blue-300'
               }`}>
-                {settings.defaultToWalkIn ? '✓ Walk-in Mode Active' : 'Search Patient Mode Active'}
+                {defaultToWalkIn ? '✓ Walk-in Mode Active' : 'Search Patient Mode Active'}
               </p>
               <p className={`text-xs mt-1 ${
-                settings.defaultToWalkIn
+                defaultToWalkIn
                   ? 'text-purple-600 dark:text-purple-400'
                   : 'text-blue-600 dark:text-blue-400'
               }`}>
-                {settings.defaultToWalkIn 
+                {defaultToWalkIn 
                   ? 'Prescription form will open in walk-in patient mode'
                   : 'Prescription form will open in search patient mode'
                 }

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Plus, Eye, Edit, Trash2, X, Pill, Search, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Hospital, MedicineType, UserRole } from '../types';
-import { mockMedicineTypes, mockHospitals } from '../data/mockData';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { useMedicineTypes } from '../context/MedicineTypeContext';
+import { useHospitals } from '../context/HospitalContext';
 
 interface MedicineTypeManagementProps {
   hospital: Hospital;
@@ -16,10 +17,8 @@ interface MedicineTypeManagementProps {
 export function MedicineTypeManagement({ hospital, userRole = 'admin' }: MedicineTypeManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
-  const [medicineTypes, setMedicineTypes] = useState<MedicineType[]>(
-    filterByHospital(mockMedicineTypes)
-  );
+  const { medicineTypes, addMedicineType, updateMedicineType, deleteMedicineType, loading } = useMedicineTypes();
+  const { hospitals } = useHospitals();
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'view' | 'edit' | 'delete'>('add');
   const [selectedMedicineType, setSelectedMedicineType] = useState<MedicineType | null>(null);
@@ -36,12 +35,11 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     hospitalId: currentHospital.id // Add hospital selection
   });
 
-  // Update medicine types when hospital changes
-  React.useEffect(() => {
-    setMedicineTypes(filterByHospital(mockMedicineTypes));
-  }, [selectedHospitalId, isAllHospitals]);
+  const getHospitalName = (id: string) => hospitals.find(h => h.id === id)?.name || 'Unknown';
 
-  const filteredMedicineTypes = medicineTypes.filter(mt =>
+  const scopedMedicineTypes = filterByHospital(medicineTypes);
+
+  const filteredMedicineTypes = scopedMedicineTypes.filter(mt =>
     mt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (mt.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     mt.status.toLowerCase().includes(searchTerm.toLowerCase())
@@ -82,7 +80,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
       Name: mt.name,
       Description: mt.description,
       Status: mt.status,
-      Hospital: mockHospitals.find(h => h.id === mt.hospitalId)?.name || 'Unknown'
+      Hospital: getHospitalName(mt.hospitalId)
     })));
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "MedicineTypes");
@@ -120,7 +118,10 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
   const handleAdd = () => {
     setModalMode('add');
-    setFormData({ name: '', description: '', status: 'active', hospitalId: currentHospital.id });
+    const targetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
+      ? selectedHospitalId
+      : currentHospital.id;
+    setFormData({ name: '', description: '', status: 'active', hospitalId: targetHospitalId });
     setShowModal(true);
   };
 
@@ -148,7 +149,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.name.trim()) {
@@ -156,35 +157,46 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
       return;
     }
 
-    if (modalMode === 'add') {
-      const newMedicineType: MedicineType = {
-        id: Date.now().toString(),
-        hospitalId: formData.hospitalId,
-        name: formData.name,
-        description: formData.description,
-        status: formData.status
-      };
-      setMedicineTypes([...medicineTypes, newMedicineType]);
-      toast.success('Medicine type added successfully');
-    } else if (modalMode === 'edit' && selectedMedicineType) {
-      setMedicineTypes(medicineTypes.map(mt =>
-        mt.id === selectedMedicineType.id
-          ? { ...mt, ...formData }
-          : mt
-      ));
-      toast.success('Medicine type updated successfully');
-    }
+    try {
+      if (modalMode === 'add') {
+        await addMedicineType({
+          hospitalId: formData.hospitalId,
+          name: formData.name,
+          description: formData.description,
+          status: formData.status,
+        });
+        toast.success('Medicine type added successfully');
+      } else if (modalMode === 'edit' && selectedMedicineType) {
+        await updateMedicineType({
+          id: selectedMedicineType.id,
+          hospitalId: formData.hospitalId,
+          name: formData.name,
+          description: formData.description,
+          status: formData.status,
+        });
+        toast.success('Medicine type updated successfully');
+      }
 
-    setShowModal(false);
-    setFormData({ name: '', description: '', status: 'active', hospitalId: currentHospital.id });
+      setShowModal(false);
+      const resetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
+        ? selectedHospitalId
+        : currentHospital.id;
+      setFormData({ name: '', description: '', status: 'active', hospitalId: resetHospitalId });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to save medicine type');
+    }
   };
 
   const confirmDelete = () => {
-    if (selectedMedicineType) {
-      setMedicineTypes(medicineTypes.filter(mt => mt.id !== selectedMedicineType.id));
-      toast.success('Medicine type deleted successfully');
-      setShowModal(false);
-    }
+    if (!selectedMedicineType) return;
+    deleteMedicineType(selectedMedicineType.id)
+      .then(() => {
+        toast.success('Medicine type deleted successfully');
+        setShowModal(false);
+      })
+      .catch((err: any) => {
+        toast.error(err?.response?.data?.message || 'Failed to delete medicine type');
+      });
   };
 
   return (
@@ -343,7 +355,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredMedicineTypes.length}</span></span>
-          <span>Showing {sortedMedicineTypes.length} of {medicineTypes.length} types</span>
+          <span>Showing {sortedMedicineTypes.length} of {scopedMedicineTypes.length} types</span>
         </div>
       </div>
 
@@ -571,7 +583,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                       required
                     >
-                      {mockHospitals.map(h => (
+                      {hospitals.map(h => (
                         <option key={h.id} value={h.id}>{h.name}</option>
                       ))}
                     </select>

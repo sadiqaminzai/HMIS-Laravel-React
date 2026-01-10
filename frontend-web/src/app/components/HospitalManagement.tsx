@@ -1,24 +1,28 @@
-import React, { useState } from 'react';
-import { Plus, Pencil, Trash2, Building2, X, Upload, Image as ImageIcon, Search, Eye, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { mockHospitals } from '../data/mockData';
-import { Hospital } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, Building2, X, Search, Eye, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Printer } from 'lucide-react';
+import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useHospitals } from '../context/HospitalContext';
+import api from '../../api/axios';
 
-export function HospitalManagement() {
-  const { hospitals, updateHospital, addHospital } = useHospitals();
-  // Remove local hospitals state since we use context now
-  // const [hospitals, setHospitals] = useState(mockHospitals);
-  
+interface HospitalManagementProps {
+  userRole: UserRole;
+}
+
+type ManagedHospital = Hospital & { id: string };
+
+export function HospitalManagement({ userRole }: HospitalManagementProps) {
+  const { hospitals, addHospital, updateHospital, deleteHospital, refresh, loading } = useHospitals();
+  const canManage = userRole === 'super_admin';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   
   // Sorting state
   const [sortField, setSortField] = useState<keyof Hospital>('id');
@@ -35,32 +39,45 @@ export function HospitalManagement() {
     licenseExpiryDate: '',
     status: 'active' as 'active' | 'suspended',
     logo: '',
+    logoFile: null as File | null,
     brandColor: '#2563eb'
   });
 
-  // Filter hospitals based on search term - Search across all fields
-  const filteredHospitals = hospitals.filter(hospital => {
-    const search = searchTerm.toLowerCase().trim();
-    return hospital.name.toLowerCase().includes(search) ||
-           hospital.code.toLowerCase().includes(search) ||
-           hospital.address.toLowerCase().includes(search) ||
-           hospital.phone.toLowerCase().includes(search) ||
-           hospital.email.toLowerCase().includes(search) ||
-           hospital.license.toLowerCase().includes(search) ||
-           hospital.status.toLowerCase().includes(search);
-  });
+  useEffect(() => {
+    refresh();
+  }, []);
 
-  // Sort hospitals
-  const sortedHospitals = [...filteredHospitals].sort((a, b) => {
-    const aValue = a[sortField]?.toString().toLowerCase() || '';
-    const bValue = b[sortField]?.toString().toLowerCase() || '';
-    
-    if (sortDirection === 'asc') {
-      return aValue.localeCompare(bValue);
-    } else {
-      return bValue.localeCompare(aValue);
-    }
-  });
+  const filteredHospitals = useMemo(() => {
+    const search = searchTerm.toLowerCase().trim();
+    return hospitals.filter((hospital) =>
+      [
+        hospital.name,
+        hospital.code,
+        hospital.address,
+        hospital.phone,
+        hospital.email,
+        hospital.license,
+        hospital.status,
+      ]
+        .filter(Boolean)
+        .some((field) => field?.toString().toLowerCase().includes(search))
+    );
+  }, [hospitals, searchTerm]);
+
+  const sortedHospitals = useMemo(() => {
+    const copy = [...filteredHospitals];
+    const normalize = (value: unknown) => {
+      if (value === null || value === undefined) return '';
+      if (value instanceof Date) return value.toISOString();
+      return value.toString().toLowerCase();
+    };
+
+    return copy.sort((a, b) => {
+      const aValue = normalize(a[sortField as keyof Hospital]);
+      const bValue = normalize(b[sortField as keyof Hospital]);
+      return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+    });
+  }, [filteredHospitals, sortDirection, sortField]);
 
   const handleSort = (field: keyof Hospital) => {
     if (sortField === field) {
@@ -93,14 +110,18 @@ export function HospitalManagement() {
       licenseExpiryDate: '',
       status: 'active',
       logo: '',
+      logoFile: null,
       brandColor: '#2563eb'
     });
-    setLogoPreview(null);
     setSelectedHospital(null);
     setIsModalOpen(true);
   };
 
   const handleEdit = (hospital: Hospital) => {
+    if (!canManage) {
+      toast.warning('Only super admins can manage hospitals.');
+      return;
+    }
     setModalMode('edit');
     setFormData({
       name: hospital.name,
@@ -113,60 +134,67 @@ export function HospitalManagement() {
       licenseExpiryDate: hospital.licenseExpiryDate,
       status: hospital.status,
       logo: hospital.logo || '',
+      logoFile: null,
       brandColor: hospital.brandColor || '#2563eb'
     });
-    setLogoPreview(hospital.logo || null);
     setSelectedHospital(hospital);
     setIsModalOpen(true);
   };
 
   const handleDelete = (hospital: Hospital) => {
-    if (window.confirm(`Are you sure you want to delete ${hospital.name}?`)) {
-      // In a real app we would call deleteHospital from context
-      // setHospitals(hospitals.filter(h => h.id !== hospital.id));
-      toast.error('Deletion not implemented in mock context yet');
+    if (!canManage) {
+      toast.warning('Only super admins can manage hospitals.');
+      return;
     }
-  };
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setLogoPreview(result);
-        setFormData({ ...formData, logo: result });
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!window.confirm(`Are you sure you want to delete ${hospital.name}?`)) return;
+    setSubmitting(true);
+    deleteHospital(hospital.id)
+      .then(() => toast.success('Hospital deleted successfully'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to delete hospital'))
+      .finally(() => setSubmitting(false));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (modalMode === 'add') {
-      const newHospital: Hospital = {
-        id: (hospitals.length + 1).toString(),
-        ...formData
-      };
-      addHospital(newHospital);
-      toast.success('Hospital added successfully');
-    } else {
-      if (selectedHospital) {
-        updateHospital({
-          ...selectedHospital,
-          ...formData
-        });
-        toast.success('Hospital updated successfully');
-      }
+    if (!canManage) {
+      toast.warning('Only super admins can manage hospitals.');
+      return;
     }
 
-    setIsModalOpen(false);
+    setSubmitting(true);
+    const payload = {
+      name: formData.name,
+      code: formData.code,
+      address: formData.address,
+      phone: formData.phone,
+      email: formData.email,
+      license: formData.license,
+      licenseIssueDate: formData.licenseIssueDate,
+      licenseExpiryDate: formData.licenseExpiryDate,
+      status: formData.status,
+      logo: formData.logo,
+      logoFile: formData.logoFile,
+      brandColor: formData.brandColor,
+    };
+
+    const action = modalMode === 'add'
+      ? addHospital(payload)
+      : selectedHospital
+        ? updateHospital({ ...payload, id: selectedHospital.id })
+        : Promise.resolve();
+
+    action
+      .then(() => {
+        toast.success(`Hospital ${modalMode === 'add' ? 'added' : 'updated'} successfully`);
+        setIsModalOpen(false);
+      })
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save hospital'))
+      .finally(() => setSubmitting(false));
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setLogoPreview(null);
   };
 
   const handleView = (hospital: Hospital) => {
@@ -316,12 +344,8 @@ export function HospitalManagement() {
                   <tr key={hospital.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-md flex items-center justify-center overflow-hidden flex-shrink-0 border border-blue-200 dark:border-blue-800">
-                          {hospital.logo ? (
-                            <img src={hospital.logo} alt={hospital.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          )}
+                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-md flex items-center justify-center flex-shrink-0 border border-blue-200 dark:border-blue-800">
+                          <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div className="min-w-0">
                           <div className="font-semibold text-gray-900 dark:text-white text-xs truncate">{hospital.name}</div>
@@ -427,37 +451,6 @@ export function HospitalManagement() {
 
             <form onSubmit={handleSubmit} className="p-4 space-y-3">
               <div className="space-y-3">
-                {/* Logo Upload Section */}
-                <div className="bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg border border-gray-100 dark:border-gray-700 flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-600 group hover:border-blue-500 dark:hover:border-blue-400 transition-colors shadow-sm shrink-0">
-                    {logoPreview ? (
-                      <img src={logoPreview} alt="Logo preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                      Hospital Logo
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm font-medium text-[10px]">
-                        <Upload className="w-3 h-3" />
-                        Choose
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                        Max 2MB
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Hospital Name */}
                   <div className="md:col-span-2">
@@ -529,6 +522,43 @@ export function HospitalManagement() {
                          className="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs uppercase font-mono"
                          placeholder="#000000"
                          maxLength={7}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Logo Upload */}
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                      Logo (image upload)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden bg-gray-50 dark:bg-gray-700 flex items-center justify-center">
+                        {formData.logo ? (
+                          <img src={formData.logo} alt="Logo preview" className="w-full h-full object-contain" />
+                        ) : (
+                          <Building2 className="w-5 h-5 text-gray-400" />
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file) {
+                            setFormData((prev) => ({
+                              ...prev,
+                              logoFile: file,
+                              logo: URL.createObjectURL(file),
+                            }));
+                          } else {
+                            setFormData((prev) => ({
+                              ...prev,
+                              logoFile: null,
+                              logo: selectedHospital?.logo || '',
+                            }));
+                          }
+                        }}
+                        className="flex-1 text-xs text-gray-700 dark:text-gray-200 file:mr-3 file:px-2 file:py-1.5 file:border file:border-gray-300 dark:file:border-gray-600 file:rounded-md file:bg-white dark:file:bg-gray-700 file:text-xs file:text-gray-700 dark:file:text-gray-200"
                       />
                     </div>
                   </div>
@@ -682,13 +712,13 @@ export function HospitalManagement() {
           <div id="hospital-print-view" className="hidden">
             <div className="flex items-start justify-between mb-8 border-b-2 border-gray-800 pb-6">
               <div className="flex items-center gap-6">
-                {selectedHospital.logo ? (
-                  <img src={selectedHospital.logo} alt={selectedHospital.name} className="w-24 h-24 object-contain rounded-lg border border-gray-200" />
-                ) : (
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200">
+                <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200 overflow-hidden">
+                  {selectedHospital.logo ? (
+                    <img src={selectedHospital.logo} alt={selectedHospital.name} className="w-full h-full object-contain" />
+                  ) : (
                     <Building2 className="w-12 h-12 text-gray-400" />
-                  </div>
-                )}
+                  )}
+                </div>
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 mb-2">{selectedHospital.name}</h1>
                   <div className="flex items-center gap-3">
@@ -795,12 +825,12 @@ export function HospitalManagement() {
 
             {/* Content */}
             <div className="p-5 space-y-5">
-              {/* Hospital Logo & Name Card */}
+              {/* Hospital Header Card */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-5 border border-blue-100 dark:border-blue-800 shadow-sm">
                 <div className="flex items-center gap-5">
                   <div className="w-20 h-20 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden shadow-md ring-4 ring-white dark:ring-gray-600">
                     {selectedHospital.logo ? (
-                      <img src={selectedHospital.logo} alt={selectedHospital.name} className="w-full h-full object-cover" />
+                      <img src={selectedHospital.logo} alt={selectedHospital.name} className="w-full h-full object-contain" />
                     ) : (
                       <Building2 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                     )}

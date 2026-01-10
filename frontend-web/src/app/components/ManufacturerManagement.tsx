@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Plus, Pencil, Search, Factory, Eye, Trash2, X, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { Hospital, UserRole } from '../types';
-import { mockManufacturers, mockHospitals } from '../data/mockData';
+import { Hospital, Manufacturer, UserRole } from '../types';
 import { Toast } from './Toast';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { useManufacturers } from '../context/ManufacturerContext';
+import { useHospitals } from '../context/HospitalContext';
+import { toast } from 'sonner';
 
 interface ManufacturerManagementProps {
   hospital: Hospital;
@@ -16,15 +18,17 @@ interface ManufacturerManagementProps {
 export function ManufacturerManagement({ hospital, userRole = 'admin' }: ManufacturerManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { hospitals } = useHospitals();
+  const { manufacturers, addManufacturer, updateManufacturer, deleteManufacturer, loading } = useManufacturers();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedManufacturer, setSelectedManufacturer] = useState<any>(null);
-  const [manufacturers, setManufacturers] = useState(filterByHospital(mockManufacturers));
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
+  const [selectedManufacturer, setSelectedManufacturer] = useState<Manufacturer | null>(null);
+  // Keep notification state separate so it doesn't shadow the sonner toast import
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('id');
@@ -37,13 +41,11 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
     status: 'active' as const,
     hospitalId: currentHospital.id // Add hospital selection
   });
+  const getHospitalName = (id: string) => hospitals.find(h => h.id === id)?.name || 'Unknown';
 
-  // Update manufacturers when hospital changes
-  React.useEffect(() => {
-    setManufacturers(filterByHospital(mockManufacturers));
-  }, [selectedHospitalId, isAllHospitals]);
+  const scopedManufacturers = filterByHospital(manufacturers);
 
-  const filteredManufacturers = manufacturers.filter(m =>
+  const filteredManufacturers = scopedManufacturers.filter(m =>
     m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.licenseNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.country.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -87,7 +89,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
       Country: m.country,
       License: m.licenseNumber,
       Status: m.status,
-      Hospital: mockHospitals.find(h => h.id === m.hospitalId)?.name || 'Unknown'
+      Hospital: getHospitalName(m.hospitalId)
     })));
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "Manufacturers");
@@ -125,22 +127,26 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
   };
 
   const handleAdd = () => {
+    const targetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
+      ? selectedHospitalId
+      : currentHospital.id;
+
     setFormData({
       name: '',
       country: '',
       licenseNumber: '',
       status: 'active',
-      hospitalId: currentHospital.id // Add hospital selection
+      hospitalId: targetHospitalId // Add hospital selection
     });
     setShowAddModal(true);
   };
 
-  const handleView = (manufacturer: any) => {
+  const handleView = (manufacturer: Manufacturer) => {
     setSelectedManufacturer(manufacturer);
     setShowViewModal(true);
   };
 
-  const handleEdit = (manufacturer: any) => {
+  const handleEdit = (manufacturer: Manufacturer) => {
     setSelectedManufacturer(manufacturer);
     setFormData({
       name: manufacturer.name,
@@ -152,51 +158,57 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
     setShowEditModal(true);
   };
 
-  const handleDelete = (manufacturer: any) => {
+  const handleDelete = (manufacturer: Manufacturer) => {
     setSelectedManufacturer(manufacturer);
     setShowDeleteModal(true);
   };
 
-  const handleSubmitAdd = (e: React.FormEvent) => {
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newManufacturer = {
-      id: `m${manufacturers.length + 1}`,
-      hospitalId: formData.hospitalId, // Use selected hospital from form
-      name: formData.name,
-      country: formData.country,
-      licenseNumber: formData.licenseNumber,
-      status: formData.status
-    };
-    setManufacturers([...manufacturers, newManufacturer]);
-    setShowAddModal(false);
-    setToast({ message: 'Manufacturer added successfully.', type: 'success' });
+    try {
+      await addManufacturer({
+        hospitalId: formData.hospitalId,
+        name: formData.name,
+        country: formData.country,
+        licenseNumber: formData.licenseNumber,
+        status: formData.status,
+      });
+      setShowAddModal(false);
+      setNotification({ message: 'Manufacturer added successfully.', type: 'success' });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to add manufacturer');
+    }
   };
 
-  const handleSubmitEdit = (e: React.FormEvent) => {
+  const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedManufacturers = manufacturers.map(m => {
-      if (m.id === selectedManufacturer.id) {
-        return {
-          ...m,
-          hospitalId: formData.hospitalId, // Use selected hospital from form
-          name: formData.name,
-          country: formData.country,
-          licenseNumber: formData.licenseNumber,
-          status: formData.status
-        };
-      }
-      return m;
-    });
-    setManufacturers(updatedManufacturers);
-    setShowEditModal(false);
-    setToast({ message: 'Manufacturer updated successfully.', type: 'success' });
+    if (!selectedManufacturer) return;
+    try {
+      await updateManufacturer({
+        id: selectedManufacturer.id,
+        hospitalId: formData.hospitalId,
+        name: formData.name,
+        country: formData.country,
+        licenseNumber: formData.licenseNumber,
+        status: formData.status,
+      });
+      setShowEditModal(false);
+      setNotification({ message: 'Manufacturer updated successfully.', type: 'success' });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update manufacturer');
+    }
   };
 
   const handleConfirmDelete = () => {
-    const updatedManufacturers = manufacturers.filter(m => m.id !== selectedManufacturer.id);
-    setManufacturers(updatedManufacturers);
-    setShowDeleteModal(false);
-    setToast({ message: 'Manufacturer deleted successfully.', type: 'success' });
+    if (!selectedManufacturer) return;
+    deleteManufacturer(selectedManufacturer.id)
+      .then(() => {
+        setShowDeleteModal(false);
+        setNotification({ message: 'Manufacturer deleted successfully.', type: 'success' });
+      })
+      .catch((err: any) => {
+        toast.error(err?.response?.data?.message || 'Failed to delete manufacturer');
+      });
   };
 
   return (
@@ -364,7 +376,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredManufacturers.length}</span></span>
-          <span>Showing {sortedManufacturers.length} of {manufacturers.length} manufacturers</span>
+          <span>Showing {sortedManufacturers.length} of {scopedManufacturers.length} manufacturers</span>
         </div>
       </div>
 
@@ -399,7 +411,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
-                    {mockHospitals.map(h => (
+                    {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
@@ -690,11 +702,11 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
         </div>
       )}
 
-      {toast && (
+      {notification && (
         <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
         />
       )}
     </div>

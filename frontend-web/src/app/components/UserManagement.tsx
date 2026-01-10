@@ -1,17 +1,29 @@
-import React, { useState } from 'react';
-import { Plus, Pencil, Search, UserCog, Eye, Trash2, X, Upload, Image as ImageIcon, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { Hospital, UserRole, User } from '../types';
-import { Toast } from './Toast';
-import { mockUsers, mockDoctors } from '../data/mockData';
-import { mockHospitals } from '../data/mockData';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Search, UserCog, Eye, Trash2, X, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Hospital, UserRole } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
+import api from '../../api/axios';
+import { useDoctors } from '../context/DoctorContext';
 
 interface UserManagementProps {
   hospital: Hospital;
   userRole: UserRole;
 }
+
+type ManagedUser = {
+  id: number;
+  hospitalId: number | null;
+  hospitalName?: string;
+  doctorId?: number | null;
+  doctorName?: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'inactive';
+};
 
 const roleLabels: Record<UserRole, string> = {
   super_admin: 'Super Admin',
@@ -32,26 +44,19 @@ const roleColors: Record<UserRole, string> = {
 };
 
 export function UserManagement({ hospital, userRole }: UserManagementProps) {
-  // For super_admin: show all users from all hospitals
-  // For admin: only show users from their hospital (excluding super_admin users)
-  let initialUsers = userRole === 'super_admin' 
-    ? mockUsers  // Super admin sees all users
-    : mockUsers.filter(u => 
-        (u.hospitalId === hospital.id || u.hospitalId === '0') && 
-        u.role !== 'super_admin'  // Admin cannot see super_admin users
-      );
-
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedHospitalFilter, setSelectedHospitalFilter] = useState('all');
+  const [selectedHospitalFilter, setSelectedHospitalFilter] = useState<string>('all');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(initialUsers);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [hospitals, setHospitals] = useState<{ id: number; name: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const { doctors } = useDoctors();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('name');
@@ -61,43 +66,51 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     name: '',
     email: '',
     role: 'receptionist' as UserRole,
-    hospitalId: hospital.id,
+    hospitalId: hospital.id as string | number | null,
     status: 'active' as const,
-    image: '',
-    doctorId: ''
+    password: '',
+    doctorId: '' as string | number | null,
   });
+  const canManageTarget = (target: ManagedUser) => {
+    if (target.role === 'super_admin' && userRole !== 'super_admin') return false;
+    return true;
+  };
 
-  // Get hospital name by ID
-  const getHospitalName = (hospitalId: string) => {
-    if (hospitalId === '0') return 'All Hospitals';
-    const hosp = mockHospitals.find(h => h.id === hospitalId);
+  const getHospitalName = (hospitalId: number | null | undefined) => {
+    if (!hospitalId) return 'All Hospitals';
+    const hosp = hospitals.find((h) => h.id === hospitalId);
     return hosp ? hosp.name : 'Unknown';
   };
 
-  // Filtered users with search, hospital, and role filters
-  const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      roleLabels[u.role].toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.status.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesHospital = selectedHospitalFilter === 'all' || u.hospitalId === selectedHospitalFilter;
-    const matchesRole = selectedRoleFilter === 'all' || u.role === selectedRoleFilter;
-    
-    return matchesSearch && matchesHospital && matchesRole;
-  });
+  const doctorOptions = useMemo(() => {
+    if (formData.role !== 'doctor') return [];
+    const targetHospitalId = formData.hospitalId || (userRole !== 'super_admin' ? hospital.id : null);
+    if (!targetHospitalId) return [];
+    return doctors.filter((d) => String(d.hospitalId) === String(targetHospitalId) && d.status === 'active');
+  }, [doctors, formData.hospitalId, formData.role, hospital.id, userRole]);
 
-  // Sort users
-  const sortedUsers = [...filteredUsers].sort((a: any, b: any) => {
-    const aValue = a[sortField]?.toString().toLowerCase() || '';
-    const bValue = b[sortField]?.toString().toLowerCase() || '';
-    
-    if (sortDirection === 'asc') {
-      return aValue.localeCompare(bValue);
-    } else {
-      return bValue.localeCompare(aValue);
-    }
-  });
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        roleLabels[u.role].toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.status.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesHospital = selectedHospitalFilter === 'all' || `${u.hospitalId ?? ''}` === selectedHospitalFilter;
+      const matchesRole = selectedRoleFilter === 'all' || u.role === selectedRoleFilter;
+
+      return matchesSearch && matchesHospital && matchesRole;
+    });
+  }, [users, searchTerm, selectedHospitalFilter, selectedRoleFilter]);
+
+  const sortedUsers = useMemo(() => {
+    const copy = [...filteredUsers];
+    return copy.sort((a: any, b: any) => {
+      const aValue = a[sortField]?.toString().toLowerCase() || '';
+      const bValue = b[sortField]?.toString().toLowerCase() || '';
+      return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+    });
+  }, [filteredUsers, sortDirection, sortField]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -126,13 +139,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       Hospital: getHospitalName(u.hospitalId)
     })));
     const workBook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workBook, workSheet, "Users");
-    XLSX.writeFile(workBook, "Users_List.xlsx");
+    XLSX.utils.book_append_sheet(workBook, workSheet, 'Users');
+    XLSX.writeFile(workBook, 'Users_List.xlsx');
   };
 
   const exportToPDF = () => {
     const doc = new jsPDF();
-    
     doc.setFontSize(18);
     doc.text('Users Report', 14, 22);
     doc.setFontSize(11);
@@ -159,16 +171,55 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     doc.save('Users_Report.pdf');
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setImagePreview(result);
-        setFormData({ ...formData, image: result });
-      };
-      reader.readAsDataURL(file);
+  useEffect(() => {
+    if (userRole === 'super_admin') {
+      loadHospitals();
+    } else {
+      const idNumber = Number(hospital.id);
+      setHospitals([{ id: isNaN(idNumber) ? 0 : idNumber, name: hospital.name }]);
+      setSelectedHospitalFilter(`${hospital.id}`);
+    }
+  }, [hospital.id, hospital.name, userRole]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [searchTerm, selectedRoleFilter, selectedHospitalFilter]);
+
+  const loadHospitals = async () => {
+    try {
+      const { data } = await api.get('/hospitals');
+      const records: any[] = data.data ?? data;
+      setHospitals(records.map((h) => ({ id: h.id, name: h.name })));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+    }
+  };
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, any> = {};
+      if (searchTerm) params.search = searchTerm;
+      if (selectedRoleFilter !== 'all') params.role = selectedRoleFilter;
+      if (userRole === 'super_admin' && selectedHospitalFilter !== 'all') params.hospital_id = selectedHospitalFilter;
+
+      const { data } = await api.get('/users', { params });
+      const records: any[] = data.data ?? data;
+      setUsers(records.map((u) => ({
+        id: u.id,
+        hospitalId: u.hospital_id ?? null,
+        hospitalName: u.hospital?.name,
+        doctorId: u.doctor_id ?? null,
+        doctorName: u.doctor?.name,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        status: u.is_active ? 'active' : 'inactive',
+      })));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load users');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -179,84 +230,106 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       role: 'receptionist',
       hospitalId: hospital.id,
       status: 'active',
-      image: '',
-      doctorId: ''
+      password: '',
+      doctorId: '',
     });
-    setImagePreview(null);
     setShowAddModal(true);
   };
 
-  const handleView = (user: User) => {
+  const handleView = (user: ManagedUser) => {
     setSelectedUser(user);
     setShowViewModal(true);
   };
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: ManagedUser) => {
+    if (!canManageTarget(user)) {
+      toast.warning('Not authorized to edit this user');
+      return;
+    }
     setSelectedUser(user);
     setFormData({
       name: user.name,
       email: user.email,
       role: user.role,
-      hospitalId: user.hospitalId,
+      hospitalId: user.hospitalId ?? hospital.id,
       status: user.status,
-      image: user.image || '',
-      doctorId: user.doctorId || ''
+      password: '',
+      doctorId: user.doctorId ?? '',
     });
-    setImagePreview(user.image || null);
     setShowEditModal(true);
   };
 
-  const handleDelete = (user: User) => {
+  const handleDelete = (user: ManagedUser) => {
+    if (!canManageTarget(user)) {
+      toast.warning('Not authorized to delete this user');
+      return;
+    }
     setSelectedUser(user);
     setShowDeleteModal(true);
   };
 
-  const handleSubmitAdd = (e: React.FormEvent) => {
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser = {
-      id: `${users.length + 1}`,
-      hospitalId: formData.hospitalId,
-      name: formData.name,
-      email: formData.email,
-      role: formData.role,
-      status: formData.status,
-      image: formData.image,
-      doctorId: formData.role === 'doctor' ? formData.doctorId : undefined
-    };
-    setUsers([...users, newUser]);
-    setShowAddModal(false);
-    setImagePreview(null);
-    setToast({ message: 'User added successfully.', type: 'success' });
+    setSubmitting(true);
+    try {
+      await api.post('/users', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
+        is_active: formData.status === 'active',
+        doctor_id: formData.role === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+      });
+      toast.success('User added successfully');
+      setShowAddModal(false);
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to add user');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleSubmitEdit = (e: React.FormEvent) => {
+  const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedUsers = users.map(u => {
-      if (u.id === selectedUser?.id) {
-        return {
-          ...u,
-          name: formData.name,
-          email: formData.email,
-          role: formData.role,
-          hospitalId: formData.hospitalId,
-          status: formData.status,
-          image: formData.image,
-          doctorId: formData.role === 'doctor' ? formData.doctorId : undefined
-        };
-      }
-      return u;
-    });
-    setUsers(updatedUsers);
-    setShowEditModal(false);
-    setImagePreview(null);
-    setToast({ message: 'User updated successfully.', type: 'success' });
+    if (!selectedUser) return;
+    setSubmitting(true);
+    try {
+      const payload: any = {
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
+        is_active: formData.status === 'active',
+        doctor_id: formData.role === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+      };
+      if (formData.password) payload.password = formData.password;
+
+      await api.put(`/users/${selectedUser.id}`, payload);
+      toast.success('User updated successfully');
+      setShowEditModal(false);
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update user');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleConfirmDelete = () => {
-    const updatedUsers = users.filter(u => u.id !== selectedUser?.id);
-    setUsers(updatedUsers);
-    setShowDeleteModal(false);
-    setToast({ message: 'User deleted successfully.', type: 'success' });
+  const handleConfirmDelete = async () => {
+    if (!selectedUser) return;
+    setSubmitting(true);
+    try {
+      await api.delete(`/users/${selectedUser.id}`);
+      toast.success('User deleted successfully');
+      setShowDeleteModal(false);
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to delete user');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -290,7 +363,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 className="px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md text-xs focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Hospitals</option>
-                {mockHospitals.map(h => (
+                {hospitals.map((h) => (
                   <option key={h.id} value={h.id}>{h.name}</option>
                 ))}
               </select>
@@ -381,12 +454,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-md flex items-center justify-center overflow-hidden border border-indigo-200 dark:border-indigo-800">
-                          {user.image ? (
-                            <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <UserCog className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                          )}
+                        <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-md flex items-center justify-center border border-indigo-200 dark:border-indigo-800">
+                          <UserCog className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         <span className="font-semibold text-gray-900 dark:text-white text-xs">{user.name}</span>
                       </div>
@@ -422,14 +491,16 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                         </button>
                         <button
                           onClick={() => handleEdit(user)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                          disabled={!canManageTarget(user)}
+                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           title="Edit"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDelete(user)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                          disabled={!canManageTarget(user)}
+                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           title="Delete"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -510,10 +581,11 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     value={formData.role}
                     onChange={(e) => {
                       const newRole = e.target.value as UserRole;
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         role: newRole,
-                        hospitalId: newRole === 'super_admin' ? '0' : (userRole === 'super_admin' ? hospital.id : hospital.id)
+                        hospitalId: newRole === 'super_admin' ? '' : formData.hospitalId,
+                        doctorId: newRole === 'doctor' ? (formData.doctorId ?? '') : '',
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
@@ -539,86 +611,68 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 </div>
               </div>
 
-              {/* Doctor Selection (Only if Role is Doctor) */}
-              {formData.role === 'doctor' && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Link to Doctor Profile <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.doctorId}
-                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                    required={formData.role === 'doctor'}
-                  >
-                    <option value="">Select a Doctor Profile...</option>
-                    {mockDoctors
-                      .filter(d => d.hospitalId === formData.hospitalId && d.status === 'active')
-                      .map(doctor => (
-                        <option key={doctor.id} value={doctor.id}>
-                          {doctor.name} ({doctor.specialization}) - {doctor.registrationNumber}
-                        </option>
-                      ))
-                    }
-                  </select>
-                  <p className="text-[9px] text-blue-600 dark:text-blue-400 mt-1">
-                    Linking this user account to a Doctor profile ensures they see their assigned patients and appointments.
-                  </p>
-                </div>
-              )}
-
               {/* Hospital Selection - Only for Super Admin and NOT for super_admin role */}
               {userRole === 'super_admin' && formData.role !== 'super_admin' && (
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
                   <select
                     value={formData.hospitalId}
-                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value, doctorId: '' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                     required
                   >
-                    {mockHospitals.map(h => (
+                    <option value="">Select hospital</option>
+                    {hospitals.map((h) => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
                 </div>
               )}
-              {/* Show info message when Super Admin role is selected */}
-              {userRole === 'super_admin' && formData.role === 'super_admin' && (
-                <div className="p-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
-                  <p className="text-[10px] text-purple-700 dark:text-purple-300">
-                    <span className="font-semibold">Note:</span> Super Admin users have access to all hospitals.
-                  </p>
+              {formData.role === 'doctor' && (
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor Profile <span className="text-red-500">*</span></label>
+                  <select
+                    value={formData.doctorId ?? ''}
+                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    required
+                    disabled={!formData.hospitalId || doctorOptions.length === 0}
+                  >
+                    <option value="">{!formData.hospitalId ? 'Select hospital first' : 'Select doctor'}</option>
+                    {doctorOptions.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  {formData.hospitalId && doctorOptions.length === 0 && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">No active doctors found for this hospital.</p>
+                  )}
                 </div>
               )}
-              
-              {/* User Image - Compact */}
-              <div className="bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg border border-gray-100 dark:border-gray-700 flex items-center gap-3">
-                <div className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-600 shrink-0">
-                    {imagePreview ? (
-                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                    ) : (
-                    <ImageIcon className="w-4 h-4 text-gray-400" />
-                    )}
+              {showAddModal && (
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Password <span className="text-red-500">*</span></label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    required
+                    minLength={8}
+                  />
                 </div>
-                <div className="flex-1">
-                    <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                    User Image
-                    </label>
-                    <div className="flex items-center gap-2">
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm font-medium text-[10px]">
-                        <Upload className="w-3 h-3" />
-                        Choose
-                        <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                        />
-                    </label>
-                    </div>
+              )}
+              {showEditModal && (
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Password (leave blank to keep)</label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    minLength={8}
+                  />
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
                 <button
@@ -633,9 +687,10 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
                 </button>
               </div>
             </form>
@@ -741,13 +796,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               </h2>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setTimeout(() => window.print(), 100)}
-                  className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Print"
-                >
-                  <Printer className="w-4 h-4" />
-                </button>
-                <button
                   onClick={() => setShowViewModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
                   title="Close"
@@ -759,12 +807,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
             <div className="p-5 space-y-5">
               <div className="flex items-center gap-5">
-                <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center overflow-hidden border border-indigo-200 dark:border-indigo-800 shadow-sm">
-                  {selectedUser.image ? (
-                    <img src={selectedUser.image} alt={selectedUser.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <UserCog className="w-10 h-10 text-indigo-600 dark:text-indigo-400" />
-                  )}
+                <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center border border-indigo-200 dark:border-indigo-800 shadow-sm">
+                  <UserCog className="w-10 h-10 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">{selectedUser.name}</h3>
@@ -797,25 +841,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     <p className="text-xs font-medium text-gray-900 dark:text-white">{getHospitalName(selectedUser.hospitalId)}</p>
                   </div>
 
-                  {/* Show Doctor Link Info if applicable */}
-                  {selectedUser.role === 'doctor' && selectedUser.doctorId && (
-                    <div className="col-span-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <label className="block text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1">
-                        Linked Doctor Profile
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <div className="p-1 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                          <UserCog className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <p className="text-xs font-medium text-gray-900 dark:text-white">
-                          {mockDoctors.find(d => d.id === selectedUser.doctorId)?.name || 'Unknown Doctor'} 
-                          <span className="text-gray-500 dark:text-gray-400 font-normal ml-1">
-                             (ID: {selectedUser.doctorId})
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -852,21 +877,14 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               </button>
               <button
                 onClick={handleConfirmDelete}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
+                disabled={submitting}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Delete
+                {submitting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
       )}
     </div>
   );

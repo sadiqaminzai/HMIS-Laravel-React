@@ -5,12 +5,17 @@ import { instructionOptions } from '../data/mockData';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatDate } from '../utils/date';
 
+// Extended type for medicine with additional display fields
+type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
+  genericName?: string;
+  brandName?: string;
+};
 
 interface PrescriptionPrintProps {
   hospital: Hospital;
   patient: Patient;
   doctor: Doctor;
-  medicines: PrescriptionMedicine[];
+  medicines: ExtendedPrescriptionMedicine[];
   advice: string;
   prescriptionNumber: string;
   diagnosis?: string;
@@ -39,6 +44,34 @@ export function PrescriptionPrint({
   updatedBy
 }: PrescriptionPrintProps) {
   
+  const formatMedicineForPrint = (med: ExtendedPrescriptionMedicine) => {
+    // Format: Brand Name (Generic Name) Medicine Type Strength
+    const brandName = med.brandName || med.medicineName || '';
+    const genericName = med.genericName || '';
+    const type = (med.type || '').trim();
+    const strength = (med.strength || '').trim();
+    
+    // Start with brand name
+    let displayName = brandName.trim();
+    
+    // Add generic name in parentheses if available and not already in brand name
+    if (genericName && !displayName.toLowerCase().includes(genericName.toLowerCase())) {
+      displayName += ` (${genericName})`;
+    }
+    
+    // Add medicine type if available and not already in name
+    if (type && !displayName.toLowerCase().includes(type.toLowerCase())) {
+      displayName += ` ${type}`;
+    }
+    
+    // Add strength if available and not already in name
+    if (strength && !displayName.toLowerCase().includes(strength.toLowerCase())) {
+      displayName += ` ${strength}`;
+    }
+    
+    return displayName.replace(/\s+/g, ' ').trim();
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -106,18 +139,39 @@ export function PrescriptionPrint({
               overflow: visible;
             }
 
-            /* Footer Positioning */
+            /* Footer Positioning - QR Code and Signature */
             #print-footer {
+              visibility: visible !important;
+              display: block !important;
               width: 100%;
-              margin-top: auto !important; /* Ensure it stays at bottom */
-              background: white; /* Ensure it's not transparent over other things */
+              margin-top: auto !important;
+              background: white;
               z-index: 10000;
               break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            
+            /* Ensure QR Code prints properly */
+            #print-footer svg {
+              visibility: visible !important;
+              display: block !important;
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+            
+            /* Ensure signature image prints */
+            #print-footer img {
+              visibility: visible !important;
+              display: block !important;
+              max-height: 60px;
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
             }
             
             /* Helper to hide UI elements */
             .print-hide {
               display: none !important;
+              visibility: hidden !important;
             }
           }
         `}
@@ -283,11 +337,7 @@ export function PrescriptionPrint({
                     <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{index + 1}</td>
                       <td className="px-2 py-1 border-b border-gray-100 font-medium">
-                        {med.medicineName}
-                        {med.type && !med.medicineName.includes(med.type) && (
-                          <span className="font-normal text-gray-500 ml-1">{med.type}</span>
-                        )}
-                        <span className="text-[9px] text-gray-500 block font-normal leading-tight">{med.strength}</span>
+                        {formatMedicineForPrint(med)}
                       </td>
                       <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">
                         <span className="inline-block px-1 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-semibold border border-blue-100">

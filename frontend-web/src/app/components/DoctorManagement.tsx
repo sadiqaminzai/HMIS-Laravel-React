@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Plus, Pencil, Search, Stethoscope, Eye, Trash2, X, Upload, Image as ImageIcon, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Clock, Check } from 'lucide-react';
-import { Hospital, UserRole, DoctorAvailability } from '../types';
-import { mockDoctors, mockHospitals } from '../data/mockData';
-import { Toast } from './Toast';
+import { Hospital, UserRole, DoctorAvailability, Doctor } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { useDoctors } from '../context/DoctorContext';
+import { useHospitals } from '../context/HospitalContext';
+import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -16,19 +17,18 @@ interface DoctorManagementProps {
 export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
+  const { hospitals } = useHospitals();
+  const { doctors, addDoctor, updateDoctor, deleteDoctor } = useDoctors();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
-  
-  const [doctors, setDoctors] = useState(filterByHospital(mockDoctors));
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
-  
+  const [formSubmitting, setFormSubmitting] = useState(false);
+
   // Sorting state
   const [sortField, setSortField] = useState<string>('id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -43,6 +43,8 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     status: 'active' as const,
     image: '',
     signature: '',
+    imageFile: null as File | null,
+    signatureFile: null as File | null,
     hospitalId: currentHospital.id, // Add hospital selection
     availability: [
       { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
@@ -55,17 +57,19 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     ] as DoctorAvailability[]
   });
 
-  // Update doctors when hospital changes
-  React.useEffect(() => {
-    setDoctors(filterByHospital(mockDoctors));
-  }, [selectedHospitalId, isAllHospitals]);
+  // Scope doctors to selected hospital (or all if super admin)
+  const scopedDoctors = useMemo(
+    () => filterByHospital(doctors),
+    [doctors, filterByHospital]
+  );
 
-  // Check if user can delete (only admin and super_admin)
-  const canDelete = userRole === 'admin' || userRole === 'super_admin';
-  const canEdit = userRole === 'admin' || userRole === 'super_admin'; // Also controls Add action
+  // Only admin and super_admin can manage; receptionist is view-only
+  const canManage = ['admin', 'super_admin'].includes(userRole);
+  const canDelete = canManage;
+  const canEdit = canManage; // Also controls Add action
 
   // Filter doctors by search term
-  const filteredDoctors = doctors.filter(d =>
+  const filteredDoctors = scopedDoctors.filter(d =>
     d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     d.specialization.toLowerCase().includes(searchTerm.toLowerCase()) ||
     d.registrationNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -114,7 +118,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       Email: d.email,
       Phone: d.phone,
       Status: d.status,
-      Hospital: mockHospitals.find(h => h.id === d.hospitalId)?.name || 'Unknown'
+      Hospital: hospitals.find(h => h.id === d.hospitalId)?.name || 'Unknown'
     })));
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "Doctors");
@@ -154,32 +158,26 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0] || null;
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setImagePreview(result);
-        setFormData({ ...formData, image: result });
-      };
-      reader.readAsDataURL(file);
+      setImagePreview(URL.createObjectURL(file));
+      setFormData({ ...formData, imageFile: file, image: URL.createObjectURL(file) });
     }
   };
 
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0] || null;
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setSignaturePreview(result);
-        setFormData({ ...formData, signature: result });
-      };
-      reader.readAsDataURL(file);
+      setSignaturePreview(URL.createObjectURL(file));
+      setFormData({ ...formData, signatureFile: file, signature: URL.createObjectURL(file) });
     }
   };
 
   const handleAdd = () => {
+    if (!canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
     setFormData({
       name: '',
       email: '',
@@ -190,6 +188,8 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       status: 'active' as const,
       image: '',
       signature: '',
+      imageFile: null,
+      signatureFile: null,
       hospitalId: currentHospital.id, // Add hospital selection
       availability: [
         { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
@@ -206,12 +206,16 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     setShowAddModal(true);
   };
 
-  const handleView = (doctor: any) => {
+  const handleView = (doctor: Doctor) => {
     setSelectedDoctor(doctor);
     setShowViewModal(true);
   };
 
-  const handleEdit = (doctor: any) => {
+  const handleEdit = (doctor: Doctor) => {
+    if (!canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
     setSelectedDoctor(doctor);
     setFormData({
       name: doctor.name,
@@ -223,7 +227,9 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       status: doctor.status,
       image: doctor.image || '',
       signature: doctor.signature || '',
-      hospitalId: doctor.hospitalId, // Add hospital selection
+      imageFile: null,
+      signatureFile: null,
+      hospitalId: doctor.hospitalId,
       availability: doctor.availability || [
         { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
         { day: 'Sunday', startTime: '09:00', endTime: '17:00', isAvailable: true },
@@ -239,16 +245,24 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     setShowEditModal(true);
   };
 
-  const handleDelete = (doctor: any) => {
+  const handleDelete = (doctor: Doctor) => {
+    if (!canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
     setSelectedDoctor(doctor);
     setShowDeleteModal(true);
   };
 
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    const newDoctor = {
-      id: (doctors.length + 1).toString(),
-      hospitalId: formData.hospitalId, // Use selected hospital from form
+    if (!canManage) {
+      toast.warning('Not allowed');
+      return;
+    }
+    setFormSubmitting(true);
+    const payload = {
+      hospitalId: currentHospital.id,
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
@@ -256,49 +270,66 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       registrationNumber: formData.registrationNumber,
       consultationFee: Number(formData.consultationFee),
       status: formData.status,
-      image: formData.image,
-      signature: formData.signature,
-      availability: formData.availability
+      availability: formData.availability,
+      imageFile: formData.imageFile,
+      signatureFile: formData.signatureFile,
     };
-    setDoctors([...doctors, newDoctor]);
-    setToast({ message: 'Doctor added successfully', type: 'success' });
-    setShowAddModal(false);
-    setImagePreview(null);
-    setSignaturePreview(null);
+    addDoctor(payload)
+      .then(() => {
+        toast.success('Doctor added successfully');
+        setShowAddModal(false);
+        setImagePreview(null);
+        setSignaturePreview(null);
+      })
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to add doctor'))
+      .finally(() => setFormSubmitting(false));
   };
 
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedDoctors = doctors.map(d =>
-      d.id === selectedDoctor.id
-        ? {
-            ...d,
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            specialization: formData.specialization,
-            registrationNumber: formData.registrationNumber,
-            consultationFee: Number(formData.consultationFee),
-            status: formData.status,
-            image: formData.image,
-            signature: formData.signature,
-            hospitalId: formData.hospitalId,
-            availability: formData.availability
-          }
-        : d
-    );
-    setDoctors(updatedDoctors);
-    setToast({ message: 'Doctor updated successfully', type: 'success' });
-    setShowEditModal(false);
-    setImagePreview(null);
-    setSignaturePreview(null);
+    if (!canManage || !selectedDoctor) {
+      toast.warning('Not allowed');
+      return;
+    }
+    setFormSubmitting(true);
+    const payload = {
+      id: selectedDoctor.id,
+      hospitalId: selectedDoctor.hospitalId,
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      specialization: formData.specialization,
+      registrationNumber: formData.registrationNumber,
+      consultationFee: Number(formData.consultationFee),
+      status: formData.status,
+      availability: formData.availability,
+      imageFile: formData.imageFile,
+      signatureFile: formData.signatureFile,
+    };
+    updateDoctor(payload)
+      .then(() => {
+        toast.success('Doctor updated successfully');
+        setShowEditModal(false);
+        setImagePreview(null);
+        setSignaturePreview(null);
+      })
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to update doctor'))
+      .finally(() => setFormSubmitting(false));
   };
 
   const handleConfirmDelete = () => {
-    const updatedDoctors = doctors.filter(d => d.id !== selectedDoctor.id);
-    setDoctors(updatedDoctors);
-    setToast({ message: 'Doctor deleted successfully', type: 'success' });
-    setShowDeleteModal(false);
+    if (!canDelete || !selectedDoctor) {
+      toast.warning('Not allowed');
+      return;
+    }
+    setFormSubmitting(true);
+    deleteDoctor(selectedDoctor.id)
+      .then(() => toast.success('Doctor deleted successfully'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to delete doctor'))
+      .finally(() => {
+        setFormSubmitting(false);
+        setShowDeleteModal(false);
+      });
   };
 
   return (
@@ -512,14 +543,6 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
         </div>
       </div>
 
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-
       {/* Add/Edit Modal */}
       {(showAddModal || showEditModal) && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
@@ -551,7 +574,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
-                    {mockHospitals.map(h => (
+                    {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
@@ -1095,31 +1118,31 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full p-6 text-center border border-gray-200 dark:border-gray-700">
-             <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-               <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
-             </div>
-             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Doctor</h3>
-             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-               Are you sure you want to delete {selectedDoctor?.name}? This action cannot be undone.
-             </p>
-             <div className="flex gap-3">
-               <button
-                 onClick={() => setShowDeleteModal(false)}
-                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-               >
-                 Cancel
-               </button>
-               <button
-                 onClick={handleConfirmDelete}
-                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
-               >
-                 Delete
-               </button>
-             </div>
-           </div>
-         </div>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full p-6 text-center border border-gray-200 dark:border-gray-700">
+            <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Doctor</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              Are you sure you want to delete {selectedDoctor?.name}? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
