@@ -274,24 +274,26 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Monthly Activity</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="#6b7280" />
-              <YAxis tick={{ fontSize: 10 }} stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: 'none', 
-                  borderRadius: '8px',
-                  fontSize: '11px'
-                }} 
-              />
-              <Legend wrapperStyle={{ fontSize: '10px' }} />
-              <Bar dataKey="patients" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="appointments" fill="#10b981" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%" debounce={200}>
+              <BarChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="#6b7280" />
+                <YAxis tick={{ fontSize: 10 }} stroke="#6b7280" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#1f2937', 
+                    border: 'none', 
+                    borderRadius: '8px',
+                    fontSize: '11px'
+                  }} 
+                />
+                <Legend wrapperStyle={{ fontSize: '10px' }} />
+                <Bar dataKey="patients" fill="#3b82f6" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="appointments" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">

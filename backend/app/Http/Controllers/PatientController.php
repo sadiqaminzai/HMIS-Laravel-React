@@ -39,11 +39,17 @@ class PatientController extends Controller
     {
         $this->authorizeReceptionOrAbove($request->user());
 
-        $data = $this->validatePayload($request);
+        $actor = $request->user();
+        $hospitalId = $actor->role !== 'super_admin'
+            ? $actor->hospital_id
+            : $request->integer('hospital_id');
 
-        if ($request->user()->role !== 'super_admin') {
-            $data['hospital_id'] = $request->user()->hospital_id;
+        if ($actor->role === 'super_admin' && empty($hospitalId)) {
+            return response()->json(['message' => 'hospital_id is required'], 422);
         }
+
+        $data = $this->validatePayload($request, null, (int) $hospitalId);
+        $data['hospital_id'] = $hospitalId;
 
         // Apply default doctor if none provided
         if (empty($data['referred_doctor_id'])) {
@@ -74,7 +80,7 @@ class PatientController extends Controller
         $this->authorizeReceptionOrAbove($request->user());
         $this->authorizeScope($request->user(), $patient);
 
-        $data = $this->validatePayload($request, $patient->id);
+        $data = $this->validatePayload($request, $patient->id, (int) $patient->hospital_id);
 
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('patients/images', 'public');
@@ -109,11 +115,25 @@ class PatientController extends Controller
         }
     }
 
-    private function validatePayload(Request $request, ?int $patientId = null): array
+    private function validatePayload(Request $request, ?int $patientId = null, ?int $hospitalIdForUnique = null): array
     {
+        $hospitalId = $hospitalIdForUnique;
+        if (!$hospitalId) {
+            $hospitalId = $request->user()->role !== 'super_admin'
+                ? $request->user()->hospital_id
+                : $request->integer('hospital_id');
+        }
+
         $data = $request->validate([
             'hospital_id' => ['sometimes', 'required', 'exists:hospitals,id'],
-            'patient_id' => ['required', 'string', 'max:50', Rule::unique('patients', 'patient_id')->ignore($patientId)],
+            'patient_id' => [
+                'required',
+                'string',
+                'max:50',
+                Rule::unique('patients', 'patient_id')
+                    ->where(fn ($q) => $q->where('hospital_id', $hospitalId))
+                    ->ignore($patientId),
+            ],
             'name' => ['required', 'string', 'max:255'],
             'age' => ['nullable', 'integer', 'min:0', 'max:150'],
             'gender' => ['required', 'in:male,female,other'],

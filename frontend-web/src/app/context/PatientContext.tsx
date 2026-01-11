@@ -35,13 +35,21 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setPatients([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.get('/patients');
       const records: any[] = data.data ?? data;
       setPatients(records.map(mapPatient));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load patients');
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load patients');
+      }
     } finally {
       setLoading(false);
     }

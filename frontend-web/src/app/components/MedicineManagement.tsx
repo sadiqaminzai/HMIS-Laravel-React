@@ -111,7 +111,6 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       BrandName: m.brandName,
       GenericName: m.genericName,
       Strength: m.strength,
-      Strength: m.strength,
       Type: getMedicineTypeName(m.medicineTypeId),
       Manufacturer: getManufacturerName(m.manufacturerId),
       Status: m.status,

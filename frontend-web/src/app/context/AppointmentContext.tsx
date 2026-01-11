@@ -38,13 +38,21 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setAppointments([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.get('/appointments');
       const records: any[] = data.data ?? data;
       setAppointments(records.map(mapAppointment));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load appointments');
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load appointments');
+      }
     } finally {
       setLoading(false);
     }

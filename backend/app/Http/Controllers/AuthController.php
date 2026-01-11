@@ -32,7 +32,10 @@ class AuthController extends Controller
         // Rotate existing tokens to avoid token sprawl per user.
         $user->tokens()->delete();
 
-        $token = $user->createToken('auth_token', [$user->role])->plainTextToken;
+        $user->loadMissing('roleRecord.permissions');
+        $abilities = array_values(array_unique(array_merge([$user->role], $user->permissionNames())));
+
+        $token = $user->createToken('auth_token', $abilities)->plainTextToken;
 
         $user->forceFill(['last_login_at' => now()])->save();
 
@@ -46,7 +49,7 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'user' => $this->transformUser($request->user()->loadMissing('hospital')),
+            'user' => $this->transformUser($request->user()->loadMissing('hospital', 'roleRecord')),
         ]);
     }
 
@@ -66,11 +69,13 @@ class AuthController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
+            'roleId' => $user->role_id ? (string) $user->role_id : null,
             'hospitalId' => $user->hospital_id ? (string) $user->hospital_id : null,
             'doctorId' => $user->doctor_id ? (string) $user->doctor_id : null,
             'avatarPath' => $user->avatar_path,
             'isActive' => $user->is_active,
             'lastLoginAt' => $user->last_login_at,
+            'permissions' => $user->permissionNames(),
             'hospital' => $user->hospital ? [
                 'id' => (string) $user->hospital->id,
                 'name' => $user->hospital->name,

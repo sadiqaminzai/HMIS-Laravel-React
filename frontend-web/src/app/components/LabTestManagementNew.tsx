@@ -1,8 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye } from 'lucide-react';
-import { Hospital, LabTest, UserRole } from '../types';
-import { mockPatients, mockHospitals, mockDoctors } from '../data/mockData';
-import { mockTestTemplates } from '../data/mockTestTemplates';
+import { Hospital, LabTest, TestResult, TestTemplate, UserRole } from '../types';
 import { Toast } from './Toast';
 import { LabReportPrintNew } from './LabReportPrintNew';
 import { LabReportTemplate } from './LabReportTemplate';
@@ -14,6 +12,11 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import { toPng } from 'html-to-image';
 import autoTable from 'jspdf-autotable';
+import { fetchLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
+import { fetchTestTemplates } from '../../api/testTemplates';
+import { usePatients } from '../context/PatientContext';
+import { useDoctors } from '../context/DoctorContext';
+import { useHospitals } from '../context/HospitalContext';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
@@ -21,102 +24,113 @@ interface LabTestManagementNewProps {
   currentUserId?: string;
 }
 
-// Generate mock lab tests with new structure
-const generateMockLabTests = (hospitalId: string): LabTest[] => [
-  {
-    id: '1',
-    hospitalId,
-    testNumber: 'LAB-2026-00001',
-    patientId: 'P00001',
-    patientName: 'Ahmed Khan',
-    patientAge: 35,
-    patientGender: 'male',
-    doctorId: 'D001',
-    doctorName: 'Dr. Sarah Ahmed',
-    selectedTests: ['test-1'], // CBC
-    testName: 'Complete Blood Count (CBC)',
-    testType: 'Hematology',
-    instructions: 'Fasting not required',
-    status: 'unpaid',
-    priority: 'normal',
-    createdAt: new Date(new Date().setHours(new Date().getHours() - 2)), // 2 hours ago
-    createdBy: 'doctor1'
-  },
-  {
-    id: '2',
-    hospitalId,
-    testNumber: 'LAB-2026-00002',
-    patientId: 'P00002',
-    patientName: 'Fatima Ali',
-    patientAge: 28,
-    patientGender: 'female',
-    doctorId: 'D002',
-    doctorName: 'Dr. Mohammed Yusuf',
-    selectedTests: ['test-2'], // LFT
-    testName: 'Liver Function Test (LFT)',
-    testType: 'Clinical Chemistry',
-    status: 'pending',
-    priority: 'urgent',
-    createdAt: new Date(new Date().setHours(new Date().getHours() - 4)), // 4 hours ago
-    createdBy: 'doctor2'
-  },
-  {
-    id: '3',
-    hospitalId,
-    testNumber: 'LAB-2026-00003',
-    patientId: 'P00003',
-    patientName: 'Omar Hassan',
-    patientAge: 45,
-    patientGender: 'male',
-    doctorId: 'D001',
-    doctorName: 'Dr. Sarah Ahmed',
-    selectedTests: ['test-3'], // KFT
-    testName: 'Kidney Function Test (KFT)',
-    testType: 'Clinical Chemistry',
-    status: 'in_progress',
-    priority: 'normal',
-    assignedTo: 'LT001',
-    assignedToName: 'Lab Tech - Ali Hassan',
-    sampleCollectedAt: new Date(new Date().setHours(new Date().getHours() - 1)),
-    createdAt: new Date(new Date().setHours(new Date().getHours() - 5)),
-    createdBy: 'doctor1'
-  },
-  {
-    id: '4',
-    hospitalId,
-    testNumber: 'LAB-2026-00004',
-    patientId: 'P00004',
-    patientName: 'Zainab Bibi',
-    patientAge: 52,
-    patientGender: 'female',
-    doctorId: 'D001',
-    doctorName: 'Dr. Sarah Ahmed',
-    selectedTests: ['test-5'], // Lipid
-    testName: 'Lipid Profile',
-    testType: 'Clinical Chemistry',
-    status: 'completed',
-    priority: 'normal',
-    assignedTo: 'LT001',
-    assignedToName: 'Lab Tech - Ali Hassan',
-    sampleCollectedAt: new Date(new Date().setDate(new Date().getDate() - 1)),
-    reportedAt: new Date(new Date().setHours(new Date().getHours() - 10)),
-    testResults: [
-      { testTemplateId: 'test-5', testName: 'Lipid Profile', parameterName: 'Total Cholesterol', unit: 'mg/dL', normalRange: '<200', result: '185', remarks: 'Desirable' },
-      { testTemplateId: 'test-5', testName: 'Lipid Profile', parameterName: 'Triglycerides', unit: 'mg/dL', normalRange: '<150', result: '145', remarks: 'Normal' },
-      { testTemplateId: 'test-5', testName: 'Lipid Profile', parameterName: 'HDL Cholesterol', unit: 'mg/dL', normalRange: '>40', result: '48', remarks: 'Good' },
-      { testTemplateId: 'test-5', testName: 'Lipid Profile', parameterName: 'LDL Cholesterol', unit: 'mg/dL', normalRange: '<100', result: '110', remarks: 'Near Optimal' },
-    ],
-    remarks: 'Lipid profile is within normal limits.',
-    createdAt: new Date(new Date().setDate(new Date().getDate() - 1)),
-    createdBy: 'doctor1'
-  }
-];
+const mapOrderStatus = (orderStatus: string, paymentStatus: string): LabTest['status'] => {
+  if (paymentStatus !== 'paid') return 'unpaid';
+  if (orderStatus === 'completed') return 'completed';
+  if (orderStatus === 'processing' || orderStatus === 'sample_collected') return 'in_progress';
+  if (orderStatus === 'cancelled') return 'cancelled';
+  return 'pending';
+};
+
+const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[]): LabTest => {
+  const selectedTests: string[] = [];
+  const testNames: string[] = [];
+  const testTypes: string[] = [];
+  const testResults: TestResult[] = [];
+  const orderItems: LabTest['orderItems'] = [];
+
+  order.items?.forEach((item) => {
+    const template = templates.find((t) => String(t.id) === String(item.testTemplateId));
+    const norm = (v: string | undefined | null) => (v ?? '').trim().toLowerCase();
+
+    const sourceParams = template?.parameters?.length ? template.parameters : item.results || [];
+
+    const parameters = sourceParams.map((param, idx) => {
+      const parameterName = (param as any).parameterName || (param as any).name || (param as any).parameter_name || '';
+      const unit = (param as any).unit || '';
+      const normalRange = (param as any).normalRange || (param as any).normal_range || '';
+
+      const matchingResult = item.results?.find((r) => norm(r.parameterName) === norm(parameterName))
+        || item.results?.[idx];
+
+      if (matchingResult) {
+        testResults.push({
+          resultId: matchingResult.id,
+          labOrderItemId: item.id,
+          testTemplateId: item.testTemplateId,
+          testName: item.testName,
+          parameterName: matchingResult.parameterName,
+          unit: matchingResult.unit || unit,
+          normalRange: matchingResult.normalRange || normalRange,
+          result: matchingResult.resultValue || '',
+          remarks: matchingResult.remarks || '',
+        });
+      }
+
+      return {
+        parameterName,
+        resultId: matchingResult?.id,
+        unit: matchingResult?.unit || unit,
+        normalRange: matchingResult?.normalRange || normalRange,
+      };
+    });
+
+    const results = (item.results || []).map((r) => ({
+      id: r.id,
+      parameterName: r.parameterName,
+      unit: r.unit || undefined,
+      normalRange: r.normalRange || undefined,
+      resultValue: r.resultValue || undefined,
+      remarks: r.remarks || undefined,
+    }));
+
+    selectedTests.push(String(item.testTemplateId));
+    testNames.push(item.testName);
+    if (!testTypes.includes(item.testType)) testTypes.push(item.testType);
+    orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), parameters, results });
+  });
+
+  return {
+    id: String(order.id),
+    hospitalId: String(order.hospitalId),
+    testNumber: order.orderNumber,
+    patientId: order.patientId || '',
+    patientName: order.patientName,
+    patientAge: order.patientAge,
+    patientGender: order.patientGender,
+    doctorId: order.doctorId,
+    doctorName: order.doctorName,
+    selectedTests,
+    testName: testNames.join(', '),
+    testType: testTypes.join(', '),
+    instructions: order.clinicalNotes || undefined,
+    status: mapOrderStatus(order.status, order.paymentStatus),
+    paymentStatus: order.paymentStatus,
+    priority: order.priority,
+    sampleCollectedAt: order.sampleCollectedAt || undefined,
+    reportedAt: order.completedAt || undefined,
+    testResults,
+    remarks: order.remarks || undefined,
+    assignedTo: order.assignedTo || undefined,
+    assignedToName: order.assignedToName || undefined,
+    totalAmount: order.totalAmount,
+    paidAmount: order.paidAmount,
+    orderItems,
+    createdAt: order.createdAt,
+    createdBy: order.createdBy || 'system',
+    updatedAt: order.updatedAt || undefined,
+    updatedBy: order.updatedBy || undefined,
+  };
+};
 
 export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabTestManagementNewProps) {
-  // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
-  const [labTests, setLabTests] = useState<LabTest[]>(generateMockLabTests(currentHospital.id));
+  const { patients } = usePatients();
+  const { doctors } = useDoctors();
+  const { hospitals } = useHospitals();
+
+  const [labTests, setLabTests] = useState<LabTest[]>([]);
+  const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -129,54 +143,49 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const pdfContainerRef = React.useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // Handle PDF Generation
+  const [formData, setFormData] = useState({
+    patientId: '',
+    selectedTests: [] as string[],
+    instructions: '',
+    priority: 'normal' as 'normal' | 'urgent' | 'stat',
+    hospitalId: currentHospital.id,
+  });
+
+  // Safety: auto-clear toast even if child component unmount effect is interrupted
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   useEffect(() => {
     if (pdfTest && pdfContainerRef.current) {
       const generatePDF = async () => {
         try {
-          // Wait for render
-          await new Promise(resolve => setTimeout(resolve, 100));
-
+          await new Promise((resolve) => setTimeout(resolve, 100));
           const element = pdfContainerRef.current!;
-          const doc = new jsPDF({
-            format: 'a4',
-            unit: 'mm',
-          });
-
-          // Using html-to-image (toPng) instead of html2canvas
-          // It's generally more robust with modern CSS
-          const dataUrl = await toPng(element, { 
-             backgroundColor: '#ffffff',
-             quality: 1.0,
-             pixelRatio: 2 // Higher quality
-          });
-
-          const imgWidth = 210; // A4 width in mm
-          const pageHeight = 297; // A4 height in mm
-          
-          // Calculate height maintaining aspect ratio
-          // We need to know original dimensions
+          const doc = new jsPDF({ format: 'a4', unit: 'mm' });
+          const dataUrl = await toPng(element, { backgroundColor: '#ffffff', quality: 1.0, pixelRatio: 2 });
+          const imgWidth = 210;
+          const pageHeight = 297;
           const originalWidth = element.offsetWidth;
           const originalHeight = element.offsetHeight;
-          
-          // Ratio of A4 width to element width
           const ratio = imgWidth / originalWidth;
           const imgHeight = originalHeight * ratio;
-          
           let heightLeft = imgHeight;
           let position = 0;
-
           doc.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
           heightLeft -= pageHeight;
-
           while (heightLeft >= 0) {
             position = heightLeft - imgHeight;
             doc.addPage();
             doc.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
             heightLeft -= pageHeight;
           }
-
           doc.save(`Lab_Report_${pdfTest.testNumber}.pdf`);
           setToast({ message: 'PDF downloaded successfully', type: 'success' });
         } catch (error) {
@@ -191,67 +200,80 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
   }, [pdfTest]);
 
-  // Sorting state
-  const [sortField, setSortField] = useState<string>('createdAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-
-  // Form state
-  const [formData, setFormData] = useState({
-    patientId: '',
-    selectedTests: [] as string[],
-    instructions: '',
-    priority: 'normal' as 'normal' | 'urgent' | 'stat',
-    hospitalId: currentHospital.id // Add hospital selection
-  });
-
-  // Result form state
-  const [resultFormData, setResultFormData] = useState({
-    remarks: '',
-    results: [] as any[]
-  });
-
-  // Update lab tests when hospital changes
-  useEffect(() => {
-    if (isAllHospitals) {
-      const allTests = mockHospitals.flatMap((h, hospitalIndex) => 
-        generateMockLabTests(h.id).map((test, testIndex) => ({
-          ...test,
-          // Make IDs unique across hospitals by prefixing with hospital index
-          id: `${hospitalIndex}-${test.id}`
-        }))
-      );
-      setLabTests(allTests);
-    } else {
-      setLabTests(generateMockLabTests(currentHospital.id));
+  const loadTestTemplates = useCallback(async () => {
+    try {
+      const { data } = await fetchTestTemplates(isAllHospitals ? undefined : currentHospital.id);
+      setTestTemplates(data);
+    } catch (error) {
+      console.error(error);
+      setToast({ message: 'Failed to load test templates', type: 'danger' });
     }
   }, [currentHospital.id, isAllHospitals]);
 
-  // Get hospital-specific data (or all if viewing all hospitals)
-  const hospitalPatients = filterByHospital(mockPatients);
-  const hospitalTests = isAllHospitals 
-    ? mockTestTemplates.filter(t => t.hospitalId === 'h1' || mockHospitals.some(h => h.id === t.hospitalId))
-    : mockTestTemplates.filter(t => t.hospitalId === currentHospital.id || t.hospitalId === 'h1');
+  const refreshLabOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await fetchLabOrders({
+        hospitalId: isAllHospitals ? undefined : currentHospital.id,
+        doctorId: userRole === 'doctor' ? currentUserId : undefined,
+      });
+      setLabTests(data.map((order) => mapOrderToLabTest(order, testTemplates)));
+    } catch (error) {
+      console.error(error);
+      setToast({ message: 'Failed to load lab tests', type: 'danger' });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentHospital.id, currentUserId, isAllHospitals, testTemplates, userRole]);
 
-  // Filter lab tests
+  useEffect(() => {
+    loadTestTemplates();
+  }, [loadTestTemplates]);
+
+  useEffect(() => {
+    refreshLabOrders();
+  }, [refreshLabOrders]);
+
+  // Keep selected test in sync when list refreshes (e.g., payment status updates)
+  useEffect(() => {
+    if (!selectedTest) return;
+    const updated = labTests.find((t) => t.id === selectedTest.id);
+    if (updated && JSON.stringify(updated) !== JSON.stringify(selectedTest)) {
+      setSelectedTest(updated);
+    }
+  }, [labTests, selectedTest]);
+
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, hospitalId: currentHospital.id }));
+  }, [currentHospital.id]);
+
+  const hospitalPatients = filterByHospital(patients);
+  const doctorScopedPatients = userRole === 'doctor'
+    ? hospitalPatients.filter((p) => String(p.referredDoctorId) === String(currentUserId))
+    : hospitalPatients;
+  const hospitalTests = isAllHospitals
+    ? testTemplates
+    : testTemplates.filter((t) => String(t.hospitalId) === String(currentHospital.id));
+
   const getFilteredLabTests = () => {
     let filtered = labTests;
-    
+
     if (userRole === 'doctor' && currentUserId) {
-      filtered = filtered.filter(test => test.doctorId === currentUserId);
+      filtered = filtered.filter((test) => String(test.doctorId) === String(currentUserId));
     }
-    
+
     if (userRole === 'lab_technician') {
-      filtered = filtered.filter(test => test.status !== 'unpaid');
+      filtered = filtered.filter((test) => test.status !== 'unpaid');
     }
-    
+
     if (searchTerm) {
-      filtered = filtered.filter(test =>
+      filtered = filtered.filter((test) =>
         test.testNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         test.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         test.testName.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     return filtered.sort((a, b) => {
       let aValue: any = a[sortField as keyof LabTest];
       let bValue: any = b[sortField as keyof LabTest];
@@ -273,6 +295,8 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   };
 
   const filteredLabTests = getFilteredLabTests();
+  const minimumRowCount = 5;
+  const fillerRows = Math.max(0, minimumRowCount - filteredLabTests.length);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -287,13 +311,13 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     if (sortField !== field) {
       return <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />;
     }
-    return sortDirection === 'asc' 
+    return sortDirection === 'asc'
       ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
       : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
   };
 
   const exportToExcel = () => {
-    const workSheet = XLSX.utils.json_to_sheet(filteredLabTests.map(test => ({
+    const workSheet = XLSX.utils.json_to_sheet(filteredLabTests.map((test) => ({
       TestNumber: test.testNumber,
       Patient: test.patientName,
       TestsOrdered: test.testName,
@@ -301,16 +325,15 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       Priority: test.priority,
       Status: test.status,
       Date: formatDate(test.createdAt, currentHospital.timezone, currentHospital.calendarType),
-      Hospital: mockHospitals.find(h => h.id === test.hospitalId)?.name || 'Unknown'
+      Hospital: hospitals.find((h) => String(h.id) === String(test.hospitalId))?.name || 'Unknown',
     })));
     const workBook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workBook, workSheet, "LabTests");
-    XLSX.writeFile(workBook, "LabTests_List.xlsx");
+    XLSX.utils.book_append_sheet(workBook, workSheet, 'LabTests');
+    XLSX.writeFile(workBook, 'LabTests_List.xlsx');
   };
 
   const exportToPDF = () => {
     const doc = new jsPDF();
-    
     doc.setFontSize(18);
     doc.text('Lab Tests Report', 14, 22);
     doc.setFontSize(11);
@@ -322,71 +345,218 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
     autoTable(doc, {
       head: [['Test #', 'Patient', 'Tests Ordered', 'Doctor', 'Priority', 'Status']],
-      body: filteredLabTests.map(test => [
+      body: filteredLabTests.map((test) => [
         test.testNumber,
         test.patientName,
         test.testName,
         test.doctorName,
         test.priority,
-        test.status
+        test.status,
       ]),
       startY: isAllHospitals ? 40 : 46,
       styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [66, 139, 202] }
+      headStyles: { fillColor: [66, 139, 202] },
     });
 
     doc.save('LabTests_Report.pdf');
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.patientId || formData.selectedTests.length === 0) {
       setToast({ message: 'Please select patient and at least one test.', type: 'warning' });
       return;
     }
 
-    const selectedTemplates = hospitalTests.filter(t => formData.selectedTests.includes(t.id));
-    const testNames = selectedTemplates.map(t => t.testName).join(', ');
-    const testTypes = [...new Set(selectedTemplates.map(t => t.testType))].join(', ');
-
-    const newTest: LabTest = {
-      id: Date.now().toString(),
-      hospitalId: formData.hospitalId, // Use selected hospital from form
-      testNumber: `LAB-${new Date().getFullYear()}-${String(labTests.length + 1).padStart(5, '0')}`,
-      patientId: formData.patientId,
-      patientName: hospitalPatients.find(p => p.id === formData.patientId)?.name || 'Unknown',
-      patientAge: hospitalPatients.find(p => p.id === formData.patientId)?.age || 0,
-      patientGender: hospitalPatients.find(p => p.id === formData.patientId)?.gender || 'male',
-      doctorId: currentUserId || 'D001',
-      doctorName: 'Dr. Current User',
-      selectedTests: formData.selectedTests,
-      testName: testNames,
-      testType: testTypes,
-      instructions: formData.instructions,
-      status: 'unpaid',
-      priority: formData.priority,
-      createdAt: new Date(),
-      createdBy: currentUserId || 'doctor1'
-    };
-    
-    setLabTests([newTest, ...labTests]);
-    setShowAddModal(false);
-    resetForm();
-    setToast({ message: 'Lab test order created successfully!', type: 'success' });
+    try {
+      await createLabOrder({
+        hospitalId: String(formData.hospitalId),
+        patientId: formData.patientId,
+        doctorId: currentUserId || doctors[0]?.id || '',
+        doctorName: doctors.find((d) => String(d.id) === String(currentUserId))?.name || 'Doctor',
+        testIds: formData.selectedTests,
+        priority: formData.priority,
+        clinicalNotes: formData.instructions,
+      });
+      setToast({ message: 'Lab test order created successfully!', type: 'success' });
+      setShowAddModal(false);
+      resetForm();
+      await refreshLabOrders();
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: 'Failed to create lab order', type: 'danger' });
+    }
   };
 
   const handleStatusUpdate = (testId: string, newStatus: LabTest['status'], additionalData?: Partial<LabTest>) => {
-    setLabTests(labTests.map(test =>
-      test.id === testId ? { ...test, status: newStatus, ...additionalData } : test
-    ));
+    setLabTests(labTests.map((test) => (test.id === testId ? { ...test, status: newStatus, ...additionalData } : test)));
     setToast({ message: `Test status updated to ${newStatus}.`, type: 'success' });
+  };
+
+  const handleAdminResetToUnpaid = async (test: LabTest) => {
+    try {
+      await resetLabOrderPayment(test.id, 'Reset to unpaid by admin');
+      await refreshLabOrders();
+      setToast({ message: 'Payment reset to unpaid.', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      const apiMessage = err?.response?.data?.message;
+      const validation = err?.response?.data?.errors;
+      const detail = apiMessage || (validation ? Object.values(validation).flat().join(' ') : null);
+      setToast({ message: detail || 'Failed to reset payment to unpaid', type: 'danger' });
+    } finally {
+      setOpenStatusDropdown(null);
+    }
+  };
+
+  const handleAdminResetToPending = async (test: LabTest) => {
+    try {
+      await updateLabOrder(test.id, { status: 'pending' });
+      await refreshLabOrders();
+      setToast({ message: 'Order reset to pending.', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      const apiMessage = err?.response?.data?.message;
+      const validation = err?.response?.data?.errors;
+      const detail = apiMessage || (validation ? Object.values(validation).flat().join(' ') : null);
+      setToast({ message: detail || 'Failed to reset order to pending', type: 'danger' });
+    } finally {
+      setOpenStatusDropdown(null);
+    }
+  };
+
+  const handleCollectSample = async (test: LabTest) => {
+    try {
+      await collectSample(test.id);
+      await refreshLabOrders();
+      setToast({ message: 'Sample collected. Test is now in progress.', type: 'success' });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: 'Failed to collect sample', type: 'danger' });
+    } finally {
+      setOpenStatusDropdown(null);
+    }
+  };
+
+  const handleCancelOrder = async (test: LabTest) => {
+    try {
+      await cancelLabOrder(test.id);
+      await refreshLabOrders();
+      setToast({ message: 'Lab test cancelled.', type: 'success' });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: 'Failed to cancel lab test', type: 'danger' });
+    } finally {
+      setOpenStatusDropdown(null);
+    }
+  };
+
+  const handleSubmitResults = async (results: TestResult[], remarks: string) => {
+    if (!selectedTest) return;
+    let currentTest = selectedTest;
+
+    // Refresh latest order to ensure payment/status are current
+    try {
+      const latest = await fetchLabOrder(selectedTest.id);
+      const mapped = mapOrderToLabTest(latest, testTemplates);
+      currentTest = mapped;
+      setSelectedTest(mapped);
+    } catch (refreshErr) {
+      console.error('Failed to refresh lab order before submitting results', refreshErr);
+    }
+
+    // Allow submission if payment is paid OR status already progressed beyond unpaid
+    if (currentTest.paymentStatus !== 'paid' && currentTest.status === 'unpaid') {
+      setToast({
+        message: `Payment must be completed before submitting results. Current payment status: ${currentTest.paymentStatus || 'unknown'}.`,
+        type: 'warning'
+      });
+      return;
+    }
+    try {
+      const groupedByItem: Record<string, Array<{ resultId: string; resultValue: string; remarks?: string }>> = {};
+      const missingIds: string[] = [];
+      const missingValues: string[] = [];
+
+      results.forEach((r, idx) => {
+        if (!r.result || r.result.trim() === '') {
+          missingValues.push(r.parameterName);
+          return;
+        }
+        const norm = (v: string | undefined | null) => (v ?? '').trim().toLowerCase();
+        const orderItem = currentTest.orderItems?.find((item) => String(item.testTemplateId) === String(r.testTemplateId));
+        const byName = orderItem?.parameters?.find((p) => norm(p.parameterName) === norm(r.parameterName))?.resultId;
+        const byExisting = currentTest.testResults?.find(
+          (tr) => tr.testTemplateId === r.testTemplateId && norm(tr.parameterName) === norm(r.parameterName)
+        )?.resultId;
+        const byItemResult = orderItem?.results?.find((res) => norm(res.parameterName) === norm(r.parameterName))?.id;
+        // Fallback by index if names differ or are missing
+        const byIndex = orderItem?.parameters?.[idx]?.resultId || orderItem?.results?.[idx]?.id;
+
+        const resultId = r.resultId || byName || byExisting || byItemResult || byIndex;
+        if (!orderItem || resultId === undefined || resultId === null) {
+          missingIds.push(r.parameterName);
+          console.warn('Missing resultId for parameter', r.parameterName, 'item', orderItem?.id, 'template', r.testTemplateId, 'byName', byName, 'byExisting', byExisting, 'byIndex', byIndex);
+          return;
+        }
+
+        const payloadItem = { resultId: String(resultId), resultValue: r.result, remarks: r.remarks };
+        if (!groupedByItem[orderItem.id]) groupedByItem[orderItem.id] = [];
+        groupedByItem[orderItem.id].push(payloadItem);
+      });
+
+      if (missingValues.length > 0) {
+        setToast({ message: `Enter result value for: ${missingValues.join(', ')}`, type: 'warning' });
+        return;
+      }
+
+      if (missingIds.length > 0) {
+        setToast({ message: `Missing result IDs for: ${missingIds.join(', ')}. Please refresh the order (so result placeholders load) and try again.`, type: 'danger' });
+        console.warn('Missing result IDs', missingIds, 'groupedByItem', groupedByItem, 'results', results, 'orderItems', currentTest.orderItems);
+        return;
+      }
+
+      const itemIds = Object.keys(groupedByItem);
+      if (itemIds.length === 0) {
+        setToast({ message: 'No results to submit. Please ensure parameters are loaded from templates.', type: 'warning' });
+        return;
+      }
+      for (const itemId of itemIds) {
+        const payload = groupedByItem[itemId].filter((p) => p.resultId != null && `${p.resultId}`.trim() !== '' && `${p.resultValue}`.trim() !== '');
+        console.info('Submitting lab results payload', itemId, payload);
+        if (payload.length === 0) {
+          setToast({ message: 'No valid results to submit for this test. Please ensure each parameter has an ID and value.', type: 'warning' });
+          continue;
+        }
+        await enterResults(itemId, payload);
+      }
+
+      await refreshLabOrders();
+      setShowResultModal(false);
+      setToast({ message: 'Results submitted and test completed.', type: 'success' });
+    } catch (err: any) {
+      console.error('enterResults failed', err?.response?.data || err);
+      const apiMessage = err?.response?.data?.message;
+      const validation = err?.response?.data?.errors;
+      const detail = apiMessage || (validation ? Object.values(validation).flat().join(' ') : null);
+      setToast({ message: detail || 'Failed to submit results', type: 'danger' });
+    }
   };
 
   const handleDelete = () => {
     if (!selectedTest) return;
-    setLabTests(labTests.filter(test => test.id !== selectedTest.id));
-    setShowDeleteModal(false);
-    setSelectedTest(null);
-    setToast({ message: 'Lab test deleted successfully.', type: 'success' });
+    deleteLabOrder(selectedTest.id)
+      .then(async () => {
+        await refreshLabOrders();
+        setToast({ message: 'Lab test deleted successfully.', type: 'success' });
+      })
+      .catch((err) => {
+        console.error(err);
+        setToast({ message: 'Failed to delete lab test', type: 'danger' });
+      })
+      .finally(() => {
+        setShowDeleteModal(false);
+        setSelectedTest(null);
+      });
   };
 
   const resetForm = () => {
@@ -395,16 +565,16 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       selectedTests: [],
       instructions: '',
       priority: 'normal',
-      hospitalId: currentHospital.id // Reset hospital selection
+      hospitalId: currentHospital.id,
     });
   };
 
   const toggleTestSelection = (testId: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       selectedTests: prev.selectedTests.includes(testId)
-        ? prev.selectedTests.filter(id => id !== testId)
-        : [...prev.selectedTests, testId]
+        ? prev.selectedTests.filter((id) => id !== testId)
+        : [...prev.selectedTests, testId],
     }));
   };
 
@@ -414,7 +584,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       pending: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800',
       in_progress: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
       completed: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800',
-      cancelled: 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-800'
+      cancelled: 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-800',
     };
     return colors[status];
   };
@@ -423,7 +593,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     const colors = {
       normal: 'text-gray-600 dark:text-gray-400',
       urgent: 'text-orange-600 dark:text-orange-400 font-semibold',
-      stat: 'text-red-600 dark:text-red-400 font-bold'
+      stat: 'text-red-600 dark:text-red-400 font-bold',
     };
     return colors[priority];
   };
@@ -439,20 +609,20 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     setShowInvoiceModal(true);
   };
 
-  const confirmPayment = () => {
+  const confirmPayment = async () => {
     if (!selectedTest) return;
-    
-    // Update status to pending (Paid)
-    handleStatusUpdate(selectedTest.id, 'pending');
-    // Update selected test to reflect change in modal
-    setSelectedTest({ ...selectedTest, status: 'pending' });
-    
-    setToast({ message: 'Payment collected. Printing receipt...', type: 'success' });
-    
-    // Print after render update
-    setTimeout(() => {
-      window.print();
-    }, 500);
+    try {
+      const total = selectedTest.totalAmount ?? 0;
+      const paid = selectedTest.paidAmount ?? 0;
+      const remaining = Math.max(0, total - paid);
+      await processPayment(selectedTest.id, remaining || total || 0, 'cash');
+      setToast({ message: 'Payment collected. Printing receipt...', type: 'success' });
+      await refreshLabOrders();
+      setShowInvoiceModal(false);
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: 'Payment failed', type: 'danger' });
+    }
   };
 
   return (
@@ -517,7 +687,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
       {/* Lab Tests Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', minHeight: '360px', overflowY: 'auto' }}>
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -569,220 +739,225 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   </td>
                 </tr>
               ) : (
-                filteredLabTests.map((test) => (
-                  <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-                    <td className="px-4 py-2">
-                      <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 font-mono">{test.testNumber}</span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div>
-                        <div className="text-xs font-semibold text-gray-900 dark:text-white">{test.patientName}</div>
-                        <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientAge}Y • {test.patientGender}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div>
-                        <div className="text-xs font-medium text-gray-900 dark:text-white">{test.testName}</div>
-                        <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.selectedTests?.length || 0} test(s)</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="text-xs text-gray-900 dark:text-white">{test.doctorName}</div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <span className={`text-[10px] uppercase tracking-wide ${getPriorityColor(test.priority)}`}>
-                        {test.priority}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="relative">
-                        <button
-                          onClick={() => {
-                            if (
-                              canChangeAnyStatus || 
-                              (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
-                              (canPayment && test.status === 'unpaid')
-                            ) {
-                              setOpenStatusDropdown(openStatusDropdown === test.id ? null : test.id);
-                            }
-                          }}
-                          disabled={
-                            !canChangeAnyStatus && 
-                            !(canProcess && test.status !== 'completed' && test.status !== 'cancelled') &&
-                            !(canPayment && test.status === 'unpaid')
-                          }
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusColor(test.status)} ${
-                            (
-                              canChangeAnyStatus || 
-                              (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
-                              (canPayment && test.status === 'unpaid')
-                            )
-                              ? 'cursor-pointer hover:opacity-80'
-                              : 'cursor-default'
-                          }`}
-                        >
-                          {test.status === 'unpaid' && <CreditCard className="w-3 h-3" />}
-                          {test.status === 'pending' && <Clock className="w-3 h-3" />}
-                          {test.status === 'in_progress' && <Beaker className="w-3 h-3" />}
-                          {test.status === 'completed' && <CheckCircle className="w-3 h-3" />}
-                          {test.status === 'cancelled' && <XCircle className="w-3 h-3" />}
-                          {test.status === 'unpaid' ? 'Unpaid' : test.status.replace('_', ' ')}
-                        </button>
-                        {openStatusDropdown === test.id && (
-                          <>
-                            <div 
-                              className="fixed inset-0 z-10" 
-                              onClick={() => setOpenStatusDropdown(null)}
-                            />
-                            <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-1 z-20 min-w-[140px]">
-                              {test.status === 'unpaid' && canPayment && (
-                                <button
-                                  onClick={() => {
-                                    handlePayAndPrint(test);
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                >
-                                  Pay & Print Invoice
-                                </button>
-                              )}
-
-                              {/* Admin only: Reset to Unpaid (e.g. refund/error) */}
-                              {test.status !== 'unpaid' && canChangeAnyStatus && (
-                                <button
-                                  onClick={() => {
-                                    handleStatusUpdate(test.id, 'unpaid');
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-700"
-                                >
-                                  Reset to Unpaid (Admin)
-                                </button>
-                              )}
-
-                              {(test.status === 'completed' || test.status === 'cancelled') && canChangeAnyStatus && (
-                                <button
-                                  onClick={() => {
-                                    handleStatusUpdate(test.id, 'pending');
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-yellow-600 dark:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                >
-                                  Reset to Pending
-                                </button>
-                              )}
-                              
-                              {test.status === 'pending' && (
-                                <button
-                                  onClick={() => {
-                                    handleStatusUpdate(test.id, 'in_progress', { 
-                                      sampleCollectedAt: new Date(),
-                                      assignedTo: currentUserId,
-                                      assignedToName: 'Current Lab Tech'
-                                    });
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                >
-                                  Start Processing
-                                </button>
-                              )}
-                              
-                              {test.status === 'in_progress' && (
-                                <button
-                                  onClick={() => {
-                                    // Normally handled by result entry, but allow quick complete
-                                    handleStatusUpdate(test.id, 'completed', { reportedAt: new Date() });
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                >
-                                  Mark Completed
-                                </button>
-                              )}
-                              
-                              {test.status !== 'cancelled' && (
-                                <button
-                                  onClick={() => {
-                                    handleStatusUpdate(test.id, 'cancelled');
-                                    setOpenStatusDropdown(null);
-                                  }}
-                                  className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                >
-                                  Cancel Test
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => { setSelectedTest(test); setShowViewModal(true); }}
-                          className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {canPayment && test.status === 'unpaid' && (
+                <>
+                  {filteredLabTests.map((test) => (
+                    <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+                      <td className="px-4 py-2">
+                        <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 font-mono">{test.testNumber}</span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div>
+                          <div className="text-xs font-semibold text-gray-900 dark:text-white">{test.patientName}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientAge}Y • {test.patientGender}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div>
+                          <div className="text-xs font-medium text-gray-900 dark:text-white">{test.testName}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.selectedTests?.length || 0} test(s)</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="text-xs text-gray-900 dark:text-white">{test.doctorName}</div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`text-[10px] uppercase tracking-wide ${getPriorityColor(test.priority)}`}>
+                          {test.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="relative">
                           <button
-                            onClick={() => handlePayAndPrint(test)}
-                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Pay & Print Invoice"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        
-                        {canProcess && test.status === 'in_progress' && (
-                          <button
-                            onClick={() => { 
-                              setSelectedTest(test); 
-                              setShowResultModal(true); 
+                            onClick={() => {
+                              if (
+                                canChangeAnyStatus || 
+                                (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
+                                (canPayment && test.status === 'unpaid')
+                              ) {
+                                setOpenStatusDropdown(openStatusDropdown === test.id ? null : test.id);
+                              }
                             }}
-                            className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-md transition-colors"
-                            title="Submit Result"
+                            disabled={
+                              !canChangeAnyStatus && 
+                              !(canProcess && test.status !== 'completed' && test.status !== 'cancelled') &&
+                              !(canPayment && test.status === 'unpaid')
+                            }
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusColor(test.status)} ${
+                              (
+                                canChangeAnyStatus || 
+                                (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
+                                (canPayment && test.status === 'unpaid')
+                              )
+                                ? 'cursor-pointer hover:opacity-80'
+                                : 'cursor-default'
+                            }`}
                           >
-                            <Beaker className="w-3.5 h-3.5" />
+                            {test.status === 'unpaid' && <CreditCard className="w-3 h-3" />}
+                            {test.status === 'pending' && <Clock className="w-3 h-3" />}
+                            {test.status === 'in_progress' && <Beaker className="w-3 h-3" />}
+                            {test.status === 'completed' && <CheckCircle className="w-3 h-3" />}
+                            {test.status === 'cancelled' && <XCircle className="w-3 h-3" />}
+                            {test.status === 'unpaid' ? 'Unpaid' : test.status.replace('_', ' ')}
                           </button>
-                        )}
-                        
-                        {test.status === 'completed' && (
+                          {openStatusDropdown === test.id && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-10" 
+                                onClick={() => setOpenStatusDropdown(null)}
+                              />
+                              <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-1 z-20 min-w-[140px]">
+                                {test.status === 'unpaid' && canPayment && (
+                                  <button
+                                    onClick={() => {
+                                      handlePayAndPrint(test);
+                                      setOpenStatusDropdown(null);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                                  >
+                                    Pay & Print Invoice
+                                  </button>
+                                )}
+
+                                {/* Admin only: Reset to Unpaid (e.g. refund/error) */}
+                                {test.status !== 'unpaid' && canChangeAnyStatus && (
+                                  <button
+                                    onClick={() => {
+                                      handleAdminResetToUnpaid(test);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-700"
+                                  >
+                                    Reset to Unpaid (Admin)
+                                  </button>
+                                )}
+
+                                {(test.status === 'completed' || test.status === 'cancelled') && canChangeAnyStatus && (
+                                  <button
+                                    onClick={() => {
+                                      handleAdminResetToPending(test);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-yellow-600 dark:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                                  >
+                                    Reset to Pending
+                                  </button>
+                                )}
+                                
+                                {test.status === 'pending' && (
+                                  <button
+                                    onClick={() => {
+                                      handleCollectSample(test);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                                  >
+                                    Start Processing
+                                  </button>
+                                )}
+                                
+                                {test.status === 'in_progress' && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedTest(test);
+                                      setShowResultModal(true);
+                                      setOpenStatusDropdown(null);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                                  >
+                                    Enter Results & Complete
+                                  </button>
+                                )}
+                                
+                                {test.status !== 'cancelled' && (
+                                  <button
+                                    onClick={() => {
+                                      handleCancelOrder(test);
+                                    }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                                  >
+                                    Cancel Test
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
-                            className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
-                            title="Print Report"
+                            onClick={() => { setSelectedTest(test); setShowViewModal(true); }}
+                            className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                            title="View Details"
                           >
-                            <Printer className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                        
-                        {test.status === 'completed' && (
-                          <button
-                            onClick={() => setPdfTest(test)}
-                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Download PDF"
-                          >
-                            <FileDown className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        
-                        {canDelete && (
-                          <button
-                            onClick={() => { setSelectedTest(test); setShowDeleteModal(true); }}
-                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          
+                          {canPayment && test.status === 'unpaid' && (
+                            <button
+                              onClick={() => handlePayAndPrint(test)}
+                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                              title="Pay & Print Invoice"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          
+                          {canProcess && test.status === 'in_progress' && (
+                            <button
+                              onClick={() => { 
+                                setSelectedTest(test); 
+                                setShowResultModal(true); 
+                              }}
+                              className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-md transition-colors"
+                              title="Submit Result"
+                            >
+                              <Beaker className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          
+                          {test.status === 'completed' && (
+                            <button
+                              onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
+                              className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
+                              title="Print Report"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          
+                          {test.status === 'completed' && (
+                            <button
+                              onClick={() => setPdfTest(test)}
+                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                              title="Download PDF"
+                            >
+                              <FileDown className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          
+                          {canDelete && (
+                            <button
+                              onClick={() => { setSelectedTest(test); setShowDeleteModal(true); }}
+                              className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {Array.from({ length: fillerRows }).map((_, idx) => (
+                    <tr key={`filler-${idx}`} className="opacity-60">
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-gray-300 dark:text-gray-600">—</td>
+                      <td className="px-4 py-3 text-xs text-center text-gray-300 dark:text-gray-600">—</td>
+                    </tr>
+                  ))}
+                </>
               )}
             </tbody>
           </table>
@@ -835,7 +1010,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
-                    {mockHospitals.map(h => (
+                      {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
@@ -852,7 +1027,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   required
                 >
                   <option value="">Select Patient</option>
-                  {hospitalPatients.map(p => (
+                  {doctorScopedPatients.map(p => (
                     <option key={p.id} value={p.id}>{p.name} ({p.age}Y, {p.gender})</option>
                   ))}
                 </select>
@@ -867,25 +1042,25 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   {hospitalTests.length === 0 ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">No tests available</p>
                   ) : (
-                    hospitalTests.map(test => (
+                    hospitalTests.map((test: any) => (
                       <label
                         key={test.id}
                         className={`flex items-start gap-2 p-2 rounded cursor-pointer transition-colors ${
-                          formData.selectedTests.includes(test.id)
+                          formData.selectedTests.includes(String(test.id))
                             ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
                             : 'hover:bg-white dark:hover:bg-gray-600'
                         }`}
                       >
                         <input
                           type="checkbox"
-                          checked={formData.selectedTests.includes(test.id)}
-                          onChange={() => toggleTestSelection(test.id)}
+                          checked={formData.selectedTests.includes(String(test.id))}
+                          onChange={() => toggleTestSelection(String(test.id))}
                           className="mt-0.5 text-blue-600 focus:ring-blue-500 h-3 w-3 rounded border-gray-300 dark:border-gray-500"
                         />
                         <div className="flex-1">
                           <div className="flex justify-between">
-                            <span className="text-xs font-medium text-gray-900 dark:text-white">{test.testName}</span>
-                            <span className="text-[10px] text-gray-500 dark:text-gray-400">{test.testType}</span>
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">{test.testName || test.test_name}</span>
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400">{test.testType || test.test_type}</span>
                           </div>
                           <div className="text-[10px] text-gray-600 dark:text-gray-400 mt-0.5">
                             ₹{test.price} • {test.duration}
@@ -1072,13 +1247,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       {showResultModal && selectedTest && (
         <LabResultEntryNew
           test={selectedTest}
+          testTemplates={testTemplates}
           onClose={() => setShowResultModal(false)}
-          onSave={() => {
-            setShowResultModal(false);
-            setToast({ message: 'Results saved successfully', type: 'success' });
-            // Refresh test list logic would go here
-            handleStatusUpdate(selectedTest.id, 'completed'); // Auto-complete for now
-          }}
+          onSubmit={handleSubmitResults}
         />
       )}
 
@@ -1086,10 +1257,10 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       {showInvoiceModal && selectedTest && (
         <LabInvoicePrint
           hospital={currentHospital}
-          patient={mockPatients.find(p => p.id === selectedTest.patientId)}
-          doctor={mockDoctors.find(d => d.id === selectedTest.doctorId)}
+          patient={hospitalPatients.find(p => String(p.id) === String(selectedTest.patientId))}
+          doctor={doctors.find(d => String(d.id) === String(selectedTest.doctorId))}
           labTest={selectedTest}
-          testTemplates={mockTestTemplates}
+          testTemplates={testTemplates}
           onClose={() => setShowInvoiceModal(false)}
           onPrint={confirmPayment}
         />

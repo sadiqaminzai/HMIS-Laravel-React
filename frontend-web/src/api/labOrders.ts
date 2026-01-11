@@ -328,6 +328,16 @@ export async function processPayment(
   return transformToFrontend(response.data.data);
 }
 
+export async function resetLabOrderPayment(
+  id: string | number,
+  reason?: string
+): Promise<LabOrder> {
+  const response = await api.post<{ data: LabOrderResponse }>(`/lab-orders/${id}/reset-payment`, {
+    reason,
+  });
+  return transformToFrontend(response.data.data);
+}
+
 export async function collectSample(id: string | number): Promise<LabOrder> {
   const response = await api.post<{ data: LabOrderResponse }>(`/lab-orders/${id}/collect-sample`);
   return transformToFrontend(response.data.data);

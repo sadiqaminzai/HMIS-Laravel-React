@@ -34,6 +34,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   role: UserRole;
@@ -44,7 +45,7 @@ interface MenuItem {
   id: string; // This will now be the route path
   translationKey: string;
   icon: React.ReactNode;
-  roles: UserRole[];
+  anyPermissions?: string[];
   subItems?: MenuItem[];
 }
 
@@ -53,43 +54,42 @@ const menuItems: MenuItem[] = [
     id: '/',
     translationKey: 'nav.dashboard',
     icon: <LayoutDashboard className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist', 'lab_technician']
+    // Dashboard is available to all authenticated users
   },
   {
     id: '/hospitals',
     translationKey: 'nav.hospitals',
     icon: <Building2 className="w-3.5 h-3.5" />,
-    roles: ['super_admin']
+    anyPermissions: ['view_hospitals', 'manage_hospitals']
   },
   {
     id: '/my-appointments',
     translationKey: 'nav.myAppointments',
     icon: <Calendar className="w-3.5 h-3.5" />,
-    roles: ['doctor']
+    anyPermissions: ['view_appointments', 'manage_appointments', 'schedule_appointments']
   },
   {
     id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'receptionist'],
     subItems: [
       {
         id: '/doctors',
         translationKey: 'nav.doctors',
         icon: <Stethoscope className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'receptionist']
+        anyPermissions: ['view_doctors', 'manage_doctors']
       },
       {
         id: '/patients',
         translationKey: 'nav.patients',
         icon: <Users className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'receptionist']
+        anyPermissions: ['view_patients', 'manage_patients', 'register_patients']
       },
       {
         id: '/appointments',
         translationKey: 'nav.appointments',
         icon: <Calendar className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'receptionist']
+        anyPermissions: ['view_appointments', 'manage_appointments', 'schedule_appointments']
       }
     ]
   },
@@ -97,19 +97,18 @@ const menuItems: MenuItem[] = [
     id: 'laboratory', // Group ID
     translationKey: 'nav.laboratory',
     icon: <TestTube className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'lab_technician'],
     subItems: [
       {
         id: '/lab-tests',
         translationKey: 'nav.labTests',
         icon: <FileText className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'lab_technician']
+        anyPermissions: ['view_lab_orders', 'manage_lab_orders', 'enter_lab_results', 'manage_lab_payments']
       },
       {
         id: '/test-management',
         translationKey: 'nav.testManagement',
         icon: <TestTube className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'lab_technician']
+        anyPermissions: ['view_test_templates', 'manage_test_templates']
       }
     ]
   },
@@ -117,25 +116,24 @@ const menuItems: MenuItem[] = [
     id: 'pharmacy', // Group ID
     translationKey: 'nav.pharmacy',
     icon: <Package className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'pharmacist'],
     subItems: [
       {
         id: '/manufacturers',
         translationKey: 'nav.manufacturers',
         icon: <Factory className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'pharmacist']
+        anyPermissions: ['view_manufacturers', 'manage_manufacturers']
       },
       {
         id: '/medicine-types',
         translationKey: 'nav.medicineTypes',
         icon: <Pill className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'pharmacist']
+        anyPermissions: ['view_medicine_types', 'manage_medicine_types']
       },
       {
         id: '/medicines',
         translationKey: 'nav.medicines',
         icon: <Pill className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'pharmacist']
+        anyPermissions: ['view_medicines', 'manage_medicines', 'dispense_medicines']
       }
     ]
   },
@@ -143,19 +141,18 @@ const menuItems: MenuItem[] = [
     id: 'prescription-menu', // Group ID
     translationKey: 'nav.prescriptions',
     icon: <ClipboardList className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist'],
     subItems: [
       {
         id: '/prescriptions/create',
         translationKey: 'nav.createNew',
         icon: <FilePlus className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'doctor']
+        anyPermissions: ['create_prescription', 'manage_prescriptions']
       },
       {
         id: '/prescriptions',
         translationKey: 'nav.viewAll',
         icon: <List className="w-3.5 h-3.5" />,
-        roles: ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist']
+        anyPermissions: ['view_prescriptions', 'manage_prescriptions']
       }
     ]
   },
@@ -163,20 +160,50 @@ const menuItems: MenuItem[] = [
     id: '/reports',
     translationKey: 'nav.reports',
     icon: <BarChart className="w-3.5 h-3.5" />,
-    roles: ['super_admin', 'admin', 'doctor']
+    anyPermissions: ['view_reports', 'manage_reports']
   }
 ];
 
 export function Sidebar({ role, onLogout }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
+  const { hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
+
+  const canSeeSettings = [
+    'view_users',
+    'manage_users',
+    'view_roles',
+    'manage_roles',
+    'view_permissions',
+    'manage_permissions',
+    'view_hospital_settings',
+    'manage_hospital_settings',
+  ].some((p) => hasPermission(p));
   
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
-  const visibleMenuItems = menuItems.filter(item => item.roles.includes(role));
+
+  const isItemVisible = (item: MenuItem): boolean => {
+    if (!item.anyPermissions || item.anyPermissions.length === 0) {
+      // Public-to-auth (dashboard) or group header; visibility determined by children
+      return true;
+    }
+    return item.anyPermissions.some((p) => hasPermission(p));
+  };
+
+  const visibleMenuItems = menuItems
+    .map((item) => {
+      if (!item.subItems?.length) return item;
+      const subItems = item.subItems.filter(isItemVisible);
+      return { ...item, subItems };
+    })
+    .filter((item) => {
+      if (item.subItems?.length) return item.subItems.length > 0;
+      return isItemVisible(item);
+    });
 
   const toggleMenu = (menuId: string) => {
     setExpandedMenus(prev => 
@@ -254,7 +281,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
           </button>
           {!isCollapsed && isExpanded && (
             <div className="mt-0.5 ml-4 space-y-0.5 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
-              {item.subItems?.filter(sub => sub.roles.includes(role)).map(subItem => (
+              {item.subItems?.filter(isItemVisible).map((subItem) => (
                 <button
                   key={subItem.id}
                   onClick={() => handleNavigate(subItem.id)}
@@ -349,6 +376,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
             <select
               value={i18n.language}
               onChange={(e) => i18n.changeLanguage(e.target.value)}
+              aria-label="Language"
               className="w-full px-2.5 py-1.5 pr-7 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-md transition-colors cursor-pointer appearance-none text-xs"
             >
               <option value="en">🇬🇧 English</option>
@@ -396,8 +424,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
           </div>
         )}
 
-        {/* Settings Menu with Sub-items - RESTRICTED TO SUPER_ADMIN AND ADMIN ONLY */}
-        {(role === 'super_admin' || role === 'admin') && (
+        {/* Settings Menu with Sub-items */}
+        {canSeeSettings && (
           <div>
             <button
               onClick={() => isCollapsed ? handleNavigate('/settings/general') : toggleMenu('settings')}

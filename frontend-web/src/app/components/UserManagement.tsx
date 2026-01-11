@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useDoctors } from '../context/DoctorContext';
+import { useAuth } from '../context/AuthContext';
 
 interface UserManagementProps {
   hospital: Hospital;
@@ -22,28 +23,30 @@ type ManagedUser = {
   name: string;
   email: string;
   role: UserRole;
+  roleId?: number | null;
   status: 'active' | 'inactive';
 };
 
-const roleLabels: Record<UserRole, string> = {
+const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
-  admin: 'Admin',
-  doctor: 'Doctor',
-  receptionist: 'Receptionist',
-  pharmacist: 'Pharmacist',
-  lab_technician: 'Lab Technician'
 };
 
-const roleColors: Record<UserRole, string> = {
+const roleColors: Record<string, string> = {
   super_admin: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
-  admin: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-  doctor: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  receptionist: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
-  pharmacist: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
-  lab_technician: 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
+};
+
+type RoleOption = {
+  id: number;
+  name: string;
+  displayName: string;
 };
 
 export function UserManagement({ hospital, userRole }: UserManagementProps) {
+  const { hasPermission } = useAuth();
+  const canManageUsers = hasPermission('manage_users');
+  const canViewUsers = hasPermission('view_users') || canManageUsers;
+  const canViewRoles = hasPermission('view_roles') || hasPermission('manage_roles');
+  const isSuperAdmin = userRole === 'super_admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHospitalFilter, setSelectedHospitalFilter] = useState<string>('all');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
@@ -54,8 +57,10 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [hospitals, setHospitals] = useState<{ id: number; name: string }[]>([]);
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const { doctors } = useDoctors();
   
   // Sorting state
@@ -65,7 +70,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'receptionist' as UserRole,
+    roleId: '' as string,
     hospitalId: hospital.id as string | number | null,
     status: 'active' as const,
     password: '',
@@ -82,18 +87,29 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     return hosp ? hosp.name : 'Unknown';
   };
 
+  const getRoleLabel = (roleName: string) => roleLabels[roleName] ?? roleName;
+  const getRoleColor = (roleName: string) =>
+    roleColors[roleName] ?? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200';
+
+  const selectedRoleName = useMemo(() => {
+    if (!formData.roleId) return '';
+    const id = Number(formData.roleId);
+    const match = roleOptions.find((r) => r.id === id);
+    return match?.name ?? '';
+  }, [formData.roleId, roleOptions]);
+
   const doctorOptions = useMemo(() => {
-    if (formData.role !== 'doctor') return [];
+    if (selectedRoleName !== 'doctor') return [];
     const targetHospitalId = formData.hospitalId || (userRole !== 'super_admin' ? hospital.id : null);
     if (!targetHospitalId) return [];
     return doctors.filter((d) => String(d.hospitalId) === String(targetHospitalId) && d.status === 'active');
-  }, [doctors, formData.hospitalId, formData.role, hospital.id, userRole]);
+  }, [doctors, formData.hospitalId, selectedRoleName, hospital.id, userRole]);
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        roleLabels[u.role].toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getRoleLabel(String(u.role)).toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.status.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesHospital = selectedHospitalFilter === 'all' || `${u.hospitalId ?? ''}` === selectedHospitalFilter;
@@ -134,7 +150,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     const workSheet = XLSX.utils.json_to_sheet(sortedUsers.map(u => ({
       Name: u.name,
       Email: u.email,
-      Role: roleLabels[u.role],
+      Role: getRoleLabel(String(u.role)),
       Status: u.status,
       Hospital: getHospitalName(u.hospitalId)
     })));
@@ -159,7 +175,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       body: sortedUsers.map(u => [
         u.name,
         u.email,
-        roleLabels[u.role],
+        getRoleLabel(String(u.role)),
         u.status,
         getHospitalName(u.hospitalId)
       ]),
@@ -182,8 +198,28 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   }, [hospital.id, hospital.name, userRole]);
 
   useEffect(() => {
+    if (!canViewUsers) {
+      setAccessDenied(true);
+      setUsers([]);
+      return;
+    }
+    setAccessDenied(false);
     loadUsers();
   }, [searchTerm, selectedRoleFilter, selectedHospitalFilter]);
+
+  useEffect(() => {
+    const targetHospitalId = userRole === 'super_admin'
+      ? String(formData.hospitalId ?? hospital.id)
+      : String(hospital.id);
+
+    if (!targetHospitalId || targetHospitalId === 'null' || targetHospitalId === 'undefined') return;
+    if (canViewRoles) {
+      loadRoleOptions(targetHospitalId);
+    } else {
+      setRoleOptions([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, formData.hospitalId, hospital.id, canViewRoles]);
 
   const loadHospitals = async () => {
     try {
@@ -191,7 +227,28 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       const records: any[] = data.data ?? data;
       setHospitals(records.map((h) => ({ id: h.id, name: h.name })));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+      const status = err?.response?.status;
+      if (status !== 401 && status !== 403) {
+        toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+      }
+    }
+  };
+
+  const loadRoleOptions = async (hospitalId: string) => {
+    try {
+      const params = userRole === 'super_admin' ? { hospital_id: hospitalId } : undefined;
+      const { data } = await api.get('/roles', { params });
+      const records: any[] = data.data ?? data;
+      setRoleOptions(records.map((r) => ({
+        id: r.id,
+        name: r.name,
+        displayName: r.display_name ?? r.displayName,
+      })));
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status !== 401 && status !== 403) {
+        toast.error(err?.response?.data?.message || 'Failed to load roles');
+      }
     }
   };
 
@@ -214,21 +271,40 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         name: u.name,
         email: u.email,
         role: u.role,
+        roleId: u.role_id ?? null,
         status: u.is_active ? 'active' : 'inactive',
       })));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load users');
+      const status = err?.response?.status;
+      if (status === 403) {
+        setAccessDenied(true);
+        setUsers([]);
+        return;
+      }
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load users');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleAdd = () => {
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
+
+    if (isSuperAdmin) {
+      // Hospitals may have been created/updated in another screen; refresh before showing the modal.
+      void loadHospitals();
+    }
     setFormData({
       name: '',
       email: '',
-      role: 'receptionist',
-      hospitalId: hospital.id,
+      roleId: '',
+      // Super admin must explicitly choose the target hospital for tenant users.
+      hospitalId: isSuperAdmin ? '' : hospital.id,
       status: 'active',
       password: '',
       doctorId: '',
@@ -242,15 +318,24 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   };
 
   const handleEdit = (user: ManagedUser) => {
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
     if (!canManageTarget(user)) {
       toast.warning('Not authorized to edit this user');
       return;
+    }
+
+    if (isSuperAdmin) {
+      // Ensure dropdown has the latest hospitals list.
+      void loadHospitals();
     }
     setSelectedUser(user);
     setFormData({
       name: user.name,
       email: user.email,
-      role: user.role,
+      roleId: user.roleId ? String(user.roleId) : '',
       hospitalId: user.hospitalId ?? hospital.id,
       status: user.status,
       password: '',
@@ -260,6 +345,10 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   };
 
   const handleDelete = (user: ManagedUser) => {
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
     if (!canManageTarget(user)) {
       toast.warning('Not authorized to delete this user');
       return;
@@ -270,16 +359,31 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
+
+    if (!formData.roleId) {
+      toast.error('Please select a role');
+      return;
+    }
+
+    if (userRole === 'super_admin' && !formData.hospitalId) {
+      toast.error('Please select a hospital');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/users', {
         name: formData.name,
         email: formData.email,
         password: formData.password,
-        role: formData.role,
+        role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        doctor_id: formData.role === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+        doctor_id: selectedRoleName === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
       });
       toast.success('User added successfully');
       setShowAddModal(false);
@@ -294,15 +398,25 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
+
+    if (!formData.roleId) {
+      toast.error('Please select a role');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload: any = {
         name: formData.name,
         email: formData.email,
-        role: formData.role,
+        role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        doctor_id: formData.role === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+        doctor_id: selectedRoleName === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
       };
       if (formData.password) payload.password = formData.password;
 
@@ -319,6 +433,10 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
   const handleConfirmDelete = async () => {
     if (!selectedUser) return;
+    if (!canManageUsers) {
+      toast.warning('You are not authorized to manage users');
+      return;
+    }
     setSubmitting(true);
     try {
       await api.delete(`/users/${selectedUser.id}`);
@@ -334,6 +452,11 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
   return (
     <div className="space-y-3">
+      {accessDenied ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-200">
+          You don’t have permission to view users.
+        </div>
+      ) : null}
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -462,8 +585,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     </td>
                     <td className="px-4 py-2 text-[10px] text-gray-700 dark:text-gray-300">{user.email}</td>
                     <td className="px-4 py-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${roleColors[user.role]}`}>
-                        {roleLabels[user.role]}
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(String(user.role))}`}>
+                        {getRoleLabel(String(user.role))}
                       </span>
                     </td>
                     {userRole === 'super_admin' && (
@@ -578,24 +701,24 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Role <span className="text-red-500">*</span></label>
                   <select
-                    value={formData.role}
+                    value={formData.roleId}
                     onChange={(e) => {
-                      const newRole = e.target.value as UserRole;
+                      const nextRoleId = e.target.value;
+                      const nextRoleName = roleOptions.find((r) => String(r.id) === nextRoleId)?.name ?? '';
                       setFormData({
                         ...formData,
-                        role: newRole,
-                        hospitalId: newRole === 'super_admin' ? '' : formData.hospitalId,
-                        doctorId: newRole === 'doctor' ? (formData.doctorId ?? '') : '',
+                        roleId: nextRoleId,
+                        doctorId: nextRoleName === 'doctor' ? (formData.doctorId ?? '') : '',
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    required
+                    disabled={userRole === 'super_admin' && !formData.hospitalId}
                   >
-                    <option value="receptionist">Receptionist</option>
-                    <option value="doctor">Doctor</option>
-                    <option value="pharmacist">Pharmacist</option>
-                    <option value="admin">Admin</option>
-                    <option value="lab_technician">Lab Technician</option>
-                    {userRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                    <option value="">Select role</option>
+                    {roleOptions.map((r) => (
+                      <option key={r.id} value={r.id}>{r.displayName}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -612,12 +735,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               </div>
 
               {/* Hospital Selection - Only for Super Admin and NOT for super_admin role */}
-              {userRole === 'super_admin' && formData.role !== 'super_admin' && (
+              {userRole === 'super_admin' && selectedRoleName !== 'super_admin' && (
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
                   <select
                     value={formData.hospitalId}
-                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value, doctorId: '' })}
+                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value, roleId: '', doctorId: '' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                     required
                   >
@@ -628,7 +751,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   </select>
                 </div>
               )}
-              {formData.role === 'doctor' && (
+              {selectedRoleName === 'doctor' && (
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor Profile <span className="text-red-500">*</span></label>
                   <select
@@ -771,7 +894,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <div className="grid grid-cols-2 gap-8">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Role</label>
-                  <p className="text-gray-900 font-bold text-xl">{roleLabels[selectedUser.role]}</p>
+                  <p className="text-gray-900 font-bold text-xl">{getRoleLabel(String(selectedUser.role))}</p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Hospital</label>
@@ -822,8 +945,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Role</label>
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${roleColors[selectedUser.role]}`}>
-                      {roleLabels[selectedUser.role]}
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(String(selectedUser.role))}`}>
+                      {getRoleLabel(String(selectedUser.role))}
                     </span>
                   </div>
                   <div>

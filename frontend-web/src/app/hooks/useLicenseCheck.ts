@@ -44,7 +44,7 @@ export function useLicenseCheck(hospital: Hospital | null): LicenseStatus {
       const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
 
       const isExpired = daysRemaining < 0;
-      const isExpiringSoon = daysRemaining >= 0 && daysRemaining <= 15;
+      const isExpiringSoon = daysRemaining >= 0 && daysRemaining <= 10; // warn only when 10 days or less
 
       setLicenseStatus({
         isExpired,

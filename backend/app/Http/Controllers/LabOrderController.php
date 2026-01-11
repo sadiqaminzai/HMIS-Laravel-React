@@ -208,13 +208,58 @@ class LabOrderController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $labOrder->fill($validator->validated());
+        $validated = $validator->validated();
+        $labOrder->fill($validated);
+
+        // If an admin resets status away from completed, clear completion metadata.
+        if (array_key_exists('status', $validated) && $validated['status'] !== 'completed') {
+            $labOrder->completed_at = null;
+
+            // If resetting all the way back to pending, also clear assignment/sample info.
+            if ($validated['status'] === 'pending') {
+                $labOrder->sample_collected_at = null;
+                $labOrder->assigned_to = null;
+                $labOrder->assigned_to_name = null;
+            }
+        }
+
         $labOrder->updated_by = $request->user()?->name;
         $labOrder->save();
 
         return response()->json([
             'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
             'message' => 'Lab order updated successfully'
+        ]);
+    }
+
+    /**
+     * Reset payment back to unpaid (Admin/Super Admin)
+     */
+    public function resetPayment(Request $request, LabOrder $labOrder)
+    {
+        $validator = Validator::make($request->all(), [
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $labOrder->update([
+            'payment_status' => 'unpaid',
+            'paid_amount' => 0,
+            'payment_method' => null,
+            'paid_at' => null,
+            'paid_by' => null,
+            'receipt_number' => null,
+            // Preserve lab progress status by default; only payment is reset.
+            'updated_by' => $request->user()?->name,
+            'remarks' => $validator->validated()['reason'] ?? $labOrder->remarks,
+        ]);
+
+        return response()->json([
+            'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
+            'message' => 'Payment reset to unpaid'
         ]);
     }
 

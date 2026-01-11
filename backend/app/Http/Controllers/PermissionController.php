@@ -34,7 +34,7 @@ class PermissionController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManagePermissions($request->user());
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:permissions,name'],
@@ -57,7 +57,7 @@ class PermissionController extends Controller
 
     public function update(Request $request, Permission $permission)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManagePermissions($request->user());
 
         if ($permission->is_system) {
             return response()->json(['message' => 'System permissions cannot be modified'], 403);
@@ -77,7 +77,7 @@ class PermissionController extends Controller
 
     public function destroy(Request $request, Permission $permission)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManagePermissions($request->user());
 
         if ($permission->is_system) {
             return response()->json(['message' => 'System permissions cannot be deleted'], 403);
@@ -89,10 +89,10 @@ class PermissionController extends Controller
         return response()->json(['message' => 'Permission deleted']);
     }
 
-    private function authorizeSuperAdmin($user): void
+    private function authorizeManagePermissions($user): void
     {
-        if ($user->role !== 'super_admin') {
-            abort(403, 'Only super admins can manage permissions');
+        if (! $user || ! $user->hasPermission('manage_permissions')) {
+            abort(403, 'Not authorized to manage permissions');
         }
     }
 }

@@ -3,6 +3,7 @@ import { Plus, Pencil, Search, Key, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 interface PermissionManagementProps {
   hospital: Hospital;
@@ -20,7 +21,8 @@ interface Permission {
 }
 
 export function PermissionManagement({ hospital, userRole }: PermissionManagementProps) {
-  const canManage = userRole === 'super_admin';
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_permissions');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -79,7 +81,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
 
   const handleAdd = () => {
     if (!canManage) {
-      toast.warning('Only super admins can manage permissions.');
+      toast.warning('You are not authorized to manage permissions');
       return;
     }
     setFormData({
@@ -99,7 +101,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
 
   const handleEdit = (permission: Permission) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage permissions.');
+      toast.warning('You are not authorized to manage permissions');
       return;
     }
     if (permission.isSystem) {
@@ -119,7 +121,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
 
   const handleDelete = (permission: Permission) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage permissions.');
+      toast.warning('You are not authorized to manage permissions');
       return;
     }
     if (permission.isSystem) {

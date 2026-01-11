@@ -19,24 +19,36 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
     
     test.selectedTests?.forEach(testId => {
       const template = testTemplates.find(t => t.id === testId);
-      if (template) {
-        template.parameters.forEach(param => {
-          // Check if result already exists
-          const existingResult = test.testResults?.find(
-            r => r.testTemplateId === testId && r.parameterName === param.parameterName
-          );
-          
-          initialResults.push({
-            testTemplateId: testId,
-            testName: template.testName,
-            parameterName: param.parameterName,
-            unit: param.unit,
-            normalRange: param.normalRange,
-            result: existingResult?.result || '',
-            remarks: existingResult?.remarks || ''
-          });
+      const orderItem = test.orderItems?.find(item => String(item.testTemplateId) === String(testId));
+      const sourceParams = (template?.parameters && template.parameters.length > 0)
+        ? template.parameters
+        : (orderItem?.parameters || orderItem?.results || []);
+
+      sourceParams.forEach((param, idx) => {
+        const paramName = (param as any).parameterName || (param as any).name || '';
+        const existingResult = test.testResults?.find(
+          r => r.testTemplateId === testId && r.parameterName?.toLowerCase() === paramName.toLowerCase()
+        );
+        const paramUnit = (param as any).unit || '';
+        const paramRange = (param as any).normalRange || '';
+        const paramResultId = existingResult?.resultId
+          || orderItem?.parameters?.find(p => p.parameterName?.toLowerCase() === paramName.toLowerCase())?.resultId
+          || orderItem?.results?.find(p => p.parameterName?.toLowerCase() === paramName.toLowerCase())?.id
+          || orderItem?.parameters?.[idx]?.resultId
+          || orderItem?.results?.[idx]?.id;
+
+        initialResults.push({
+          testTemplateId: testId,
+          testName: template?.testName || orderItem?.testTemplateId || '',
+          resultId: paramResultId,
+          labOrderItemId: orderItem?.id,
+          parameterName: paramName,
+          unit: paramUnit,
+          normalRange: paramRange,
+          result: existingResult?.result || '',
+          remarks: existingResult?.remarks || ''
         });
-      }
+      });
     });
     
     setResults(initialResults);

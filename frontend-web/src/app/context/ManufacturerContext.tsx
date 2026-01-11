@@ -30,13 +30,21 @@ export function ManufacturerProvider({ children }: { children: React.ReactNode }
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setManufacturers([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.get('/manufacturers');
       const records: any[] = data.data ?? data;
       setManufacturers(records.map(mapManufacturer));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load manufacturers');
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load manufacturers');
+      }
     } finally {
       setLoading(false);
     }

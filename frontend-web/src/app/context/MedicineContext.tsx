@@ -33,13 +33,21 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setMedicines([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.get('/medicines');
       const records: any[] = data.data ?? data;
       setMedicines(records.map(mapMedicine));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load medicines');
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load medicines');
+      }
     } finally {
       setLoading(false);
     }

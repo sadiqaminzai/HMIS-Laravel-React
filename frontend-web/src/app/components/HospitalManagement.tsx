@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useHospitals } from '../context/HospitalContext';
 import api from '../../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 interface HospitalManagementProps {
   userRole: UserRole;
@@ -16,7 +17,8 @@ type ManagedHospital = Hospital & { id: string };
 
 export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const { hospitals, addHospital, updateHospital, deleteHospital, refresh, loading } = useHospitals();
-  const canManage = userRole === 'super_admin';
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_hospitals');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
@@ -98,6 +100,10 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   };
 
   const handleAdd = () => {
+    if (!canManage) {
+      toast.warning('You are not authorized to manage hospitals.');
+      return;
+    }
     setModalMode('add');
     setFormData({
       name: '',
@@ -119,7 +125,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
   const handleEdit = (hospital: Hospital) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage hospitals.');
+      toast.warning('You are not authorized to manage hospitals.');
       return;
     }
     setModalMode('edit');
@@ -143,7 +149,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
   const handleDelete = (hospital: Hospital) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage hospitals.');
+      toast.warning('You are not authorized to manage hospitals.');
       return;
     }
     if (!window.confirm(`Are you sure you want to delete ${hospital.name}?`)) return;
@@ -158,7 +164,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
     e.preventDefault();
 
     if (!canManage) {
-      toast.warning('Only super admins can manage hospitals.');
+      toast.warning('You are not authorized to manage hospitals.');
       return;
     }
 
@@ -294,7 +300,12 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
           </button>
           <button
             onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            disabled={!canManage}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium shadow-sm ${
+              canManage
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
+            }`}
           >
             <Plus className="w-3.5 h-3.5" />
             Add

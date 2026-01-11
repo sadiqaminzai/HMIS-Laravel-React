@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Stethoscope, Mail, Lock, Eye, EyeOff, LogIn, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { Toaster } from 'sonner';
 
 export function Login() {
   const { t } = useTranslation();
@@ -28,7 +27,6 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
-      <Toaster richColors closeButton />
       
       {/* Centered Login Card */}
       <div className="w-full max-w-md">

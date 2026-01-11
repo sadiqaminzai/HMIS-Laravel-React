@@ -12,6 +12,7 @@ import { useHospitals } from '../context/HospitalContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
 interface AppointmentManagementProps {
   hospital: Hospital;
@@ -26,6 +27,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const { doctors } = useDoctors();
   const { appointments, refresh, addAppointment, updateAppointment, deleteAppointment } = useAppointments();
   const { hospitals } = useHospitals();
+  const { hasPermission } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -239,6 +241,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   const handleAdd = () => {
+    if (!canCreate) {
+      setToast({ message: 'You are not authorized to schedule appointments.', type: 'warning' });
+      return;
+    }
     // Validate availability
     const availability = checkAvailability(formData.doctorId, formData.appointmentDate, formData.appointmentTime);
     if (!availability.available) {
@@ -271,6 +277,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
   const handleEdit = () => {
     if (!selectedAppointment) return;
+
+    if (!canEdit) {
+      setToast({ message: 'You are not authorized to manage appointments.', type: 'warning' });
+      return;
+    }
 
     // Validate availability
     const availability = checkAvailability(formData.doctorId, formData.appointmentDate, formData.appointmentTime);
@@ -307,6 +318,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
   const handleDelete = () => {
     if (!selectedAppointment) return;
+    if (!canDelete) {
+      setToast({ message: 'You are not authorized to manage appointments.', type: 'warning' });
+      return;
+    }
     deleteAppointment(selectedAppointment.id)
       .then(() => {
         setShowDeleteModal(false);
@@ -321,6 +336,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const handleStatusChange = (aptId: string, newStatus: Appointment['status']) => {
     const target = appointments.find(a => a.id === aptId);
     if (!target) return;
+
+    if (!canChangeAnyStatus) {
+      setToast({ message: 'You are not authorized to change appointment status.', type: 'warning' });
+      return;
+    }
 
     updateAppointment({
       id: aptId,
@@ -387,10 +407,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   // Check permissions
-  const canCreate = ['super_admin', 'admin', 'receptionist'].includes(userRole);
-  const canEdit = ['super_admin', 'admin', 'receptionist'].includes(userRole);
-  const canDelete = ['super_admin', 'admin'].includes(userRole);
-  const canChangeAnyStatus = ['super_admin', 'admin'].includes(userRole);
+  const canCreate = hasPermission('schedule_appointments') || hasPermission('manage_appointments');
+  const canEdit = hasPermission('manage_appointments');
+  const canDelete = hasPermission('manage_appointments');
+  const canChangeAnyStatus = hasPermission('manage_appointments');
 
   return (
     <div className="space-y-3">
@@ -466,7 +486,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
       {/* Appointments Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', minHeight: '360px' }}>
+        <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto min-h-[360px]">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -683,6 +703,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   setShowEditModal(false);
                 }} 
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                aria-label="Close"
+                title="Close"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -691,13 +713,15 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                  <label htmlFor="appointment-hospital" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
                     Hospital <span className="text-red-500">*</span>
                   </label>
                   <select
+                    id="appointment-hospital"
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title="Hospital"
                     required
                   >
                     {hospitals.map(h => (
@@ -709,11 +733,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Patient <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-patient" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Patient <span className="text-red-500">*</span></label>
                   <select
+                    id="appointment-patient"
                     value={formData.patientId}
                     onChange={(e) => setFormData({ ...formData, patientId: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    title="Patient"
                     required
                   >
                     <option value="">Select Patient</option>
@@ -723,11 +749,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-doctor" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor <span className="text-red-500">*</span></label>
                   <select
+                    id="appointment-doctor"
                     value={formData.doctorId}
                     onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    title="Doctor"
                     required
                   >
                     <option value="">Select Doctor</option>
@@ -739,8 +767,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-date" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Date <span className="text-red-500">*</span></label>
                   <input
+                    id="appointment-date"
                     type="date"
                     value={formData.appointmentDate}
                     onChange={(e) => setFormData({ ...formData, appointmentDate: e.target.value })}
@@ -749,6 +778,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         ? 'border-gray-300 dark:border-gray-600' 
                         : 'border-red-500 focus:ring-red-500'
                     } rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all`}
+                    title="Appointment date"
                     required
                   />
                   {formData.appointmentDate && !checkAvailability(formData.doctorId, formData.appointmentDate, '').available && (
@@ -758,8 +788,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   )}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Time</label>
+                  <label htmlFor="appointment-time" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Time</label>
                   <input
+                    id="appointment-time"
                     type="time"
                     value={formData.appointmentTime}
                     onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
@@ -768,6 +799,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         ? 'border-gray-300 dark:border-gray-600' 
                         : 'border-red-500 focus:ring-red-500'
                     } rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all`}
+                    title="Appointment time"
                   />
                   {formData.appointmentTime && !checkAvailability(formData.doctorId, formData.appointmentDate, formData.appointmentTime).available && (
                     <p className="text-[10px] text-red-500 mt-0.5">
@@ -883,7 +915,12 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
               <h3 className="font-bold text-gray-900 dark:text-white">Print Fees Card</h3>
-              <button onClick={() => setShowPrintModal(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label="Close"
+                title="Close"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>

@@ -3,6 +3,7 @@ import { Plus, Pencil, Search, Shield, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 interface RoleManagementProps {
   hospital: Hospital;
@@ -27,7 +28,14 @@ interface PermissionOption {
 }
 
 export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
-  const canManage = userRole === 'super_admin';
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_roles');
+  const canViewRoles = hasPermission('view_roles') || canManage;
+  const canLoadPermissionOptions =
+    canManage || hasPermission('view_permissions') || hasPermission('manage_permissions');
+  const isSuperAdmin = userRole === 'super_admin';
+  const [hospitals, setHospitals] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string>(hospital?.id ? String(hospital.id) : '');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -45,9 +53,47 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   });
 
   useEffect(() => {
-    loadPermissions();
-    loadRoles();
+    if (!canViewRoles) {
+      return;
+    }
+
+    if (canLoadPermissionOptions) {
+      loadPermissions();
+    }
+    if (isSuperAdmin) {
+      loadHospitals();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!canViewRoles) {
+      return;
+    }
+    loadRoles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHospitalId, isSuperAdmin, canViewRoles]);
+
+  useEffect(() => {
+    if (!isSuperAdmin && hospital?.id) {
+      setSelectedHospitalId(String(hospital.id));
+    }
+  }, [hospital?.id, isSuperAdmin]);
+
+  const loadHospitals = async () => {
+    try {
+      const { data } = await api.get('/hospitals');
+      const records: any[] = data.data ?? data;
+      const mapped = records.map((h) => ({ id: h.id, name: h.name }));
+      setHospitals(mapped);
+      // If there's no selection yet, default to the first hospital.
+      if (!selectedHospitalId && mapped.length > 0) {
+        setSelectedHospitalId(String(mapped[0].id));
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+    }
+  };
 
   const loadPermissions = async () => {
     try {
@@ -65,8 +111,14 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   };
 
   const loadRoles = async () => {
+    if (!canViewRoles) {
+      return;
+    }
     try {
-      const { data } = await api.get('/roles');
+      const params = isSuperAdmin
+        ? (selectedHospitalId ? { hospital_id: selectedHospitalId } : undefined)
+        : undefined;
+      const { data } = await api.get('/roles', { params });
       const records: any[] = data.data ?? data;
       setRoles(records.map((r) => ({
         id: r.id,
@@ -87,14 +139,15 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     r.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // If current user is admin (not super_admin), hide super_admin role
-  const visibleRoles = userRole === 'admin' 
-    ? filteredRoles.filter(r => r.name !== 'super_admin')
-    : filteredRoles;
+  const visibleRoles = filteredRoles;
 
   const handleAdd = () => {
     if (!canManage) {
       toast.warning('Only super admins can manage roles');
+      return;
+    }
+    if (isSuperAdmin && !selectedHospitalId) {
+      toast.error('Please select a hospital first');
       return;
     }
     setFormData({
@@ -114,11 +167,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
 
   const handleEdit = (role: Role) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage roles');
-      return;
-    }
-    if (role.isSystem) {
-      toast.warning('System roles cannot be edited.');
+      toast.warning('You are not authorized to manage roles');
       return;
     }
     setSelectedRole(role);
@@ -134,7 +183,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
 
   const handleDelete = (role: Role) => {
     if (!canManage) {
-      toast.warning('Only super admins can manage roles');
+      toast.warning('You are not authorized to manage roles');
       return;
     }
     if (role.isSystem) {
@@ -148,12 +197,17 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (isSuperAdmin && !selectedHospitalId) {
+        toast.error('Please select a hospital first');
+        return;
+      }
       await api.post('/roles', {
         name: formData.name.toLowerCase().replace(/\s+/g, '_'),
         display_name: formData.displayName,
         description: formData.description,
         status: formData.status,
         permission_ids: formData.permissions,
+        ...(isSuperAdmin ? { hospital_id: Number(selectedHospitalId) } : {}),
       });
       setShowAddModal(false);
       await loadRoles();
@@ -213,19 +267,42 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
 
   return (
     <div className="space-y-3">
+      {!canViewRoles ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-200">
+          You don’t have permission to view roles.
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Role Management</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Define and manage user roles</p>
         </div>
-        <button
-          onClick={handleAdd}
-          disabled={!canManage}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Role
-        </button>
+        <div className="flex items-center gap-2">
+          {isSuperAdmin && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Hospital</span>
+              <select
+                value={selectedHospitalId}
+                onChange={(e) => setSelectedHospitalId(e.target.value)}
+                className="px-2 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                <option value="">Select hospital</option>
+                {hospitals.map((h) => (
+                  <option key={h.id} value={h.id}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            onClick={handleAdd}
+            disabled={!canManage || (isSuperAdmin && !selectedHospitalId)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Role
+          </button>
+        </div>
       </div>
 
       {/* Search */}

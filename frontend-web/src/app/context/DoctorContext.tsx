@@ -34,13 +34,21 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setDoctors([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.get('/doctors');
       const records: any[] = data.data ?? data;
       setDoctors(records.map(mapDoctor));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load doctors');
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load doctors');
+      }
     } finally {
       setLoading(false);
     }

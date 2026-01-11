@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,7 +14,7 @@ class UserController extends Controller
     {
         $user = $request->user();
 
-        $query = User::query()->with('hospital');
+        $query = User::query()->with('hospital', 'roleRecord');
 
         if ($user->role !== 'super_admin') {
             $query->where('hospital_id', $user->hospital_id)
@@ -47,8 +48,8 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
-            'role' => ['required', Rule::in(['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist', 'lab_technician'])],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
+            'role_id' => ['required', 'integer', 'exists:roles,id'],
             'doctor_id' => ['nullable', 'integer', 'exists:doctors,id'],
             'avatar_path' => ['nullable', 'string'],
             'is_active' => ['boolean'],
@@ -56,10 +57,27 @@ class UserController extends Controller
 
         if ($actor->role !== 'super_admin') {
             $data['hospital_id'] = $actor->hospital_id;
-            if ($data['role'] === 'super_admin') {
-                return response()->json(['message' => 'Not authorized to create super admins'], 403);
+        } else {
+            // Super admin must explicitly choose a hospital for tenant users.
+            if (empty($data['hospital_id'])) {
+                return response()->json(['message' => 'hospital_id is required'], 422);
             }
         }
+
+        // Enforce that the selected role belongs to the target hospital.
+        $role = Role::query()->whereKey($data['role_id'])->first();
+        if (!$role) {
+            return response()->json(['message' => 'Invalid role'], 422);
+        }
+        if ((int) $role->hospital_id !== (int) $data['hospital_id']) {
+            return response()->json(['message' => 'Role does not belong to this hospital'], 422);
+        }
+        if ($role->name === 'super_admin') {
+            return response()->json(['message' => 'Not authorized to create super admins'], 403);
+        }
+
+        // Keep the legacy role string in sync for display/compat.
+        $data['role'] = $role->name;
 
         $user = User::create($data);
 
@@ -85,8 +103,8 @@ class UserController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'password' => ['sometimes', 'string', 'min:8'],
-            'role' => ['sometimes', Rule::in(['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist', 'lab_technician'])],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
+            'role_id' => ['sometimes', 'integer', 'exists:roles,id'],
             'doctor_id' => ['nullable', 'integer', 'exists:doctors,id'],
             'avatar_path' => ['nullable', 'string'],
             'is_active' => ['boolean'],
@@ -96,9 +114,24 @@ class UserController extends Controller
 
         if ($actor->role !== 'super_admin') {
             $data['hospital_id'] = $actor->hospital_id;
-            if (isset($data['role']) && $data['role'] === 'super_admin') {
+        } else if (array_key_exists('hospital_id', $data) && empty($data['hospital_id'])) {
+            return response()->json(['message' => 'hospital_id is required'], 422);
+        }
+
+        if (isset($data['role_id'])) {
+            $targetHospitalId = array_key_exists('hospital_id', $data) ? $data['hospital_id'] : $user->hospital_id;
+            $role = Role::query()->whereKey($data['role_id'])->first();
+            if (!$role) {
+                return response()->json(['message' => 'Invalid role'], 422);
+            }
+            if ((int) $role->hospital_id !== (int) $targetHospitalId) {
+                return response()->json(['message' => 'Role does not belong to this hospital'], 422);
+            }
+            if ($role->name === 'super_admin') {
                 return response()->json(['message' => 'Not authorized to assign super_admin role'], 403);
             }
+
+            $data['role'] = $role->name;
         }
 
         // Clear doctor link if role not doctor

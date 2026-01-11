@@ -38,10 +38,12 @@ import { Settings } from './components/Settings';
 import { GeneralSettings } from './components/GeneralSettings';
 import { ContactMessages } from './components/ContactMessages';
 import { Reports } from './components/Reports';
+import { RequirePermission } from './components/RequirePermission';
 import { LicenseExpiryWarning } from './components/LicenseExpiryWarning';
 import { LicenseExpired } from './components/LicenseExpired';
 import { UserRole, Hospital } from './types';
-import { useLicenseCheck } from './hooks/useLicenseCheck';
+import { useLicenseCheck, shouldShowWarningToday, markWarningShownToday } from './hooks/useLicenseCheck';
+import api from '../api/axios';
 import '../i18n/config';
 
 // Suppress ReactQuill findDOMNode deprecation warning (known library issue)
@@ -55,10 +57,15 @@ console.error = (...args: any[]) => {
 
 function AppContent() {
   const { i18n } = useTranslation();
-  const { user, isAuthenticated, logout } = useAuth();
-  const { hospitals, getHospital } = useHospitals();
-  const [showLanding, setShowLanding] = useState(true);
+  const { user, isAuthenticated, authLoading, logout } = useAuth();
+  const { hospitals, getHospital, loading, refresh } = useHospitals();
+  const [showLanding, setShowLanding] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const token = localStorage.getItem('auth_token');
+    return !token; // skip landing if session token exists
+  });
   const [currentHospital, setCurrentHospital] = useState<Hospital | null>(hospitals[0] || null);
+  const [myHospitalLoading, setMyHospitalLoading] = useState(false);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
 
   // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
@@ -108,11 +115,66 @@ function AppContent() {
     }
   }, [user, hospitals, currentHospital]);
 
+  // Bootstrap current hospital for tenant users even if they cannot access the hospitals directory.
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    if (user.role === 'super_admin') return;
+    if (!user.hospitalId) return;
+    if (currentHospital) return;
+
+    let cancelled = false;
+    setMyHospitalLoading(true);
+
+    api
+      .get('/my-hospital')
+      .then((res) => {
+        if (cancelled) return;
+        const h = res.data;
+        if (!h) return;
+        const mapped: Hospital = {
+          id: String(h.id),
+          name: h.name,
+          code: h.code ?? h.slug ?? '',
+          address: h.address ?? '',
+          phone: h.phone ?? '',
+          email: h.email ?? '',
+          license: h.license ?? '',
+          licenseIssueDate: h.license_issue_date ?? '',
+          licenseExpiryDate: h.license_expiry_date ?? '',
+          status: (h.status ?? 'active') as Hospital['status'],
+          logo: h.logo_url ?? h.logo_path ?? '',
+          brandColor: h.brand_color ?? '#2563eb',
+          createdAt: h.created_at ? new Date(h.created_at) : undefined,
+        };
+        setCurrentHospital(mapped);
+      })
+      .catch(() => {
+        // Best-effort; UI will show "No hospital assigned" if needed.
+      })
+      .finally(() => {
+        if (!cancelled) setMyHospitalLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, user, currentHospital]);
+
   // Hide landing page once user is authenticated
   useEffect(() => {
     if (isAuthenticated) {
       setShowLanding(false);
     }
+  }, [isAuthenticated]);
+
+  // After authentication, re-fetch hospitals (initial fetch may have happened without token)
+  useEffect(() => {
+    if (isAuthenticated) {
+      refresh();
+    }
+    // refresh is intentionally omitted from deps to avoid repeated calls
+    // due to function identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Handle RTL for Pashto, Dari, and Arabic
@@ -122,24 +184,40 @@ function AppContent() {
     document.documentElement.lang = i18n.language;
   }, [i18n.language]);
 
-  // Check and show license expiry warning (15 days before expiry)
+  // Check and show license expiry warning (only once per day, 10 days or less remaining)
   useEffect(() => {
     if (
       user &&
       user.role !== 'super_admin' &&
       user.hospitalId &&
+      currentHospital &&
       licenseStatus.isExpiringSoon &&
-      !licenseStatus.isExpired
+      !licenseStatus.isExpired &&
+      shouldShowWarningToday(currentHospital.id)
     ) {
-      // Show warning every time on login during the warning period
       setShowLicenseWarning(true);
     }
-  }, [user, licenseStatus]);
+  }, [user, licenseStatus, currentHospital]);
 
   // Handle license warning close
   const handleLicenseWarningClose = () => {
     setShowLicenseWarning(false);
+    if (currentHospital) {
+      markWarningShownToday(currentHospital.id);
+    }
   };
+
+  // While auth is resolving (refresh), avoid redirect flicker
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Restoring your session...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show landing page first
   if (showLanding && !isAuthenticated) {
@@ -151,13 +229,49 @@ function AppContent() {
     return <Login />;
   }
 
-  // If hospitals haven't loaded yet, avoid rendering dependent UI
+  // If hospitals directory hasn't resolved yet, don't hard-block the entire app.
+  // Non-super-admin users may not have access to the full hospitals list endpoint.
+  // We can still render the app if the user's hospitalId is known.
   if (!currentHospital) {
+    if (loading || myHospitalLoading) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading hospitals...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Not loading anymore, but we still don't have a hospital.
+    const msg = user?.hospitalId
+      ? 'Failed to load your hospital. Please try again.'
+      : 'No hospital assigned to this account.';
+
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading hospitals...</p>
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 p-4">
+        <div className="text-center space-y-4">
+          <p className="text-gray-700 dark:text-gray-200 font-medium">{msg}</p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => {
+                // Retry both: directory (for super admin) and my-hospital bootstrap.
+                refresh();
+                setCurrentHospital(null);
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+            >
+              Retry
+            </button>
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg text-sm font-semibold dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
+            >
+              Logout
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Ask Super Admin to assign a hospital if needed.</p>
         </div>
       </div>
     );
@@ -167,6 +281,7 @@ function AppContent() {
   if (
     user.role !== 'super_admin' &&
     user.hospitalId &&
+    currentHospital &&
     licenseStatus.isExpired
   ) {
     return (
@@ -213,31 +328,164 @@ function AppContent() {
         />
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 dark:bg-gray-900 p-3">
           <Routes>
-            {/* Default to prescriptions list */}
-            <Route path="/" element={<Navigate to="/prescriptions" replace />} />
+            {/* Default to dashboard after login */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard role={currentRole} hospital={currentHospital} />} />
-            <Route path="/hospitals" element={<HospitalManagement userRole={currentRole} />} />
-            <Route path="/doctors" element={<DoctorManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/patients" element={<PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
-            <Route path="/manufacturers" element={<ManufacturerManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/medicines" element={<MedicineManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/medicine-types" element={<MedicineTypeManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/appointments" element={<AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
-            <Route path="/my-appointments" element={<AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
-            <Route path="/lab-tests" element={<LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.email} />} />
-            <Route path="/test-management" element={<TestManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/prescriptions/create" element={<PrescriptionCreate hospital={currentHospital} currentUser={currentUser} />} />
-            <Route path="/prescriptions" element={<PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />} />
-            <Route path="/users" element={<UserManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/settings/users" element={<UserManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/settings/roles" element={<RoleManagement hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/settings/permissions" element={<PermissionManagement hospital={currentHospital} userRole={currentRole} />} />
+            <Route
+              path="/hospitals"
+              element={
+                <RequirePermission anyOf={["view_hospitals", "manage_hospitals"]}>
+                  <HospitalManagement userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/doctors"
+              element={
+                <RequirePermission anyOf={["view_doctors", "manage_doctors"]}>
+                  <DoctorManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/patients"
+              element={
+                <RequirePermission anyOf={["view_patients", "manage_patients", "register_patients"]}>
+                  <PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/manufacturers"
+              element={
+                <RequirePermission anyOf={["view_manufacturers", "manage_manufacturers"]}>
+                  <ManufacturerManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/medicines"
+              element={
+                <RequirePermission anyOf={["view_medicines", "manage_medicines", "dispense_medicines"]}>
+                  <MedicineManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/medicine-types"
+              element={
+                <RequirePermission anyOf={["view_medicine_types", "manage_medicine_types"]}>
+                  <MedicineTypeManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/appointments"
+              element={
+                <RequirePermission anyOf={["view_appointments", "manage_appointments", "schedule_appointments"]}>
+                  <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/my-appointments"
+              element={
+                <RequirePermission anyOf={["view_appointments", "manage_appointments", "schedule_appointments"]}>
+                  <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/lab-tests"
+              element={
+                <RequirePermission anyOf={["view_lab_orders", "manage_lab_orders", "enter_lab_results", "manage_lab_payments"]}>
+                  <LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.doctorId || currentUser.id} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/test-management"
+              element={
+                <RequirePermission anyOf={["view_test_templates", "manage_test_templates"]}>
+                  <TestManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/prescriptions/create"
+              element={
+                <RequirePermission anyOf={["create_prescription", "manage_prescriptions"]}>
+                  <PrescriptionCreate hospital={currentHospital} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/prescriptions"
+              element={
+                <RequirePermission anyOf={["view_prescriptions", "manage_prescriptions"]}>
+                  <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <RequirePermission anyOf={["view_users", "manage_users"]}>
+                  <UserManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/users"
+              element={
+                <RequirePermission anyOf={["view_users", "manage_users"]}>
+                  <UserManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/roles"
+              element={
+                <RequirePermission anyOf={["view_roles", "manage_roles"]}>
+                  <RoleManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/permissions"
+              element={
+                <RequirePermission anyOf={["view_permissions", "manage_permissions"]}>
+                  <PermissionManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/general" element={<GeneralSettings hospital={currentHospital} userRole={currentRole} />} />
-            <Route path="/contact-messages" element={<ContactMessages />} />
-            <Route path="/reports" element={<Reports hospital={currentHospital} userRole={currentRole} />} />
+            <Route
+              path="/settings/general"
+              element={
+                <RequirePermission anyOf={["view_hospital_settings", "manage_hospital_settings"]}>
+                  <GeneralSettings hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/contact-messages"
+              element={
+                <RequirePermission anyOf={["view_contact_messages", "manage_contact_messages"]}>
+                  <ContactMessages />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <RequirePermission anyOf={["view_reports", "manage_reports"]}>
+                  <Reports hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
             {/* Fallback route */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>
@@ -248,10 +496,10 @@ function AppContent() {
 export default function App() {
   return (
     <ThemeProvider>
-      <HospitalProvider>
-        <DoctorProvider>
-          <PatientProvider>
-            <AuthProvider>
+      <AuthProvider>
+        <HospitalProvider>
+          <DoctorProvider>
+            <PatientProvider>
               <SettingsProvider>
                 <LandingThemeProvider>
                   <LandingLanguageProvider>
@@ -261,7 +509,7 @@ export default function App() {
                           <PrescriptionProvider>
                             <AppointmentProvider>
                               <BrowserRouter>
-                                <Toaster richColors closeButton />
+                                <Toaster richColors closeButton position="top-right" />
                                 <AppContent />
                               </BrowserRouter>
                             </AppointmentProvider>
@@ -272,10 +520,10 @@ export default function App() {
                   </LandingLanguageProvider>
                 </LandingThemeProvider>
               </SettingsProvider>
-            </AuthProvider>
-          </PatientProvider>
-        </DoctorProvider>
-      </HospitalProvider>
+            </PatientProvider>
+          </DoctorProvider>
+        </HospitalProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

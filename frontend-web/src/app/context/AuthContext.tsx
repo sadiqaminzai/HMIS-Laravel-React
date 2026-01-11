@@ -7,15 +7,19 @@ interface User {
   name: string;
   email: string;
   role: UserRole;
+  roleId?: string | null;
   hospitalId: string | null;
   doctorId?: string;
+  permissions?: string[];
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  authLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  hasPermission: (permissionName: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const clearAuth = () => {
     setUser(null);
@@ -32,12 +37,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     delete api.defaults.headers.common['Authorization'];
   };
 
+  const hasPermission = (permissionName: string) => {
+    if (!permissionName) return false;
+    return Boolean(user?.permissions?.includes(permissionName));
+  };
+
   // Check for existing session on mount
   useEffect(() => {
     const storedToken = localStorage.getItem('auth_token');
+    const storedUser = localStorage.getItem('auth_user');
 
     if (storedToken) {
       api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+
+      // Optimistically hydrate user to avoid redirect flicker on refresh
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser) as User;
+          setUser(parsedUser);
+          setIsAuthenticated(true);
+        } catch (_) {
+          // ignore parse errors, will be corrected by /me
+        }
+      }
 
       api
         .get('/me')
@@ -49,10 +71,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {
           clearAuth();
-        });
+        })
+        .finally(() => setAuthLoading(false));
       return;
     }
 
+    setAuthLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
@@ -83,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, authLoading, login, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );
@@ -98,8 +122,10 @@ export function useAuth() {
     return {
       user: null,
       isAuthenticated: false,
+      authLoading: false,
       login: async () => ({ success: false, error: 'Auth context not ready' }),
-      logout: () => {}
+      logout: () => {},
+      hasPermission: () => false,
     };
   }
   return context;

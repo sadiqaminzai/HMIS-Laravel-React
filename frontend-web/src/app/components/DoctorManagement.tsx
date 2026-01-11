@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
 interface DoctorManagementProps {
   hospital: Hospital;
@@ -19,6 +20,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { hospitals } = useHospitals();
   const { doctors, addDoctor, updateDoctor, deleteDoctor } = useDoctors();
+  const { hasPermission } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -63,8 +65,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     [doctors, filterByHospital]
   );
 
-  // Only admin and super_admin can manage; receptionist is view-only
-  const canManage = ['admin', 'super_admin'].includes(userRole);
+  const canManage = hasPermission('manage_doctors');
   const canDelete = canManage;
   const canEdit = canManage; // Also controls Add action
 
@@ -175,7 +176,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
   const handleAdd = () => {
     if (!canManage) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage doctors');
       return;
     }
     setFormData({
@@ -213,7 +214,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
   const handleEdit = (doctor: Doctor) => {
     if (!canManage) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage doctors');
       return;
     }
     setSelectedDoctor(doctor);
@@ -247,7 +248,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
   const handleDelete = (doctor: Doctor) => {
     if (!canManage) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage doctors');
       return;
     }
     setSelectedDoctor(doctor);
@@ -257,7 +258,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage doctors');
       return;
     }
     setFormSubmitting(true);
@@ -288,7 +289,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage || !selectedDoctor) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage doctors');
       return;
     }
     setFormSubmitting(true);

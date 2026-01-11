@@ -70,9 +70,21 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
 
   const refresh = async () => {
-    const { data } = await api.get('/prescriptions');
-    const records: any[] = data.data ?? data;
-    setPrescriptions(records.map(mapPrescription));
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      setPrescriptions([]);
+      return;
+    }
+    try {
+      const { data } = await api.get('/prescriptions');
+      const records: any[] = data.data ?? data;
+      setPrescriptions(records.map(mapPrescription));
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status !== 401) {
+        toast.error(err?.response?.data?.message || 'Failed to load prescriptions');
+      }
+    }
   };
 
   useEffect(() => {

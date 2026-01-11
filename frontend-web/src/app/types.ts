@@ -1,4 +1,5 @@
-export type UserRole = 'super_admin' | 'admin' | 'doctor' | 'receptionist' | 'pharmacist' | 'lab_technician';
+// Roles are hospital-scoped and created dynamically, so role names are not a fixed enum.
+export type UserRole = string;
 
 export interface Hospital {
   id: string;
@@ -193,6 +194,7 @@ export interface LabTest {
   testType: string;
   instructions?: string;
   status: 'unpaid' | 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  paymentStatus?: 'unpaid' | 'partial' | 'paid';
   priority: 'normal' | 'urgent' | 'stat';
   sampleCollectedAt?: Date;
   reportedAt?: Date;
@@ -200,6 +202,26 @@ export interface LabTest {
   remarks?: string;
   assignedTo?: string; // Lab Technician ID
   assignedToName?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  orderItems?: Array<{
+    id: string;
+    testTemplateId: string;
+    parameters?: Array<{
+      parameterName: string;
+      resultId?: string | number;
+      unit?: string;
+      normalRange?: string;
+    }>;
+    results?: Array<{
+      id: string | number;
+      parameterName: string;
+      unit?: string | null;
+      normalRange?: string | null;
+      resultValue?: string | null;
+      remarks?: string | null;
+    }>;
+  }>;
   createdAt: Date;
   createdBy: string;
   updatedAt?: Date;
@@ -208,6 +230,8 @@ export interface LabTest {
 
 // Result for each parameter
 export interface TestResult {
+  resultId?: string | number;
+  labOrderItemId?: string | number;
   testTemplateId: string;
   testName: string;
   parameterName: string;

@@ -9,9 +9,38 @@ use Illuminate\Support\Str;
 
 class HospitalController extends Controller
 {
+    public function myHospital(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        if ($user->role === 'super_admin') {
+            // Super admin can switch hospitals from the directory; this endpoint isn't required.
+            return response()->json(null);
+        }
+
+        if (!$user->hospital_id) {
+            return response()->json(['message' => 'No hospital assigned'], 404);
+        }
+
+        $hospital = Hospital::query()->findOrFail($user->hospital_id);
+        return response()->json($this->withLogoUrl($hospital));
+    }
+
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = Hospital::query();
+
+        // Non-super-admin users can only view their own hospital.
+        if ($user && $user->role !== 'super_admin') {
+            if (!$user->hospital_id) {
+                return response()->json([]);
+            }
+            $query->whereKey($user->hospital_id);
+        }
 
         if ($request->filled('search')) {
             $search = $request->string('search');
@@ -45,6 +74,12 @@ class HospitalController extends Controller
 
     public function show(Hospital $hospital)
     {
+        $user = request()->user();
+        if ($user && $user->role !== 'super_admin') {
+            if (!$user->hospital_id || (int) $user->hospital_id !== (int) $hospital->id) {
+                abort(403, 'Forbidden');
+            }
+        }
         return response()->json($this->withLogoUrl($hospital));
     }
 

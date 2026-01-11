@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { toPng } from 'html-to-image';
+import { useAuth } from '../context/AuthContext';
 
 // Helper to convert hex to RGB array for jsPDF
 const hexToRgb = (hex?: string): [number, number, number] | null => {
@@ -34,7 +35,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const { hospitals: contextHospitals } = useHospitals();
   const { patients, addPatient, updatePatient, deletePatient } = usePatients();
   const { doctors } = useDoctors();
-  const { getDefaultDoctorId, generatePatientId, loadHospitalSetting } = useSettings();
+  const { getDefaultDoctorId, getPatientIdConfig, generatePatientId, loadHospitalSetting } = useSettings();
+  const { hasPermission } = useAuth();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
@@ -81,9 +83,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       loadHospitalSetting(currentHospital.id);
     }, [currentHospital.id, loadHospitalSetting]);
 
-  const canManage = ['receptionist', 'admin', 'super_admin'].includes(userRole);
-  // Check if user can delete (only admin and super_admin)
-  const canDelete = userRole === 'admin' || userRole === 'super_admin';
+  const canManage = hasPermission('manage_patients');
+  const canRegister = hasPermission('register_patients');
+  const canCreate = canRegister || canManage;
+  const canDelete = canManage;
 
   const filteredPatients = doctorFiltered.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -121,6 +124,38 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     return sortDirection === 'asc' 
       ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
       : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
+  };
+
+  const formatDoctorDisplayName = (name: string) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return 'N/A';
+    // Avoid double prefix when DB already stores names like "Dr. Raz".
+    if (/^dr\.?\s+/i.test(trimmed)) return trimmed;
+    return `Dr. ${trimmed}`;
+  };
+
+  const getNextPatientId = (hospitalId: string) => {
+    const config = getPatientIdConfig(hospitalId);
+    const prefix = config.prefix || 'P';
+    const digits = Number(config.digits || 5);
+    const startNumber = Number(config.startNumber || 1);
+
+    const existing = patients
+      .filter((p) => String(p.hospitalId) === String(hospitalId))
+      .map((p) => String(p.patientId || ''))
+      .filter((id) => id.startsWith(prefix));
+
+    let maxNumber = startNumber - 1;
+    for (const id of existing) {
+      const suffix = id.slice(prefix.length);
+      const n = Number.parseInt(suffix, 10);
+      if (!Number.isNaN(n)) {
+        maxNumber = Math.max(maxNumber, n);
+      }
+    }
+
+    const next = Math.max(startNumber, maxNumber + 1);
+    return `${prefix}${String(next).padStart(digits, '0')}`;
   };
 
   const getDoctorName = (doctorId?: string) => {
@@ -197,10 +232,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   };
 
   const handleAdd = () => {
+    if (!canCreate) {
+      toast.warning('You are not authorized to register patients');
+      return;
+    }
     // Auto-populate with default doctor if configured
     const defaultDoctorId = getDefaultDoctorId(currentHospital.id) || '';
+    const autoPatientId = getNextPatientId(currentHospital.id);
     setFormData({
-      patientId: '',
+      patientId: autoPatientId,
       name: '',
       age: '',
       gender: 'male',
@@ -222,6 +262,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   };
 
   const handleEdit = (patient: Patient) => {
+    if (!canManage) {
+      toast.warning('You are not authorized to manage patients');
+      return;
+    }
     setSelectedPatient(patient);
     setFormData({
       patientId: patient.patientId,
@@ -241,6 +285,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   };
 
   const handleDelete = (patient: Patient) => {
+    if (!canDelete) {
+      toast.warning('You are not authorized to manage patients');
+      return;
+    }
     setSelectedPatient(patient);
     setShowDeleteModal(true);
   };
@@ -292,11 +340,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManage) {
-      toast.warning('Not allowed');
+    if (!canCreate) {
+      toast.warning('You are not authorized to register patients');
       return;
     }
-    const newPatientId = formData.patientId || generatePatientId(formData.hospitalId, patients.length);
+    const newPatientId = formData.patientId || getNextPatientId(String(formData.hospitalId));
     try {
       await addPatient({
         hospitalId: formData.hospitalId,
@@ -314,14 +362,21 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       setShowAddModal(false);
       setImagePreview(null);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to add patient');
+      const apiMessage = err?.response?.data?.message;
+      const validation = err?.response?.data?.errors;
+      const detail = apiMessage || (validation ? Object.values(validation).flat().join(' ') : null);
+      toast.error(detail || 'Failed to add patient');
+      // If patient_id collided, auto-pick a new one for next attempt.
+      if (validation?.patient_id) {
+        setFormData((prev) => ({ ...prev, patientId: getNextPatientId(String(prev.hospitalId)) }));
+      }
     }
   };
 
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatient || !canManage) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage patients');
       return;
     }
     try {
@@ -348,7 +403,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
   const confirmDelete = async () => {
     if (!selectedPatient || !canDelete) {
-      toast.warning('Not allowed');
+      toast.warning('You are not authorized to manage patients');
       return;
     }
     try {
@@ -409,13 +464,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+          {canCreate && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -433,7 +490,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <Users className="w-3 h-3 text-blue-600 dark:text-blue-400" />
           </div>
           <p className="text-xs text-blue-900 dark:text-blue-100 font-medium">
-            <strong>Default Doctor:</strong> Dr. {defaultDoctor.name} - New patients will be automatically assigned
+            <strong>Default Doctor:</strong> {formatDoctorDisplayName(defaultDoctor.name)} - New patients will be automatically assigned
           </p>
         </div>
       )}
@@ -538,13 +595,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleEdit(patient)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => handleEdit(patient)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {canDelete && (
                           <button
                             onClick={() => handleDelete(patient)}
@@ -698,7 +757,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               </div>
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                  Assigned Doctor {defaultDoctor && <span className="text-blue-600 dark:text-blue-400 text-[10px] ml-1">(Default: Dr. {defaultDoctor.name})</span>}
+                  Assigned Doctor {defaultDoctor && <span className="text-blue-600 dark:text-blue-400 text-[10px] ml-1">(Default: {formatDoctorDisplayName(defaultDoctor.name)})</span>}
                 </label>
                 <select
                   value={formData.referredDoctorId}
@@ -708,7 +767,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   <option value="">-- Select Doctor --</option>
                   {hospitalDoctors.map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
-                      Dr. {doctor.name} - {doctor.specialization}
+                      {formatDoctorDisplayName(doctor.name)} - {doctor.specialization}
                     </option>
                   ))}
                 </select>
@@ -838,7 +897,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Assigned Doctor</label>
-                    <p className="text-gray-900 font-bold text-xl">Dr. {getDoctorName(selectedPatient.referredDoctorId)}</p>
+                    <p className="text-gray-900 font-bold text-xl">{formatDoctorDisplayName(getDoctorName(selectedPatient.referredDoctorId))}</p>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Registration Date</label>
@@ -960,7 +1019,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Doctor</label>
                     <p className="text-sm text-blue-600 dark:text-blue-400 font-bold">
-                      Dr. {getDoctorName(selectedPatient.referredDoctorId)}
+                      {formatDoctorDisplayName(getDoctorName(selectedPatient.referredDoctorId))}
                     </p>
                   </div>
                 </div>

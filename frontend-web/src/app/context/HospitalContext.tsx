@@ -32,19 +32,29 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     status: (h.status ?? 'active') as Hospital['status'],
     logo: h.logo_url ?? h.logo_path ?? '',
     brandColor: h.brand_color ?? '#2563eb',
-    licenseIssueDateFormatted: undefined,
-    licenseExpiryDateFormatted: undefined,
     createdAt: h.created_at ? new Date(h.created_at) : undefined,
   });
 
   const refresh = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      // Skip fetching when unauthenticated to avoid noisy toasts
+      setHospitals([]);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await api.get('/hospitals');
       const records: any[] = data.data ?? data;
       setHospitals(records.map(mapHospital));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+      const status = err?.response?.status;
+      // Suppress unauthenticated errors here; they will be handled after login
+      // Also suppress forbidden errors (403) for users who don't have hospitals directory access.
+      if (status !== 401 && status !== 403) {
+        toast.error(err?.response?.data?.message || 'Failed to load hospitals');
+      }
     } finally {
       setLoading(false);
     }

@@ -11,7 +11,14 @@ class RoleController extends Controller
 {
     public function index(Request $request)
     {
+        $actor = $request->user();
         $query = Role::query()->with('permissions');
+
+        if ($actor && $actor->role !== 'super_admin') {
+            $query->where('hospital_id', $actor->hospital_id);
+        } elseif ($request->filled('hospital_id')) {
+            $query->where('hospital_id', $request->integer('hospital_id'));
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -31,17 +38,39 @@ class RoleController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManageRoles($request->user());
+
+        $actor = $request->user();
+        $hospitalId = $actor->role === 'super_admin'
+            ? $request->input('hospital_id')
+            : $actor->hospital_id;
+
+        if (!$hospitalId) {
+            return response()->json(['message' => 'hospital_id is required'], 422);
+        }
 
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:roles,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('roles', 'name')->where(fn ($q) => $q->where('hospital_id', $hospitalId)),
+            ],
             'display_name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'is_system' => ['boolean'],
+            'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
             'permission_ids' => ['array'],
             'permission_ids.*' => ['integer', 'exists:permissions,id'],
         ]);
+
+        $data['hospital_id'] = (int) $hospitalId;
+        $data['is_system'] = false;
+
+        if ($data['name'] === 'super_admin') {
+            return response()->json(['message' => 'Reserved role name'], 422);
+        }
 
         $role = Role::create($data);
 
@@ -54,15 +83,20 @@ class RoleController extends Controller
 
     public function show(Role $role)
     {
+        $actor = request()->user();
+        if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
+            return response()->json(['message' => 'Not authorized'], 403);
+        }
         return response()->json($role->load('permissions'));
     }
 
     public function update(Request $request, Role $role)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManageRoles($request->user());
 
-        if ($role->is_system) {
-            return response()->json(['message' => 'System roles cannot be modified'], 403);
+        $actor = $request->user();
+        if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
+            return response()->json(['message' => 'Not authorized'], 403);
         }
 
         $data = $request->validate([
@@ -84,7 +118,12 @@ class RoleController extends Controller
 
     public function destroy(Request $request, Role $role)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeManageRoles($request->user());
+
+        $actor = $request->user();
+        if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
+            return response()->json(['message' => 'Not authorized'], 403);
+        }
 
         if ($role->is_system) {
             return response()->json(['message' => 'System roles cannot be deleted'], 403);
@@ -96,10 +135,10 @@ class RoleController extends Controller
         return response()->json(['message' => 'Role deleted']);
     }
 
-    private function authorizeSuperAdmin($user): void
+    private function authorizeManageRoles($user): void
     {
-        if ($user->role !== 'super_admin') {
-            abort(403, 'Only super admins can manage roles');
+        if (! $user || ! $user->hasPermission('manage_roles')) {
+            abort(403, 'Not authorized to manage roles');
         }
     }
 }

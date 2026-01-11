@@ -7,15 +7,3 @@ receptionist: receptionist@shifaascript.com / reception123
 pharmacist: pharmacist@shifaascript.com / pharmacy123
 lab_technician: labtech@shifaascript.com / lab123
 Next: start the API (php artisan serve), run the frontend (npm run dev), and log in with any of the above.
-
--- PROMPT --
-View Modal - Detailed view with all information
-Role-based workflow - Doctor creates → Receptionist pays → Lab Technician enters results → Doctor views results
-Summary view for Receptionist/Lab Technician
-Detailed test entry with action buttons for each test item
-Print receipt and report functionality
-Admin/Super Admin full control
-
-create the complete implementation:
-
-Dont change any design work on API implementation 
