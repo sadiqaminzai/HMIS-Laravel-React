@@ -21,7 +21,11 @@ class HospitalSettingController extends Controller
         $this->authorizeHospital($request->user(), $hospital, true);
 
         $data = $request->validate([
-            'default_doctor_id' => ['nullable', 'integer', 'exists:doctors,id'],
+            'default_doctor_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+            ],
             'default_to_walk_in' => ['boolean'],
             'auto_generate_patient_ids' => ['boolean'],
             'patient_id_prefix' => ['sometimes', 'string', 'max:10'],

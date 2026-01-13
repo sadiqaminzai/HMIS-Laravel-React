@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Patient;
-use App\Models\HospitalSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -18,6 +17,26 @@ class PatientController extends Controller
             $query->where('hospital_id', $request->user()->hospital_id);
         } elseif ($request->filled('hospital_id')) {
             $query->where('hospital_id', $request->integer('hospital_id'));
+        }
+
+        // Doctor scope: patients are linked to doctors via appointments.
+        if ($request->user()->role === 'doctor' || $request->user()->is_doctor) {
+            $doctorId = (int) $request->user()->id;
+            $allowedStatuses = ['scheduled', 'completed', 'cancelled', 'no_show'];
+            $status = $request->filled('appointment_status') ? (string) $request->input('appointment_status') : null;
+            $status = $status !== null ? strtolower(trim($status)) : null;
+
+            $query->whereIn('id', function ($q) use ($doctorId, $status, $allowedStatuses) {
+                $q->select('patient_id')
+                    ->from('appointments')
+                    ->where('doctor_id', $doctorId)
+                    ->whereNotNull('patient_id')
+                    ->distinct();
+
+                if ($status !== null && in_array($status, $allowedStatuses, true)) {
+                    $q->where('status', $status);
+                }
+            });
         }
 
         if ($request->filled('search')) {
@@ -50,14 +69,6 @@ class PatientController extends Controller
 
         $data = $this->validatePayload($request, null, (int) $hospitalId);
         $data['hospital_id'] = $hospitalId;
-
-        // Apply default doctor if none provided
-        if (empty($data['referred_doctor_id'])) {
-            $setting = HospitalSetting::where('hospital_id', $data['hospital_id'])->first();
-            if ($setting && $setting->default_doctor_id) {
-                $data['referred_doctor_id'] = $setting->default_doctor_id;
-            }
-        }
 
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('patients/images', 'public');
@@ -139,7 +150,6 @@ class PatientController extends Controller
             'gender' => ['required', 'in:male,female,other'],
             'phone' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:500'],
-            'referred_doctor_id' => ['nullable', 'exists:doctors,id'],
             'status' => ['required', 'in:active,inactive'],
             'image' => ['nullable', 'image', 'max:2048'],
         ]);

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Medicine } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface MedicineContextType {
   medicines: Medicine[];
@@ -31,10 +32,17 @@ const mapMedicine = (m: any): Medicine => ({
 export function MedicineProvider({ children }: { children: React.ReactNode }) {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAuthenticated, authLoading, hasPermission } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
+      setMedicines([]);
+      return;
+    }
+
+    // Backend: /medicines is guarded by permission:view_medicines OR manage_medicines
+    if (!hasPermission('view_medicines') && !hasPermission('manage_medicines')) {
       setMedicines([]);
       return;
     }
@@ -45,7 +53,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
       setMedicines(records.map(mapMedicine));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load medicines');
       }
     } finally {
@@ -54,8 +62,13 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setMedicines([]);
+      return;
+    }
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const serializePayload = (payload: Partial<Medicine>) => {
     const body: any = {};

@@ -18,7 +18,6 @@ class Patient extends Model
         'gender',
         'phone',
         'address',
-        'referred_doctor_id',
         'status',
         'image_path',
     ];

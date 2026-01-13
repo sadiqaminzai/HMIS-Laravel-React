@@ -18,4 +18,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+
+    // If token expired/invalid, clear stored auth so app can redirect to login.
+    if (status === 401) {
+      try {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+      } catch {
+        // ignore
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export default api;

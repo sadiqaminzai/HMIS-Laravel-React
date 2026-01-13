@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
-use App\Models\Doctor;
 use App\Models\Patient;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -26,8 +26,8 @@ class AppointmentController extends Controller
             $query->where('hospital_id', $request->integer('hospital_id'));
         }
 
-        if ($user->role === 'doctor' && $user->doctor_id) {
-            $query->where('doctor_id', $user->doctor_id);
+        if ($user->role === 'doctor' || $user->is_doctor) {
+            $query->where('doctor_id', $user->id);
         }
 
         if ($request->filled('doctor_id')) {
@@ -134,7 +134,10 @@ class AppointmentController extends Controller
         return $request->validate([
             'hospital_id' => ['sometimes', 'required', 'exists:hospitals,id'],
             'patient_id' => ['nullable', 'exists:patients,id'],
-            'doctor_id' => ['required', 'exists:doctors,id'],
+            'doctor_id' => [
+                'required',
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+            ],
             'appointment_number' => ['nullable', 'string', 'max:100', Rule::unique('appointments', 'appointment_number')->ignore($appointmentId)],
             'patient_name' => ['required_without:patient_id', 'string', 'max:255'],
             'patient_age' => ['nullable', 'integer', 'min:0', 'max:150'],
@@ -149,7 +152,10 @@ class AppointmentController extends Controller
 
     private function syncDoctorHospital(array &$data, ?Appointment $existing = null): void
     {
-        $doctor = Doctor::findOrFail($data['doctor_id']);
+        $doctor = User::query()
+            ->whereKey($data['doctor_id'])
+            ->where('is_doctor', true)
+            ->firstOrFail();
 
         if (!isset($data['hospital_id'])) {
             $data['hospital_id'] = $existing?->hospital_id ?? $doctor->hospital_id;
@@ -190,7 +196,7 @@ class AppointmentController extends Controller
             abort(403, 'Unauthorized appointment access');
         }
 
-        if ($user->role === 'doctor' && $user->doctor_id && $appointment->doctor_id !== $user->doctor_id) {
+        if (($user->role === 'doctor' || $user->is_doctor) && (int) $appointment->doctor_id !== (int) $user->id) {
             abort(403, 'Unauthorized appointment access');
         }
     }

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Doctor } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface DoctorContextType {
   doctors: Doctor[];
@@ -32,10 +33,17 @@ const mapDoctor = (d: any): Doctor => ({
 export function DoctorProvider({ children }: { children: React.ReactNode }) {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAuthenticated, authLoading, hasPermission } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
+      setDoctors([]);
+      return;
+    }
+
+    // Backend: /doctors is guarded by permission:view_doctors OR manage_doctors
+    if (!hasPermission('view_doctors') && !hasPermission('manage_doctors')) {
       setDoctors([]);
       return;
     }
@@ -46,7 +54,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
       setDoctors(records.map(mapDoctor));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load doctors');
       }
     } finally {
@@ -55,8 +63,13 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setDoctors([]);
+      return;
+    }
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const buildFormData = (payload: any) => {
     const formData = new FormData();

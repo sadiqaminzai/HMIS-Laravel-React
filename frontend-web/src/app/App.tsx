@@ -388,14 +388,6 @@ function AppContent() {
               }
             />
             <Route
-              path="/my-appointments"
-              element={
-                <RequirePermission anyOf={["view_appointments", "manage_appointments", "schedule_appointments"]}>
-                  <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
-                </RequirePermission>
-              }
-            />
-            <Route
               path="/lab-tests"
               element={
                 <RequirePermission anyOf={["view_lab_orders", "manage_lab_orders", "enter_lab_results", "manage_lab_payments"]}>

@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->appendToGroup('api', [
+            \App\Http\Middleware\NoCacheHeaders::class,
+        ]);
+
         $middleware->alias([
             'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
             'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
@@ -25,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
             'sanctum' => \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             'permission' => \App\Http\Middleware\RequirePermission::class,
+            'permission_or_doctor' => \App\Http\Middleware\RequirePermissionOrDoctor::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

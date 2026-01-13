@@ -6,7 +6,6 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import api from '../../api/axios';
-import { useDoctors } from '../context/DoctorContext';
 import { useAuth } from '../context/AuthContext';
 
 interface UserManagementProps {
@@ -18,8 +17,12 @@ type ManagedUser = {
   id: number;
   hospitalId: number | null;
   hospitalName?: string;
-  doctorId?: number | null;
-  doctorName?: string;
+  isDoctor?: boolean;
+  phone?: string | null;
+  specialization?: string | null;
+  registrationNumber?: string | null;
+  consultationFee?: number | null;
+  doctorStatus?: 'active' | 'inactive' | null;
   name: string;
   email: string;
   role: UserRole;
@@ -61,7 +64,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
-  const { doctors } = useDoctors();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('name');
@@ -74,7 +76,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     hospitalId: hospital.id as string | number | null,
     status: 'active' as const,
     password: '',
-    doctorId: '' as string | number | null,
+    isDoctor: false,
+    phone: '',
+    specialization: '',
+    registrationNumber: '',
+    consultationFee: '' as string | number,
+    doctorStatus: 'active' as 'active' | 'inactive',
   });
   const canManageTarget = (target: ManagedUser) => {
     if (target.role === 'super_admin' && userRole !== 'super_admin') return false;
@@ -98,12 +105,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     return match?.name ?? '';
   }, [formData.roleId, roleOptions]);
 
-  const doctorOptions = useMemo(() => {
-    if (selectedRoleName !== 'doctor') return [];
-    const targetHospitalId = formData.hospitalId || (userRole !== 'super_admin' ? hospital.id : null);
-    if (!targetHospitalId) return [];
-    return doctors.filter((d) => String(d.hospitalId) === String(targetHospitalId) && d.status === 'active');
-  }, [doctors, formData.hospitalId, selectedRoleName, hospital.id, userRole]);
+  const isDoctorSelectionLocked = selectedRoleName === 'doctor';
+  const effectiveIsDoctor = isDoctorSelectionLocked || formData.isDoctor;
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -266,8 +269,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         id: u.id,
         hospitalId: u.hospital_id ?? null,
         hospitalName: u.hospital?.name,
-        doctorId: u.doctor_id ?? null,
-        doctorName: u.doctor?.name,
+        isDoctor: Boolean(u.is_doctor),
+        phone: u.phone ?? null,
+        specialization: u.specialization ?? null,
+        registrationNumber: u.registration_number ?? null,
+        consultationFee: u.consultation_fee ?? null,
+        doctorStatus: u.doctor_status ?? null,
         name: u.name,
         email: u.email,
         role: u.role,
@@ -307,7 +314,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       hospitalId: isSuperAdmin ? '' : hospital.id,
       status: 'active',
       password: '',
-      doctorId: '',
+      isDoctor: false,
+      phone: '',
+      specialization: '',
+      registrationNumber: '',
+      consultationFee: '',
+      doctorStatus: 'active',
     });
     setShowAddModal(true);
   };
@@ -339,7 +351,12 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       hospitalId: user.hospitalId ?? hospital.id,
       status: user.status,
       password: '',
-      doctorId: user.doctorId ?? '',
+      isDoctor: Boolean(user.isDoctor),
+      phone: user.phone ?? '',
+      specialization: user.specialization ?? '',
+      registrationNumber: user.registrationNumber ?? '',
+      consultationFee: user.consultationFee ?? '',
+      doctorStatus: user.doctorStatus ?? 'active',
     });
     setShowEditModal(true);
   };
@@ -383,7 +400,14 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        doctor_id: selectedRoleName === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+        is_doctor: effectiveIsDoctor,
+        phone: effectiveIsDoctor ? (formData.phone || null) : null,
+        specialization: effectiveIsDoctor ? (formData.specialization || null) : null,
+        registration_number: effectiveIsDoctor ? (formData.registrationNumber || null) : null,
+        consultation_fee: effectiveIsDoctor
+          ? (formData.consultationFee === '' ? null : Number(formData.consultationFee))
+          : null,
+        doctor_status: effectiveIsDoctor ? formData.doctorStatus : null,
       });
       toast.success('User added successfully');
       setShowAddModal(false);
@@ -416,7 +440,14 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        doctor_id: selectedRoleName === 'doctor' ? (formData.doctorId ? Number(formData.doctorId) : null) : null,
+        is_doctor: effectiveIsDoctor,
+        phone: effectiveIsDoctor ? (formData.phone || null) : null,
+        specialization: effectiveIsDoctor ? (formData.specialization || null) : null,
+        registration_number: effectiveIsDoctor ? (formData.registrationNumber || null) : null,
+        consultation_fee: effectiveIsDoctor
+          ? (formData.consultationFee === '' ? null : Number(formData.consultationFee))
+          : null,
+        doctor_status: effectiveIsDoctor ? formData.doctorStatus : null,
       };
       if (formData.password) payload.password = formData.password;
 
@@ -473,6 +504,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search users..."
+              aria-label="Search users"
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -483,6 +515,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <select
                 value={selectedHospitalFilter}
                 onChange={(e) => setSelectedHospitalFilter(e.target.value)}
+                aria-label="Filter by hospital"
                 className="px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md text-xs focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Hospitals</option>
@@ -493,6 +526,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <select
                 value={selectedRoleFilter}
                 onChange={(e) => setSelectedRoleFilter(e.target.value)}
+                aria-label="Filter by role"
                 className="px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md text-xs focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Roles</option>
@@ -532,7 +566,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
       {/* Users Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        <div className="overflow-x-auto overflow-y-auto rounded-t-lg max-h-[calc(100vh-220px)]">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -669,6 +703,8 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   setShowAddModal(false);
                   setShowEditModal(false);
                 }} 
+                aria-label="Close"
+                title="Close"
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -682,6 +718,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    aria-label="Full Name"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   />
@@ -692,6 +729,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    aria-label="Email"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   />
@@ -708,10 +746,11 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                       setFormData({
                         ...formData,
                         roleId: nextRoleId,
-                        doctorId: nextRoleName === 'doctor' ? (formData.doctorId ?? '') : '',
+                        isDoctor: nextRoleName === 'doctor' ? true : formData.isDoctor,
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    aria-label="Role"
                     required
                     disabled={userRole === 'super_admin' && !formData.hospitalId}
                   >
@@ -727,6 +766,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    aria-label="Status"
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -740,8 +780,21 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
                   <select
                     value={formData.hospitalId}
-                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value, roleId: '', doctorId: '' })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        hospitalId: e.target.value,
+                        roleId: '',
+                        isDoctor: false,
+                        phone: '',
+                        specialization: '',
+                        registrationNumber: '',
+                        consultationFee: '',
+                        doctorStatus: 'active',
+                      })
+                    }
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    aria-label="Hospital"
                     required
                   >
                     <option value="">Select hospital</option>
@@ -751,24 +804,81 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   </select>
                 </div>
               )}
-              {selectedRoleName === 'doctor' && (
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor Profile <span className="text-red-500">*</span></label>
-                  <select
-                    value={formData.doctorId ?? ''}
-                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    required
-                    disabled={!formData.hospitalId || doctorOptions.length === 0}
-                  >
-                    <option value="">{!formData.hospitalId ? 'Select hospital first' : 'Select doctor'}</option>
-                    {doctorOptions.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                  {formData.hospitalId && doctorOptions.length === 0 && (
-                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">No active doctors found for this hospital.</p>
-                  )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex items-center justify-between rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 px-2 py-1.5">
+                  <div>
+                    <div className="text-[10px] font-medium text-gray-700 dark:text-gray-300">Doctor</div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400">Enable doctor profile fields</div>
+                  </div>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={effectiveIsDoctor}
+                      onChange={(e) => setFormData({ ...formData, isDoctor: e.target.checked })}
+                      disabled={isDoctorSelectionLocked}
+                      aria-label="Is Doctor"
+                      className="h-4 w-4"
+                    />
+                    <span className="text-[10px] text-gray-700 dark:text-gray-300">Is Doctor</span>
+                  </label>
+                </div>
+              </div>
+
+              {effectiveIsDoctor && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone</label>
+                    <input
+                      type="text"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      aria-label="Phone"
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Specialization</label>
+                    <input
+                      type="text"
+                      value={formData.specialization}
+                      onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+                      aria-label="Specialization"
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Registration Number</label>
+                    <input
+                      type="text"
+                      value={formData.registrationNumber}
+                      onChange={(e) => setFormData({ ...formData, registrationNumber: e.target.value })}
+                      aria-label="Registration Number"
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Consultation Fee</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={formData.consultationFee}
+                      onChange={(e) => setFormData({ ...formData, consultationFee: e.target.value })}
+                      aria-label="Consultation Fee"
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor Status</label>
+                    <select
+                      value={formData.doctorStatus}
+                      onChange={(e) => setFormData({ ...formData, doctorStatus: e.target.value as 'active' | 'inactive' })}
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                      aria-label="Doctor Status"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
                 </div>
               )}
               {showAddModal && (
@@ -778,6 +888,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    aria-label="Password"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                     minLength={8}
@@ -791,6 +902,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    aria-label="Password"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     minLength={8}
                   />

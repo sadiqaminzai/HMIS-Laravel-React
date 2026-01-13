@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface AppointmentContextType {
   appointments: Appointment[];
@@ -36,10 +37,24 @@ const mapAppointment = (a: any): Appointment => ({
 export function AppointmentProvider({ children }: { children: React.ReactNode }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAuthenticated, authLoading, hasPermission, user } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
+      setAppointments([]);
+      return;
+    }
+
+    // Backend: /appointments is guarded by permission OR (doctor).
+    // Allow doctors to load their own appointments even if their DB role permissions are not configured.
+    const isDoctor = String(user?.role || '').toLowerCase() === 'doctor';
+    if (
+      !isDoctor &&
+      !hasPermission('view_appointments') &&
+      !hasPermission('manage_appointments') &&
+      !hasPermission('schedule_appointments')
+    ) {
       setAppointments([]);
       return;
     }
@@ -50,7 +65,7 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
       setAppointments(records.map(mapAppointment));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load appointments');
       }
     } finally {
@@ -59,8 +74,12 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setAppointments([]);
+      return;
+    }
     refresh();
-  }, []);
+  }, [isAuthenticated, authLoading, user?.id, user?.role]);
 
   const addAppointment = async (payload: Partial<Appointment>) => {
     await api.post('/appointments', serializePayload(payload));

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye } from 'lucide-react';
+import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw } from 'lucide-react';
 import { Hospital, LabTest, TestResult, TestTemplate, UserRole } from '../types';
 import { Toast } from './Toast';
 import { LabReportPrintNew } from './LabReportPrintNew';
@@ -17,6 +17,7 @@ import { fetchTestTemplates } from '../../api/testTemplates';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAppointments } from '../context/AppointmentContext';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
@@ -43,6 +44,12 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[]): LabTest 
     const template = templates.find((t) => String(t.id) === String(item.testTemplateId));
     const norm = (v: string | undefined | null) => (v ?? '').trim().toLowerCase();
 
+    // Prefer the latest template metadata for display.
+    // Existing lab orders store a snapshot (item.testName/testType) at creation time,
+    // so renaming a template in DB would otherwise not reflect in the UI.
+    const effectiveTestName = (template?.testName || item.testName || '').trim();
+    const effectiveTestType = (template?.testType || item.testType || '').trim();
+
     const sourceParams = template?.parameters?.length ? template.parameters : item.results || [];
 
     const parameters = sourceParams.map((param, idx) => {
@@ -58,7 +65,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[]): LabTest 
           resultId: matchingResult.id,
           labOrderItemId: item.id,
           testTemplateId: item.testTemplateId,
-          testName: item.testName,
+          testName: effectiveTestName,
           parameterName: matchingResult.parameterName,
           unit: matchingResult.unit || unit,
           normalRange: matchingResult.normalRange || normalRange,
@@ -85,8 +92,8 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[]): LabTest 
     }));
 
     selectedTests.push(String(item.testTemplateId));
-    testNames.push(item.testName);
-    if (!testTypes.includes(item.testType)) testTypes.push(item.testType);
+    testNames.push(effectiveTestName);
+    if (effectiveTestType && !testTypes.includes(effectiveTestType)) testTypes.push(effectiveTestType);
     orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), parameters, results });
   });
 
@@ -128,6 +135,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { hospitals } = useHospitals();
+  const { appointments } = useAppointments();
 
   const [labTests, setLabTests] = useState<LabTest[]>([]);
   const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
@@ -202,7 +210,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
   const loadTestTemplates = useCallback(async () => {
     try {
-      const { data } = await fetchTestTemplates(isAllHospitals ? undefined : currentHospital.id);
+      const { data } = await fetchTestTemplates(isAllHospitals ? undefined : currentHospital.id, undefined, 1, 500);
       setTestTemplates(data);
     } catch (error) {
       console.error(error);
@@ -248,8 +256,16 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   }, [currentHospital.id]);
 
   const hospitalPatients = filterByHospital(patients);
-  const doctorScopedPatients = userRole === 'doctor'
-    ? hospitalPatients.filter((p) => String(p.referredDoctorId) === String(currentUserId))
+  const doctorScopedPatients = userRole === 'doctor' && currentUserId
+    ? (() => {
+        const doctorId = String(currentUserId);
+        const patientIds = new Set(
+          appointments
+            .filter((a) => String(a.hospitalId) === String(currentHospital.id) && String(a.doctorId) === doctorId)
+            .map((a) => String(a.patientId))
+        );
+        return hospitalPatients.filter((p) => patientIds.has(String(p.id)));
+      })()
     : hospitalPatients;
   const hospitalTests = isAllHospitals
     ? testTemplates
@@ -665,6 +681,20 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
              <FileText className="w-3.5 h-3.5" />
              PDF
            </button>
+
+          <button
+            onClick={async () => {
+              await loadTestTemplates();
+              await refreshLabOrders();
+              setToast({ message: 'Refreshed latest data', type: 'success' });
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-sm"
+            title="Refresh"
+            type="button"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
 
           {canCreate && (
             <button

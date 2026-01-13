@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Doctor;
 use App\Models\Patient;
 use App\Models\Prescription;
 use App\Models\PrescriptionItem;
+use App\Models\User;
 use App\Models\WalkInPatient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -154,7 +154,10 @@ class PrescriptionController extends Controller
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_age' => ['required', 'integer', 'min:0'],
             'patient_gender' => ['nullable', 'string', 'max:20'],
-            'doctor_id' => ['required', 'exists:doctors,id'],
+            'doctor_id' => [
+                'required',
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+            ],
             'doctor_name' => ['required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
             'advice' => ['nullable', 'string'],
@@ -196,7 +199,10 @@ class PrescriptionController extends Controller
             }
         }
 
-        $doctor = Doctor::findOrFail($data['doctor_id']);
+        $doctor = User::query()
+            ->whereKey($data['doctor_id'])
+            ->where('is_doctor', true)
+            ->firstOrFail();
         if ((int) $doctor->hospital_id !== (int) $hospitalId) {
             abort(422, 'Doctor does not belong to the selected hospital');
         }

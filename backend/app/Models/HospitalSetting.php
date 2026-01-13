@@ -31,6 +31,6 @@ class HospitalSetting extends Model
 
     public function defaultDoctor()
     {
-        return $this->belongsTo(Doctor::class, 'default_doctor_id');
+        return $this->belongsTo(User::class, 'default_doctor_id');
     }
 }

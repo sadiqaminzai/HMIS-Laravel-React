@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Manufacturer } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface ManufacturerContextType {
   manufacturers: Manufacturer[];
@@ -28,10 +29,17 @@ const mapManufacturer = (m: any): Manufacturer => ({
 export function ManufacturerProvider({ children }: { children: React.ReactNode }) {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAuthenticated, authLoading, hasPermission } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
+      setManufacturers([]);
+      return;
+    }
+
+    // Backend: /manufacturers is guarded by permission:view_manufacturers OR manage_manufacturers
+    if (!hasPermission('view_manufacturers') && !hasPermission('manage_manufacturers')) {
       setManufacturers([]);
       return;
     }
@@ -42,7 +50,7 @@ export function ManufacturerProvider({ children }: { children: React.ReactNode }
       setManufacturers(records.map(mapManufacturer));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load manufacturers');
       }
     } finally {
@@ -51,8 +59,13 @@ export function ManufacturerProvider({ children }: { children: React.ReactNode }
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setManufacturers([]);
+      return;
+    }
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const serializePayload = (payload: Partial<Manufacturer>) => {
     const body: any = {};

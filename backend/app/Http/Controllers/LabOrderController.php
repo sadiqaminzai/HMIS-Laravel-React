@@ -7,6 +7,7 @@ use App\Models\LabOrderItem;
 use App\Models\LabOrderResult;
 use App\Models\TestTemplate;
 use App\Models\Patient;
+use App\Models\User;
 use App\Models\WalkInPatient;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -20,11 +21,21 @@ class LabOrderController extends Controller
      */
     public function index(Request $request)
     {
+        $user = $request->user();
+
         $query = LabOrder::query()
             ->with(['items.results', 'patient', 'doctor']);
 
+        // If logged-in user is a doctor, always scope to their own hospital and their own orders.
+        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+            if ($user->hospital_id) {
+                $query->where('hospital_id', (int) $user->hospital_id);
+            }
+            $query->where('doctor_id', (int) $user->id);
+        }
+
         // Hospital filter
-        if ($request->has('hospital_id')) {
+        if ((!$user || ((string) $user->role !== 'doctor' && !(bool) $user->is_doctor)) && $request->has('hospital_id')) {
             $query->where('hospital_id', $request->integer('hospital_id'));
         }
 
@@ -39,7 +50,7 @@ class LabOrderController extends Controller
         }
 
         // Doctor filter
-        if ($request->has('doctor_id')) {
+        if ((!$user || ((string) $user->role !== 'doctor' && !(bool) $user->is_doctor)) && $request->has('doctor_id')) {
             $query->where('doctor_id', $request->integer('doctor_id'));
         }
 
@@ -61,6 +72,14 @@ class LabOrderController extends Controller
 
         $orders = $query->orderByDesc('id')->paginate($request->integer('per_page', 25));
 
+        // Ensure doctor name is always the latest user name (not a stale snapshot).
+        $orders->getCollection()->transform(function (LabOrder $order) {
+            if ($order->relationLoaded('doctor') && $order->doctor) {
+                $order->doctor_name = $order->doctor->name;
+            }
+            return $order;
+        });
+
         return response()->json($orders);
     }
 
@@ -69,6 +88,8 @@ class LabOrderController extends Controller
      */
     public function store(Request $request)
     {
+        $user = $request->user();
+
         $validator = Validator::make($request->all(), [
             'hospital_id' => ['required', 'exists:hospitals,id'],
             'patient_id' => ['nullable', 'exists:patients,id'],
@@ -78,7 +99,7 @@ class LabOrderController extends Controller
             'walk_in_patient.age' => ['required_if:is_walk_in,true', 'integer', 'min:0', 'max:150'],
             'walk_in_patient.gender' => ['required_if:is_walk_in,true', 'in:male,female,other'],
             'walk_in_patient.phone' => ['nullable', 'string', 'max:20'],
-            'doctor_id' => ['required', 'exists:doctors,id'],
+            'doctor_id' => ['required', 'exists:users,id'],
             'doctor_name' => ['required', 'string', 'max:255'],
             'test_ids' => ['required', 'array', 'min:1'],
             'test_ids.*' => ['exists:test_templates,id'],
@@ -94,7 +115,23 @@ class LabOrderController extends Controller
         $hospitalId = $data['hospital_id'];
         $isWalkIn = $data['is_walk_in'] ?? false;
 
-        return DB::transaction(function () use ($data, $hospitalId, $isWalkIn, $request) {
+        // If the logged-in user is a doctor, force the order to be created under their identity.
+        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+            if ((int) $user->hospital_id !== (int) $hospitalId) {
+                return response()->json(['message' => 'Doctor does not belong to the selected hospital'], 422);
+            }
+
+            $data['doctor_id'] = (int) $user->id;
+            $data['doctor_name'] = (string) $user->name;
+        }
+
+        // Ensure doctor belongs to hospital and is marked as doctor.
+        $doctor = User::query()->whereKey($data['doctor_id'])->where('is_doctor', true)->first();
+        if (!$doctor || (int) $doctor->hospital_id !== (int) $hospitalId) {
+            return response()->json(['message' => 'Doctor does not belong to the selected hospital'], 422);
+        }
+
+        return DB::transaction(function () use ($data, $hospitalId, $isWalkIn, $request, $doctor) {
             // Handle walk-in patient
             $patientId = null;
             $walkInPatientId = null;
@@ -134,7 +171,7 @@ class LabOrderController extends Controller
                 'patient_age' => $patientAge,
                 'patient_gender' => $patientGender,
                 'doctor_id' => $data['doctor_id'],
-                'doctor_name' => $data['doctor_name'],
+                'doctor_name' => $doctor->name,
                 'priority' => $data['priority'] ?? 'normal',
                 'clinical_notes' => $data['clinical_notes'] ?? null,
                 'status' => 'pending',
@@ -176,7 +213,11 @@ class LabOrderController extends Controller
             $order->update(['total_amount' => $totalAmount]);
 
             return response()->json([
-                'data' => $order->load(['items.results', 'patient', 'doctor']),
+                'data' => tap($order->load(['items.results', 'patient', 'doctor']), function (LabOrder $loaded) {
+                    if ($loaded->doctor) {
+                        $loaded->doctor_name = $loaded->doctor->name;
+                    }
+                }),
                 'message' => 'Lab order created successfully'
             ], Response::HTTP_CREATED);
         });
@@ -187,8 +228,23 @@ class LabOrderController extends Controller
      */
     public function show(LabOrder $labOrder)
     {
+        $user = request()->user();
+        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+            if ((int) $labOrder->doctor_id !== (int) $user->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+            if ($user->hospital_id && (int) $labOrder->hospital_id !== (int) $user->hospital_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
+        $loaded = $labOrder->load(['items.results', 'patient', 'doctor']);
+        if ($loaded->doctor) {
+            $loaded->doctor_name = $loaded->doctor->name;
+        }
+
         return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor'])
+            'data' => $loaded
         ]);
     }
 

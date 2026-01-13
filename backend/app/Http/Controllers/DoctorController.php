@@ -2,15 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Doctor;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DoctorController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Doctor::query();
+        $query = User::query()->where('is_doctor', true);
 
         if ($request->user()->role !== 'super_admin') {
             $query->where('hospital_id', $request->user()->hospital_id);
@@ -28,7 +29,7 @@ class DoctorController extends Controller
             });
         }
 
-        $doctors = $query->orderBy('name')->get()->map(fn ($doctor) => $this->withMediaUrls($doctor));
+        $doctors = $query->orderBy('name')->get()->map(fn ($doctor) => $this->toDoctorShape($this->withMediaUrls($doctor)));
 
         return response()->json($doctors);
     }
@@ -51,21 +52,51 @@ class DoctorController extends Controller
             $data['signature_path'] = $request->file('signature')->store('doctors/signatures', 'public');
         }
 
-        $doctor = Doctor::create($data);
+        // Doctors are users now; generate a password for the new account.
+        $generatedPassword = Str::password(12);
 
-        return response()->json($this->withMediaUrls($doctor), 201);
+        $user = User::create([
+            'hospital_id' => $data['hospital_id'],
+            'name' => $data['name'],
+            'email' => $data['email'] ?? Str::uuid().'@example.invalid',
+            'password' => $generatedPassword,
+            'role' => 'doctor',
+            'is_doctor' => true,
+            'phone' => $data['phone'] ?? null,
+            'specialization' => $data['specialization'] ?? null,
+            'registration_number' => $data['registration_number'] ?? null,
+            'consultation_fee' => $data['consultation_fee'] ?? 0,
+            'doctor_status' => $data['status'] ?? 'active',
+            'availability_schedule' => $data['availability_schedule'] ?? null,
+            'image_path' => $data['image_path'] ?? null,
+            'signature_path' => $data['signature_path'] ?? null,
+            'is_active' => ($data['status'] ?? 'active') === 'active',
+        ]);
+
+        $payload = $this->toDoctorShape($this->withMediaUrls($user));
+        $payload['generated_password'] = $generatedPassword;
+
+        return response()->json($payload, 201);
     }
 
-    public function show(Request $request, Doctor $doctor)
+    public function show(Request $request, User $doctor)
     {
+        if (!$doctor->is_doctor) {
+            abort(404);
+        }
+
         $this->authorizeScope($request->user(), $doctor);
-        return response()->json($this->withMediaUrls($doctor));
+        return response()->json($this->toDoctorShape($this->withMediaUrls($doctor)));
     }
 
-    public function update(Request $request, Doctor $doctor)
+    public function update(Request $request, User $doctor)
     {
         $this->authorizeReceptionOrAbove($request->user());
         $this->authorizeScope($request->user(), $doctor);
+
+        if (!$doctor->is_doctor) {
+            abort(404);
+        }
 
         $data = $this->validatePayload($request, $doctor->id);
 
@@ -77,15 +108,31 @@ class DoctorController extends Controller
             $data['signature_path'] = $request->file('signature')->store('doctors/signatures', 'public');
         }
 
-        $doctor->update($data);
+        $doctor->update([
+            'name' => $data['name'],
+            'email' => $data['email'] ?? $doctor->email,
+            'phone' => $data['phone'] ?? null,
+            'specialization' => $data['specialization'] ?? null,
+            'registration_number' => $data['registration_number'] ?? null,
+            'consultation_fee' => $data['consultation_fee'] ?? 0,
+            'doctor_status' => $data['status'] ?? 'active',
+            'availability_schedule' => $data['availability_schedule'] ?? null,
+            'image_path' => $data['image_path'] ?? $doctor->image_path,
+            'signature_path' => $data['signature_path'] ?? $doctor->signature_path,
+            'is_active' => ($data['status'] ?? 'active') === 'active',
+        ]);
 
-        return response()->json($this->withMediaUrls($doctor->fresh()));
+        return response()->json($this->toDoctorShape($this->withMediaUrls($doctor->fresh())));
     }
 
-    public function destroy(Request $request, Doctor $doctor)
+    public function destroy(Request $request, User $doctor)
     {
         $this->authorizeReceptionOrAbove($request->user());
         $this->authorizeScope($request->user(), $doctor);
+
+        if (!$doctor->is_doctor) {
+            abort(404);
+        }
 
         $doctor->delete();
 
@@ -99,7 +146,7 @@ class DoctorController extends Controller
         }
     }
 
-    private function authorizeScope($user, Doctor $doctor): void
+    private function authorizeScope($user, User $doctor): void
     {
         if ($user->role !== 'super_admin' && $user->hospital_id !== $doctor->hospital_id) {
             abort(403, 'Unauthorized doctor access');
@@ -136,10 +183,35 @@ class DoctorController extends Controller
         return $data;
     }
 
-    private function withMediaUrls(Doctor $doctor): Doctor
+    private function withMediaUrls(User $doctor): User
     {
         $doctor->image_url = $doctor->image_path ? url(Storage::url($doctor->image_path)) : null;
         $doctor->signature_url = $doctor->signature_path ? url(Storage::url($doctor->signature_path)) : null;
         return $doctor;
+    }
+
+    /**
+     * Keep response backward-compatible with the old Doctor model.
+     */
+    private function toDoctorShape(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'hospital_id' => $user->hospital_id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'specialization' => $user->specialization ?? '',
+            'registration_number' => $user->registration_number,
+            'consultation_fee' => $user->consultation_fee ?? 0,
+            'status' => $user->doctor_status ?? ($user->is_active ? 'active' : 'inactive'),
+            'availability_schedule' => $user->availability_schedule,
+            'image_path' => $user->image_path,
+            'signature_path' => $user->signature_path,
+            'image_url' => $user->image_url ?? null,
+            'signature_url' => $user->signature_url ?? null,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
+        ];
     }
 }

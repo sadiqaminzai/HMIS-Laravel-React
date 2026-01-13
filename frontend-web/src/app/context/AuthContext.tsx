@@ -83,12 +83,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.post('/login', { email, password });
       const { token, user: userData } = response.data;
-      setUser(userData);
-      setIsAuthenticated(true);
-      localStorage.setItem('auth_user', JSON.stringify(userData));
+      // Persist token immediately so follow-up calls can authenticate
       localStorage.setItem('auth_token', token);
       // Optionally set default Authorization header for future requests
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+      // Prefer fresh user payload from /me so permissions/role changes are reflected immediately
+      // (and to keep localStorage consistent with backend reality)
+      try {
+        const me = await api.get('/me');
+        const authedUser = me.data.user as User;
+        setUser(authedUser);
+        setIsAuthenticated(true);
+        localStorage.setItem('auth_user', JSON.stringify(authedUser));
+      } catch {
+        // Fall back to login response payload
+        setUser(userData);
+        setIsAuthenticated(true);
+        localStorage.setItem('auth_user', JSON.stringify(userData));
+      }
       return { success: true };
     } catch (error: any) {
       let message = 'Login failed';

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Patient } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface PatientContextType {
   patients: Patient[];
@@ -23,7 +24,6 @@ const mapPatient = (p: any): Patient => ({
   gender: (p.gender ?? 'other') as Patient['gender'],
   phone: p.phone ?? '',
   address: p.address ?? '',
-  referredDoctorId: p.referred_doctor_id ? String(p.referred_doctor_id) : undefined,
   status: (p.status ?? 'active') as Patient['status'],
   image: p.image_url ?? p.image_path ?? '',
   createdAt: p.created_at ? new Date(p.created_at) : new Date(),
@@ -33,12 +33,22 @@ const mapPatient = (p: any): Patient => ({
 export function PatientProvider({ children }: { children: React.ReactNode }) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAuthenticated, authLoading, hasPermission, user } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
       setPatients([]);
       return;
+    }
+
+    // Backend: /patients is guarded by permission OR (doctor).
+    const isDoctor = String(user?.role || '').toLowerCase() === 'doctor';
+    if (!isDoctor) {
+      if (!hasPermission('view_patients') && !hasPermission('manage_patients') && !hasPermission('register_patients')) {
+        setPatients([]);
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -47,7 +57,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
       setPatients(records.map(mapPatient));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load patients');
       }
     } finally {
@@ -56,8 +66,12 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setPatients([]);
+      return;
+    }
     refresh();
-  }, []);
+  }, [isAuthenticated, authLoading, user?.id, user?.role]);
 
   const buildFormData = (payload: any) => {
     const formData = new FormData();
@@ -68,7 +82,6 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     if (payload.gender) formData.append('gender', payload.gender);
     if (payload.phone) formData.append('phone', payload.phone);
     if (payload.address) formData.append('address', payload.address);
-    if (payload.referredDoctorId) formData.append('referred_doctor_id', payload.referredDoctorId);
     if (payload.status) formData.append('status', payload.status);
     if (payload.imageFile) formData.append('image', payload.imageFile);
     return formData;

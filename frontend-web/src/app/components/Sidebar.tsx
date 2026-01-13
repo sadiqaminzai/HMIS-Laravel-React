@@ -63,12 +63,6 @@ const menuItems: MenuItem[] = [
     anyPermissions: ['view_hospitals', 'manage_hospitals']
   },
   {
-    id: '/my-appointments',
-    translationKey: 'nav.myAppointments',
-    icon: <Calendar className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_appointments', 'manage_appointments', 'schedule_appointments']
-  },
-  {
     id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,

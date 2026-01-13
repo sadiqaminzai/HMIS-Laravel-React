@@ -50,8 +50,15 @@ class UserController extends Controller
             'password' => ['required', 'string', 'min:8'],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
-            'doctor_id' => ['nullable', 'integer', 'exists:doctors,id'],
-            'avatar_path' => ['nullable', 'string'],
+            'is_doctor' => ['sometimes', 'boolean'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'specialization' => ['nullable', 'string', 'max:255'],
+            'registration_number' => ['nullable', 'string', 'max:255'],
+            'consultation_fee' => ['nullable', 'numeric', 'min:0'],
+            'doctor_status' => ['nullable', 'in:active,inactive'],
+            'availability_schedule' => ['nullable', 'array'],
+            'image_path' => ['nullable', 'string', 'max:255'],
+            'signature_path' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
         ]);
 
@@ -79,6 +86,22 @@ class UserController extends Controller
         // Keep the legacy role string in sync for display/compat.
         $data['role'] = $role->name;
 
+        // If the role is doctor, force doctor flag.
+        if ($data['role'] === 'doctor') {
+            $data['is_doctor'] = true;
+        }
+
+        // If not doctor, strip doctor-only fields.
+        if (empty($data['is_doctor'])) {
+            $data['specialization'] = null;
+            $data['registration_number'] = null;
+            $data['consultation_fee'] = 0;
+            $data['doctor_status'] = null;
+            $data['availability_schedule'] = null;
+            $data['image_path'] = null;
+            $data['signature_path'] = null;
+        }
+
         $user = User::create($data);
 
         return response()->json($user->load('hospital'), 201);
@@ -105,8 +128,15 @@ class UserController extends Controller
             'password' => ['sometimes', 'string', 'min:8'],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
             'role_id' => ['sometimes', 'integer', 'exists:roles,id'],
-            'doctor_id' => ['nullable', 'integer', 'exists:doctors,id'],
-            'avatar_path' => ['nullable', 'string'],
+            'is_doctor' => ['sometimes', 'boolean'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'specialization' => ['nullable', 'string', 'max:255'],
+            'registration_number' => ['nullable', 'string', 'max:255'],
+            'consultation_fee' => ['nullable', 'numeric', 'min:0'],
+            'doctor_status' => ['nullable', 'in:active,inactive'],
+            'availability_schedule' => ['nullable', 'array'],
+            'image_path' => ['nullable', 'string', 'max:255'],
+            'signature_path' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
         ]);
 
@@ -132,11 +162,24 @@ class UserController extends Controller
             }
 
             $data['role'] = $role->name;
+
+            if ($data['role'] === 'doctor') {
+                $data['is_doctor'] = true;
+            }
         }
 
-        // Clear doctor link if role not doctor
-        if (isset($data['role']) && $data['role'] !== 'doctor') {
-            $data['doctor_id'] = null;
+        // Clear doctor fields if not a doctor.
+        $isDoctor = array_key_exists('is_doctor', $data) ? (bool) $data['is_doctor'] : (bool) $user->is_doctor;
+        $roleName = array_key_exists('role', $data) ? (string) $data['role'] : (string) $user->role;
+        if ($roleName !== 'doctor' && !$isDoctor) {
+            $data['specialization'] = null;
+            $data['registration_number'] = null;
+            $data['consultation_fee'] = 0;
+            $data['doctor_status'] = null;
+            $data['availability_schedule'] = null;
+            $data['image_path'] = null;
+            $data['signature_path'] = null;
+            $data['is_doctor'] = false;
         }
 
         $user->update($data);

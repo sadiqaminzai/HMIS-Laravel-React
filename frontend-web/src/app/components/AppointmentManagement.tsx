@@ -21,6 +21,10 @@ interface AppointmentManagementProps {
 }
 
 export function AppointmentManagement({ hospital, userRole, currentUser }: AppointmentManagementProps) {
+  
+      const doctorNeedsLinking =
+        currentUser?.role === 'doctor' &&
+        (currentUser.doctorId === null || currentUser.doctorId === undefined || `${currentUser.doctorId}`.trim() === '');
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { patients } = usePatients();
@@ -73,21 +77,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     
     // Role-based filtering
     if (userRole === 'doctor') {
-      let doctorIdToFilter = '';
-      
-      if (currentUser?.doctorId) {
-        doctorIdToFilter = currentUser.doctorId;
-      } else if (currentUser?.id) {
-        // Fallback: try to find by email if doctorId not set
-        const doctorByEmail = hospitalDoctors.find(d => d.email === currentUser.email);
-        if (doctorByEmail) {
-          doctorIdToFilter = doctorByEmail.id;
-        }
-      }
-      
-      if (doctorIdToFilter) {
-        filtered = filtered.filter(apt => apt.doctorId === doctorIdToFilter);
-      }
+      // Doctors are users now; appointment.doctorId is users.id.
+      const doctorUserId = currentUser?.id ? String(currentUser.id) : '';
+      filtered = doctorUserId ? filtered.filter((apt) => String(apt.doctorId) === doctorUserId) : [];
     }
     
     // Search filter
@@ -422,6 +414,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             Manage patient appointments for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
           </p>
         </div>
+  
+                {doctorNeedsLinking && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    This doctor account isn’t linked to a Doctor profile yet (missing doctorId), so no appointments can be shown.
+                    Please log out and log back in. If it still persists, an admin should ensure the user email matches the Doctor email.
+                  </div>
+                )}
         
         <div className="flex flex-wrap items-center gap-2">
           {/* Compact Search */}

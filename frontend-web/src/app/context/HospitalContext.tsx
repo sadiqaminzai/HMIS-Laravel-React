@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Hospital } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
+import { useAuth } from './AuthContext';
 
 interface HospitalContextType {
   hospitals: Hospital[];
@@ -18,6 +19,7 @@ const HospitalContext = createContext<HospitalContextType | undefined>(undefined
 export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const { isAuthenticated, authLoading, hasPermission } = useAuth();
 
   const mapHospital = (h: any): Hospital => ({
     id: String(h.id),
@@ -43,6 +45,12 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Backend: /hospitals is guarded by permission:manage_hospitals
+    if (!hasPermission('manage_hospitals')) {
+      setHospitals([]);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await api.get('/hospitals');
@@ -61,8 +69,13 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setHospitals([]);
+      return;
+    }
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const addHospital = async (payload: Partial<Hospital> & { logoFile?: File | null }) => {
     const formData = new FormData();

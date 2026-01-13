@@ -57,7 +57,6 @@ export interface Patient {
   gender: 'male' | 'female' | 'other';
   phone: string;
   address: string;
-  referredDoctorId?: string;
   createdAt: Date;
   createdBy?: string;
   updatedAt?: Date;

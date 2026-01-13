@@ -10,6 +10,7 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useMedicines } from '../context/MedicineContext';
 import { usePrescriptions } from '../context/PrescriptionContext';
+import { useAppointments } from '../context/AppointmentContext';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
@@ -45,6 +46,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const { doctors } = useDoctors();
   const { medicines: inventory } = useMedicines();
   const { addPrescription, updatePrescription } = usePrescriptions();
+  const { appointments } = useAppointments();
 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
@@ -77,16 +79,43 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const patientInputRef = useRef<HTMLInputElement>(null);
 
+  const fallbackLoggedInDoctor: Doctor | null = useMemo(() => {
+    const role = String(currentUser.role || '').toLowerCase();
+    if (role !== 'doctor') return null;
+    const id = currentUser.doctorId || currentUser.id;
+    if (!id) return null;
+    return {
+      id: String(id),
+      hospitalId: String(currentHospital.id),
+      name: currentUser.name,
+      specialization: '',
+      registrationNumber: '',
+      consultationFee: 0,
+      email: currentUser.email,
+      phone: '',
+      status: 'active',
+      image: '',
+      signature: '',
+      availability: [],
+    };
+  }, [currentHospital.id, currentUser.doctorId, currentUser.email, currentUser.id, currentUser.name, currentUser.role]);
+
   // Auto-assign logged-in doctor if user is a doctor
   useEffect(() => {
-    if (currentUser.role === 'doctor' && currentUser.doctorId) {
-      // Compare as strings to ensure type consistency
-      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
-      if (loggedInDoctor) {
-        setSelectedDoctor(loggedInDoctor);
-      }
+    if (String(currentUser.role || '').toLowerCase() !== 'doctor') return;
+
+    // After the "doctors are users" migration, appointment/prescription doctorId is users.id.
+    const loggedInDoctorId = currentUser.id;
+    if (!loggedInDoctorId) return;
+
+    // Compare as strings to ensure type consistency
+    const loggedInDoctor = doctors.find((d) => String(d.id) === String(loggedInDoctorId));
+    if (loggedInDoctor) {
+      setSelectedDoctor(loggedInDoctor);
+    } else if (fallbackLoggedInDoctor) {
+      setSelectedDoctor(fallbackLoggedInDoctor);
     }
-  }, [currentUser.role, currentUser.doctorId, doctors]);
+  }, [currentUser.id, currentUser.role, doctors, fallbackLoggedInDoctor]);
 
   // Honor hospital-specific default walk-in preference from settings
   useEffect(() => {
@@ -145,12 +174,47 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
   }, [editPrescriptionData, patients, doctors, inventory]);
 
-  // Filter patients based on search and current hospital
-  const filteredPatients = patients.filter(p =>
-    p.hospitalId === currentHospital.id &&
-    (p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
-     p.patientId.toLowerCase().includes(patientSearch.toLowerCase()))
-  );
+  const eligiblePatientIds = useMemo(() => {
+    const role = String(currentUser.role || '').toLowerCase();
+
+    // Doctors: only patients with *scheduled* appointments for that logged-in doctor.
+    if (role === 'doctor') {
+      const doctorId = currentUser.id;
+      if (!doctorId) return new Set<string>();
+      return new Set(
+        appointments
+          .filter(
+            (a) =>
+              String(a.hospitalId) === String(currentHospital.id) &&
+              a.status === 'scheduled' &&
+              String(a.doctorId) === String(doctorId)
+          )
+          .map((a) => String(a.patientId))
+      );
+    }
+
+    // Admin/Super Admin: all hospital patients who have any *scheduled* appointment (any doctor).
+    return new Set(
+      appointments
+        .filter((a) => String(a.hospitalId) === String(currentHospital.id) && a.status === 'scheduled')
+        .map((a) => String(a.patientId))
+    );
+  }, [appointments, currentHospital.id, currentUser.id, currentUser.role]);
+
+  // Filter patients based on search and current hospital.
+  // Doctors/Admins: only show patients that have scheduled appointments.
+  const filteredPatients = patients.filter((p) => {
+    if (String(p.hospitalId) !== String(currentHospital.id)) return false;
+
+    const search = patientSearch.toLowerCase();
+    const matchesSearch =
+      p.name.toLowerCase().includes(search) ||
+      p.patientId.toLowerCase().includes(search);
+
+    if (!matchesSearch) return false;
+
+    return eligiblePatientIds.has(String(p.id));
+  });
 
   // Reset highlighted index when filtered patients change
   useEffect(() => {
@@ -161,12 +225,6 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     setSelectedPatient(patient);
     setPatientSearch(patient.name);
     setShowPatientDropdown(false);
-    
-    // Auto-fill doctor if patient has referred doctor
-    if (patient.referredDoctorId) {
-      const doctor = doctors.find(d => d.id === patient.referredDoctorId);
-      if (doctor) setSelectedDoctor(doctor);
-    }
 
     // Auto-add first medicine row
     if (medicines.length === 0) {
@@ -216,11 +274,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
     
     // Auto-assign logged-in doctor for walk-in patients if user is a doctor
-    if (type === 'walkin' && currentUser.role === 'doctor' && currentUser.doctorId) {
-      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
-      if (loggedInDoctor) {
-        setSelectedDoctor(loggedInDoctor);
-      }
+    if (type === 'walkin' && String(currentUser.role || '').toLowerCase() === 'doctor') {
+      const loggedInDoctor = doctors.find((d) => String(d.id) === String(currentUser.id));
+      if (loggedInDoctor) setSelectedDoctor(loggedInDoctor);
+      else if (fallbackLoggedInDoctor) setSelectedDoctor(fallbackLoggedInDoctor);
     } else if (type === 'walkin' && (currentUser.role === 'super_admin' || currentUser.role === 'admin')) {
       // Clear doctor for admin/super_admin creating walk-in prescriptions
       setSelectedDoctor(null);
@@ -366,16 +423,17 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     
     // For walk-in patients created by admin/super_admin, doctor can be null
     // For doctors, use logged-in doctor for walk-in prescriptions
-    const isAdminOrSuperAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
+    const role = String(currentUser.role || '').toLowerCase();
+    const isAdminOrSuperAdmin = role === 'super_admin' || role === 'admin';
     
     let doctor = selectedDoctor;
     
     // If user is a doctor, ALWAYS use their associated doctor profile
-    if (currentUser.role === 'doctor' && currentUser.doctorId) {
-      const loggedInDoctor = doctors.find(d => String(d.id) === String(currentUser.doctorId));
-      if (loggedInDoctor) {
-        doctor = loggedInDoctor;
-      }
+    if (role === 'doctor') {
+      const loggedInDoctor = currentUser.id
+        ? doctors.find((d) => String(d.id) === String(currentUser.id))
+        : null;
+      doctor = loggedInDoctor || fallbackLoggedInDoctor || doctor;
     }
     
     // Fallback to first hospital doctor if no doctor selected (for non-admin users)
@@ -475,7 +533,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         <div className="flex gap-1.5">
           <button
             onClick={handleSave}
-            disabled={!selectedPatient || medicines.length === 0}
+            disabled={medicines.length === 0 || (!isWalkIn && !selectedPatient)}
             className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
           >
             <Save className="w-3 h-3" />
@@ -483,7 +541,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           </button>
           <button
             onClick={handlePrint}
-            disabled={!selectedPatient || medicines.length === 0}
+            disabled={medicines.length === 0 || (!isWalkIn && !selectedPatient)}
             className="px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
           >
             <Printer className="w-3 h-3" />
@@ -562,24 +620,30 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               </div>
               
               {/* Patient Dropdown */}
-              {showPatientDropdown && filteredPatients.length > 0 && (
+              {showPatientDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {filteredPatients.map((patient, index) => (
-                    <div
-                      key={patient.id}
-                      onClick={() => handlePatientSelect(patient)}
-                      className={`px-3 py-2 cursor-pointer transition-colors ${
-                        index === highlightedPatientIndex
-                          ? 'bg-blue-50 border-l-2 border-blue-500'
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="font-medium text-sm text-gray-900">{patient.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {patient.patientId} • Age: {patient.age} • {patient.gender}
+                  {filteredPatients.length > 0 ? (
+                    filteredPatients.map((patient, index) => (
+                      <div
+                        key={patient.id}
+                        onClick={() => handlePatientSelect(patient)}
+                        className={`px-3 py-2 cursor-pointer transition-colors ${
+                          index === highlightedPatientIndex
+                            ? 'bg-blue-50 border-l-2 border-blue-500'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="font-medium text-sm text-gray-900">{patient.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {patient.patientId} • Age: {patient.age} • {patient.gender}
+                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-gray-500">
+                      No scheduled patients found
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -596,6 +660,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   onChange={(e) => setWalkInPatient({ ...walkInPatient, name: e.target.value })}
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter patient name"
+                  aria-label="Walk-in patient name"
                 />
               </div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -609,6 +674,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, age: e.target.value })}
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Age"
+                    aria-label="Walk-in patient age"
                   />
                 </div>
                 <div>
@@ -619,6 +685,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     value={walkInPatient.gender}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, gender: e.target.value })}
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-label="Walk-in patient gender"
                   >
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
@@ -878,27 +945,17 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
             }}
             onKeyDown={(e) => handleKeyDown(e, 'medicine')}
             placeholder="Type medicine name..."
+            aria-label="Medicine search"
             className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             autoComplete="off"
           />
           {showMedicineDropdown && searchTerm.length > 0 && (
-            <div 
+            <div
               ref={dropdownRef}
-              className="fixed bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden"
-              style={{
-                top: medicineInputRef.current ? 
-                  medicineInputRef.current.getBoundingClientRect().bottom + window.scrollY + 4 : 0,
-                left: medicineInputRef.current ? 
-                  medicineInputRef.current.getBoundingClientRect().left + window.scrollX : 0,
-                width: medicineInputRef.current ? 
-                  medicineInputRef.current.getBoundingClientRect().width : 300,
-                maxHeight: '280px',
-                minHeight: '60px',
-                zIndex: 99999
-              }}
+              className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px] z-50"
             >
               {filteredMedicines.length > 0 ? (
-                <div className="overflow-y-auto" style={{ maxHeight: '280px' }}>
+                <div className="overflow-y-auto max-h-[280px]">
                   {filteredMedicines.map((med, idx) => {
                     const isHighlighted = idx === highlightedIndex;
                     return (
@@ -977,6 +1034,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
           value={medicine.instruction}
           onChange={(e) => onUpdate(medicine.rowId, 'instruction', e.target.value as any)}
           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          aria-label="Medicine instruction"
         >
           {instructionOptions.map(inst => (
             <option key={inst.value} value={inst.value}>{inst.label}</option>
@@ -989,6 +1047,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
           value={medicine.quantity}
           onChange={(e) => onUpdate(medicine.rowId, 'quantity', parseInt(e.target.value) || 0)}
           onKeyDown={(e) => handleKeyDown(e, 'quantity')}
+          aria-label="Medicine quantity"
           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         />
       </td>

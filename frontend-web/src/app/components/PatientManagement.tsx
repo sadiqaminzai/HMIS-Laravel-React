@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Image as ImageIcon, CreditCard, QrCode, Download, FileImage } from 'lucide-react';
 import { Hospital, UserRole, Patient } from '../types';
 import { usePatients } from '../context/PatientContext';
-import { useDoctors } from '../context/DoctorContext';
 import { toast } from 'sonner';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useHospitals } from '../context/HospitalContext';
 import { formatDate } from '../utils/date';
+import { useAppointments } from '../context/AppointmentContext';
+import { useDoctors } from '../context/DoctorContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -34,8 +35,9 @@ interface PatientManagementProps {
 export function PatientManagement({ hospital, userRole = 'admin', currentUser }: PatientManagementProps) {
   const { hospitals: contextHospitals } = useHospitals();
   const { patients, addPatient, updatePatient, deletePatient } = usePatients();
+  const { appointments } = useAppointments();
   const { doctors } = useDoctors();
-  const { getDefaultDoctorId, getPatientIdConfig, generatePatientId, loadHospitalSetting } = useSettings();
+  const { getPatientIdConfig, generatePatientId, loadHospitalSetting, getDefaultDoctorId } = useSettings();
   const { hasPermission } = useAuth();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
@@ -55,10 +57,17 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   // Then apply doctor filter if applicable
   const doctorFiltered = React.useMemo(() => {
     if (userRole === 'doctor' && currentUser?.doctorId) {
-      return hospitalFiltered.filter(p => p.referredDoctorId === currentUser.doctorId);
+      const doctorId = String(currentUser.doctorId);
+      const appointedPatientIds = new Set(
+        appointments
+          .filter((a) => String(a.doctorId) === doctorId)
+          .map((a) => String(a.patientId))
+      );
+
+      return hospitalFiltered.filter((p) => appointedPatientIds.has(String(p.id)));
     }
     return hospitalFiltered;
-  }, [hospitalFiltered, userRole, currentUser]);
+  }, [hospitalFiltered, userRole, currentUser?.doctorId, appointments]);
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('id');
@@ -72,7 +81,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     gender: 'male',
     phone: '',
     address: '',
-    referredDoctorId: '',
     image: '',
     imageFile: null as File | null,
     status: 'active',
@@ -82,6 +90,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     React.useEffect(() => {
       loadHospitalSetting(currentHospital.id);
     }, [currentHospital.id, loadHospitalSetting]);
+
+  const defaultDoctor = React.useMemo(() => {
+    if (isAllHospitals) return undefined;
+    const defaultDoctorId = getDefaultDoctorId(currentHospital.id);
+    if (!defaultDoctorId) return undefined;
+    return doctors.find((d) => String(d.id) === String(defaultDoctorId));
+  }, [currentHospital.id, doctors, getDefaultDoctorId, isAllHospitals]);
 
   const canManage = hasPermission('manage_patients');
   const canRegister = hasPermission('register_patients');
@@ -107,6 +122,46 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       return bValue.localeCompare(aValue);
     }
   });
+
+  const latestAppointmentByPatientId = React.useMemo(() => {
+    const byPatientId = new Map<string, { doctorName: string; doctorId: string; when: number }>();
+
+    for (const appt of appointments) {
+      const patientId = String(appt.patientId || '');
+      if (!patientId) continue;
+
+      // Ensure appointment belongs to the same hospital as the patient record.
+      // (Super admin may view all hospitals.)
+      const whenDate = appt.appointmentDate instanceof Date ? appt.appointmentDate : new Date(appt.appointmentDate as any);
+      const timeStr = String(appt.appointmentTime || '').trim();
+      const [hh, mm] = timeStr.includes(':') ? timeStr.split(':') : ['0', '0'];
+      const when = new Date(whenDate);
+      when.setHours(Number(hh) || 0, Number(mm) || 0, 0, 0);
+      const whenMs = when.getTime();
+
+      const existing = byPatientId.get(patientId);
+      if (!existing || whenMs > existing.when) {
+        byPatientId.set(patientId, {
+          doctorName: String(appt.doctorName || ''),
+          doctorId: String(appt.doctorId || ''),
+          when: whenMs,
+        });
+      }
+    }
+
+    return byPatientId;
+  }, [appointments]);
+
+  const getLastAppointmentDoctorName = (patient: Patient) => {
+    const latest = latestAppointmentByPatientId.get(String(patient.id));
+    return latest?.doctorName?.trim() ? latest.doctorName : '—';
+  };
+
+  const getLastAppointmentDateLabel = (patient: Patient) => {
+    const latest = latestAppointmentByPatientId.get(String(patient.id));
+    if (!latest?.when) return '—';
+    return formatDate(new Date(latest.when), currentHospital.timezone, currentHospital.calendarType);
+  };
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -158,11 +213,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     return `${prefix}${String(next).padStart(digits, '0')}`;
   };
 
-  const getDoctorName = (doctorId?: string) => {
-    if (!doctorId) return 'N/A';
-    const doctor = doctors.find(d => d.id === doctorId);
-    return doctor ? doctor.name : 'N/A';
-  };
 
   const exportToExcel = () => {
     const workSheet = XLSX.utils.json_to_sheet(sortedPatients.map(p => ({
@@ -172,7 +222,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       Gender: p.gender,
       Phone: p.phone,
       Address: p.address,
-      Doctor: getDoctorName(p.referredDoctorId),
+      LastAppointmentDoctor: getLastAppointmentDoctorName(p),
+      LastAppointmentDate: getLastAppointmentDateLabel(p),
       Hospital: contextHospitals.find(h => h.id === p.hospitalId)?.name || 'Unknown'
     })));
     const workBook = XLSX.utils.book_new();
@@ -201,14 +252,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
     // Create table
     autoTable(doc, {
-      head: [['ID', 'Name', 'Age', 'Gender', 'Phone', 'Doctor']],
+      head: [['ID', 'Name', 'Age', 'Gender', 'Phone', 'Last Doctor', 'Last Appt']],
       body: sortedPatients.map(p => [
         p.patientId,
         p.name,
         p.age,
         p.gender,
         p.phone,
-        getDoctorName(p.referredDoctorId)
+        getLastAppointmentDoctorName(p),
+        getLastAppointmentDateLabel(p),
       ]),
       startY: isAllHospitals ? 40 : 46,
       styles: { fontSize: 8, cellPadding: 3 },
@@ -236,8 +288,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       toast.warning('You are not authorized to register patients');
       return;
     }
-    // Auto-populate with default doctor if configured
-    const defaultDoctorId = getDefaultDoctorId(currentHospital.id) || '';
     const autoPatientId = getNextPatientId(currentHospital.id);
     setFormData({
       patientId: autoPatientId,
@@ -246,7 +296,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       gender: 'male',
       phone: '',
       address: '',
-      referredDoctorId: defaultDoctorId,
       image: '',
       imageFile: null,
       status: 'active',
@@ -274,7 +323,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       gender: patient.gender,
       phone: patient.phone,
       address: patient.address,
-      referredDoctorId: patient.referredDoctorId || '',
       image: patient.image || '',
       imageFile: null,
       status: patient.status || 'active',
@@ -354,7 +402,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
         gender: formData.gender as Patient['gender'],
         phone: formData.phone,
         address: formData.address,
-        referredDoctorId: formData.referredDoctorId || undefined,
         status: formData.status as Patient['status'],
         imageFile: formData.imageFile,
       });
@@ -389,7 +436,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
         gender: formData.gender as Patient['gender'],
         phone: formData.phone,
         address: formData.address,
-        referredDoctorId: formData.referredDoctorId || undefined,
         status: formData.status as Patient['status'],
         imageFile: formData.imageFile,
       });
@@ -415,13 +461,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       setShowDeleteModal(false);
     }
   };
-
-  const hospitalDoctors = React.useMemo(
-    () => doctors.filter(d => d.hospitalId === currentHospital.id),
-    [doctors, currentHospital.id]
-  );
-  const defaultDoctorId = getDefaultDoctorId(currentHospital.id);
-  const defaultDoctor = defaultDoctorId ? hospitalDoctors.find(d => d.id === defaultDoctorId) : null;
 
   return (
     <div className="space-y-3">
@@ -526,7 +565,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   </div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Phone</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Doctor</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Last Appointment Doctor</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
               </tr>
             </thead>
@@ -578,7 +617,9 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                       </span>
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{patient.phone}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getDoctorName(patient.referredDoctorId)}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
+                      {getLastAppointmentDoctorName(patient)}
+                    </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
@@ -755,24 +796,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   placeholder="Street, City, Country"
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                  Assigned Doctor {defaultDoctor && <span className="text-blue-600 dark:text-blue-400 text-[10px] ml-1">(Default: {formatDoctorDisplayName(defaultDoctor.name)})</span>}
-                </label>
-                <select
-                  value={formData.referredDoctorId}
-                  onChange={(e) => setFormData({ ...formData, referredDoctorId: e.target.value })}
-                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                >
-                  <option value="">-- Select Doctor --</option>
-                  {hospitalDoctors.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {formatDoctorDisplayName(doctor.name)} - {doctor.specialization}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
                 <button
                   type="button"
@@ -896,8 +919,12 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Assigned Doctor</label>
-                    <p className="text-gray-900 font-bold text-xl">{formatDoctorDisplayName(getDoctorName(selectedPatient.referredDoctorId))}</p>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Last Appointment Doctor</label>
+                    <p className="text-gray-900 font-medium text-base">{getLastAppointmentDoctorName(selectedPatient)}</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Last Appointment Date</label>
+                    <p className="text-gray-900 font-medium text-base">{getLastAppointmentDateLabel(selectedPatient)}</p>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Registration Date</label>
@@ -1009,18 +1036,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         {selectedPatient.address}
                       </p>
                     </div>
-                  </div>
-                </div>
-
-                <div className="md:col-span-2 bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                    Medical Assignment
-                  </h4>
-                  <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Doctor</label>
-                    <p className="text-sm text-blue-600 dark:text-blue-400 font-bold">
-                      {formatDoctorDisplayName(getDoctorName(selectedPatient.referredDoctorId))}
-                    </p>
                   </div>
                 </div>
 

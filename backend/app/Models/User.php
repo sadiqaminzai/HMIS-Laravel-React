@@ -29,7 +29,15 @@ class User extends Authenticatable
         'password',
         'role',
         'role_id',
-        'doctor_id',
+        'is_doctor',
+        'phone',
+        'specialization',
+        'registration_number',
+        'consultation_fee',
+        'doctor_status',
+        'availability_schedule',
+        'image_path',
+        'signature_path',
         'avatar_path',
         'is_active',
         'last_login_at',
@@ -56,18 +64,21 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'is_doctor' => 'boolean',
+            'consultation_fee' => 'decimal:2',
+            'availability_schedule' => 'array',
             'last_login_at' => 'datetime',
         ];
+    }
+
+    public function getRoleAttribute($value): string
+    {
+        return strtolower(trim((string) ($value ?? '')));
     }
 
     public function hospital()
     {
         return $this->belongsTo(Hospital::class);
-    }
-
-    public function doctor()
-    {
-        return $this->belongsTo(Doctor::class);
     }
 
     public function roleRecord(): BelongsTo
@@ -97,6 +108,86 @@ class User extends Authenticatable
     }
 
     /**
+     * Legacy/system-role fallback.
+     *
+     * If a user has a built-in role name (admin/doctor/etc) but the RBAC tables
+     * are not populated (or the user has no matching Role row), we still grant
+     * a sensible baseline of permissions so hospital-scoped data can be viewed.
+     *
+     * @return array<int, string>
+     */
+    private function fallbackPermissionNamesForSystemRole(): array
+    {
+        $role = strtolower(trim((string) ($this->role ?? '')));
+        if ($role === '') {
+            return [];
+        }
+
+        // Keep these minimal and focused on the common built-in roles.
+        // If a Role record exists in the DB, that will take precedence.
+        return match ($role) {
+            'admin' => [
+                // Users/RBAC (within hospital)
+                'view_users', 'manage_users',
+                'view_roles', 'manage_roles',
+                'view_permissions', 'manage_permissions',
+
+                // Core clinical flows
+                'view_doctors', 'manage_doctors',
+                'view_patients', 'manage_patients', 'register_patients',
+                'view_appointments', 'manage_appointments', 'schedule_appointments',
+                'view_prescriptions', 'manage_prescriptions', 'create_prescription',
+
+                // Pharmacy
+                'view_medicines', 'manage_medicines', 'dispense_medicines',
+                'view_manufacturers', 'manage_manufacturers',
+                'view_medicine_types', 'manage_medicine_types',
+
+                // Laboratory
+                'view_test_templates', 'manage_test_templates',
+                'view_lab_orders', 'manage_lab_orders',
+                'enter_lab_results', 'manage_lab_payments',
+
+                // Settings/Reports
+                'view_hospital_settings', 'manage_hospital_settings',
+                'view_reports', 'manage_reports',
+            ],
+
+            'doctor' => [
+                'view_doctors',
+                'view_patients',
+                'view_appointments',
+                'view_prescriptions', 'create_prescription',
+                'view_test_templates',
+                'view_lab_orders',
+                'view_medicines',
+            ],
+
+            'receptionist' => [
+                'view_doctors',
+                'view_patients', 'register_patients',
+                'view_appointments', 'schedule_appointments',
+                'view_prescriptions',
+            ],
+
+            'pharmacist' => [
+                'view_medicines', 'manage_medicines', 'dispense_medicines',
+                'view_manufacturers',
+                'view_medicine_types',
+                'view_prescriptions',
+            ],
+
+            'lab' => [
+                'view_test_templates',
+                'view_lab_orders', 'manage_lab_orders',
+                'enter_lab_results', 'manage_lab_payments',
+            ],
+
+            default => [],
+        };
+    }
+
+    /**
      * @return array<int, string>
      */
     public function permissionNames(): array
@@ -111,7 +202,7 @@ class User extends Authenticatable
 
         $role = $this->effectiveRoleRecord();
         if (!$role) {
-            return [];
+            return $this->fallbackPermissionNamesForSystemRole();
         }
 
         return $role
@@ -134,7 +225,7 @@ class User extends Authenticatable
 
         $role = $this->effectiveRoleRecord();
         if (!$role) {
-            return false;
+            return in_array($permissionName, $this->fallbackPermissionNamesForSystemRole(), true);
         }
 
         return $role
@@ -160,7 +251,11 @@ class User extends Authenticatable
 
         $role = $this->effectiveRoleRecord();
         if (!$role) {
-            return false;
+            $fallback = $this->fallbackPermissionNamesForSystemRole();
+            if (empty($fallback)) {
+                return false;
+            }
+            return count(array_intersect($names, $fallback)) > 0;
         }
 
         return $role

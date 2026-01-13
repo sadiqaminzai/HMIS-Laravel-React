@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Prescription, PrescriptionMedicine } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
+import { useAuth } from './AuthContext';
 
 interface AddPrescriptionInput {
   hospitalId: string;
@@ -68,10 +69,22 @@ const mapPrescription = (p: any): Prescription => ({
 
 export function PrescriptionProvider({ children }: { children: React.ReactNode }) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const { isAuthenticated, authLoading, hasPermission } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (!token) {
+      setPrescriptions([]);
+      return;
+    }
+
+    // Backend: /prescriptions is guarded by permission:view_prescriptions OR manage_prescriptions
+    // Create requires create_prescription OR manage_prescriptions.
+    if (
+      !hasPermission('view_prescriptions') &&
+      !hasPermission('manage_prescriptions') &&
+      !hasPermission('create_prescription')
+    ) {
       setPrescriptions([]);
       return;
     }
@@ -81,15 +94,20 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       setPrescriptions(records.map(mapPrescription));
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status !== 401) {
+      if (status !== 401 && status !== 403) {
         toast.error(err?.response?.data?.message || 'Failed to load prescriptions');
       }
     }
   };
 
   useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      setPrescriptions([]);
+      return;
+    }
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const addPrescription = async (input: AddPrescriptionInput) => {
     const payload: any = {
@@ -123,8 +141,9 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       toast.success('Prescription saved');
       return mapped;
     } catch (error: any) {
+      const status = error?.response?.status;
       const msg = error?.response?.data?.message || 'Failed to save prescription';
-      toast.error(msg);
+      if (status !== 401 && status !== 403) toast.error(msg);
       throw error;
     }
   };
