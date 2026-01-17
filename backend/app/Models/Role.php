@@ -3,15 +3,18 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Spatie\Permission\Models\Role as SpatieRole;
 
-class Role extends Model
+class Role extends SpatieRole
 {
     use HasFactory;
+
+    protected string $guard_name = 'web';
 
     protected $fillable = [
         'hospital_id',
         'name',
+        'guard_name',
         'display_name',
         'description',
         'status',
@@ -21,11 +24,6 @@ class Role extends Model
     protected $casts = [
         'is_system' => 'boolean',
     ];
-
-    public function permissions()
-    {
-        return $this->belongsToMany(Permission::class);
-    }
 
     public function hospital()
     {

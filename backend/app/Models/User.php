@@ -11,11 +11,17 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Permission;
 use App\Models\Role;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasRoles {
+        hasAnyPermission as spatieHasAnyPermission;
+        hasPermissionTo as spatieHasPermissionTo;
+    }
+
+    protected string $guard_name = 'web';
 
     /**
      * The attributes that are mass assignable.
@@ -29,7 +35,6 @@ class User extends Authenticatable
         'password',
         'role',
         'role_id',
-        'is_doctor',
         'phone',
         'specialization',
         'registration_number',
@@ -64,7 +69,6 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
-            'is_doctor' => 'boolean',
             'consultation_fee' => 'decimal:2',
             'availability_schedule' => 'array',
             'last_login_at' => 'datetime',
@@ -200,6 +204,15 @@ class User extends Authenticatable
                 ->all();
         }
 
+        $hasSpatieRoles = $this->roles()->exists();
+        if ($hasSpatieRoles) {
+            return $this->getAllPermissions()
+                ->filter(fn ($perm) => !isset($perm->status) || $perm->status === 'active')
+                ->pluck('name')
+                ->values()
+                ->all();
+        }
+
         $role = $this->effectiveRoleRecord();
         if (!$role) {
             return $this->fallbackPermissionNamesForSystemRole();
@@ -221,6 +234,14 @@ class User extends Authenticatable
 
         if ($this->role === 'super_admin') {
             return true;
+        }
+
+        if ($this->roles()->exists()) {
+            try {
+                return $this->spatieHasPermissionTo($permissionName);
+            } catch (\Throwable $e) {
+                return false;
+            }
         }
 
         $role = $this->effectiveRoleRecord();
@@ -247,6 +268,10 @@ class User extends Authenticatable
 
         if ($this->role === 'super_admin') {
             return true;
+        }
+
+        if ($this->roles()->exists()) {
+            return $this->spatieHasAnyPermission($names);
         }
 
         $role = $this->effectiveRoleRecord();

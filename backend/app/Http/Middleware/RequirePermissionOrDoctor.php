@@ -8,8 +8,8 @@ use Illuminate\Http\Request;
 class RequirePermissionOrDoctor
 {
     /**
-     * Allows access when either:
-        * - user is a doctor (users.is_doctor = 1 or role=doctor), OR
+      * Allows access when either:
+      * - user is a doctor (role=doctor), OR
      * - user has any of the provided permissions.
      *
      * @param  array<int, string>  $permissions
@@ -22,7 +22,9 @@ class RequirePermissionOrDoctor
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-            if ($user && ($user->role === 'doctor' || $user->is_doctor)) {
+        $role = strtolower(trim((string) ($user->role ?? '')));
+
+        if ($role === 'doctor') {
             return $next($request);
         }
 

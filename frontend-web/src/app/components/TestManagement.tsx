@@ -4,7 +4,8 @@ import { TestTemplate, TestParameter, Hospital, UserRole } from '../types';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { mockHospitals } from '../data/mockData';
+import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -23,6 +24,9 @@ interface TestManagementProps {
 export function TestManagement({ hospital, userRole = 'admin' }: TestManagementProps) {
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { hospitals } = useHospitals();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_test_templates');
   
   const { t, i18n } = useTranslation();
   const [tests, setTests] = useState<TestTemplate[]>([]);
@@ -227,7 +231,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       Price: t.price,
       Parameters: t.parameters.length,
       Status: t.status,
-      Hospital: mockHospitals.find(h => h.id === t.hospitalId)?.name || 'Unknown'
+      Hospital: hospitals.find(h => h.id === t.hospitalId)?.name || 'Unknown'
     })));
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "Tests");
@@ -313,13 +317,15 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
-          <button
-            onClick={handleAddTest}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {i18n.language === 'en' ? 'Add' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة'}
-          </button>
+          {canManage && (
+            <button
+              onClick={handleAddTest}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {i18n.language === 'en' ? 'Add' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -422,20 +428,24 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleEditTest(test)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTest(test.id)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => handleEditTest(test)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            onClick={() => handleDeleteTest(test.id)}
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -507,7 +517,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
-                    {mockHospitals.map(h => (
+                    {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>

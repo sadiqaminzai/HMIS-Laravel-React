@@ -8,6 +8,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedicineTypes } from '../context/MedicineTypeContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 
 interface MedicineTypeManagementProps {
   hospital: Hospital;
@@ -19,10 +20,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { medicineTypes, addMedicineType, updateMedicineType, deleteMedicineType, loading } = useMedicineTypes();
   const { hospitals } = useHospitals();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_medicine_types');
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'view' | 'edit' | 'delete'>('add');
   const [selectedMedicineType, setSelectedMedicineType] = useState<MedicineType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('name');
@@ -151,13 +155,14 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name.trim()) {
-      toast.error('Please enter medicine type name');
-      return;
-    }
+    setSubmitting(true);
 
     try {
+      if (!formData.name.trim()) {
+        toast.error('Please enter medicine type name');
+        return;
+      }
+
       if (modalMode === 'add') {
         await addMedicineType({
           hospitalId: formData.hospitalId,
@@ -184,6 +189,8 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
       setFormData({ name: '', description: '', status: 'active', hospitalId: resetHospitalId });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to save medicine type');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -240,13 +247,15 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+          {canManage && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -310,20 +319,24 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handleView(medicineType)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="View"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(medicineType)}
-                          className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => handleEdit(medicineType)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            onClick={() => handleDelete(medicineType)}
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(medicineType)}
                           className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
@@ -636,9 +649,10 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                    disabled={submitting}
+                    className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {modalMode === 'add' ? 'Add' : 'Save'}
+                    {submitting ? 'Saving...' : modalMode === 'add' ? 'Add' : 'Save'}
                   </button>
                 </div>
               </form>

@@ -8,15 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->foreignId('doctor_id')->nullable()->after('role')->constrained('doctors')->nullOnDelete();
-        });
+        // No-op: merged into base users migration
     }
 
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('doctor_id');
-        });
+        // No-op
     }
 };

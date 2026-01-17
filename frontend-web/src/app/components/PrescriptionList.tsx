@@ -17,6 +17,7 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useMedicines } from '../context/MedicineContext';
+import { useAuth } from '../context/AuthContext';
 
 interface PrescriptionListProps {
   hospital: Hospital;
@@ -40,6 +41,7 @@ const hexToRgb = (hex?: string): [number, number, number] | null => {
 
 export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
   const { prescriptions, deletePrescription } = usePrescriptions();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -88,15 +90,18 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     );
   };
 
+  const canManagePrescriptions = hasPermission('manage_prescriptions');
+  const canCreatePrescriptions = hasPermission('create_prescription') || canManagePrescriptions;
+
   // Check if user can edit a prescription
   const canEditPrescription = (prescription: any): boolean => {
-    // Super Admin and Admin can always edit
-    if (userRole === 'super_admin' || userRole === 'admin') {
+    // Manage permission allows editing any prescription
+    if (canManagePrescriptions) {
       return true;
     }
     
-    // Doctor can only edit prescriptions created today
-    if (userRole === 'doctor') {
+    // Creator roles can only edit prescriptions created today
+    if (canCreatePrescriptions && userRole === 'doctor') {
       return isPrescriptionCreatedToday(prescription.createdAt);
     }
     
@@ -536,7 +541,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {(userRole === 'super_admin' || userRole === 'admin') && (
+                        {canManagePrescriptions && (
                           <button
                             onClick={() => handleDeletePrescription(prescription)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"

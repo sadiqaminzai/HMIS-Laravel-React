@@ -76,3 +76,66 @@ export function formatOnlyTime(
     hour12: true
   });
 }
+
+export function getISODateInTimeZone(timezone: string, date: Date = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date);
+
+    const year = parts.find((p) => p.type === 'year')?.value ?? '1970';
+    const month = parts.find((p) => p.type === 'month')?.value ?? '01';
+    const day = parts.find((p) => p.type === 'day')?.value ?? '01';
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+    console.warn(`Error getting ISO date (tz: ${timezone}): ${error}`);
+    return date.toISOString().split('T')[0];
+  }
+}
+
+export function getTimeInTimeZone(timezone: string, date: Date = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(date);
+
+    const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    return `${hour}:${minute}`;
+  } catch (error) {
+    console.warn(`Error getting time (tz: ${timezone}): ${error}`);
+    const fallback = date.toTimeString().slice(0, 5);
+    return fallback;
+  }
+}
+
+export function getWeekdayFromDateString(dateStr: string): string {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const utcDate = new Date(Date.UTC(year, month, day));
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' }).format(utcDate);
+}
+
+export function parseDateOnly(value: Date | string | undefined | null): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    return new Date(Date.UTC(year, month, day));
+  }
+  const d = new Date(String(value));
+  if (isNaN(d.getTime())) return undefined;
+  return d;
+}

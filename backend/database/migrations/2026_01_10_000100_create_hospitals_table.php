@@ -8,23 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('hospitals', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->string('email')->nullable();
-            $table->string('phone')->nullable();
-            $table->text('address')->nullable();
-            $table->string('logo_path')->nullable();
-            $table->json('settings')->nullable();
-            $table->enum('subscription_status', ['active', 'inactive', 'past_due'])->default('active');
-            $table->timestamps();
-            $table->softDeletes();
-        });
+        // No-op: hospitals table is created earlier in 2026_01_10_000000_create_hospitals_table.php
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('hospitals');
+        // No-op
     }
 };

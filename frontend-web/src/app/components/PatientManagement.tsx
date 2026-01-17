@@ -50,6 +50,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const [showIdCardModal, setShowIdCardModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Apply hospital filter first from API data
   const hospitalFiltered = React.useMemo(() => filterByHospital(patients), [patients, filterByHospital]);
@@ -393,6 +394,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       return;
     }
     const newPatientId = formData.patientId || getNextPatientId(String(formData.hospitalId));
+    setSubmitting(true);
     try {
       await addPatient({
         hospitalId: formData.hospitalId,
@@ -417,6 +419,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       if (validation?.patient_id) {
         setFormData((prev) => ({ ...prev, patientId: getNextPatientId(String(prev.hospitalId)) }));
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -426,6 +430,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       toast.warning('You are not authorized to manage patients');
       return;
     }
+    setSubmitting(true);
     try {
       await updatePatient({
         id: selectedPatient.id,
@@ -444,6 +449,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       setImagePreview(null);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update patient');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -809,9 +816,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
                 </button>
               </div>
             </form>

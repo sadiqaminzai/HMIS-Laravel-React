@@ -36,14 +36,18 @@ class PermissionController extends Controller
     {
         $this->authorizeManagePermissions($request->user());
 
+        $guardName = 'web';
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:permissions,name'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('permissions', 'name')->where('guard_name', $guardName)],
             'display_name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'is_system' => ['boolean'],
         ]);
+
+        $data['guard_name'] = $guardName;
 
         $permission = Permission::create($data);
 
@@ -58,10 +62,6 @@ class PermissionController extends Controller
     public function update(Request $request, Permission $permission)
     {
         $this->authorizeManagePermissions($request->user());
-
-        if ($permission->is_system) {
-            return response()->json(['message' => 'System permissions cannot be modified'], 403);
-        }
 
         $data = $request->validate([
             'display_name' => ['sometimes', 'string', 'max:255'],
@@ -78,10 +78,6 @@ class PermissionController extends Controller
     public function destroy(Request $request, Permission $permission)
     {
         $this->authorizeManagePermissions($request->user());
-
-        if ($permission->is_system) {
-            return response()->json(['message' => 'System permissions cannot be deleted'], 403);
-        }
 
         $permission->roles()->detach();
         $permission->delete();

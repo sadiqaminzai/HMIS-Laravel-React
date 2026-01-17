@@ -26,7 +26,7 @@ class AppointmentController extends Controller
             $query->where('hospital_id', $request->integer('hospital_id'));
         }
 
-        if ($user->role === 'doctor' || $user->is_doctor) {
+        if ($user->role === 'doctor') {
             $query->where('doctor_id', $user->id);
         }
 
@@ -136,7 +136,7 @@ class AppointmentController extends Controller
             'patient_id' => ['nullable', 'exists:patients,id'],
             'doctor_id' => [
                 'required',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
             ],
             'appointment_number' => ['nullable', 'string', 'max:100', Rule::unique('appointments', 'appointment_number')->ignore($appointmentId)],
             'patient_name' => ['required_without:patient_id', 'string', 'max:255'],
@@ -154,7 +154,7 @@ class AppointmentController extends Controller
     {
         $doctor = User::query()
             ->whereKey($data['doctor_id'])
-            ->where('is_doctor', true)
+            ->where('role', 'doctor')
             ->firstOrFail();
 
         if (!isset($data['hospital_id'])) {
@@ -196,7 +196,7 @@ class AppointmentController extends Controller
             abort(403, 'Unauthorized appointment access');
         }
 
-        if (($user->role === 'doctor' || $user->is_doctor) && (int) $appointment->doctor_id !== (int) $user->id) {
+        if ($user->role === 'doctor' && (int) $appointment->doctor_id !== (int) $user->id) {
             abort(403, 'Unauthorized appointment access');
         }
     }

@@ -14,23 +14,33 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             // Nullable for Super Admins who manage the whole system
-            $table->foreignId('hospital_id')->nullable()->constrained()->onDelete('cascade');
-            
+            $table->unsignedBigInteger('hospital_id')->nullable();
+
             $table->string('name');
             $table->string('email')->unique();
+            $table->string('phone')->nullable();
             $table->string('password');
-            
+
             $table->enum('role', ['super_admin', 'admin', 'doctor', 'receptionist', 'pharmacist', 'lab_technician']);
+            $table->unsignedBigInteger('doctor_id')->nullable();
+            $table->string('specialization')->nullable();
+            $table->string('registration_number')->nullable();
+            $table->decimal('consultation_fee', 10, 2)->default(0);
+            $table->enum('doctor_status', ['active', 'inactive'])->nullable()->default('active');
+            $table->json('availability_schedule')->nullable();
+            $table->string('image_path')->nullable();
+            $table->string('signature_path')->nullable();
             $table->string('avatar_path')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamp('last_login_at')->nullable();
-            
+
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();
 
             // Index for faster tenant scoping
             $table->index(['hospital_id', 'role']);
+            $table->index('doctor_id');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

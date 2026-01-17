@@ -27,7 +27,7 @@ class LabOrderController extends Controller
             ->with(['items.results', 'patient', 'doctor']);
 
         // If logged-in user is a doctor, always scope to their own hospital and their own orders.
-        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+        if ($user && (string) $user->role === 'doctor') {
             if ($user->hospital_id) {
                 $query->where('hospital_id', (int) $user->hospital_id);
             }
@@ -35,7 +35,7 @@ class LabOrderController extends Controller
         }
 
         // Hospital filter
-        if ((!$user || ((string) $user->role !== 'doctor' && !(bool) $user->is_doctor)) && $request->has('hospital_id')) {
+        if ((!$user || (string) $user->role !== 'doctor') && $request->has('hospital_id')) {
             $query->where('hospital_id', $request->integer('hospital_id'));
         }
 
@@ -50,7 +50,7 @@ class LabOrderController extends Controller
         }
 
         // Doctor filter
-        if ((!$user || ((string) $user->role !== 'doctor' && !(bool) $user->is_doctor)) && $request->has('doctor_id')) {
+        if ((!$user || (string) $user->role !== 'doctor') && $request->has('doctor_id')) {
             $query->where('doctor_id', $request->integer('doctor_id'));
         }
 
@@ -116,7 +116,7 @@ class LabOrderController extends Controller
         $isWalkIn = $data['is_walk_in'] ?? false;
 
         // If the logged-in user is a doctor, force the order to be created under their identity.
-        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+        if ($user && (string) $user->role === 'doctor') {
             if ((int) $user->hospital_id !== (int) $hospitalId) {
                 return response()->json(['message' => 'Doctor does not belong to the selected hospital'], 422);
             }
@@ -126,7 +126,7 @@ class LabOrderController extends Controller
         }
 
         // Ensure doctor belongs to hospital and is marked as doctor.
-        $doctor = User::query()->whereKey($data['doctor_id'])->where('is_doctor', true)->first();
+        $doctor = User::query()->whereKey($data['doctor_id'])->where('role', 'doctor')->first();
         if (!$doctor || (int) $doctor->hospital_id !== (int) $hospitalId) {
             return response()->json(['message' => 'Doctor does not belong to the selected hospital'], 422);
         }
@@ -229,7 +229,7 @@ class LabOrderController extends Controller
     public function show(LabOrder $labOrder)
     {
         $user = request()->user();
-        if ($user && ((string) $user->role === 'doctor' || (bool) $user->is_doctor)) {
+        if ($user && (string) $user->role === 'doctor') {
             if ((int) $labOrder->doctor_id !== (int) $user->id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }

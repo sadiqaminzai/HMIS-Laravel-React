@@ -32,7 +32,7 @@ const mapMedicine = (m: any): Medicine => ({
 export function MedicineProvider({ children }: { children: React.ReactNode }) {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [loading, setLoading] = useState(false);
-  const { isAuthenticated, authLoading, hasPermission } = useAuth();
+  const { isAuthenticated, authLoading, hasPermission, user } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -41,8 +41,15 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Backend: /medicines is guarded by permission:view_medicines OR manage_medicines
-    if (!hasPermission('view_medicines') && !hasPermission('manage_medicines')) {
+    // Backend: /medicines is guarded by permissions or doctor role.
+    const isDoctor = String(user?.role || '').toLowerCase() === 'doctor';
+    if (
+      !isDoctor &&
+      !hasPermission('view_medicines') &&
+      !hasPermission('manage_medicines') &&
+      !hasPermission('create_prescription') &&
+      !hasPermission('manage_prescriptions')
+    ) {
       setMedicines([]);
       return;
     }

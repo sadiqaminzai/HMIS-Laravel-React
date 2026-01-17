@@ -24,6 +24,15 @@ class RolesPermissionsSeeder extends Seeder
             if (Schema::hasTable('personal_access_tokens')) {
                 DB::table('personal_access_tokens')->truncate();
             }
+            if (Schema::hasTable('model_has_roles')) {
+                DB::table('model_has_roles')->truncate();
+            }
+            if (Schema::hasTable('model_has_permissions')) {
+                DB::table('model_has_permissions')->truncate();
+            }
+            if (Schema::hasTable('role_has_permissions')) {
+                DB::table('role_has_permissions')->truncate();
+            }
             if (Schema::hasTable('permission_role')) {
                 DB::table('permission_role')->truncate();
             }
@@ -47,6 +56,11 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'view_roles', 'display_name' => 'View Roles', 'category' => 'RBAC'],
             ['name' => 'manage_permissions', 'display_name' => 'Manage Permissions', 'category' => 'RBAC'],
             ['name' => 'view_permissions', 'display_name' => 'View Permissions', 'category' => 'RBAC'],
+            ['name' => 'view_dashboard', 'display_name' => 'View Dashboard', 'category' => 'Navigation'],
+            ['name' => 'view_reception_menu', 'display_name' => 'View Reception Menu', 'category' => 'Navigation'],
+            ['name' => 'view_laboratory_menu', 'display_name' => 'View Laboratory Menu', 'category' => 'Navigation'],
+            ['name' => 'view_pharmacy_menu', 'display_name' => 'View Pharmacy Menu', 'category' => 'Navigation'],
+            ['name' => 'view_prescriptions_menu', 'display_name' => 'View Prescriptions Menu', 'category' => 'Navigation'],
             ['name' => 'manage_hospitals', 'display_name' => 'Manage Hospitals', 'category' => 'Hospitals'],
             ['name' => 'view_hospitals', 'display_name' => 'View Hospitals', 'category' => 'Hospitals'],
             ['name' => 'manage_users', 'display_name' => 'Manage Users', 'category' => 'User Management'],
@@ -57,6 +71,7 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'view_patients', 'display_name' => 'View Patients', 'category' => 'Patient Management'],
             ['name' => 'view_doctors', 'display_name' => 'View Doctors', 'category' => 'User Management'],
             ['name' => 'view_appointments', 'display_name' => 'View Appointments', 'category' => 'Appointments'],
+            ['name' => 'update_appointment_status', 'display_name' => 'Update Appointment Status', 'category' => 'Appointments'],
             ['name' => 'create_prescription', 'display_name' => 'Create Prescription', 'category' => 'Prescription'],
             ['name' => 'view_prescriptions', 'display_name' => 'View Prescriptions', 'category' => 'Prescription'],
             ['name' => 'manage_prescriptions', 'display_name' => 'Manage Prescriptions', 'category' => 'Prescription'],
@@ -75,6 +90,7 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'manage_test_templates', 'display_name' => 'Manage Test Templates', 'category' => 'Laboratory'],
             ['name' => 'view_lab_orders', 'display_name' => 'View Lab Orders', 'category' => 'Laboratory'],
             ['name' => 'manage_lab_orders', 'display_name' => 'Manage Lab Orders', 'category' => 'Laboratory'],
+            ['name' => 'update_lab_order_status', 'display_name' => 'Update Lab Order Status', 'category' => 'Laboratory'],
             ['name' => 'enter_lab_results', 'display_name' => 'Enter Lab Results', 'category' => 'Laboratory'],
             ['name' => 'manage_lab_payments', 'display_name' => 'Manage Lab Payments', 'category' => 'Laboratory'],
             ['name' => 'view_contact_messages', 'display_name' => 'View Contact Messages', 'category' => 'Support'],
@@ -86,7 +102,7 @@ class RolesPermissionsSeeder extends Seeder
         $permissionIds = [];
         foreach ($permissions as $perm) {
             $permission = Permission::updateOrCreate(
-                ['name' => $perm['name']],
+                ['name' => $perm['name'], 'guard_name' => 'web'],
                 [
                     'display_name' => $perm['display_name'],
                     'category' => $perm['category'],

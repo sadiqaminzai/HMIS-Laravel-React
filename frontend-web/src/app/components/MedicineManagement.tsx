@@ -9,6 +9,7 @@ import { useMedicines } from '../context/MedicineContext';
 import { useManufacturers } from '../context/ManufacturerContext';
 import { useMedicineTypes } from '../context/MedicineTypeContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 import { Hospital, Medicine, UserRole } from '../types';
 
 interface MedicineManagementProps {
@@ -24,6 +25,8 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const { manufacturers } = useManufacturers();
   const { medicineTypes } = useMedicineTypes();
   const { hospitals } = useHospitals();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_medicines');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -31,6 +34,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [sortField, setSortField] = useState<SortField>('brandName');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -196,6 +200,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       toast.error('Brand name is required');
       return;
     }
+    setSubmitting(true);
     try {
       await addMedicine({
         hospitalId: formData.hospitalId,
@@ -210,6 +215,8 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       toast.success('Medicine added successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to add medicine');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -220,6 +227,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       toast.error('Brand name is required');
       return;
     }
+    setSubmitting(true);
     try {
       await updateMedicine({
         id: selectedMedicine.id,
@@ -235,6 +243,8 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       toast.success('Medicine updated successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update medicine');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -278,10 +288,12 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
-          <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+          {canManage && (
+            <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -338,12 +350,16 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                         <button onClick={() => handleView(medicine)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleEdit(medicine)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDelete(medicine)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canManage && (
+                          <button onClick={() => handleEdit(medicine)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canManage && (
+                          <button onClick={() => handleDelete(medicine)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -509,7 +525,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button type="submit" className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700">Save</button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Saving...' : 'Save'}
+              </button>
             </div>
           </form>
         </div>
@@ -608,7 +630,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setShowEditModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button type="submit" className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Update</button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Saving...' : 'Update'}
+              </button>
             </div>
           </form>
         </div>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Doctor } from '../types';
+import { Doctor, DoctorAvailability } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
@@ -15,6 +15,23 @@ interface DoctorContextType {
 
 const DoctorContext = createContext<DoctorContextType | undefined>(undefined);
 
+const normalizeAvailability = (availability: any): DoctorAvailability[] => {
+  if (!Array.isArray(availability)) return [];
+  return availability.map((slot) => {
+    const isAvailableRaw = slot?.isAvailable ?? slot?.is_available ?? false;
+    const isAvailable = typeof isAvailableRaw === 'boolean'
+      ? isAvailableRaw
+      : Boolean(Number(isAvailableRaw));
+
+    return {
+      day: slot?.day ?? '',
+      startTime: slot?.startTime ?? slot?.start_time ?? '00:00',
+      endTime: slot?.endTime ?? slot?.end_time ?? '00:00',
+      isAvailable,
+    } as DoctorAvailability;
+  });
+};
+
 const mapDoctor = (d: any): Doctor => ({
   id: String(d.id),
   hospitalId: String(d.hospital_id),
@@ -27,13 +44,13 @@ const mapDoctor = (d: any): Doctor => ({
   status: (d.status ?? 'active') as Doctor['status'],
   image: d.image_url ?? d.image_path ?? '',
   signature: d.signature_url ?? d.signature_path ?? '',
-  availability: d.availability_schedule ?? [],
+  availability: normalizeAvailability(d.availability_schedule),
 });
 
 export function DoctorProvider({ children }: { children: React.ReactNode }) {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(false);
-  const { isAuthenticated, authLoading, hasPermission } = useAuth();
+  const { isAuthenticated, authLoading, hasPermission, user } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -42,8 +59,9 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Backend: /doctors is guarded by permission:view_doctors OR manage_doctors
-    if (!hasPermission('view_doctors') && !hasPermission('manage_doctors')) {
+    // Backend: /doctors is guarded by permission OR (doctor).
+    const isDoctor = String(user?.role || '').toLowerCase() === 'doctor';
+    if (!isDoctor && !hasPermission('view_doctors') && !hasPermission('manage_doctors')) {
       setDoctors([]);
       return;
     }

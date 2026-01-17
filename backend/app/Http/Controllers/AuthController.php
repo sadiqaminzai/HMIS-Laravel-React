@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\PermissionRegistrar;
 
 class AuthController extends Controller
 {
@@ -64,6 +65,12 @@ class AuthController extends Controller
 
     private function transformUser(User $user): array
     {
+        if ($user->role !== 'super_admin') {
+            app(PermissionRegistrar::class)->setPermissionsTeamId($user->hospital_id);
+        } else {
+            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+        }
+
         return [
             'id' => (string) $user->id,
             'name' => $user->name,
@@ -71,7 +78,7 @@ class AuthController extends Controller
             'role' => $user->role,
             'roleId' => $user->role_id ? (string) $user->role_id : null,
             'hospitalId' => $user->hospital_id ? (string) $user->hospital_id : null,
-            'doctorId' => ($user->is_doctor || $user->role === 'doctor') ? (string) $user->id : null,
+            'doctorId' => $user->role === 'doctor' ? (string) $user->id : null,
             'avatarPath' => $user->avatar_path,
             'isActive' => $user->is_active,
             'lastLoginAt' => $user->last_login_at,

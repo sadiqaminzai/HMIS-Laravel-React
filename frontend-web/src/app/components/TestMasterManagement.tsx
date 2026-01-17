@@ -18,6 +18,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingTest, setEditingTest] = useState<TestMaster | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Partial<TestMaster>>({
     testName: '',
     testCode: '',
@@ -125,29 +126,34 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
 
-    if (!formData.testName || !formData.testCode || !formData.testType) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
+    try {
+      if (!formData.testName || !formData.testCode || !formData.testType) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
 
-    if (!formData.parameters || formData.parameters.length === 0) {
-      toast.error('Please add at least one test parameter');
-      return;
-    }
+      if (!formData.parameters || formData.parameters.length === 0) {
+        toast.error('Please add at least one test parameter');
+        return;
+      }
 
-    if (editingTest) {
-      onUpdate(editingTest.id, {
-        ...formData,
-        updatedAt: new Date(),
-      });
-      toast.success('Test updated successfully');
-    } else {
-      onAdd({
-        ...formData as Omit<TestMaster, 'id' | 'createdAt'>,
-        hospitalId: user?.hospitalId || '',
-      });
-      toast.success('Test created successfully');
+      if (editingTest) {
+        onUpdate(editingTest.id, {
+          ...formData,
+          updatedAt: new Date(),
+        });
+        toast.success('Test updated successfully');
+      } else {
+        onAdd({
+          ...formData as Omit<TestMaster, 'id' | 'createdAt'>,
+          hospitalId: user?.hospitalId || '',
+        });
+        toast.success('Test created successfully');
+      }
+    } finally {
+      setSubmitting(false);
     }
 
     handleCloseModal();
@@ -176,9 +182,10 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
           {t('addTest')}
         </button>
       </div>
-
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
       {/* Search */}
-      <div className="relative">
+                  {submitting ? 'Saving...' : editingTest ? t('updateTest') : t('addTest')}
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"

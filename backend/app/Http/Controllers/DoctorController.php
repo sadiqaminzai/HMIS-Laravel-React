@@ -11,7 +11,7 @@ class DoctorController extends Controller
 {
     public function index(Request $request)
     {
-        $query = User::query()->where('is_doctor', true);
+        $query = User::query()->where('role', 'doctor');
 
         if ($request->user()->role !== 'super_admin') {
             $query->where('hospital_id', $request->user()->hospital_id);
@@ -61,7 +61,6 @@ class DoctorController extends Controller
             'email' => $data['email'] ?? Str::uuid().'@example.invalid',
             'password' => $generatedPassword,
             'role' => 'doctor',
-            'is_doctor' => true,
             'phone' => $data['phone'] ?? null,
             'specialization' => $data['specialization'] ?? null,
             'registration_number' => $data['registration_number'] ?? null,
@@ -81,7 +80,7 @@ class DoctorController extends Controller
 
     public function show(Request $request, User $doctor)
     {
-        if (!$doctor->is_doctor) {
+        if ($doctor->role !== 'doctor') {
             abort(404);
         }
 
@@ -94,7 +93,7 @@ class DoctorController extends Controller
         $this->authorizeReceptionOrAbove($request->user());
         $this->authorizeScope($request->user(), $doctor);
 
-        if (!$doctor->is_doctor) {
+        if ($doctor->role !== 'doctor') {
             abort(404);
         }
 
@@ -130,7 +129,7 @@ class DoctorController extends Controller
         $this->authorizeReceptionOrAbove($request->user());
         $this->authorizeScope($request->user(), $doctor);
 
-        if (!$doctor->is_doctor) {
+        if ($doctor->role !== 'doctor') {
             abort(404);
         }
 

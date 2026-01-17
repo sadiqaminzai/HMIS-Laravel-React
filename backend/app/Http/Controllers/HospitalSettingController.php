@@ -24,7 +24,7 @@ class HospitalSettingController extends Controller
             'default_doctor_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
             ],
             'default_to_walk_in' => ['boolean'],
             'auto_generate_patient_ids' => ['boolean'],

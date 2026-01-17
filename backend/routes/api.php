@@ -35,27 +35,28 @@ Route::middleware('auth:sanctum')->group(function () {
 		'update' => 'permission:manage_hospitals',
 		'destroy' => 'permission:manage_hospitals',
 	]);
-	Route::apiResource('doctors', DoctorController::class)->except(['create', 'edit'])->middleware([
-		'index' => 'permission:view_doctors,manage_doctors',
-		'show' => 'permission:view_doctors,manage_doctors',
-		'store' => 'permission:manage_doctors',
-		'update' => 'permission:manage_doctors',
-		'destroy' => 'permission:manage_doctors',
-	]);
-	Route::apiResource('patients', PatientController::class)->except(['create', 'edit'])->middleware([
-		'index' => 'permission_or_doctor:view_patients,manage_patients,register_patients',
-		'show' => 'permission_or_doctor:view_patients,manage_patients,register_patients',
-		'store' => 'permission:register_patients,manage_patients',
-		'update' => 'permission:manage_patients',
-		'destroy' => 'permission:manage_patients',
-	]);
+	// Doctors
+	Route::apiResource('doctors', DoctorController::class)
+		->only(['index', 'show'])
+		->middleware('permission_or_doctor:view_doctors,manage_doctors');
+	Route::apiResource('doctors', DoctorController::class)
+		->only(['store', 'update', 'destroy'])
+		->middleware('permission:manage_doctors');
+
+	// Patients
+	Route::apiResource('patients', PatientController::class)
+		->only(['index', 'show'])
+		->middleware('permission_or_doctor:view_patients,manage_patients,register_patients');
+	Route::apiResource('patients', PatientController::class)
+		->only(['store', 'update', 'destroy'])
+		->middleware('permission:register_patients,manage_patients');
 	// NOTE: Do not use apiResource()->middleware([ 'index' => ..., ... ]) here.
 	// On Laravel's resource registration, that pattern applies ALL middleware values to ALL actions,
 	// which unintentionally makes `index` require manage-level permissions.
 	Route::get('appointments', [AppointmentController::class, 'index'])->middleware('permission_or_doctor:view_appointments,manage_appointments,schedule_appointments');
 	Route::get('appointments/{appointment}', [AppointmentController::class, 'show'])->middleware('permission_or_doctor:view_appointments,manage_appointments,schedule_appointments');
 	Route::post('appointments', [AppointmentController::class, 'store'])->middleware('permission:schedule_appointments,manage_appointments');
-	Route::match(['PUT', 'PATCH'], 'appointments/{appointment}', [AppointmentController::class, 'update'])->middleware('permission:manage_appointments');
+	Route::match(['PUT', 'PATCH'], 'appointments/{appointment}', [AppointmentController::class, 'update'])->middleware('permission:manage_appointments,update_appointment_status');
 	Route::delete('appointments/{appointment}', [AppointmentController::class, 'destroy'])->middleware('permission:manage_appointments');
 	Route::apiResource('manufacturers', ManufacturerController::class)->except(['create', 'edit'])->middleware([
 		'index' => 'permission:view_manufacturers,manage_manufacturers',
@@ -71,20 +72,21 @@ Route::middleware('auth:sanctum')->group(function () {
 		'update' => 'permission:manage_medicine_types',
 		'destroy' => 'permission:manage_medicine_types',
 	]);
-	Route::apiResource('medicines', MedicineController::class)->except(['create', 'edit'])->middleware([
-		'index' => 'permission:view_medicines,manage_medicines',
-		'show' => 'permission:view_medicines,manage_medicines',
-		'store' => 'permission:manage_medicines',
-		'update' => 'permission:manage_medicines',
-		'destroy' => 'permission:manage_medicines',
-	]);
-	Route::apiResource('prescriptions', PrescriptionController::class)->except(['create', 'edit'])->middleware([
-		'index' => 'permission:view_prescriptions,manage_prescriptions',
-		'show' => 'permission:view_prescriptions,manage_prescriptions',
-		'store' => 'permission:create_prescription,manage_prescriptions',
-		'update' => 'permission:manage_prescriptions',
-		'destroy' => 'permission:manage_prescriptions',
-	]);
+	// Medicines
+	Route::apiResource('medicines', MedicineController::class)
+		->only(['index', 'show'])
+		->middleware('permission_or_doctor:view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	Route::apiResource('medicines', MedicineController::class)
+		->only(['store', 'update', 'destroy'])
+		->middleware('permission:manage_medicines');
+
+	// Prescriptions
+	Route::apiResource('prescriptions', PrescriptionController::class)
+		->only(['index', 'show'])
+		->middleware('permission_or_doctor:view_prescriptions,manage_prescriptions,create_prescription');
+	Route::apiResource('prescriptions', PrescriptionController::class)
+		->only(['store', 'update', 'destroy'])
+		->middleware('permission:manage_prescriptions,create_prescription');
 	// Split read vs write routes so index/show don't unintentionally require manage permissions.
 	Route::apiResource('test-templates', TestTemplateController::class)
 		->only(['index', 'show'])
@@ -98,12 +100,12 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('lab-orders', [LabOrderController::class, 'index'])->middleware('permission_or_doctor:view_lab_orders,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}', [LabOrderController::class, 'show'])->middleware('permission_or_doctor:view_lab_orders,manage_lab_orders');
 	Route::post('lab-orders', [LabOrderController::class, 'store'])->middleware('permission_or_doctor:manage_lab_orders');
-	Route::match(['PUT', 'PATCH'], 'lab-orders/{labOrder}', [LabOrderController::class, 'update'])->middleware('permission:manage_lab_orders');
+	Route::match(['PUT', 'PATCH'], 'lab-orders/{labOrder}', [LabOrderController::class, 'update'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::delete('lab-orders/{labOrder}', [LabOrderController::class, 'destroy'])->middleware('permission:manage_lab_orders');
 	Route::post('lab-orders/{labOrder}/payment', [LabOrderController::class, 'processPayment'])->middleware('permission:manage_lab_payments,manage_lab_orders');
 	Route::post('lab-orders/{labOrder}/reset-payment', [LabOrderController::class, 'resetPayment'])->middleware('permission:manage_lab_payments,manage_lab_orders');
-	Route::post('lab-orders/{labOrder}/collect-sample', [LabOrderController::class, 'collectSample'])->middleware('permission:manage_lab_orders');
-	Route::post('lab-orders/{labOrder}/cancel', [LabOrderController::class, 'cancel'])->middleware('permission:manage_lab_orders');
+	Route::post('lab-orders/{labOrder}/collect-sample', [LabOrderController::class, 'collectSample'])->middleware('permission:manage_lab_orders,update_lab_order_status');
+	Route::post('lab-orders/{labOrder}/cancel', [LabOrderController::class, 'cancel'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::post('lab-order-items/{labOrderItem}/results', [LabOrderController::class, 'enterResults'])->middleware('permission:enter_lab_results,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}/receipt', [LabOrderController::class, 'getReceipt'])->middleware('permission:view_lab_orders,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}/report', [LabOrderController::class, 'getReport'])->middleware('permission:view_lab_orders,manage_lab_orders');

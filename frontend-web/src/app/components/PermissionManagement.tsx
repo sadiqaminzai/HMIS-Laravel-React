@@ -31,6 +31,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<Permission | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     displayName: '',
@@ -104,10 +105,6 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
       toast.warning('You are not authorized to manage permissions');
       return;
     }
-    if (permission.isSystem) {
-      toast.warning('System permissions cannot be edited.');
-      return;
-    }
     setSelectedPermission(permission);
     setFormData({
       name: permission.name,
@@ -124,16 +121,13 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
       toast.warning('You are not authorized to manage permissions');
       return;
     }
-    if (permission.isSystem) {
-      toast.warning('System permissions cannot be deleted.');
-      return;
-    }
     setSelectedPermission(permission);
     setShowDeleteModal(true);
   };
 
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     api.post('/permissions', {
       name: formData.name.toLowerCase().replace(/\s+/g, '_'),
       display_name: formData.displayName,
@@ -148,12 +142,16 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
       })
       .catch((err) => {
         toast.error(err?.response?.data?.message || 'Failed to add permission');
+      })
+      .finally(() => {
+        setSubmitting(false);
       });
   };
 
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPermission) return;
+    setSubmitting(true);
     api.put(`/permissions/${selectedPermission.id}`, {
       display_name: formData.displayName,
       category: formData.category,
@@ -167,6 +165,9 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
       })
       .catch((err) => {
         toast.error(err?.response?.data?.message || 'Failed to update permission');
+      })
+      .finally(() => {
+        setSubmitting(false);
       });
   };
 
@@ -190,18 +191,17 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Permission Management</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Define and manage system permissions</p>
         </div>
-        <button
-          onClick={handleAdd}
-          disabled={!canManage}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Permission
-        </button>
+        {canManage && (
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Permission
+          </button>
+        )}
       </div>
-
       {/* Search and Filter */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <div className="flex gap-3">
           <div className="relative flex-1">
             <input
@@ -223,8 +223,6 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
             ))}
           </select>
         </div>
-      </div>
-
       {/* Permissions by Category */}
       <div className="space-y-3">
         {Object.entries(groupedPermissions).map(([category, perms]) => (
@@ -280,22 +278,25 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => handleEdit(permission)}
-                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Edit"
-                            disabled={permission.isSystem || !canManage}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(permission)}
-                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Delete"
-                            disabled={permission.isSystem || !canManage}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canManage && (
+                            <button
+                              onClick={() => handleEdit(permission)}
+                              disabled={submitting}
+                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Edit"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canManage && (
+                            <button
+                              onClick={() => handleDelete(permission)}
+                              className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -430,13 +431,6 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                     {selectedPermission.status}
                   </span>
                 </div>
-                {selectedPermission.isSystem && (
-                  <div>
-                    <span className="inline-block px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs">
-                      System Permission
-                    </span>
-                  </div>
-                )}
               </div>
 
               <button

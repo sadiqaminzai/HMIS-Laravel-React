@@ -20,23 +20,28 @@ class PatientController extends Controller
         }
 
         // Doctor scope: patients are linked to doctors via appointments.
-        if ($request->user()->role === 'doctor' || $request->user()->is_doctor) {
-            $doctorId = (int) $request->user()->id;
+        if ($request->user()->role === 'doctor') {
+            // Doctors are users now; fallback to legacy doctor_id if present.
+            $doctorId = (int) ($request->user()->doctor_id ?? $request->user()->id ?? 0);
             $allowedStatuses = ['scheduled', 'completed', 'cancelled', 'no_show'];
             $status = $request->filled('appointment_status') ? (string) $request->input('appointment_status') : null;
             $status = $status !== null ? strtolower(trim($status)) : null;
 
-            $query->whereIn('id', function ($q) use ($doctorId, $status, $allowedStatuses) {
-                $q->select('patient_id')
-                    ->from('appointments')
-                    ->where('doctor_id', $doctorId)
-                    ->whereNotNull('patient_id')
-                    ->distinct();
+            if ($doctorId > 0) {
+                $query->whereIn('id', function ($q) use ($doctorId, $status, $allowedStatuses) {
+                    $q->select('patient_id')
+                        ->from('appointments')
+                        ->where('doctor_id', $doctorId)
+                        ->whereNotNull('patient_id')
+                        ->distinct();
 
-                if ($status !== null && in_array($status, $allowedStatuses, true)) {
-                    $q->where('status', $status);
-                }
-            });
+                    if ($status !== null && in_array($status, $allowedStatuses, true)) {
+                        $q->where('status', $status);
+                    }
+                });
+            } else {
+                $query->whereRaw('1 = 0');
+            }
         }
 
         if ($request->filled('search')) {

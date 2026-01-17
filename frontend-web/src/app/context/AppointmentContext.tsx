@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Appointment } from '../types';
+import { parseDateOnly } from '../utils/date';
 import api from '../../api/axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
@@ -15,6 +16,15 @@ interface AppointmentContextType {
 
 const AppointmentContext = createContext<AppointmentContextType | undefined>(undefined);
 
+const normalizeStatus = (status: any): Appointment['status'] => {
+  const raw = String(status ?? '').toLowerCase().trim();
+  if (raw === 'scheduled' || raw === 'completed' || raw === 'cancelled' || raw === 'no_show') {
+    return raw as Appointment['status'];
+  }
+  // Treat unknown/empty statuses as cancelled so they are excluded from scheduled-only flows.
+  return 'cancelled';
+};
+
 const mapAppointment = (a: any): Appointment => ({
   id: String(a.id),
   hospitalId: String(a.hospital_id),
@@ -25,10 +35,10 @@ const mapAppointment = (a: any): Appointment => ({
   patientGender: a.patient_gender ?? a.patient?.gender ?? 'other',
   doctorId: a.doctor_id ? String(a.doctor_id) : '',
   doctorName: a.doctor?.name ?? '',
-  appointmentDate: a.appointment_date ? new Date(a.appointment_date) : new Date(),
+  appointmentDate: parseDateOnly(a.appointment_date) ?? new Date(),
   appointmentTime: a.appointment_time ?? '',
   reason: a.reason ?? '',
-  status: (a.status ?? 'scheduled') as Appointment['status'],
+  status: normalizeStatus(a.status),
   notes: a.notes ?? '',
   createdAt: a.created_at ? new Date(a.created_at) : new Date(),
   updatedAt: a.updated_at ? new Date(a.updated_at) : undefined,

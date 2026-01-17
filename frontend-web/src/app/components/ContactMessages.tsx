@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Eye, Trash2, MessageSquare, Phone, Calendar, CheckCircle2, XCircle, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 interface ContactMessage {
   id: number;
@@ -15,13 +16,20 @@ interface ContactMessage {
 }
 
 export function ContactMessages() {
+  const { hasPermission } = useAuth();
+  const canView = hasPermission('view_contact_messages') || hasPermission('manage_contact_messages');
+  const canManage = hasPermission('manage_contact_messages');
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread' | 'read' | 'responded'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadMessages();
+    if (canView) {
+      loadMessages();
+    } else {
+      setMessages([]);
+    }
   }, [filter, searchTerm]);
 
   const loadMessages = async () => {
@@ -44,7 +52,7 @@ export function ContactMessages() {
   const handleView = async (message: ContactMessage) => {
     setSelectedMessage(message);
 
-    if (message.status === 'unread') {
+    if (message.status === 'unread' && canManage) {
       try {
         await api.patch(`/contact-messages/${message.id}`, { status: 'read' });
         setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'read' } : m)));
@@ -56,6 +64,10 @@ export function ContactMessages() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!canManage) {
+      toast.warning('You are not authorized to manage messages');
+      return;
+    }
     if (!confirm('Are you sure you want to delete this message?')) return;
 
     try {
@@ -72,6 +84,10 @@ export function ContactMessages() {
   };
 
   const markAsResponded = async (id: number) => {
+    if (!canManage) {
+      toast.warning('You are not authorized to manage messages');
+      return;
+    }
     try {
       await api.patch(`/contact-messages/${id}`, { status: 'responded' });
       setMessages((prev) => prev.map((msg) => (msg.id === id ? { ...msg, status: 'responded' } : msg)));
@@ -94,6 +110,14 @@ export function ContactMessages() {
         return null;
     }
   };
+
+  if (!canView) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-200">
+        You don’t have permission to view contact messages.
+      </div>
+    );
+  }
 
   return (
     <div className="p-3 space-y-3">
@@ -217,7 +241,7 @@ export function ContactMessages() {
               <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Message Details</h2>
                 <div className="flex items-center gap-1">
-                  {selectedMessage.status !== 'responded' && (
+                  {selectedMessage.status !== 'responded' && canManage && (
                     <button
                       onClick={() => markAsResponded(selectedMessage.id)}
                       className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
@@ -226,13 +250,15 @@ export function ContactMessages() {
                       <CheckCircle2 className="w-4 h-4" />
                     </button>
                   )}
-                  <button
-                    onClick={() => handleDelete(selectedMessage.id)}
-                    className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => handleDelete(selectedMessage.id)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 

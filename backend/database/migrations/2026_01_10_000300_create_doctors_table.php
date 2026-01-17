@@ -26,10 +26,18 @@ return new class extends Migration
 
             $table->index(['hospital_id', 'status']);
         });
+
+        Schema::table('users', function (Blueprint $table) {
+            $table->foreign('doctor_id')->references('id')->on('doctors')->nullOnDelete();
+        });
     }
 
     public function down(): void
     {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropForeign(['doctor_id']);
+        });
+
         Schema::dropIfExists('doctors');
     }
 };

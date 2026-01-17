@@ -6,6 +6,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\PermissionRegistrar;
 
 class RoleController extends Controller
 {
@@ -14,11 +15,17 @@ class RoleController extends Controller
         $actor = $request->user();
         $query = Role::query()->with('permissions');
 
+        $teamId = null;
+
         if ($actor && $actor->role !== 'super_admin') {
             $query->where('hospital_id', $actor->hospital_id);
+            $teamId = $actor->hospital_id;
         } elseif ($request->filled('hospital_id')) {
             $query->where('hospital_id', $request->integer('hospital_id'));
+            $teamId = $request->integer('hospital_id');
         }
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($teamId);
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -49,12 +56,14 @@ class RoleController extends Controller
             return response()->json(['message' => 'hospital_id is required'], 422);
         }
 
+        $guardName = 'web';
+
         $data = $request->validate([
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('roles', 'name')->where(fn ($q) => $q->where('hospital_id', $hospitalId)),
+                Rule::unique('roles', 'name')->where(fn ($q) => $q->where('hospital_id', $hospitalId)->where('guard_name', $guardName)),
             ],
             'display_name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -72,10 +81,14 @@ class RoleController extends Controller
             return response()->json(['message' => 'Reserved role name'], 422);
         }
 
+        $data['guard_name'] = $guardName;
+
         $role = Role::create($data);
 
+        app(PermissionRegistrar::class)->setPermissionsTeamId($hospitalId);
         if (!empty($data['permission_ids'])) {
-            $role->permissions()->sync($data['permission_ids']);
+            $permissions = Permission::query()->whereIn('id', $data['permission_ids'])->get();
+            $role->syncPermissions($permissions);
         }
 
         return response()->json($role->load('permissions'), 201);
@@ -87,12 +100,14 @@ class RoleController extends Controller
         if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
             return response()->json(['message' => 'Not authorized'], 403);
         }
+        app(PermissionRegistrar::class)->setPermissionsTeamId($role->hospital_id);
         return response()->json($role->load('permissions'));
     }
 
     public function update(Request $request, Role $role)
     {
         $this->authorizeManageRoles($request->user());
+
 
         $actor = $request->user();
         if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
@@ -110,7 +125,9 @@ class RoleController extends Controller
         $role->update($data);
 
         if ($request->has('permission_ids')) {
-            $role->permissions()->sync($data['permission_ids'] ?? []);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($role->hospital_id);
+            $permissions = Permission::query()->whereIn('id', $data['permission_ids'] ?? [])->get();
+            $role->syncPermissions($permissions);
         }
 
         return response()->json($role->fresh()->load('permissions'));
@@ -125,11 +142,8 @@ class RoleController extends Controller
             return response()->json(['message' => 'Not authorized'], 403);
         }
 
-        if ($role->is_system) {
-            return response()->json(['message' => 'System roles cannot be deleted'], 403);
-        }
 
-        $role->permissions()->detach();
+        $role->syncPermissions([]);
         $role->delete();
 
         return response()->json(['message' => 'Role deleted']);

@@ -156,7 +156,7 @@ class PrescriptionController extends Controller
             'patient_gender' => ['nullable', 'string', 'max:20'],
             'doctor_id' => [
                 'required',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_doctor', true)),
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
             ],
             'doctor_name' => ['required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
@@ -201,7 +201,7 @@ class PrescriptionController extends Controller
 
         $doctor = User::query()
             ->whereKey($data['doctor_id'])
-            ->where('is_doctor', true)
+            ->where('role', 'doctor')
             ->firstOrFail();
         if ((int) $doctor->hospital_id !== (int) $hospitalId) {
             abort(422, 'Doctor does not belong to the selected hospital');

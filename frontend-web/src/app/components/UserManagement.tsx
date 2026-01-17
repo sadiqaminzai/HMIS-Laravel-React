@@ -76,7 +76,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     hospitalId: hospital.id as string | number | null,
     status: 'active' as const,
     password: '',
-    isDoctor: false,
     phone: '',
     specialization: '',
     registrationNumber: '',
@@ -105,8 +104,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
     return match?.name ?? '';
   }, [formData.roleId, roleOptions]);
 
-  const isDoctorSelectionLocked = selectedRoleName === 'doctor';
-  const effectiveIsDoctor = isDoctorSelectionLocked || formData.isDoctor;
+  const effectiveIsDoctor = selectedRoleName === 'doctor';
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -314,7 +312,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       hospitalId: isSuperAdmin ? '' : hospital.id,
       status: 'active',
       password: '',
-      isDoctor: false,
       phone: '',
       specialization: '',
       registrationNumber: '',
@@ -351,7 +348,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       hospitalId: user.hospitalId ?? hospital.id,
       status: user.status,
       password: '',
-      isDoctor: Boolean(user.isDoctor),
       phone: user.phone ?? '',
       specialization: user.specialization ?? '',
       registrationNumber: user.registrationNumber ?? '',
@@ -400,7 +396,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        is_doctor: effectiveIsDoctor,
         phone: effectiveIsDoctor ? (formData.phone || null) : null,
         specialization: effectiveIsDoctor ? (formData.specialization || null) : null,
         registration_number: effectiveIsDoctor ? (formData.registrationNumber || null) : null,
@@ -440,7 +435,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         role_id: Number(formData.roleId),
         hospital_id: formData.hospitalId ? Number(formData.hospitalId) : null,
         is_active: formData.status === 'active',
-        is_doctor: effectiveIsDoctor,
         phone: effectiveIsDoctor ? (formData.phone || null) : null,
         specialization: effectiveIsDoctor ? (formData.specialization || null) : null,
         registration_number: effectiveIsDoctor ? (formData.registrationNumber || null) : null,
@@ -743,10 +737,15 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     onChange={(e) => {
                       const nextRoleId = e.target.value;
                       const nextRoleName = roleOptions.find((r) => String(r.id) === nextRoleId)?.name ?? '';
+                      const isDoctorRole = nextRoleName === 'doctor';
                       setFormData({
                         ...formData,
                         roleId: nextRoleId,
-                        isDoctor: nextRoleName === 'doctor' ? true : formData.isDoctor,
+                        phone: isDoctorRole ? formData.phone : '',
+                        specialization: isDoctorRole ? formData.specialization : '',
+                        registrationNumber: isDoctorRole ? formData.registrationNumber : '',
+                        consultationFee: isDoctorRole ? formData.consultationFee : '',
+                        doctorStatus: isDoctorRole ? formData.doctorStatus : 'active',
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
@@ -785,7 +784,6 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                         ...formData,
                         hospitalId: e.target.value,
                         roleId: '',
-                        isDoctor: false,
                         phone: '',
                         specialization: '',
                         registrationNumber: '',
@@ -804,25 +802,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   </select>
                 </div>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="flex items-center justify-between rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 px-2 py-1.5">
-                  <div>
-                    <div className="text-[10px] font-medium text-gray-700 dark:text-gray-300">Doctor</div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">Enable doctor profile fields</div>
-                  </div>
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={effectiveIsDoctor}
-                      onChange={(e) => setFormData({ ...formData, isDoctor: e.target.checked })}
-                      disabled={isDoctorSelectionLocked}
-                      aria-label="Is Doctor"
-                      className="h-4 w-4"
-                    />
-                    <span className="text-[10px] text-gray-700 dark:text-gray-300">Is Doctor</span>
-                  </label>
-                </div>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3" />
 
               {effectiveIsDoctor && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

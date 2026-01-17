@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->appendToGroup('api', [
+            \App\Http\Middleware\SetPermissionsTeam::class,
             \App\Http\Middleware\NoCacheHeaders::class,
         ]);
 

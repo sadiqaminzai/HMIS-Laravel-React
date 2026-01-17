@@ -8,6 +8,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useManufacturers } from '../context/ManufacturerContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 
 interface ManufacturerManagementProps {
@@ -20,6 +21,8 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { hospitals } = useHospitals();
   const { manufacturers, addManufacturer, updateManufacturer, deleteManufacturer, loading } = useManufacturers();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('manage_manufacturers');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -27,6 +30,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedManufacturer, setSelectedManufacturer] = useState<Manufacturer | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   // Keep notification state separate so it doesn't shadow the sonner toast import
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   
@@ -165,6 +169,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
 
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       await addManufacturer({
         hospitalId: formData.hospitalId,
@@ -177,12 +182,15 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
       setNotification({ message: 'Manufacturer added successfully.', type: 'success' });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to add manufacturer');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedManufacturer) return;
+    setSubmitting(true);
     try {
       await updateManufacturer({
         id: selectedManufacturer.id,
@@ -196,6 +204,8 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
       setNotification({ message: 'Manufacturer updated successfully.', type: 'success' });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update manufacturer');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -252,13 +262,15 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+          {canManage && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -338,20 +350,24 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleEdit(manufacturer)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(manufacturer)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => handleEdit(manufacturer)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            onClick={() => handleDelete(manufacturer)}
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -476,9 +492,10 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showAddModal ? 'Add' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? 'Add' : 'Save'}
                 </button>
               </div>
             </form>

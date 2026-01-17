@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
 import { Hospital, Patient, Medicine, Doctor, UserRole } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
+import api from '../../api/axios';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { useSettings } from '../context/SettingsContext';
 import { toast } from '../utils/toast';
@@ -59,6 +60,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0);
+  const [openMedicineDropdownRowId, setOpenMedicineDropdownRowId] = useState<string | null>(null);
   const [isWalkIn, setIsWalkIn] = useState(settings.defaultToWalkIn || false);
   const [walkInPatient, setWalkInPatient] = useState({
     name: '',
@@ -179,15 +181,19 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
     // Doctors: only patients with *scheduled* appointments for that logged-in doctor.
     if (role === 'doctor') {
-      const doctorId = currentUser.id;
-      if (!doctorId) return new Set<string>();
+      const doctorIdCandidates = [currentUser.id, currentUser.doctorId, selectedDoctor?.id]
+        .filter(Boolean)
+        .map((id) => String(id));
+
+      if (doctorIdCandidates.length === 0) return new Set<string>();
+
       return new Set(
         appointments
           .filter(
             (a) =>
               String(a.hospitalId) === String(currentHospital.id) &&
-              a.status === 'scheduled' &&
-              String(a.doctorId) === String(doctorId)
+              String(a.status).toLowerCase() === 'scheduled' &&
+              doctorIdCandidates.includes(String(a.doctorId))
           )
           .map((a) => String(a.patientId))
       );
@@ -196,10 +202,14 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     // Admin/Super Admin: all hospital patients who have any *scheduled* appointment (any doctor).
     return new Set(
       appointments
-        .filter((a) => String(a.hospitalId) === String(currentHospital.id) && a.status === 'scheduled')
+        .filter(
+          (a) =>
+            String(a.hospitalId) === String(currentHospital.id) &&
+            String(a.status).toLowerCase() === 'scheduled'
+        )
         .map((a) => String(a.patientId))
     );
-  }, [appointments, currentHospital.id, currentUser.id, currentUser.role]);
+  }, [appointments, currentHospital.id, currentUser.doctorId, currentUser.id, currentUser.role, selectedDoctor?.id]);
 
   // Filter patients based on search and current hospital.
   // Doctors/Admins: only show patients that have scheduled appointments.
@@ -378,7 +388,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     
     // Auto-complete if exact match found
     const medicine = inventory.find(m =>
-      m.hospitalId === hospital.id &&
+      m.hospitalId === currentHospital.id &&
       m.status === 'active' &&
       m.brandName.toLowerCase() === searchTerm.toLowerCase()
     );
@@ -736,8 +746,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           </div>
 
           {/* Scrollable table container - only show scrollbar when 5+ medicines */}
-          <div className={`overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg ${
-            medicines.length >= 5 ? 'max-h-[240px] overflow-y-auto' : 'overflow-y-visible'
+          <div className={`border border-gray-200 dark:border-gray-700 rounded-lg ${
+            openMedicineDropdownRowId
+              ? 'overflow-visible'
+              : `overflow-x-auto ${medicines.length >= 5 ? 'max-h-[240px] overflow-y-auto' : 'overflow-y-visible'}`
           }`}>
             <table className="w-full">
               <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900 z-10">
@@ -757,13 +769,16 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     key={medicine.rowId}
                     medicine={medicine}
                     index={index}
-                    hospital={hospital}
+                    hospital={currentHospital}
                     medicineOptions={inventory}
                     onUpdate={updateMedicineRow}
                     onUpdateBatch={updateMedicineRowBatch}
                     onRemove={removeMedicineRow}
                     onMedicineSearch={handleMedicineSearch}
                     onAddNew={addMedicineRow}
+                    onDropdownToggle={(open) =>
+                      setOpenMedicineDropdownRowId(open ? medicine.rowId : null)
+                    }
                   />
                 ))}
               </tbody>
@@ -836,12 +851,14 @@ interface MedicineRowProps {
   onRemove: (rowId: string) => void;
   onMedicineSearch: (rowId: string, searchTerm: string) => void;
   onAddNew: () => void;
+  onDropdownToggle: (open: boolean) => void;
 }
 
-function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew }: MedicineRowProps) {
+function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew, onDropdownToggle }: MedicineRowProps) {
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [remoteMedicines, setRemoteMedicines] = useState<Medicine[]>([]);
   const medicineInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -850,13 +867,59 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
     setSearchTerm(medicine.brandName);
   }, [medicine.brandName]);
 
-  const filteredMedicines = medicineOptions.filter(m =>
+  const localMatches = medicineOptions.filter(m =>
     m.hospitalId === hospital.id &&
     m.status === 'active' &&
     searchTerm.length > 0 &&
     (m.brandName.toLowerCase().includes(searchTerm.toLowerCase()) ||
      m.genericName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const filteredMedicines = localMatches.length > 0 ? localMatches : remoteMedicines;
+
+  // Fetch remote suggestions when local cache has no matches
+  React.useEffect(() => {
+    const term = searchTerm.trim();
+    if (term.length < 2 || localMatches.length > 0) {
+      setRemoteMedicines([]);
+      return;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/medicines', {
+          params: {
+            search: term,
+            hospital_id: hospital.id,
+          },
+        });
+        if (!active) return;
+        const records: any[] = data.data ?? data;
+        const mapped = records.map((m) => ({
+          id: String(m.id),
+          hospitalId: String(m.hospital_id),
+          manufacturerId: String(m.manufacturer_id),
+          medicineTypeId: String(m.medicine_type_id),
+          brandName: m.brand_name ?? '',
+          genericName: m.generic_name ?? '',
+          strength: m.strength ?? '',
+          type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
+          status: (m.status ?? 'active') as Medicine['status'],
+          createdAt: m.created_at ? new Date(m.created_at) : undefined,
+          updatedAt: m.updated_at ? new Date(m.updated_at) : undefined,
+        })) as Medicine[];
+        setRemoteMedicines(mapped);
+      } catch {
+        if (active) setRemoteMedicines([]);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [hospital.id, localMatches.length, searchTerm]);
 
   // Reset highlighted index when filtered medicines change
   React.useEffect(() => {
@@ -891,6 +954,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setShowMedicineDropdown(false);
+        onDropdownToggle(false);
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -899,6 +963,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
       }
     } else if (e.key === 'Escape') {
       setShowMedicineDropdown(false);
+      onDropdownToggle(false);
     }
   };
 
@@ -917,6 +982,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
     });
     
     setShowMedicineDropdown(false);
+    onDropdownToggle(false);
     // Focus on next field (dose)
     setTimeout(() => {
       const nextInput = medicineInputRef.current?.closest('tr')?.querySelector('select');
@@ -937,11 +1003,18 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
               setSearchTerm(value);
               onMedicineSearch(medicine.rowId, value);
               setShowMedicineDropdown(true);
+              onDropdownToggle(true);
             }}
-            onFocus={() => setShowMedicineDropdown(true)}
+            onFocus={() => {
+              setShowMedicineDropdown(true);
+              onDropdownToggle(true);
+            }}
             onBlur={() => {
               // Delay to allow click on dropdown items
-              setTimeout(() => setShowMedicineDropdown(false), 250);
+              setTimeout(() => {
+                setShowMedicineDropdown(false);
+                onDropdownToggle(false);
+              }, 250);
             }}
             onKeyDown={(e) => handleKeyDown(e, 'medicine')}
             placeholder="Type medicine name..."

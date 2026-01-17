@@ -42,6 +42,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<PermissionOption[]>([]);
   const [formData, setFormData] = useState({
@@ -186,10 +187,6 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
       toast.warning('You are not authorized to manage roles');
       return;
     }
-    if (role.isSystem) {
-      toast.warning('System roles cannot be deleted.');
-      return;
-    }
     setSelectedRole(role);
     setShowDeleteModal(true);
   };
@@ -201,6 +198,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
         toast.error('Please select a hospital first');
         return;
       }
+      setSubmitting(true);
       await api.post('/roles', {
         name: formData.name.toLowerCase().replace(/\s+/g, '_'),
         display_name: formData.displayName,
@@ -214,6 +212,8 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
       toast.success('Role added successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to add role');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -221,6 +221,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     e.preventDefault();
     if (!selectedRole) return;
     try {
+      setSubmitting(true);
       await api.put(`/roles/${selectedRole.id}`, {
         display_name: formData.displayName,
         description: formData.description,
@@ -232,6 +233,8 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
       toast.success('Role updated successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update role');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -305,18 +308,15 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search roles..."
-            className="w-full px-3 py-1.5 pl-8 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-          />
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-        </div>
+      <div className="relative">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search roles..."
+          className="w-full px-3 py-1.5 pl-8 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+        />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
       </div>
 
       {/* Roles Table */}
@@ -342,9 +342,6 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                       </div>
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white text-xs">{role.displayName}</div>
-                        {role.isSystem && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">(System)</span>
-                        )}
                       </div>
                     </div>
                   </td>
@@ -378,7 +375,6 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                                 onClick={() => handleEdit(role)}
                                 className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
                                 title="Edit"
-                                disabled={role.isSystem}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
@@ -386,7 +382,6 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                                 onClick={() => handleDelete(role)}
                                 className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                                 title="Delete"
-                                disabled={role.isSystem}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -486,9 +481,10 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Add Role
+                  {submitting ? 'Saving...' : 'Add Role'}
                 </button>
               </div>
             </form>
@@ -638,9 +634,10 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Save Changes
+                  {submitting ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

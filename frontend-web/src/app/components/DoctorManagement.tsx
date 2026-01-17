@@ -546,8 +546,8 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
       {/* Add/Edit Modal */}
       {(showAddModal || showEditModal) && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-50 p-4 py-6 overflow-y-auto transition-all">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                 {showAddModal ? 'Add New Doctor' : 'Edit Doctor Details'}
@@ -582,7 +582,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {/* Profile Image - Compact */}
                 <div className="md:col-span-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg border border-gray-100 dark:border-gray-700 flex items-center gap-3">
                    <div className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-600 shrink-0">
@@ -700,8 +700,8 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </h3>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {formData.availability.map((slot, index) => (
-                    <div key={slot.day} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-gray-700/30 p-1.5 rounded-md border border-gray-100 dark:border-gray-700">
-                      <div className="w-20 font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                    <div key={slot.day} className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs bg-gray-50 dark:bg-gray-700/30 p-1.5 rounded-md border border-gray-100 dark:border-gray-700">
+                      <div className="sm:w-20 font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
                         <input
                           type="checkbox"
                           checked={slot.isAvailable}
@@ -791,9 +791,10 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={formSubmitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showAddModal ? 'Create' : 'Save'}
+                  {formSubmitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
                 </button>
               </div>
             </form>

@@ -67,6 +67,7 @@ function AppContent() {
   const [currentHospital, setCurrentHospital] = useState<Hospital | null>(hospitals[0] || null);
   const [myHospitalLoading, setMyHospitalLoading] = useState(false);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
+  const [isRTL, setIsRTL] = useState(false);
 
   // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
   // This can happen during hot reload
@@ -179,10 +180,22 @@ function AppContent() {
 
   // Handle RTL for Pashto, Dari, and Arabic
   useEffect(() => {
-    const isRTL = ['ps', 'fa', 'ar'].includes(i18n.language);
-    document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
-    document.documentElement.lang = i18n.language;
-  }, [i18n.language]);
+    const updateDirection = (lng: string) => {
+      const normalized = String(lng || '').toLowerCase();
+      const rtl = ['ps', 'fa', 'ar'].some((code) => normalized.startsWith(code));
+      const dir = rtl ? 'rtl' : 'ltr';
+      document.documentElement.setAttribute('dir', dir);
+      document.documentElement.setAttribute('lang', normalized || 'en');
+      document.body?.setAttribute('dir', dir);
+      setIsRTL(rtl);
+    };
+
+    updateDirection(i18n.language);
+    i18n.on('languageChanged', updateDirection);
+    return () => {
+      i18n.off('languageChanged', updateDirection);
+    };
+  }, [i18n]);
 
   // Check and show license expiry warning (only once per day, 10 days or less remaining)
   useEffect(() => {
@@ -303,7 +316,7 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
       
       {/* License Expiry Warning Modal */}
       {showLicenseWarning && (
@@ -330,7 +343,14 @@ function AppContent() {
           <Routes>
             {/* Default to dashboard after login */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard role={currentRole} hospital={currentHospital} />} />
+            <Route
+              path="/dashboard"
+              element={
+                <RequirePermission anyOf={["view_dashboard"]}>
+                  <Dashboard role={currentRole} hospital={currentHospital} />
+                </RequirePermission>
+              }
+            />
             <Route
               path="/hospitals"
               element={
@@ -451,7 +471,27 @@ function AppContent() {
                 </RequirePermission>
               }
             />
-            <Route path="/settings" element={<Settings />} />
+            <Route
+              path="/settings"
+              element={
+                <RequirePermission
+                  anyOf={[
+                    "view_users",
+                    "manage_users",
+                    "view_roles",
+                    "manage_roles",
+                    "view_permissions",
+                    "manage_permissions",
+                    "view_hospital_settings",
+                    "manage_hospital_settings",
+                    "view_contact_messages",
+                    "manage_contact_messages",
+                  ]}
+                >
+                  <Settings />
+                </RequirePermission>
+              }
+            />
             <Route
               path="/settings/general"
               element={

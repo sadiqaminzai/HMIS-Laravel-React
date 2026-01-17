@@ -677,9 +677,10 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {modalMode === 'add' ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : modalMode === 'add' ? 'Create' : 'Save'}
                 </button>
               </div>
             </form>

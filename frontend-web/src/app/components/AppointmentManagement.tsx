@@ -4,7 +4,7 @@ import { Hospital, Appointment, UserRole, Patient, Doctor } from '../types';
 import { Toast } from './Toast';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { formatDate, formatOnlyDate } from '../utils/date';
+import { formatDate, formatOnlyDate, getISODateInTimeZone, getTimeInTimeZone, getWeekdayFromDateString } from '../utils/date';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useAppointments } from '../context/AppointmentContext';
@@ -41,17 +41,15 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const { getDefaultDoctorId } = useSettings();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('appointmentDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const today = () => new Date().toISOString().split('T')[0];
-  const nowTime = () => {
-    const d = new Date();
-    return d.toTimeString().slice(0, 5); // HH:MM 24h
-  };
+  const today = (tz: string = currentHospital.timezone || 'UTC') => getISODateInTimeZone(tz);
+  const nowTime = (tz: string = currentHospital.timezone || 'UTC') => getTimeInTimeZone(tz);
 
   const [formData, setFormData] = useState({
     patientId: '',
@@ -71,9 +69,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const hospitalPatients = filterByHospital(patients);
   const hospitalDoctors = filterByHospital(doctors);
 
-  // Filter appointments based on user role
+  // Filter appointments based on hospital and user role
   const getFilteredAppointments = () => {
-    let filtered = appointments;
+    let filtered = filterByHospital(appointments);
     
     // Role-based filtering
     if (userRole === 'doctor') {
@@ -84,12 +82,19 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(apt =>
-        apt.appointmentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.doctorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.status.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const q = searchTerm.toLowerCase();
+      filtered = filtered.filter((apt) => {
+        const dateLabel = formatOnlyDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType).toLowerCase();
+        const timeLabel = String(apt.appointmentTime || '').toLowerCase();
+        return (
+          apt.appointmentNumber.toLowerCase().includes(q) ||
+          apt.patientName.toLowerCase().includes(q) ||
+          apt.doctorName.toLowerCase().includes(q) ||
+          apt.status.toLowerCase().includes(q) ||
+          dateLabel.includes(q) ||
+          timeLabel.includes(q)
+        );
+      });
     }
     
     // Sorting logic
@@ -213,19 +218,41 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     if (!doctorId || !dateStr) return { available: true };
     const doctor = hospitalDoctors.find(d => d.id === doctorId);
     if (!doctor || !doctor.availability) return { available: true };
-    
-    const date = new Date(dateStr);
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-    const daySchedule = doctor.availability.find(d => d.day === dayName);
-    
+
+    const normalizeTime = (value?: string) => {
+      if (!value) return '';
+      const trimmed = value.trim();
+      // Convert "hh:mm AM/PM" to 24h
+      const match = trimmed.match(/^\s*(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i);
+      if (match) {
+        let hours = Number(match[1]);
+        const minutes = match[2];
+        const meridiem = match[3].toUpperCase();
+        if (meridiem === 'PM' && hours < 12) hours += 12;
+        if (meridiem === 'AM' && hours === 12) hours = 0;
+        return `${String(hours).padStart(2, '0')}:${minutes}`;
+      }
+      return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
+    };
+
+    const dayName = getWeekdayFromDateString(dateStr);
+    const daySchedule = doctor.availability.find(d => String(d.day || '').toLowerCase() === dayName.toLowerCase());
+
     if (!daySchedule || !daySchedule.isAvailable) {
       return { available: false, reason: `Doctor is not available on ${dayName}s` };
     }
-    
+
     if (timeStr) {
-      const from = daySchedule.startTime?.slice(0,5);
-      const to = daySchedule.endTime?.slice(0,5);
-      if (from && to && (timeStr < from || timeStr > to)) {
+      const from = normalizeTime(daySchedule.startTime);
+      const to = normalizeTime(daySchedule.endTime);
+      const selected = normalizeTime(timeStr);
+
+      // If schedule times are missing or both are 00:00, skip time validation.
+      if (!from || !to || (from === '00:00' && to === '00:00')) {
+        return { available: true };
+      }
+
+      if (selected && (selected < from || selected > to)) {
         return { available: false, reason: `Available hours: ${from} - ${to}` };
       }
     }
@@ -246,6 +273,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
     const appointmentTime = formData.appointmentTime || nowTime();
+    setSubmitting(true);
     addAppointment({
       hospitalId: formData.hospitalId,
       patientId: formData.patientId,
@@ -264,6 +292,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       setToast({ message: 'Appointment scheduled successfully.', type: 'success' });
     }).catch((err: any) => {
       setToast({ message: err?.response?.data?.message || 'Failed to schedule appointment.', type: 'danger' });
+    }).finally(() => {
+      setSubmitting(false);
     });
   };
 
@@ -285,6 +315,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
     const appointmentTime = formData.appointmentTime || nowTime();
+    setSubmitting(true);
     updateAppointment({
       id: selectedAppointment.id,
       hospitalId: formData.hospitalId,
@@ -305,6 +336,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       setToast({ message: 'Appointment updated successfully.', type: 'success' });
     }).catch((err: any) => {
       setToast({ message: err?.response?.data?.message || 'Failed to update appointment.', type: 'danger' });
+    }).finally(() => {
+      setSubmitting(false);
     });
   };
 
@@ -402,7 +435,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const canCreate = hasPermission('schedule_appointments') || hasPermission('manage_appointments');
   const canEdit = hasPermission('manage_appointments');
   const canDelete = hasPermission('manage_appointments');
-  const canChangeAnyStatus = hasPermission('manage_appointments');
+  const canChangeAnyStatus = hasPermission('update_appointment_status') || hasPermission('manage_appointments');
 
   return (
     <div className="space-y-3">
@@ -459,8 +492,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 setFormData({
                   patientId: '',
                   doctorId: defaultDoctorId,
-                  appointmentDate: '',
-                  appointmentTime: '',
+                  appointmentDate: today(),
+                  appointmentTime: nowTime(),
                   reason: '',
                   notes: '',
                   hospitalId: currentHospital.id // Add hospital selection
@@ -841,9 +874,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
                 </button>
               </div>
             </form>

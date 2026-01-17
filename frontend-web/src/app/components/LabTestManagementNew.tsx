@@ -18,6 +18,7 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAppointments } from '../context/AppointmentContext';
+import { useAuth } from '../context/AuthContext';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
@@ -136,6 +137,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const { doctors } = useDoctors();
   const { hospitals } = useHospitals();
   const { appointments } = useAppointments();
+  const { hasPermission } = useAuth();
+  const canManageOrders = hasPermission('manage_lab_orders');
+  const canUpdateStatus = hasPermission('update_lab_order_status') || canManageOrders;
+  const canEnterResults = hasPermission('enter_lab_results') || canManageOrders;
+  const canManagePayments = hasPermission('manage_lab_payments') || canManageOrders;
 
   const [labTests, setLabTests] = useState<LabTest[]>([]);
   const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
@@ -161,6 +167,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     instructions: '',
     priority: 'normal' as 'normal' | 'urgent' | 'stat',
     hospitalId: currentHospital.id,
+    doctorId: userRole === 'doctor' ? currentUserId || '' : '',
   });
 
   // Safety: auto-clear toast even if child component unmount effect is interrupted
@@ -252,21 +259,33 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   }, [labTests, selectedTest]);
 
   useEffect(() => {
-    setFormData((prev) => ({ ...prev, hospitalId: currentHospital.id }));
-  }, [currentHospital.id]);
+    setFormData((prev) => ({
+      ...prev,
+      hospitalId: currentHospital.id,
+      doctorId: userRole === 'doctor' ? (currentUserId || '') : '',
+    }));
+  }, [currentHospital.id, currentUserId, userRole]);
 
   const hospitalPatients = filterByHospital(patients);
+  const hospitalDoctors = filterByHospital(doctors);
+  const formHospitalId = String(formData.hospitalId);
+  const patientsForForm = userRole === 'super_admin'
+    ? patients.filter((p) => String(p.hospitalId) === formHospitalId)
+    : hospitalPatients;
+  const doctorsForForm = userRole === 'super_admin'
+    ? doctors.filter((d) => String(d.hospitalId) === formHospitalId)
+    : hospitalDoctors;
   const doctorScopedPatients = userRole === 'doctor' && currentUserId
     ? (() => {
         const doctorId = String(currentUserId);
         const patientIds = new Set(
           appointments
-            .filter((a) => String(a.hospitalId) === String(currentHospital.id) && String(a.doctorId) === doctorId)
+            .filter((a) => String(a.hospitalId) === formHospitalId && String(a.doctorId) === doctorId)
             .map((a) => String(a.patientId))
         );
-        return hospitalPatients.filter((p) => patientIds.has(String(p.id)));
+        return patientsForForm.filter((p) => patientIds.has(String(p.id)));
       })()
-    : hospitalPatients;
+    : patientsForForm;
   const hospitalTests = isAllHospitals
     ? testTemplates
     : testTemplates.filter((t) => String(t.hospitalId) === String(currentHospital.id));
@@ -383,12 +402,21 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       return;
     }
 
+    if (userRole !== 'doctor' && !formData.doctorId) {
+      setToast({ message: 'Please select a doctor.', type: 'warning' });
+      return;
+    }
+
     try {
+      const selectedDoctor = doctors.find((d) => String(d.id) === String(formData.doctorId));
       await createLabOrder({
         hospitalId: String(formData.hospitalId),
         patientId: formData.patientId,
-        doctorId: currentUserId || doctors[0]?.id || '',
-        doctorName: doctors.find((d) => String(d.id) === String(currentUserId))?.name || 'Doctor',
+        doctorId: userRole === 'doctor' ? (currentUserId || '') : (formData.doctorId || ''),
+        doctorName:
+          userRole === 'doctor'
+            ? (doctors.find((d) => String(d.id) === String(currentUserId))?.name || 'Doctor')
+            : (selectedDoctor?.name || 'Doctor'),
         testIds: formData.selectedTests,
         priority: formData.priority,
         clinicalNotes: formData.instructions,
@@ -582,6 +610,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       instructions: '',
       priority: 'normal',
       hospitalId: currentHospital.id,
+      doctorId: userRole === 'doctor' ? currentUserId || '' : '',
     });
   };
 
@@ -614,11 +643,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     return colors[priority];
   };
 
-  const canCreate = ['doctor', 'admin', 'super_admin'].includes(userRole);
-  const canProcess = ['lab_technician', 'super_admin', 'admin'].includes(userRole);
-  const canPayment = ['receptionist', 'super_admin', 'admin'].includes(userRole);
-  const canDelete = ['super_admin', 'admin', 'doctor'].includes(userRole);
-  const canChangeAnyStatus = ['super_admin', 'admin'].includes(userRole);
+  const canCreate = canManageOrders;
+  const canProcess = canUpdateStatus;
+  const canPayment = canManagePayments;
+  const canDelete = canManageOrders;
+  const canChangeAnyStatus = canUpdateStatus;
 
   const handlePayAndPrint = (test: LabTest) => {
     setSelectedTest(test);
@@ -802,7 +831,8 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                               if (
                                 canChangeAnyStatus || 
                                 (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
-                                (canPayment && test.status === 'unpaid')
+                                (canPayment && test.status === 'unpaid') ||
+                                (canEnterResults && test.status === 'in_progress')
                               ) {
                                 setOpenStatusDropdown(openStatusDropdown === test.id ? null : test.id);
                               }
@@ -810,13 +840,15 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             disabled={
                               !canChangeAnyStatus && 
                               !(canProcess && test.status !== 'completed' && test.status !== 'cancelled') &&
-                              !(canPayment && test.status === 'unpaid')
+                              !(canPayment && test.status === 'unpaid') &&
+                              !(canEnterResults && test.status === 'in_progress')
                             }
                             className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusColor(test.status)} ${
                               (
                                 canChangeAnyStatus || 
                                 (canProcess && test.status !== 'completed' && test.status !== 'cancelled') ||
-                                (canPayment && test.status === 'unpaid')
+                                (canPayment && test.status === 'unpaid') ||
+                                (canEnterResults && test.status === 'in_progress')
                               )
                                 ? 'cursor-pointer hover:opacity-80'
                                 : 'cursor-default'
@@ -871,7 +903,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                   </button>
                                 )}
                                 
-                                {test.status === 'pending' && (
+                                {test.status === 'pending' && canProcess && (
                                   <button
                                     onClick={() => {
                                       handleCollectSample(test);
@@ -882,7 +914,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                   </button>
                                 )}
                                 
-                                {test.status === 'in_progress' && (
+                                {test.status === 'in_progress' && canEnterResults && (
                                   <button
                                     onClick={() => {
                                       setSelectedTest(test);
@@ -895,7 +927,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                   </button>
                                 )}
                                 
-                                {test.status !== 'cancelled' && (
+                                {test.status !== 'cancelled' && canUpdateStatus && (
                                   <button
                                     onClick={() => {
                                       handleCancelOrder(test);
@@ -930,7 +962,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canProcess && test.status === 'in_progress' && (
+                          {canEnterResults && test.status === 'in_progress' && (
                             <button
                               onClick={() => { 
                                 setSelectedTest(test); 
@@ -1036,7 +1068,13 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   </label>
                   <select
                     value={formData.hospitalId}
-                    onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      hospitalId: e.target.value,
+                      patientId: '',
+                      selectedTests: [],
+                      doctorId: userRole === 'doctor' ? (currentUserId || '') : '',
+                    })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
@@ -1062,6 +1100,27 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   ))}
                 </select>
               </div>
+
+              {/* Doctor Selection */}
+              {userRole !== 'doctor' && (
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor <span className="text-red-500">*</span></label>
+                  <select
+                    value={formData.doctorId}
+                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    required
+                  >
+                    <option value="">Select Doctor</option>
+                    {doctorsForForm.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  {doctorsForForm.length === 0 && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">No doctors available for the selected hospital.</p>
+                  )}
+                </div>
+              )}
 
               {/* Test Selection */}
               <div>

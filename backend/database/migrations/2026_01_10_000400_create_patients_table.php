@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('patients', function (Blueprint $table) {
             $table->id();
             $table->foreignId('hospital_id')->constrained()->onDelete('cascade');
-            $table->string('patient_id')->unique();
+            $table->string('patient_id');
             $table->string('name');
             $table->unsignedSmallInteger('age')->nullable();
             $table->enum('gender', ['male', 'female', 'other'])->default('other');
@@ -23,6 +23,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
+            $table->unique(['hospital_id', 'patient_id']);
             $table->index(['hospital_id', 'patient_id']);
         });
     }

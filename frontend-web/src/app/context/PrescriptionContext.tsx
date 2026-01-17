@@ -69,7 +69,7 @@ const mapPrescription = (p: any): Prescription => ({
 
 export function PrescriptionProvider({ children }: { children: React.ReactNode }) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const { isAuthenticated, authLoading, hasPermission } = useAuth();
+  const { isAuthenticated, authLoading, hasPermission, user } = useAuth();
 
   const refresh = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -80,7 +80,9 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
 
     // Backend: /prescriptions is guarded by permission:view_prescriptions OR manage_prescriptions
     // Create requires create_prescription OR manage_prescriptions.
+    const isDoctor = String(user?.role || '').toLowerCase() === 'doctor';
     if (
+      !isDoctor &&
       !hasPermission('view_prescriptions') &&
       !hasPermission('manage_prescriptions') &&
       !hasPermission('create_prescription')

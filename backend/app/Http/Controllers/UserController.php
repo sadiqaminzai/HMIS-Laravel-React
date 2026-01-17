@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\PermissionRegistrar;
 
 class UserController extends Controller
 {
@@ -50,7 +51,6 @@ class UserController extends Controller
             'password' => ['required', 'string', 'min:8'],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
-            'is_doctor' => ['sometimes', 'boolean'],
             'phone' => ['nullable', 'string', 'max:255'],
             'specialization' => ['nullable', 'string', 'max:255'],
             'registration_number' => ['nullable', 'string', 'max:255'],
@@ -86,13 +86,8 @@ class UserController extends Controller
         // Keep the legacy role string in sync for display/compat.
         $data['role'] = $role->name;
 
-        // If the role is doctor, force doctor flag.
-        if ($data['role'] === 'doctor') {
-            $data['is_doctor'] = true;
-        }
-
         // If not doctor, strip doctor-only fields.
-        if (empty($data['is_doctor'])) {
+        if ($data['role'] !== 'doctor') {
             $data['specialization'] = null;
             $data['registration_number'] = null;
             $data['consultation_fee'] = 0;
@@ -100,9 +95,16 @@ class UserController extends Controller
             $data['availability_schedule'] = null;
             $data['image_path'] = null;
             $data['signature_path'] = null;
+        } else {
+            if (empty($data['availability_schedule'])) {
+                $data['availability_schedule'] = $this->defaultAvailabilitySchedule();
+            }
         }
 
         $user = User::create($data);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($data['hospital_id']);
+        $user->syncRoles([$role]);
 
         return response()->json($user->load('hospital'), 201);
     }
@@ -128,7 +130,6 @@ class UserController extends Controller
             'password' => ['sometimes', 'string', 'min:8'],
             'hospital_id' => ['nullable', 'integer', 'exists:hospitals,id'],
             'role_id' => ['sometimes', 'integer', 'exists:roles,id'],
-            'is_doctor' => ['sometimes', 'boolean'],
             'phone' => ['nullable', 'string', 'max:255'],
             'specialization' => ['nullable', 'string', 'max:255'],
             'registration_number' => ['nullable', 'string', 'max:255'],
@@ -162,16 +163,11 @@ class UserController extends Controller
             }
 
             $data['role'] = $role->name;
-
-            if ($data['role'] === 'doctor') {
-                $data['is_doctor'] = true;
-            }
         }
 
         // Clear doctor fields if not a doctor.
-        $isDoctor = array_key_exists('is_doctor', $data) ? (bool) $data['is_doctor'] : (bool) $user->is_doctor;
         $roleName = array_key_exists('role', $data) ? (string) $data['role'] : (string) $user->role;
-        if ($roleName !== 'doctor' && !$isDoctor) {
+        if ($roleName !== 'doctor') {
             $data['specialization'] = null;
             $data['registration_number'] = null;
             $data['consultation_fee'] = 0;
@@ -179,10 +175,18 @@ class UserController extends Controller
             $data['availability_schedule'] = null;
             $data['image_path'] = null;
             $data['signature_path'] = null;
-            $data['is_doctor'] = false;
+        } else {
+            if (empty($data['availability_schedule'])) {
+                $data['availability_schedule'] = $user->availability_schedule ?: $this->defaultAvailabilitySchedule();
+            }
         }
 
         $user->update($data);
+
+        if (isset($role) && $role) {
+            app(PermissionRegistrar::class)->setPermissionsTeamId($user->hospital_id);
+            $user->syncRoles([$role]);
+        }
 
         return response()->json($user->fresh()->load('hospital'));
     }
@@ -205,5 +209,21 @@ class UserController extends Controller
         }
 
         return $actor->hospital_id === $target->hospital_id && $target->role !== 'super_admin';
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function defaultAvailabilitySchedule(): array
+    {
+        return [
+            ['day' => 'Saturday', 'startTime' => '09:00', 'endTime' => '17:00', 'isAvailable' => true],
+            ['day' => 'Sunday', 'startTime' => '09:00', 'endTime' => '17:00', 'isAvailable' => true],
+            ['day' => 'Monday', 'startTime' => '09:00', 'endTime' => '17:00', 'isAvailable' => true],
+            ['day' => 'Tuesday', 'startTime' => '09:00', 'endTime' => '17:00', 'isAvailable' => true],
+            ['day' => 'Wednesday', 'startTime' => '09:00', 'endTime' => '17:00', 'isAvailable' => true],
+            ['day' => 'Thursday', 'startTime' => '09:00', 'endTime' => '13:00', 'isAvailable' => true],
+            ['day' => 'Friday', 'startTime' => '00:00', 'endTime' => '00:00', 'isAvailable' => false],
+        ];
     }
 }
