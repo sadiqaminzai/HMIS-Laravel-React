@@ -17,10 +17,17 @@ class Medicine extends Model
         'brand_name',
         'generic_name',
         'strength',
+        'stock',
+        'cost_price',
+        'sale_price',
         'status',
     ];
 
-    protected $casts = [];
+    protected $casts = [
+        'stock' => 'integer',
+        'cost_price' => 'decimal:2',
+        'sale_price' => 'decimal:2',
+    ];
 
     public function hospital()
     {
@@ -35,5 +42,15 @@ class Medicine extends Model
     public function medicineType()
     {
         return $this->belongsTo(MedicineType::class);
+    }
+
+    public function stocks()
+    {
+        return $this->hasMany(Stock::class);
+    }
+
+    public function transactionDetails()
+    {
+        return $this->hasMany(TransactionDetail::class);
     }
 }

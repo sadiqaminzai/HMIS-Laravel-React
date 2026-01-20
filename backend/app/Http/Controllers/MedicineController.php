@@ -110,6 +110,9 @@ class MedicineController extends Controller
             'brand_name' => ['required', 'string', 'max:255'],
             'generic_name' => ['nullable', 'string', 'max:255'],
             'strength' => ['nullable', 'string', 'max:255'],
+            'stock' => ['nullable', 'integer', 'min:0'],
+            'cost_price' => ['nullable', 'numeric', 'min:0'],
+            'sale_price' => ['nullable', 'numeric', 'min:0'],
             'status' => ['required', 'in:active,inactive'],
         ]);
     }

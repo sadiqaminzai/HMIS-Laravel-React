@@ -146,6 +146,9 @@ class User extends Authenticatable
                 'view_medicines', 'manage_medicines', 'dispense_medicines',
                 'view_manufacturers', 'manage_manufacturers',
                 'view_medicine_types', 'manage_medicine_types',
+                'view_suppliers', 'manage_suppliers',
+                'view_transactions', 'manage_transactions',
+                'view_stocks', 'manage_stocks',
 
                 // Laboratory
                 'view_test_templates', 'manage_test_templates',
@@ -178,6 +181,9 @@ class User extends Authenticatable
                 'view_medicines', 'manage_medicines', 'dispense_medicines',
                 'view_manufacturers',
                 'view_medicine_types',
+                'view_suppliers', 'manage_suppliers',
+                'view_transactions', 'manage_transactions',
+                'view_stocks', 'manage_stocks',
                 'view_prescriptions',
             ],
 

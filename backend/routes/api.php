@@ -12,6 +12,9 @@ use App\Http\Controllers\ManufacturerController;
 use App\Http\Controllers\MedicineController;
 use App\Http\Controllers\MedicineTypeController;
 use App\Http\Controllers\PrescriptionController;
+use App\Http\Controllers\StockController;
+use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TestTemplateController;
@@ -79,6 +82,26 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::apiResource('medicines', MedicineController::class)
 		->only(['store', 'update', 'destroy'])
 		->middleware('permission:manage_medicines');
+
+	// Suppliers
+	Route::apiResource('suppliers', SupplierController::class)->except(['create', 'edit'])->middleware([
+		'index' => 'permission:view_suppliers,manage_suppliers',
+		'show' => 'permission:view_suppliers,manage_suppliers',
+		'store' => 'permission:manage_suppliers',
+		'update' => 'permission:manage_suppliers',
+		'destroy' => 'permission:manage_suppliers',
+	]);
+
+	// Transactions
+	Route::get('transactions', [TransactionController::class, 'index'])->middleware('permission:view_transactions,manage_transactions');
+	Route::get('transactions/{transaction}', [TransactionController::class, 'show'])->middleware('permission:view_transactions,manage_transactions');
+	Route::post('transactions', [TransactionController::class, 'store'])->middleware('permission:manage_transactions');
+	Route::match(['PUT', 'PATCH'], 'transactions/{transaction}', [TransactionController::class, 'update'])->middleware('permission:manage_transactions');
+	Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])->middleware('permission:manage_transactions');
+
+	// Stocks (read-only)
+	Route::get('stocks', [StockController::class, 'index'])->middleware('permission:view_stocks,manage_stocks');
+	Route::get('stocks/{stock}', [StockController::class, 'show'])->middleware('permission:view_stocks,manage_stocks');
 
 	// Prescriptions
 	Route::apiResource('prescriptions', PrescriptionController::class)

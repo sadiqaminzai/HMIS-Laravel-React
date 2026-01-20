@@ -39,7 +39,24 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     hospitalId: currentHospital.id // Add hospital selection
   });
 
-  const getHospitalName = (id: string) => hospitals.find(h => h.id === id)?.name || 'Unknown';
+  const getHospital = (id: string) => hospitals.find(h => h.id === id);
+  const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
+
+  const loadImageAsDataUrl = async (url?: string) => {
+    if (!url) return undefined;
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return undefined;
+    }
+  };
 
   const scopedMedicineTypes = filterByHospital(medicineTypes);
 
@@ -91,17 +108,24 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     XLSX.writeFile(workBook, "MedicineTypes_List.xlsx");
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const doc = new jsPDF();
-    
+    const headerY = 20;
+    const logoUrl = !isAllHospitals ? getHospital(currentHospital.id)?.logo : undefined;
+    const logoDataUrl = await loadImageAsDataUrl(logoUrl);
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'PNG', 14, 12, 16, 16);
+    }
+
     // Add title
     doc.setFontSize(18);
-    doc.text('Medicine Types Report', 14, 22);
+    doc.text('Medicine Types Report', logoDataUrl ? 34 : 14, headerY);
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
     if (!isAllHospitals) {
       doc.text(`Hospital: ${currentHospital.name}`, 14, 36);
+      doc.text(`Code: ${getHospital(currentHospital.id)?.code || '—'}`, 14, 42);
     }
 
     // Create table
@@ -112,7 +136,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
         mt.description || '-',
         mt.status
       ]),
-      startY: isAllHospitals ? 40 : 46,
+      startY: isAllHospitals ? 40 : 50,
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [66, 139, 202] }
     });
@@ -268,7 +292,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
       {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -319,6 +343,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => handleView(medicineType)}
+                          className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         {canManage && (
                           <button
                             onClick={() => handleEdit(medicineType)}
@@ -337,13 +368,6 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <button
-                          onClick={() => handleDelete(medicineType)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -549,6 +573,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                 <button
                   onClick={() => setShowModal(false)}
                   className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                  title="Close"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -594,6 +619,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                       value={formData.hospitalId}
                       onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                      title="Hospital"
                       required
                     >
                       {hospitals.map(h => (
@@ -612,6 +638,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title="Medicine Type Name"
                     required
                   />
                 </div>
@@ -623,6 +650,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                    title="Description"
                     rows={3}
                   />
                 </div>
@@ -634,6 +662,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    title="Status"
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>

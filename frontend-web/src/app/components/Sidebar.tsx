@@ -12,6 +12,9 @@ import {
   Package,
   Factory,
   Pill,
+  Truck,
+  Receipt,
+  Box,
   ClipboardList,
   FilePlus,
   List,
@@ -131,6 +134,24 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.medicines',
         icon: <Pill className="w-3.5 h-3.5" />,
         anyPermissions: ['view_medicines', 'manage_medicines', 'dispense_medicines']
+      },
+      {
+        id: '/suppliers',
+        translationKey: 'nav.suppliers',
+        icon: <Truck className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_suppliers', 'manage_suppliers']
+      },
+      {
+        id: '/transactions',
+        translationKey: 'nav.transactions',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_transactions', 'manage_transactions']
+      },
+      {
+        id: '/stocks',
+        translationKey: 'nav.stocks',
+        icon: <Box className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_stocks', 'manage_stocks']
       }
     ]
   },
@@ -228,7 +249,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     
     // Auto-collapse logic based on path groups
     // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
-    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines'].includes(path);
+    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stocks'].includes(path);
     if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
     }

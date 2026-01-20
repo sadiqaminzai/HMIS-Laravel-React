@@ -12,6 +12,9 @@ import { AppointmentProvider } from './context/AppointmentContext';
 import { ManufacturerProvider } from './context/ManufacturerContext';
 import { MedicineTypeProvider } from './context/MedicineTypeContext';
 import { MedicineProvider } from './context/MedicineContext';
+import { SupplierProvider } from './context/SupplierContext';
+import { TransactionProvider } from './context/TransactionContext';
+import { StockProvider } from './context/StockContext';
 import { LandingThemeProvider } from './contexts/LandingThemeContext';
 import { LandingLanguageProvider } from './contexts/LandingLanguageContext';
 import { PrescriptionProvider } from './context/PrescriptionContext';
@@ -26,6 +29,9 @@ import { PatientManagement } from './components/PatientManagement';
 import { ManufacturerManagement } from './components/ManufacturerManagement';
 import { MedicineTypeManagement } from './components/MedicineTypeManagement';
 import { MedicineManagement } from './components/MedicineManagement';
+import { SupplierManagement } from './components/SupplierManagement';
+import { TransactionManagement } from './components/TransactionManagement';
+import { StockManagement } from './components/StockManagement';
 import { AppointmentManagement } from './components/AppointmentManagement';
 import { LabTestManagementNew } from './components/LabTestManagementNew';
 import { TestManagement } from './components/TestManagement';
@@ -400,6 +406,30 @@ function AppContent() {
               }
             />
             <Route
+              path="/suppliers"
+              element={
+                <RequirePermission anyOf={["view_suppliers", "manage_suppliers"]}>
+                  <SupplierManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/transactions"
+              element={
+                <RequirePermission anyOf={["view_transactions", "manage_transactions"]}>
+                  <TransactionManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/stocks"
+              element={
+                <RequirePermission anyOf={["view_stocks", "manage_stocks"]}>
+                  <StockManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
               path="/appointments"
               element={
                 <RequirePermission anyOf={["view_appointments", "manage_appointments", "schedule_appointments"]}>
@@ -538,14 +568,20 @@ export default function App() {
                     <ManufacturerProvider>
                       <MedicineTypeProvider>
                         <MedicineProvider>
-                          <PrescriptionProvider>
-                            <AppointmentProvider>
-                              <BrowserRouter>
-                                <Toaster richColors closeButton position="top-right" />
-                                <AppContent />
-                              </BrowserRouter>
-                            </AppointmentProvider>
-                          </PrescriptionProvider>
+                          <SupplierProvider>
+                            <TransactionProvider>
+                              <StockProvider>
+                                <PrescriptionProvider>
+                                  <AppointmentProvider>
+                                    <BrowserRouter>
+                                      <Toaster richColors closeButton position="top-right" />
+                                      <AppContent />
+                                    </BrowserRouter>
+                                  </AppointmentProvider>
+                                </PrescriptionProvider>
+                              </StockProvider>
+                            </TransactionProvider>
+                          </SupplierProvider>
                         </MedicineProvider>
                       </MedicineTypeProvider>
                     </ManufacturerProvider>

@@ -45,6 +45,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     strength: '',
     medicineTypeId: '',
     manufacturerId: '',
+    stock: 0,
+    costPrice: 0,
+    salePrice: 0,
     status: 'active' as 'active' | 'inactive',
     hospitalId: currentHospital.id,
   });
@@ -54,17 +57,36 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const scopedMedicineTypes = filterByHospital(medicineTypes);
 
   const getHospitalName = (id: string) => hospitals.find((h) => h.id === id)?.name || 'Unknown';
+  const getHospital = (id: string) => hospitals.find((h) => h.id === id);
+    const loadImageAsDataUrl = async (url?: string) => {
+      if (!url) return undefined;
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return undefined;
+      }
+    };
   const getMedicineTypeName = (id: string) => scopedMedicineTypes.find((t) => t.id === id)?.name || 'N/A';
   const getManufacturerName = (id: string) => scopedManufacturers.find((m) => m.id === id)?.name || 'N/A';
 
   const filteredMedicines = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return scopedMedicines.filter((m) =>
-      m.brandName.toLowerCase().includes(term) ||
-      m.genericName.toLowerCase().includes(term) ||
-      getMedicineTypeName(m.medicineTypeId).toLowerCase().includes(term) ||
-      getManufacturerName(m.manufacturerId).toLowerCase().includes(term)
-    );
+    const term = searchTerm.toLowerCase().trim();
+    if (!term) return scopedMedicines;
+    return scopedMedicines.filter((m) => {
+      const display = `${m.brandName} (${m.genericName || ''}) ${m.strength || ''} ${m.type || ''}`
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+      const typeName = getMedicineTypeName(m.medicineTypeId).toLowerCase();
+      const manufacturer = getManufacturerName(m.manufacturerId).toLowerCase();
+      return display.includes(term) || typeName.includes(term) || manufacturer.includes(term);
+    });
   }, [scopedMedicines, searchTerm, scopedManufacturers, scopedMedicineTypes]);
 
   const sortedMedicines = useMemo(() => {
@@ -117,6 +139,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       Strength: m.strength,
       Type: getMedicineTypeName(m.medicineTypeId),
       Manufacturer: getManufacturerName(m.manufacturerId),
+      Stock: m.stock ?? 0,
+      CostPrice: m.costPrice ?? 0,
+      SalePrice: m.salePrice ?? 0,
       Status: m.status,
       Hospital: getHospitalName(m.hospitalId),
     })));
@@ -125,28 +150,38 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     XLSX.writeFile(workBook, 'Medicines_List.xlsx');
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const doc = new jsPDF();
+    const headerY = 20;
+    const logoUrl = !isAllHospitals ? getHospital(currentHospital.id)?.logo : undefined;
+    const logoDataUrl = await loadImageAsDataUrl(logoUrl);
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'PNG', 14, 12, 16, 16);
+    }
     doc.setFontSize(18);
-    doc.text('Medicines Report', 14, 22);
+    doc.text('Medicines Report', logoDataUrl ? 34 : 14, headerY);
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
     if (!isAllHospitals) {
       doc.text(`Hospital: ${currentHospital.name}`, 14, 36);
+      doc.text(`Code: ${getHospital(currentHospital.id)?.code || '—'}`, 14, 42);
     }
 
     autoTable(doc, {
-      head: [['Brand', 'Generic', 'Strength', 'Type', 'Manufacturer', 'Status']],
+      head: [['Brand', 'Generic', 'Strength', 'Type', 'Manufacturer', 'Stock', 'Cost', 'Sale', 'Status']],
       body: sortedMedicines.map((m) => [
         m.brandName,
         m.genericName,
         m.strength,
         getMedicineTypeName(m.medicineTypeId),
         getManufacturerName(m.manufacturerId),
+        m.stock ?? 0,
+        m.costPrice ?? 0,
+        m.salePrice ?? 0,
         m.status,
       ]),
-      startY: isAllHospitals ? 40 : 46,
+      startY: isAllHospitals ? 40 : 50,
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [66, 139, 202] },
     });
@@ -164,6 +199,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       strength: '',
       medicineTypeId: '',
       manufacturerId: '',
+      stock: 0,
+      costPrice: 0,
+      salePrice: 0,
       status: 'active',
       hospitalId: targetHospitalId,
     });
@@ -183,6 +221,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       strength: medicine.strength || '',
       medicineTypeId: medicine.medicineTypeId,
       manufacturerId: medicine.manufacturerId,
+      stock: medicine.stock ?? 0,
+      costPrice: medicine.costPrice ?? 0,
+      salePrice: medicine.salePrice ?? 0,
       status: medicine.status,
       hospitalId: medicine.hospitalId,
     });
@@ -209,6 +250,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         strength: formData.strength,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
+        stock: formData.stock,
+        costPrice: formData.costPrice,
+        salePrice: formData.salePrice,
         status: formData.status,
       });
       setShowAddModal(false);
@@ -237,6 +281,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         strength: formData.strength,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
+        stock: formData.stock,
+        costPrice: formData.costPrice,
+        salePrice: formData.salePrice,
         status: formData.status,
       });
       setShowEditModal(false);
@@ -300,7 +347,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
@@ -317,6 +364,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <div className="flex items-center gap-1.5">Type {renderSortIcon('medicineType')}</div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Manufacturer</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Stock</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Cost</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Sale</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Status</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
               </tr>
@@ -337,6 +387,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{medicine.strength || '—'}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getMedicineTypeName(medicine.medicineTypeId)}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getManufacturerName(medicine.manufacturerId)}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{medicine.stock ?? 0}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{medicine.costPrice ?? 0}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{medicine.salePrice ?? 0}</td>
                     <td className="px-4 py-2 text-xs">
                       <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${medicine.status === 'active'
                         ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
@@ -366,7 +419,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     {loading ? 'Loading medicines...' : 'No medicines found'}
                   </td>
                 </tr>
@@ -414,6 +467,18 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <p className="font-semibold text-gray-900 dark:text-white">{getManufacturerName(selectedMedicine.manufacturerId)}</p>
                 </div>
                 <div className="space-y-1">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Stock</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.stock ?? 0}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Cost Price</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.costPrice ?? 0}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Sale Price</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.salePrice ?? 0}</p>
+                </div>
+                <div className="space-y-1">
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Hospital</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedMedicine.hospitalId)}</p>
                 </div>
@@ -447,6 +512,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Brand Name"
                   value={formData.brandName}
                   onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
                   required
@@ -456,6 +522,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Generic Name</label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Generic Name"
                   value={formData.genericName}
                   onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
                 />
@@ -464,6 +531,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Strength</label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Strength"
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
                 />
@@ -472,6 +540,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Type</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Medicine Type"
                   value={formData.medicineTypeId}
                   onChange={(e) => setFormData({ ...formData, medicineTypeId: e.target.value })}
                   required
@@ -486,6 +555,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Manufacturer</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Manufacturer"
                   value={formData.manufacturerId}
                   onChange={(e) => setFormData({ ...formData, manufacturerId: e.target.value })}
                 >
@@ -496,9 +566,46 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 </select>
               </div>
               <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Stock</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Stock"
+                  value={formData.stock}
+                  onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Cost Price"
+                  value={formData.costPrice}
+                  onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Sale Price</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Sale Price"
+                  value={formData.salePrice}
+                  onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Status</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Status"
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                 >
@@ -511,6 +618,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
                   <select
                     className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    title="Hospital"
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required
@@ -552,6 +660,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Brand Name"
                   value={formData.brandName}
                   onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
                   required
@@ -561,6 +670,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Generic Name</label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Generic Name"
                   value={formData.genericName}
                   onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
                 />
@@ -569,6 +679,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Strength</label>
                 <input
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Strength"
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
                 />
@@ -577,6 +688,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Type</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Medicine Type"
                   value={formData.medicineTypeId}
                   onChange={(e) => setFormData({ ...formData, medicineTypeId: e.target.value })}
                   required
@@ -591,6 +703,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Manufacturer</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Manufacturer"
                   value={formData.manufacturerId}
                   onChange={(e) => setFormData({ ...formData, manufacturerId: e.target.value })}
                 >
@@ -601,9 +714,46 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 </select>
               </div>
               <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Stock</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Stock"
+                  value={formData.stock}
+                  onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Cost Price"
+                  value={formData.costPrice}
+                  onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Sale Price</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Sale Price"
+                  value={formData.salePrice}
+                  onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Status</label>
                 <select
                   className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  title="Status"
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                 >
@@ -616,6 +766,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
                   <select
                     className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    title="Hospital"
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required

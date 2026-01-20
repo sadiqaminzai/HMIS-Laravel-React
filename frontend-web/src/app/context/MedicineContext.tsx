@@ -24,6 +24,9 @@ const mapMedicine = (m: any): Medicine => ({
   genericName: m.generic_name ?? '',
   strength: m.strength ?? '',
   type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
+  stock: m.stock !== undefined && m.stock !== null ? Number(m.stock) : undefined,
+  costPrice: m.cost_price !== undefined && m.cost_price !== null ? Number(m.cost_price) : undefined,
+  salePrice: m.sale_price !== undefined && m.sale_price !== null ? Number(m.sale_price) : undefined,
   status: (m.status ?? 'active') as Medicine['status'],
   createdAt: m.created_at ? new Date(m.created_at) : undefined,
   updatedAt: m.updated_at ? new Date(m.updated_at) : undefined,
@@ -85,6 +88,9 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     if (payload.brandName) body.brand_name = payload.brandName;
     if (payload.genericName !== undefined) body.generic_name = payload.genericName;
     if (payload.strength !== undefined) body.strength = payload.strength;
+    if (payload.stock !== undefined) body.stock = payload.stock;
+    if (payload.costPrice !== undefined) body.cost_price = payload.costPrice;
+    if (payload.salePrice !== undefined) body.sale_price = payload.salePrice;
     if (payload.status) body.status = payload.status;
     return body;
   };

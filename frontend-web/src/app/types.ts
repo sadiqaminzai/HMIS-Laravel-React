@@ -99,11 +99,68 @@ export interface Medicine {
   manufacturerId: string;
   medicineTypeId: string;
   type?: string; // human readable medicine type name (e.g., Tablet)
+  stock?: number;
+  costPrice?: number;
+  salePrice?: number;
   status: 'active' | 'inactive';
   createdAt?: Date;
   createdBy?: string;
   updatedAt?: Date;
   updatedBy?: string;
+}
+
+export interface Supplier {
+  id: string;
+  hospitalId: string;
+  name: string;
+  contactInfo?: string;
+  address?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface TransactionDetail {
+  id: string;
+  trxId: string;
+  medicineId: string;
+  batchNo?: string;
+  expiryDate?: Date;
+  qtty: number;
+  bonus?: number;
+  price: number;
+  discount?: number;
+  tax?: number;
+  amount?: number;
+  medicineName?: string;
+}
+
+export interface Transaction {
+  id: string;
+  hospitalId: string;
+  supplierId?: string;
+  patientId?: string;
+  trxType: 'purchase' | 'sales' | 'purchase_return' | 'sales_return';
+  grandTotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  paidAmount: number;
+  dueAmount: number;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  details?: TransactionDetail[];
+}
+
+export interface Stock {
+  id: string;
+  hospitalId: string;
+  medicineId: string;
+  batchNo?: string;
+  stockQty: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+  medicineName?: string;
 }
 
 export interface PrescriptionMedicine {
