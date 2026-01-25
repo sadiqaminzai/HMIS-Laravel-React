@@ -32,7 +32,8 @@ import {
   Shield,
   Key,
   LogOut,
-  Hospital
+  Hospital,
+  Database
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
@@ -466,7 +467,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
             <button
               onClick={() => isCollapsed ? handleNavigate('/settings/general') : toggleMenu('settings')}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings', '/contact-messages'].includes(currentPath)
+                ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings/backups', '/settings', '/contact-messages'].includes(currentPath)
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
@@ -493,6 +494,19 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                   >
                     <Sliders className="w-3.5 h-3.5" />
                     <span>General</span>
+                  </button>
+                )}
+                {canSeeHospitalSettings && (
+                  <button
+                    onClick={() => handleNavigate('/settings/backups')}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
+                      currentPath === '/settings/backups'
+                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    <span>Backups</span>
                   </button>
                 )}
                 {canSeeContactMessages && (

@@ -12,7 +12,9 @@ class Transaction extends Model
     protected $fillable = [
         'hospital_id',
         'supplier_id',
+        'supplier_name',
         'patient_id',
+        'patient_name',
         'trx_type',
         'grand_total',
         'total_discount',

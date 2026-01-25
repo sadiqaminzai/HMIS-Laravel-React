@@ -10,11 +10,18 @@ export interface PatientIdConfig {
   digits: number;
 }
 
+export interface PrintColumnSettings {
+  showBatchColumn: boolean;
+  showExpiryDateColumn: boolean;
+  showBonusColumn: boolean;
+}
+
 export interface HospitalSetting {
   hospitalId: string;
   defaultDoctorId?: string;
   defaultToWalkIn: boolean;
   patientIdConfig: PatientIdConfig;
+  printColumns: PrintColumnSettings;
 }
 
 interface Settings {
@@ -30,6 +37,7 @@ interface SettingsContextType {
   getDefaultDoctorId: (hospitalId: string) => string | undefined;
   getDefaultToWalkIn: (hospitalId: string) => boolean;
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
+  getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
@@ -40,6 +48,12 @@ const defaultPatientIdConfig: PatientIdConfig = {
   prefix: 'P',
   startNumber: 1,
   digits: 5
+};
+
+const defaultPrintColumns: PrintColumnSettings = {
+  showBatchColumn: true,
+  showExpiryDateColumn: true,
+  showBonusColumn: true,
 };
 
 const defaultSettings: Settings = {
@@ -56,6 +70,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getDefaultDoctorId: () => undefined,
   getDefaultToWalkIn: () => false,
   getPatientIdConfig: () => defaultPatientIdConfig,
+  getPrintColumnSettings: () => defaultPrintColumns,
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -126,6 +141,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.patient_id_digits = payload.patientIdConfig.digits;
       body.auto_generate_patient_ids = payload.patientIdConfig.autoGenerate;
     }
+    if (payload.printColumns) {
+      body.print_show_batch_column = payload.printColumns.showBatchColumn;
+      body.print_show_expiry_date_column = payload.printColumns.showExpiryDateColumn;
+      body.print_show_bonus_column = payload.printColumns.showBonusColumn;
+    }
 
     const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
     setSettingsByHospital((prev) => ({
@@ -145,6 +165,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         startNumber: Number(raw.patient_id_start ?? 1),
         digits: Number(raw.patient_id_digits ?? 5),
       },
+      printColumns: {
+        showBatchColumn: raw.print_show_batch_column ?? true,
+        showExpiryDateColumn: raw.print_show_expiry_date_column ?? true,
+        showBonusColumn: raw.print_show_bonus_column ?? true,
+      },
     };
   };
 
@@ -154,6 +179,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       defaultDoctorId: undefined,
       defaultToWalkIn: false,
       patientIdConfig: { ...defaultPatientIdConfig },
+      printColumns: { ...defaultPrintColumns },
     };
   };
 
@@ -169,6 +195,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).patientIdConfig;
   };
 
+  const getPrintColumnSettings = (hospitalId: string): PrintColumnSettings => {
+    return getHospitalSetting(hospitalId).printColumns;
+  };
+
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
     const config = getPatientIdConfig(hospitalId);
     const number = (config.startNumber + currentCount).toString().padStart(config.digits, '0');
@@ -182,6 +212,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getDefaultDoctorId,
       getDefaultToWalkIn,
       getPatientIdConfig,
+      getPrintColumnSettings,
       generatePatientId,
       loadHospitalSetting,
       saveHospitalSetting

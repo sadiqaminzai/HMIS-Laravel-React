@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Medicine;
 use App\Models\Patient;
 use App\Models\Stock;
+use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
@@ -43,6 +45,12 @@ class TransactionController extends Controller
         }
 
         $this->ensurePartyConsistency($data);
+        $this->fillPartyNames($data);
+        $this->ensureStockAvailable(
+            (int) ($data['hospital_id'] ?? $request->user()->hospital_id),
+            (string) ($data['trx_type'] ?? ''),
+            $data['items'] ?? []
+        );
 
         $transaction = DB::transaction(function () use ($data, $request) {
             $items = $data['items'] ?? [];
@@ -68,7 +76,14 @@ class TransactionController extends Controller
                 $normalized = $this->normalizeItem($item);
                 $transaction->details()->create($normalized);
 
-                $this->applyStockChange((int) $transaction->hospital_id, $normalized, $transaction->trx_type, false);
+                $this->applyStockChange(
+                    (int) $transaction->hospital_id,
+                    $normalized,
+                    $transaction->trx_type,
+                    false,
+                    (int) $transaction->id,
+                    $request->user()->name ?? null
+                );
             }
 
             return $transaction->load(['details.medicine', 'supplier', 'patient']);
@@ -96,8 +111,11 @@ class TransactionController extends Controller
         }
 
         $this->ensurePartyConsistency($data);
+        $this->fillPartyNames($data);
 
-        $transaction = DB::transaction(function () use ($data, $transaction, $request) {
+        $actor = $request->user()->name ?? null;
+
+        $transaction = DB::transaction(function () use ($data, $transaction, $request, $actor) {
             $items = $data['items'] ?? [];
             unset($data['items']);
 
@@ -122,11 +140,21 @@ class TransactionController extends Controller
                         'batch_no' => $detail->batch_no,
                         'qtty' => $detail->qtty,
                         'bonus' => $detail->bonus,
+                        'price' => $detail->price,
+                        'expiry_date' => $detail->expiry_date,
                     ],
                     $transaction->trx_type,
-                    true
+                    true,
+                    (int) $transaction->id,
+                    $actor
                 );
             }
+
+            $this->ensureStockAvailable(
+                (int) $transaction->hospital_id,
+                (string) ($data['trx_type'] ?? $transaction->trx_type),
+                $items
+            );
 
             $transaction->details()->delete();
 
@@ -138,7 +166,14 @@ class TransactionController extends Controller
                 $normalized = $this->normalizeItem($item);
                 $transaction->details()->create($normalized);
 
-                $this->applyStockChange((int) $transaction->hospital_id, $normalized, $transaction->trx_type, false);
+                $this->applyStockChange(
+                    (int) $transaction->hospital_id,
+                    $normalized,
+                    $transaction->trx_type,
+                    false,
+                    (int) $transaction->id,
+                    $actor
+                );
             }
 
             return $transaction->load(['details.medicine', 'supplier', 'patient']);
@@ -152,7 +187,9 @@ class TransactionController extends Controller
         $this->authorizePharmacy($request->user());
         $this->authorizeScope($request->user(), $transaction);
 
-        DB::transaction(function () use ($transaction) {
+        $actor = $request->user()->name ?? null;
+
+        DB::transaction(function () use ($transaction, $actor) {
             $transaction->load('details');
 
             foreach ($transaction->details as $detail) {
@@ -163,9 +200,13 @@ class TransactionController extends Controller
                         'batch_no' => $detail->batch_no,
                         'qtty' => $detail->qtty,
                         'bonus' => $detail->bonus,
+                        'price' => $detail->price,
+                        'expiry_date' => $detail->expiry_date,
                     ],
                     $transaction->trx_type,
-                    true
+                    true,
+                    (int) $transaction->id,
+                    $actor
                 );
             }
 
@@ -210,6 +251,52 @@ class TransactionController extends Controller
             'items.*.discount' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.tax' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
+    }
+
+    private function ensureStockAvailable(int $hospitalId, string $trxType, array $items): void
+    {
+        if (!in_array($trxType, ['sales', 'purchase_return'], true)) {
+            return;
+        }
+
+        $requiredByKey = [];
+        foreach ($items as $item) {
+            $medicineId = (int) ($item['medicine_id'] ?? 0);
+            if (!$medicineId) {
+                continue;
+            }
+            $batchNo = $item['batch_no'] ?? null;
+            $required = (int) ($item['qtty'] ?? 0) + (int) ($item['bonus'] ?? 0);
+            if ($required <= 0) {
+                continue;
+            }
+
+            $key = $medicineId . '::' . ($batchNo ?? '__all__');
+            $requiredByKey[$key] = ($requiredByKey[$key] ?? 0) + $required;
+        }
+
+        foreach ($requiredByKey as $key => $required) {
+            [$medicineIdRaw, $batchNo] = explode('::', $key, 2);
+            $medicineId = (int) $medicineIdRaw;
+
+            $query = Stock::query()
+                ->where('hospital_id', $hospitalId)
+                ->where('medicine_id', $medicineId);
+
+            if ($batchNo !== '__all__') {
+                $query->where('batch_no', $batchNo);
+            }
+
+            $available = (int) $query->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+            if ($available < $required) {
+                $medicine = Medicine::find($medicineId);
+                $name = $medicine?->brand_name ?? 'Medicine';
+                $batchLabel = $batchNo !== '__all__' ? " (Batch: {$batchNo})" : '';
+                throw ValidationException::withMessages([
+                    'items' => "Insufficient stock for {$name}{$batchLabel}. Available: {$available}, Required: {$required}.",
+                ]);
+            }
+        }
     }
 
     private function normalizeItem(array $item): array
@@ -275,21 +362,47 @@ class TransactionController extends Controller
         }
     }
 
-    private function applyStockChange(int $hospitalId, array $item, string $trxType, bool $reverse = false): void
+    private function fillPartyNames(array &$data): void
+    {
+        $data['supplier_name'] = null;
+        $data['patient_name'] = null;
+
+        if (!empty($data['supplier_id'])) {
+            $supplier = Supplier::find((int) $data['supplier_id']);
+            $data['supplier_name'] = $supplier?->name;
+        }
+
+        if (!empty($data['patient_id'])) {
+            $patient = Patient::find((int) $data['patient_id']);
+            $data['patient_name'] = $patient?->name;
+        }
+    }
+
+    private function applyStockChange(int $hospitalId, array $item, string $trxType, bool $reverse = false, ?int $trxId = null, ?string $actor = null): void
     {
         $medicineId = (int) ($item['medicine_id'] ?? 0);
         $qtty = (int) ($item['qtty'] ?? 0);
         $bonus = (int) ($item['bonus'] ?? 0);
+        $price = (float) ($item['price'] ?? 0);
+        $expiryDate = $item['expiry_date'] ?? null;
 
-        $delta = match ($trxType) {
-            'purchase' => ($qtty + $bonus),
-            'purchase_return' => -1 * ($qtty + $bonus),
-            'sales' => -1 * ($qtty + $bonus),
-            'sales_return' => ($qtty + $bonus),
+        $qtyDelta = match ($trxType) {
+            'purchase' => $qtty,
+            'purchase_return' => -1 * $qtty,
+            'sales' => -1 * $qtty,
+            'sales_return' => $qtty,
+            default => 0,
+        };
+        $bonusDelta = match ($trxType) {
+            'purchase' => $bonus,
+            'purchase_return' => -1 * $bonus,
+            'sales' => -1 * $bonus,
+            'sales_return' => $bonus,
             default => 0,
         };
         if ($reverse) {
-            $delta *= -1;
+            $qtyDelta *= -1;
+            $bonusDelta *= -1;
         }
 
         $batchNo = $item['batch_no'] ?? null;
@@ -299,14 +412,41 @@ class TransactionController extends Controller
             'batch_no' => $batchNo,
         ]);
 
-        $stock->stock_qty = max(0, ((int) $stock->stock_qty) + $delta);
+        if ($expiryDate && (!$stock->expiry_date || (string) $stock->expiry_date !== (string) $expiryDate)) {
+            $stock->expiry_date = $expiryDate;
+        }
+        if (in_array($trxType, ['purchase', 'purchase_return'], true) && $price > 0) {
+            $stock->purchase_price = $price;
+        }
+        if (in_array($trxType, ['sales', 'sales_return'], true) && $price > 0) {
+            $stock->sale_price = $price;
+        }
+
+        $stock->stock_qty = max(0, ((int) $stock->stock_qty) + $qtyDelta);
+        $stock->bonus_qty = max(0, ((int) ($stock->bonus_qty ?? 0)) + $bonusDelta);
         $stock->save();
 
         $medicine = Medicine::find($medicineId);
         if ($medicine) {
-            $medicine->stock = max(0, ((int) $medicine->stock) + $delta);
+            $medicine->stock = max(0, ((int) $medicine->stock) + ($qtyDelta + $bonusDelta));
             $medicine->save();
         }
+
+        StockMovement::create([
+            'hospital_id' => $hospitalId,
+            'medicine_id' => $medicineId,
+            'trx_id' => $trxId,
+            'trx_type' => $trxType,
+            'batch_no' => $batchNo,
+            'expiry_date' => $expiryDate ?: $stock->expiry_date,
+            'qty_change' => $qtyDelta,
+            'bonus_change' => $bonusDelta,
+            'unit_price' => $price,
+            'balance_qty' => (int) $stock->stock_qty,
+            'balance_bonus' => (int) ($stock->bonus_qty ?? 0),
+            'actor' => $actor,
+            'is_reversal' => $reverse,
+        ]);
     }
 
     private function authorizePharmacy($user): void

@@ -57,13 +57,13 @@ export function Header({ user, hospital, role, onRoleChange, onHospitalChange }:
         style={{ borderTop: `3px solid ${hospital.brandColor || '#2563eb'}` }}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-md border border-blue-100 dark:border-blue-800">
-              <Building2 className="w-3.5 h-3.5" style={{ color: hospital.brandColor || '#2563eb' }} />
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{t('header.currentHospital')}</div>
-                <div className="text-xs font-medium text-gray-900 dark:text-white">{hospital.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{t('header.code')}: {hospital.code}</div>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 px-1.5 py-1 sm:px-2.5 sm:py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-md border border-blue-100 dark:border-blue-800">
+              <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" style={{ color: hospital.brandColor || '#2563eb' }} />
+              <div className="max-w-[120px] sm:max-w-none">
+                <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{t('header.currentHospital')}</div>
+                <div className="text-[10px] sm:text-xs font-medium text-gray-900 dark:text-white truncate">{hospital.name}</div>
+                <div className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">{t('header.code')}: {hospital.code}</div>
               </div>
             </div>
 

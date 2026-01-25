@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContactMessageController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\HospitalSettingController;
@@ -13,6 +15,7 @@ use App\Http\Controllers\MedicineController;
 use App\Http\Controllers\MedicineTypeController;
 use App\Http\Controllers\PrescriptionController;
 use App\Http\Controllers\StockController;
+use App\Http\Controllers\StockReconciliationController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PermissionController;
@@ -30,6 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('/logout', [AuthController::class, 'logout']);
 	Route::get('/health', [ShifaaScriptController::class, 'index']);
 	Route::get('/my-hospital', [HospitalController::class, 'myHospital']);
+	Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->middleware('permission:view_dashboard');
 
 	Route::apiResource('hospitals', HospitalController::class)->except(['create', 'edit'])->middleware([
 		'index' => 'permission:manage_hospitals',
@@ -102,6 +106,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Stocks (read-only)
 	Route::get('stocks', [StockController::class, 'index'])->middleware('permission:view_stocks,manage_stocks');
 	Route::get('stocks/{stock}', [StockController::class, 'show'])->middleware('permission:view_stocks,manage_stocks');
+	Route::get('stock-reconciliation', [StockReconciliationController::class, 'index'])->middleware('permission:view_stocks,manage_stocks');
+	Route::post('stock-reconciliation', [StockReconciliationController::class, 'store'])->middleware('permission:manage_stocks');
 
 	// Prescriptions
 	Route::apiResource('prescriptions', PrescriptionController::class)
@@ -162,4 +168,12 @@ Route::middleware('auth:sanctum')->group(function () {
 		'update' => 'permission:manage_contact_messages',
 		'destroy' => 'permission:manage_contact_messages',
 	]);
+
+	// Database Backups
+	Route::get('backups', [DatabaseBackupController::class, 'index'])->middleware('permission:manage_hospital_settings');
+	Route::get('backups/settings', [DatabaseBackupController::class, 'settings'])->middleware('permission:manage_hospital_settings');
+	Route::put('backups/settings', [DatabaseBackupController::class, 'updateSettings'])->middleware('permission:manage_hospital_settings');
+	Route::post('backups', [DatabaseBackupController::class, 'store'])->middleware('permission:manage_hospital_settings');
+	Route::get('backups/{filename}/download', [DatabaseBackupController::class, 'download'])->middleware('permission:manage_hospital_settings');
+	Route::delete('backups/{filename}', [DatabaseBackupController::class, 'destroy'])->middleware('permission:manage_hospital_settings');
 });

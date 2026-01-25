@@ -1,90 +1,120 @@
-import React, { useState } from 'react';
-import { 
-  Users, FileText, Pill, Stethoscope, Building2, TrendingUp, TrendingDown,
-  Calendar, ClipboardList, TestTube, Package, Activity, AlertCircle,
-  CheckCircle, Clock, XCircle, ArrowUpRight, ArrowDownRight, Filter
+import React, { useState, useEffect } from 'react';
+import {
+  Users,
+  FileText,
+  Pill,
+  Stethoscope,
+  Building2,
+  TrendingUp,
+  TrendingDown,
+  CheckCircle,
+  Clock,
+  XCircle,
+  ArrowUpRight,
+  ArrowDownRight,
+  TestTube,
+  Activity,
+  Calendar,
+  ClipboardList,
+  AlertCircle,
+  Package
 } from 'lucide-react';
 import { UserRole, Hospital } from '../types';
-import { 
-  mockDoctors, mockPatients, mockMedicines, mockPrescriptions, 
-  mockHospitals, mockManufacturers, mockMedicineTypes 
-} from '../data/mockData';
-import { mockTestTemplates } from '../data/mockTestTemplates';
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+import api from '../../api/axios';
+import {
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 
 interface DashboardProps {
   role: UserRole;
-  hospital: Hospital;
+  hospital: Hospital | null;
+}
+
+interface DashboardSummary {
+  hospital_id: number | null;
+  hospitals: Array<{ id: number | string; name: string; code?: string; status?: string }>;
+  counts: {
+    hospitals: number;
+    doctors: number;
+    active_doctors: number;
+    patients: number;
+    prescriptions: number;
+    medicines: number;
+    manufacturers: number;
+    medicine_types: number;
+    test_templates: number;
+    lab_orders_today: number;
+    appointments_today: number;
+  };
+  charts: {
+    monthly: Array<{ month: string; patients: number; prescriptions: number; appointments: number }>;
+    appointment_status: Array<{ name: string; value: number; color: string }>;
+    test_status: Array<{ name: string; value: number; color: string }>;
+    medicine_stock: Array<{ name: string; value: number; color: string }>;
+  };
+  recent: {
+    patients: Array<{ id: number; name: string; patient_id?: string; age?: number; gender?: string }>;
+    prescriptions: Array<{ id: number; patient_name?: string; prescription_number?: string; items_count?: number }>;
+    lab_orders: Array<{ id: number; patient_name?: string; order_number?: string; status?: string }>;
+  };
 }
 
 export function Dashboard({ role, hospital }: DashboardProps) {
-  const [selectedHospital, setSelectedHospital] = useState<string>('all');
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
-  // Filter data based on role and hospital
-  const getFilteredData = () => {
-    if (role === 'super_admin') {
-      if (selectedHospital === 'all') {
-        return {
-          hospitals: mockHospitals,
-          doctors: mockDoctors,
-          patients: mockPatients,
-          prescriptions: mockPrescriptions,
-          medicines: mockMedicines
-        };
-      } else {
-        return {
-          hospitals: mockHospitals.filter(h => h.id === selectedHospital),
-          doctors: mockDoctors.filter(d => d.hospitalId === selectedHospital),
-          patients: mockPatients.filter(p => p.hospitalId === selectedHospital),
-          prescriptions: mockPrescriptions.filter(p => p.hospitalId === selectedHospital),
-          medicines: mockMedicines.filter(m => m.hospitalId === selectedHospital)
-        };
+  useEffect(() => {
+    if (!hospital) return;
+
+    const loadSummary = async () => {
+      try {
+        const params = role === 'super_admin' ? { hospital_id: hospital.id } : undefined;
+        const { data } = await api.get('/dashboard/summary', { params });
+        setSummary(data);
+      } catch (error) {
+        setSummary(null);
       }
-    } else {
-      return {
-        hospitals: [hospital],
-        doctors: mockDoctors.filter(d => d.hospitalId === hospital.id),
-        patients: mockPatients.filter(p => p.hospitalId === hospital.id),
-        prescriptions: mockPrescriptions.filter(p => p.hospitalId === hospital.id),
-        medicines: mockMedicines.filter(m => m.hospitalId === hospital.id)
-      };
-    }
+    };
+
+    loadSummary();
+  }, [hospital?.id, role]);
+
+  const counts = summary?.counts ?? {
+    hospitals: 0,
+    doctors: 0,
+    active_doctors: 0,
+    patients: 0,
+    prescriptions: 0,
+    medicines: 0,
+    manufacturers: 0,
+    medicine_types: 0,
+    test_templates: 0,
+    lab_orders_today: 0,
+    appointments_today: 0,
   };
 
-  const data = getFilteredData();
-
-  // Chart data
-  const monthlyData = [
-    { month: 'Jan', patients: 65, prescriptions: 45, appointments: 75 },
-    { month: 'Feb', patients: 78, prescriptions: 52, appointments: 85 },
-    { month: 'Mar', patients: 90, prescriptions: 68, appointments: 95 },
-    { month: 'Apr', patients: 81, prescriptions: 58, appointments: 88 },
-    { month: 'May', patients: 95, prescriptions: 72, appointments: 102 },
-    { month: 'Jun', patients: 110, prescriptions: 85, appointments: 115 },
-  ];
-
-  const testStatusData = [
-    { name: 'Pending', value: 15, color: '#f59e0b' },
-    { name: 'In Progress', value: 8, color: '#3b82f6' },
-    { name: 'Completed', value: 45, color: '#10b981' },
-    { name: 'Cancelled', value: 2, color: '#ef4444' },
-  ];
-
-  const medicineStockData = [
-    { name: 'In Stock', value: 285, color: '#10b981' },
-    { name: 'Low Stock', value: 35, color: '#f59e0b' },
-    { name: 'Out of Stock', value: 8, color: '#ef4444' },
-  ];
-
-  const appointmentStatusData = [
-    { name: 'Scheduled', value: 42, color: '#3b82f6' },
-    { name: 'Completed', value: 156, color: '#10b981' },
-    { name: 'Cancelled', value: 12, color: '#ef4444' },
-    { name: 'No Show', value: 5, color: '#6b7280' },
-  ];
+  const monthlyData = summary?.charts.monthly ?? [];
+  const testStatusData = summary?.charts.test_status ?? [];
+  const medicineStockData = summary?.charts.medicine_stock ?? [];
+  const appointmentStatusData = summary?.charts.appointment_status ?? [];
+  const hospitalsData = summary?.hospitals ?? (hospital ? [hospital] : []);
+  const recentData = summary?.recent ?? { patients: [], prescriptions: [], lab_orders: [] };
+  const lowStockCount = medicineStockData.find(item => item.name === 'Low Stock')?.value ?? 0;
+  const scheduledCount = appointmentStatusData.find(item => item.name === 'Scheduled')?.value ?? 0;
+  const pendingLabCount = testStatusData.find(item => item.name === 'Pending')?.value ?? 0;
+  const inProgressLabCount = testStatusData.find(item => item.name === 'In Progress')?.value ?? 0;
+  const completedLabCount = testStatusData.find(item => item.name === 'Completed')?.value ?? 0;
 
   // Super Admin Dashboard
   const SuperAdminDashboard = () => (
@@ -93,20 +123,11 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Super Admin Dashboard</h1>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">System-wide overview and analytics</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Viewing {hospital?.name || 'Hospital'} analytics</p>
         </div>
         <div className="flex items-center gap-2 self-end sm:self-auto">
-          <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
-          <select
-            value={selectedHospital}
-            onChange={(e) => setSelectedHospital(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Hospitals</option>
-            {mockHospitals.map(h => (
-              <option key={h.id} value={h.id}>{h.name}</option>
-            ))}
-          </select>
+          <Building2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+          <span className="text-xs text-gray-600 dark:text-gray-400">Selected in header</span>
         </div>
       </div>
 
@@ -114,28 +135,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Hospitals"
-          value={data.hospitals.length.toString()}
+          value={counts.hospitals.toString()}
           icon={<Building2 className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '2', isPositive: true }}
         />
         <StatCard
           label="Total Doctors"
-          value={data.doctors.length.toString()}
+          value={counts.doctors.toString()}
           icon={<Stethoscope className="w-4 h-4" />}
           color="bg-blue-500"
           trend={{ value: '5', isPositive: true }}
         />
         <StatCard
           label="Total Patients"
-          value={data.patients.length.toString()}
+          value={counts.patients.toString()}
           icon={<Users className="w-4 h-4" />}
           color="bg-green-500"
           trend={{ value: '12', isPositive: true }}
         />
         <StatCard
           label="Total Prescriptions"
-          value={data.prescriptions.length.toString()}
+          value={counts.prescriptions.toString()}
           icon={<FileText className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '8', isPositive: true }}
@@ -146,28 +167,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Medicines"
-          value={data.medicines.length.toString()}
+          value={counts.medicines.toString()}
           icon={<Pill className="w-4 h-4" />}
           color="bg-pink-500"
           trend={{ value: '10', isPositive: true }}
         />
         <StatCard
           label="Test Templates"
-          value={mockTestTemplates.length.toString()}
+          value={counts.test_templates.toString()}
           icon={<TestTube className="w-4 h-4" />}
           color="bg-indigo-500"
           trend={{ value: '3', isPositive: true }}
         />
         <StatCard
           label="Lab Tests (Today)"
-          value="24"
+          value={counts.lab_orders_today.toString()}
           icon={<Activity className="w-4 h-4" />}
           color="bg-cyan-500"
           trend={{ value: '6', isPositive: true }}
         />
         <StatCard
           label="Appointments"
-          value="156"
+          value={counts.appointments_today.toString()}
           icon={<Calendar className="w-4 h-4" />}
           color="bg-teal-500"
           trend={{ value: '15', isPositive: true }}
@@ -203,7 +224,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Hospital Status</h3>
           <div className="space-y-2">
-            {data.hospitals.map(h => (
+            {hospitalsData.map(h => (
               <div key={h.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
                   <Building2 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
@@ -226,7 +247,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       </div>
 
       {/* Activity Table */}
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
@@ -242,28 +263,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Doctors"
-          value={data.doctors.length.toString()}
+          value={counts.doctors.toString()}
           icon={<Stethoscope className="w-4 h-4" />}
           color="bg-blue-500"
           trend={{ value: '2', isPositive: true }}
         />
         <StatCard
           label="Total Patients"
-          value={data.patients.length.toString()}
+          value={counts.patients.toString()}
           icon={<Users className="w-4 h-4" />}
           color="bg-green-500"
           trend={{ value: '15', isPositive: true }}
         />
         <StatCard
           label="Prescriptions"
-          value={data.prescriptions.length.toString()}
+          value={counts.prescriptions.toString()}
           icon={<FileText className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '8', isPositive: true }}
         />
         <StatCard
           label="Medicines"
-          value={data.medicines.length.toString()}
+          value={counts.medicines.toString()}
           icon={<Pill className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '3', isPositive: false }}
@@ -334,7 +355,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
@@ -350,28 +371,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Patients"
-          value={data.patients.length.toString()}
+          value={counts.patients.toString()}
           icon={<Users className="w-4 h-4" />}
           color="bg-blue-500"
           trend={{ value: '12', isPositive: true }}
         />
         <StatCard
           label="Appointments Today"
-          value="8"
+          value={counts.appointments_today.toString()}
           icon={<Calendar className="w-4 h-4" />}
           color="bg-green-500"
           trend={{ value: '3', isPositive: true }}
         />
         <StatCard
           label="Prescriptions"
-          value={data.prescriptions.length.toString()}
+          value={counts.prescriptions.toString()}
           icon={<ClipboardList className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '5', isPositive: true }}
         />
         <StatCard
           label="Lab Tests Ordered"
-          value="15"
+          value={counts.lab_orders_today.toString()}
           icon={<TestTube className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '2', isPositive: true }}
@@ -420,7 +441,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
@@ -436,28 +457,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Patients"
-          value={data.patients.length.toString()}
+          value={counts.patients.toString()}
           icon={<Users className="w-4 h-4" />}
           color="bg-blue-500"
           trend={{ value: '15', isPositive: true }}
         />
         <StatCard
           label="Today's Appointments"
-          value="12"
+          value={counts.appointments_today.toString()}
           icon={<Calendar className="w-4 h-4" />}
           color="bg-green-500"
           trend={{ value: '4', isPositive: true }}
         />
         <StatCard
           label="Scheduled"
-          value="42"
+          value={scheduledCount.toString()}
           icon={<Clock className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '8', isPositive: true }}
         />
         <StatCard
           label="Available Doctors"
-          value={data.doctors.filter(d => d.status === 'active').length.toString()}
+          value={counts.active_doctors.toString()}
           icon={<Stethoscope className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '0', isPositive: true }}
@@ -524,11 +545,10 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
-  // Pharmacist Dashboard
   const PharmacistDashboard = () => (
     <div className="space-y-3">
       <div>
@@ -540,28 +560,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Medicines"
-          value={data.medicines.length.toString()}
+          value={counts.medicines.toString()}
           icon={<Pill className="w-4 h-4" />}
-          color="bg-blue-500"
+          color="bg-green-500"
           trend={{ value: '5', isPositive: true }}
         />
         <StatCard
           label="Prescriptions"
-          value={data.prescriptions.length.toString()}
+          value={counts.prescriptions.toString()}
           icon={<FileText className="w-4 h-4" />}
-          color="bg-green-500"
+          color="bg-blue-500"
           trend={{ value: '8', isPositive: true }}
         />
         <StatCard
           label="Low Stock Items"
-          value="12"
+          value={lowStockCount.toString()}
           icon={<AlertCircle className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '3', isPositive: false }}
         />
         <StatCard
           label="Manufacturers"
-          value={mockManufacturers.length.toString()}
+          value={counts.manufacturers.toString()}
           icon={<Package className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '1', isPositive: true }}
@@ -634,12 +654,12 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5" />
           <div>
             <h3 className="text-xs font-semibold text-orange-900 dark:text-orange-300">Low Stock Alert</h3>
-            <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">12 medicines are running low on stock. Please reorder soon.</p>
+            <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">{lowStockCount} medicines are running low on stock. Please reorder soon.</p>
           </div>
         </div>
       </div>
 
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
@@ -655,28 +675,28 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Pending Tests"
-          value="15"
+          value={pendingLabCount.toString()}
           icon={<Clock className="w-4 h-4" />}
           color="bg-orange-500"
           trend={{ value: '5', isPositive: false }}
         />
         <StatCard
           label="In Progress"
-          value="8"
+          value={inProgressLabCount.toString()}
           icon={<Activity className="w-4 h-4" />}
           color="bg-blue-500"
           trend={{ value: '3', isPositive: true }}
         />
         <StatCard
           label="Completed Today"
-          value="24"
+          value={completedLabCount.toString()}
           icon={<CheckCircle className="w-4 h-4" />}
           color="bg-green-500"
           trend={{ value: '12', isPositive: true }}
         />
         <StatCard
           label="Test Templates"
-          value="48"
+          value={counts.test_templates.toString()}
           icon={<TestTube className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '2', isPositive: true }}
@@ -749,12 +769,12 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5" />
           <div>
             <h3 className="text-xs font-semibold text-blue-900 dark:text-blue-300">Pending Tests</h3>
-            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">You have 15 pending tests waiting for processing.</p>
+            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">You have {pendingLabCount} pending tests waiting for processing.</p>
           </div>
         </div>
       </div>
 
-      <RecentActivity data={data} role={role} />
+      <RecentActivity recent={recentData} role={role} />
     </div>
   );
 
@@ -818,29 +838,29 @@ function StatCard({ label, value, icon, color, trend }: StatCardProps) {
 
 // Recent Activity Component
 interface RecentActivityProps {
-  data: any;
+  recent: DashboardSummary['recent'];
   role: UserRole;
 }
 
-function RecentActivity({ data, role }: RecentActivityProps) {
+function RecentActivity({ recent, role }: RecentActivityProps) {
   if (role === 'pharmacist') {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <h2 className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Recent Prescriptions</h2>
         <div className="space-y-2">
-          {data.prescriptions.slice(0, 5).map((prescription: any) => (
+          {recent.prescriptions.slice(0, 5).map((prescription) => (
             <div key={prescription.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
               <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
                 <div className="w-7 h-7 bg-green-100 dark:bg-green-900/30 rounded-md flex items-center justify-center shrink-0">
                   <FileText className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                 </div>
                 <div className="truncate">
-                  <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{prescription.patientName}</p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{prescription.prescriptionNumber}</p>
+                  <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{prescription.patient_name || '—'}</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{prescription.prescription_number || '—'}</p>
                 </div>
               </div>
               <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
-                {prescription.medicines.length} items
+                {prescription.items_count ?? 0} items
               </span>
             </div>
           ))}
@@ -854,48 +874,58 @@ function RecentActivity({ data, role }: RecentActivityProps) {
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <h2 className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Recent Lab Tests</h2>
         <div className="space-y-2">
-          <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-              <div className="w-7 h-7 bg-orange-100 dark:bg-orange-900/30 rounded-md flex items-center justify-center shrink-0">
-                <Clock className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+          {recent.lab_orders.slice(0, 5).map((order) => {
+            const status = (order.status || '').toLowerCase();
+            const statusLabel = status ? status.replace('_', ' ') : 'Pending';
+            const statusStyles = status === 'completed'
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+              : status === 'in_progress'
+                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                : status === 'cancelled'
+                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                  : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400';
+
+            const Icon = status === 'completed'
+              ? CheckCircle
+              : status === 'in_progress'
+                ? Activity
+                : status === 'cancelled'
+                  ? XCircle
+                  : Clock;
+
+            const iconStyles = status === 'completed'
+              ? 'text-green-600 dark:text-green-400'
+              : status === 'in_progress'
+                ? 'text-blue-600 dark:text-blue-400'
+                : status === 'cancelled'
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-orange-600 dark:text-orange-400';
+
+            const iconBg = status === 'completed'
+              ? 'bg-green-100 dark:bg-green-900/30'
+              : status === 'in_progress'
+                ? 'bg-blue-100 dark:bg-blue-900/30'
+                : status === 'cancelled'
+                  ? 'bg-red-100 dark:bg-red-900/30'
+                  : 'bg-orange-100 dark:bg-orange-900/30';
+
+            return (
+              <div key={order.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                  <div className={`w-7 h-7 ${iconBg} rounded-md flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-3.5 h-3.5 ${iconStyles}`} />
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{order.order_number || 'Lab Order'}</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Patient: {order.patient_name || '—'}</p>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${statusStyles} shrink-0`}>
+                  {statusLabel || 'Pending'}
+                </span>
               </div>
-              <div className="truncate">
-                <p className="text-xs font-medium text-gray-900 dark:text-white truncate">Complete Blood Count</p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Patient: John Doe</p>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 shrink-0">
-              Pending
-            </span>
-          </div>
-          <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-              <div className="w-7 h-7 bg-blue-100 dark:bg-blue-900/30 rounded-md flex items-center justify-center shrink-0">
-                <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="truncate">
-                <p className="text-xs font-medium text-gray-900 dark:text-white truncate">Lipid Profile</p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Patient: Sarah Smith</p>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0">
-              In Progress
-            </span>
-          </div>
-          <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-              <div className="w-7 h-7 bg-green-100 dark:bg-green-900/30 rounded-md flex items-center justify-center shrink-0">
-                <CheckCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-              </div>
-              <div className="truncate">
-                <p className="text-xs font-medium text-gray-900 dark:text-white truncate">Thyroid Function Test</p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Patient: Mike Johnson</p>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 shrink-0">
-              Completed
-            </span>
-          </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -905,7 +935,7 @@ function RecentActivity({ data, role }: RecentActivityProps) {
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
       <h2 className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Recent Patients</h2>
       <div className="space-y-2">
-        {data.patients.slice(0, 5).map((patient: any) => (
+        {recent.patients.slice(0, 5).map((patient) => (
           <div key={patient.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
               <div className="w-7 h-7 bg-blue-100 dark:bg-blue-900/30 rounded-md flex items-center justify-center shrink-0">
@@ -913,12 +943,12 @@ function RecentActivity({ data, role }: RecentActivityProps) {
               </div>
               <div className="truncate">
                 <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{patient.name}</p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{patient.patientId}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{patient.patient_id || '—'}</p>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-xs text-gray-500 dark:text-gray-400">{patient.age} yrs</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{patient.gender}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{patient.age ?? '—'} yrs</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{patient.gender ?? '—'}</p>
             </div>
           </div>
         ))}

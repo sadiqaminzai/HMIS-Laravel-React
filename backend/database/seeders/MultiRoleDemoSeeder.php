@@ -89,11 +89,13 @@ class MultiRoleDemoSeeder extends Seeder
                 'view_suppliers', 'manage_suppliers',
                 'view_transactions', 'manage_transactions',
                 'view_stocks', 'manage_stocks',
+                'view_stock_reconciliation', 'manage_stock_reconciliation',
                 'view_test_templates', 'manage_test_templates',
                 'view_lab_orders', 'manage_lab_orders',
                 'update_lab_order_status',
                 'enter_lab_results', 'manage_lab_payments',
                 'view_hospital_settings', 'manage_hospital_settings',
+                'view_backups', 'manage_backups',
                 'view_reports', 'manage_reports',
             ],
             'doctor' => [
@@ -129,6 +131,7 @@ class MultiRoleDemoSeeder extends Seeder
                 'view_suppliers', 'manage_suppliers',
                 'view_transactions', 'manage_transactions',
                 'view_stocks', 'manage_stocks',
+                'view_stock_reconciliation', 'manage_stock_reconciliation',
                 'view_prescriptions',
             ],
             'lab_technician' => [

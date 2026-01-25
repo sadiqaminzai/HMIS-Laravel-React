@@ -29,8 +29,12 @@ import {
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Hospital, UserRole, Doctor, Patient, LabTest, Prescription, Appointment } from '../types';
+import { Hospital, UserRole, Doctor, Patient, LabTest, Prescription, Appointment, Transaction } from '../types';
 import { mockPrescriptions, mockDoctors, mockPatients, mockHospitals } from '../data/mockData';
+import { useTransactions } from '../context/TransactionContext';
+import { useSuppliers } from '../context/SupplierContext';
+import { usePatients } from '../context/PatientContext';
+import * as XLSX from 'xlsx';
 
 // Re-implementing mock lab tests generator locally since it's not exported
 const generateMockLabTests = (hospitalId: string): LabTest[] => [
@@ -146,10 +150,14 @@ type ReportType = 'date' | 'doctor' | 'patient' | 'lab' | 'hospital' | 'other';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 export function Reports({ hospital, userRole }: ReportsProps) {
+    const { transactions } = useTransactions();
+    const { suppliers } = useSuppliers();
+    const { patients } = usePatients();
   const [reportType, setReportType] = useState<ReportType>('date');
   const [startDate, setStartDate] = useState<string>(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
+    const [trxTypeFilter, setTrxTypeFilter] = useState<'all' | Transaction['trxType']>('all');
   
   // Data State
   const [filteredData, setFilteredData] = useState<any[]>([]);
@@ -162,6 +170,147 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
   // Mock Data Aggregation
   const allLabTests = useMemo(() => generateMockLabTests(hospital.id), [hospital.id]);
+    const getSupplierName = (id?: string) => suppliers.find((s) => s.id === id)?.name || '';
+    const getPatientName = (id?: string) => patients.find((p) => p.id === id)?.name || '';
+
+    const filteredTransactions = useMemo(() => {
+        const start = startOfDay(parseISO(startDate));
+        const end = endOfDay(parseISO(endDate));
+        return transactions
+            .filter((t) => String(t.hospitalId) === String(hospital.id))
+            .filter((t) => {
+                if (trxTypeFilter !== 'all' && t.trxType !== trxTypeFilter) return false;
+                const created = t.createdAt ? new Date(t.createdAt) : null;
+                if (!created) return false;
+                return isWithinInterval(created, { start, end });
+            })
+            .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+    }, [transactions, hospital.id, startDate, endDate, trxTypeFilter]);
+
+    const transactionTotals = useMemo(() => {
+        return filteredTransactions.reduce(
+            (acc, t) => {
+                acc.grandTotal += Number(t.grandTotal || 0);
+                acc.paidTotal += Number(t.paidAmount || 0);
+                acc.dueTotal += Number(t.dueAmount || 0);
+                acc.count += 1;
+                return acc;
+            },
+            { grandTotal: 0, paidTotal: 0, dueTotal: 0, count: 0 }
+        );
+    }, [filteredTransactions]);
+
+    const exportTransactionsToExcel = () => {
+        const rows = filteredTransactions.map((t) => ({
+            ID: t.id,
+            Type: t.trxType,
+            Supplier: t.supplierName || getSupplierName(t.supplierId) || '—',
+            Patient: t.patientName || getPatientName(t.patientId) || '—',
+            GrandTotal: t.grandTotal,
+            Paid: t.paidAmount,
+            Due: t.dueAmount,
+            Date: t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+        }));
+        const workSheet = XLSX.utils.json_to_sheet(rows);
+        const workBook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workBook, workSheet, 'Transactions');
+        XLSX.writeFile(workBook, 'Transactions_Report.xlsx');
+    };
+
+    const exportTransactionsToPDF = () => {
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text('Pharmacy Transactions Report', 14, 20);
+        doc.setFontSize(10);
+        doc.text(`Hospital: ${hospital.name}`, 14, 26);
+        doc.text(`From: ${startDate} To: ${endDate}`, 14, 32);
+        doc.text(`Type: ${trxTypeFilter === 'all' ? 'All' : trxTypeFilter}`, 14, 38);
+
+        autoTable(doc, {
+            startY: 44,
+            head: [['ID', 'Type', 'Supplier', 'Patient', 'Grand', 'Paid', 'Due', 'Date']],
+            body: filteredTransactions.map((t) => [
+                `#${t.id}`,
+                t.trxType,
+                t.supplierName || getSupplierName(t.supplierId) || '—',
+                t.patientName || getPatientName(t.patientId) || '—',
+                t.grandTotal,
+                t.paidAmount,
+                t.dueAmount,
+                t.createdAt ? new Date(t.createdAt).toLocaleString() : '—',
+            ]),
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [37, 99, 235] },
+        });
+
+        doc.save('Transactions_Report.pdf');
+    };
+
+    const handlePrintTransactions = () => {
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (!printWindow) return;
+
+        const rows = filteredTransactions.map((t) => {
+            const supplier = t.supplierName || getSupplierName(t.supplierId) || '—';
+            const patient = t.patientName || getPatientName(t.patientId) || '—';
+            const date = t.createdAt ? new Date(t.createdAt).toLocaleString() : '—';
+            return `
+                <tr>
+                    <td>#${t.id}</td>
+                    <td>${t.trxType}</td>
+                    <td>${supplier}</td>
+                    <td>${patient}</td>
+                    <td>${t.grandTotal}</td>
+                    <td>${t.paidAmount}</td>
+                    <td>${t.dueAmount}</td>
+                    <td>${date}</td>
+                </tr>
+            `;
+        }).join('');
+
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Pharmacy Transactions Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+                        h1 { margin: 0 0 8px; font-size: 18px; }
+                        p { margin: 2px 0; font-size: 12px; color: #4b5563; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }
+                        th, td { border: 1px solid #e5e7eb; padding: 6px; text-align: left; }
+                        th { background: #f3f4f6; }
+                        .summary { margin-top: 10px; font-size: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Pharmacy Transactions Report</h1>
+                    <p>Hospital: ${hospital.name}</p>
+                    <p>From ${startDate} to ${endDate} | Type: ${trxTypeFilter === 'all' ? 'All' : trxTypeFilter}</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Supplier</th>
+                                <th>Patient</th>
+                                <th>Grand</th>
+                                <th>Paid</th>
+                                <th>Due</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows || '<tr><td colspan="8">No transactions found.</td></tr>'}
+                        </tbody>
+                    </table>
+                    <div class="summary">Total: ${transactionTotals.grandTotal.toFixed(2)} | Paid: ${transactionTotals.paidTotal.toFixed(2)} | Due: ${transactionTotals.dueTotal.toFixed(2)}</div>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+    };
   
   useEffect(() => {
     // Filter logic based on Date Range and Report Type
@@ -436,6 +585,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 <select 
                     value={reportType}
                     onChange={(e) => setReportType(e.target.value as ReportType)}
+                    title="Report type"
                     className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 >
                     <option value="date">Date Wise</option>
@@ -455,6 +605,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                         type="date" 
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
+                        title="Start date"
                         className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -464,6 +615,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                         type="date" 
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
+                        title="End date"
                         className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -476,6 +628,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                     <select 
                         value={selectedEntityId}
                         onChange={(e) => setSelectedEntityId(e.target.value)}
+                        title="Specific doctor"
                         className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="all">All Doctors</option>
@@ -618,6 +771,121 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             </div>
         </div>
       </div>
+
+            {/* Pharmacy Transactions Report */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pharmacy Transactions</h2>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Sales, purchases, and returns with export and print.</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <select
+                            value={trxTypeFilter}
+                            onChange={(e) => setTrxTypeFilter(e.target.value as any)}
+                            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                            aria-label="Transaction type filter"
+                            title="Transaction type"
+                        >
+                            <option value="all">All Types</option>
+                            <option value="purchase">Purchase</option>
+                            <option value="sales">Sales</option>
+                            <option value="purchase_return">Purchase Return</option>
+                            <option value="sales_return">Sales Return</option>
+                        </select>
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                            aria-label="Start date"
+                            title="Start date"
+                        />
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                            aria-label="End date"
+                            title="End date"
+                        />
+                        <button
+                            onClick={exportTransactionsToExcel}
+                            className="px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                        >
+                            Export Excel
+                        </button>
+                        <button
+                            onClick={exportTransactionsToPDF}
+                            className="px-3 py-1.5 text-xs rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            Export PDF
+                        </button>
+                        <button
+                            onClick={handlePrintTransactions}
+                            className="px-3 py-1.5 text-xs rounded-md bg-gray-900 text-white hover:bg-gray-800"
+                        >
+                            Print
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500">Transactions</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white">{transactionTotals.count}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500">Grand Total</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white">{transactionTotals.grandTotal.toFixed(2)}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500">Paid</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white">{transactionTotals.paidTotal.toFixed(2)}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500">Due</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white">{transactionTotals.dueTotal.toFixed(2)}</p>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
+                            <tr>
+                                <th className="px-3 py-2">ID</th>
+                                <th className="px-3 py-2">Type</th>
+                                <th className="px-3 py-2">Supplier</th>
+                                <th className="px-3 py-2">Patient</th>
+                                <th className="px-3 py-2">Grand</th>
+                                <th className="px-3 py-2">Paid</th>
+                                <th className="px-3 py-2">Due</th>
+                                <th className="px-3 py-2">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {filteredTransactions.map((t) => (
+                                <tr key={t.id}>
+                                    <td className="px-3 py-2">#{t.id}</td>
+                                    <td className="px-3 py-2">{t.trxType}</td>
+                                    <td className="px-3 py-2">{t.supplierName || getSupplierName(t.supplierId) || '—'}</td>
+                                    <td className="px-3 py-2">{t.patientName || getPatientName(t.patientId) || '—'}</td>
+                                    <td className="px-3 py-2">{t.grandTotal}</td>
+                                    <td className="px-3 py-2">{t.paidAmount}</td>
+                                    <td className="px-3 py-2">{t.dueAmount}</td>
+                                    <td className="px-3 py-2">{t.createdAt ? new Date(t.createdAt).toLocaleString() : '—'}</td>
+                                </tr>
+                            ))}
+                            {filteredTransactions.length === 0 && (
+                                <tr>
+                                    <td colSpan={8} className="px-4 py-6 text-center text-xs text-gray-500">No transactions found.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
 
       {/* Detailed Data Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">

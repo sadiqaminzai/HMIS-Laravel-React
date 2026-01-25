@@ -17,11 +17,17 @@ class HospitalSetting extends Model
         'patient_id_prefix',
         'patient_id_start',
         'patient_id_digits',
+        'print_show_batch_column',
+        'print_show_expiry_date_column',
+        'print_show_bonus_column',
     ];
 
     protected $casts = [
         'default_to_walk_in' => 'boolean',
         'auto_generate_patient_ids' => 'boolean',
+        'print_show_batch_column' => 'boolean',
+        'print_show_expiry_date_column' => 'boolean',
+        'print_show_bonus_column' => 'boolean',
     ];
 
     public function hospital()

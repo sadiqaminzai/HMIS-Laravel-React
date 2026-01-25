@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -31,7 +31,7 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { settings, loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, generatePatientId } = useSettings();
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -56,6 +56,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     digits: 4
   });
 
+  const [printColumns, setPrintColumns] = useState({
+    showBatchColumn: true,
+    showExpiryDateColumn: true,
+    showBonusColumn: true,
+  });
+
   // Get doctors for currently selected hospital
   const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
 
@@ -67,10 +73,13 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       const config = getPatientIdConfig(selectedHospital.id);
       setPatientIdConfigState(config);
 
+      const printConfig = getPrintColumnSettings(selectedHospital.id);
+      setPrintColumns(printConfig);
+
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
     });
-  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig]);
+  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings]);
 
   const handleSaveDefaultDoctor = () => {
     saveHospitalSetting(selectedHospital.id, { defaultDoctorId: selectedDoctorId || undefined })
@@ -82,6 +91,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     saveHospitalSetting(selectedHospital.id, { patientIdConfig })
       .then(() => toast.success('Patient ID settings saved successfully'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save patient ID settings'));
+  };
+
+  const handleSavePrintColumns = () => {
+    saveHospitalSetting(selectedHospital.id, { printColumns })
+      .then(() => toast.success('Print settings saved successfully'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save print settings'));
   };
 
   const handleSaveTimezone = () => {
@@ -119,6 +134,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
           <select
             value={selectedHospitalId}
             onChange={(e) => setSelectedHospitalId(e.target.value)}
+            aria-label="Select hospital"
             className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
           >
             {hospitals.map(h => (
@@ -148,6 +164,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               <select
                 value={selectedDoctorId}
                 onChange={(e) => setSelectedDoctorId(e.target.value)}
+                aria-label="Select default doctor"
                 className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               >
                 <option value="">-- No Default Doctor --</option>
@@ -193,6 +210,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 type="checkbox"
                 checked={patientIdConfig.autoGenerate}
                 onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, autoGenerate: e.target.checked })}
+                aria-label="Auto-generate patient IDs"
                 className="w-3.5 h-3.5 text-green-600 dark:text-green-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 dark:focus:ring-green-600"
               />
               <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -208,6 +226,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 type="text"
                 value={patientIdConfig.prefix}
                 onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, prefix: e.target.value })}
+                aria-label="Patient ID prefix"
                 className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               />
             </div>
@@ -221,6 +240,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                   type="number"
                   value={patientIdConfig.startNumber}
                   onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, startNumber: parseInt(e.target.value) })}
+                  aria-label="Patient ID start number"
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
@@ -233,6 +253,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                   type="number"
                   value={patientIdConfig.digits}
                   onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, digits: parseInt(e.target.value) })}
+                  aria-label="Patient ID digits"
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
@@ -279,6 +300,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
+                aria-label="Select timezone"
                 className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
               >
                 {timezones.map(tz => (
@@ -354,6 +376,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               </div>
               <button
                 onClick={handleWalkInToggle}
+                aria-label="Toggle default walk-in patient mode"
                 className={`
                   relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
                   ${defaultToWalkIn
@@ -402,6 +425,59 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 <strong>Note:</strong> Users can still manually toggle between modes when creating prescriptions.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Print Settings - Column Visibility */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Printer className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Print Settings</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Control which columns appear on printed transaction invoices.
+          </p>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={printColumns.showBatchColumn}
+                onChange={(e) => setPrintColumns({ ...printColumns, showBatchColumn: e.target.checked })}
+                aria-label="Show batch column on print"
+                className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-emerald-500"
+              />
+              Show Batch Column
+            </label>
+
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={printColumns.showExpiryDateColumn}
+                onChange={(e) => setPrintColumns({ ...printColumns, showExpiryDateColumn: e.target.checked })}
+                aria-label="Show expiry date column on print"
+                className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-emerald-500"
+              />
+              Show Expiry Date Column
+            </label>
+
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={printColumns.showBonusColumn}
+                onChange={(e) => setPrintColumns({ ...printColumns, showBonusColumn: e.target.checked })}
+                aria-label="Show bonus column on print"
+                className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-emerald-500"
+              />
+              Show Bonus Column
+            </label>
+
+            <button
+              onClick={handleSavePrintColumns}
+              className="w-full px-2 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Save Print Settings
+            </button>
           </div>
         </div>
       </div>

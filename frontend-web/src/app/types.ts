@@ -138,7 +138,9 @@ export interface Transaction {
   id: string;
   hospitalId: string;
   supplierId?: string;
+  supplierName?: string;
   patientId?: string;
+  patientName?: string;
   trxType: 'purchase' | 'sales' | 'purchase_return' | 'sales_return';
   grandTotal: number;
   totalDiscount: number;
@@ -158,6 +160,10 @@ export interface Stock {
   medicineId: string;
   batchNo?: string;
   stockQty: number;
+  bonusQty?: number;
+  expiryDate?: Date;
+  purchasePrice?: number;
+  salePrice?: number;
   createdAt?: Date;
   updatedAt?: Date;
   medicineName?: string;

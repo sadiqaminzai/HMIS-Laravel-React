@@ -79,13 +79,20 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const filteredMedicines = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     if (!term) return scopedMedicines;
+    const compactTerm = term.replace(/\s+/g, '');
     return scopedMedicines.filter((m) => {
       const display = `${m.brandName} (${m.genericName || ''}) ${m.strength || ''} ${m.type || ''}`
         .replace(/\s+/g, ' ')
         .toLowerCase();
+      const compactDisplay = display.replace(/\s+/g, '');
       const typeName = getMedicineTypeName(m.medicineTypeId).toLowerCase();
       const manufacturer = getManufacturerName(m.manufacturerId).toLowerCase();
-      return display.includes(term) || typeName.includes(term) || manufacturer.includes(term);
+      return (
+        display.includes(term) ||
+        compactDisplay.includes(compactTerm) ||
+        typeName.includes(term) ||
+        manufacturer.includes(term)
+      );
     });
   }, [scopedMedicines, searchTerm, scopedManufacturers, scopedMedicineTypes]);
 

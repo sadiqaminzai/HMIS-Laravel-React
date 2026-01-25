@@ -42,6 +42,7 @@ import { RoleManagement } from './components/RoleManagement';
 import { PermissionManagement } from './components/PermissionManagement';
 import { Settings } from './components/Settings';
 import { GeneralSettings } from './components/GeneralSettings';
+import { BackupManagement } from './components/BackupManagement';
 import { ContactMessages } from './components/ContactMessages';
 import { Reports } from './components/Reports';
 import { RequirePermission } from './components/RequirePermission';
@@ -527,6 +528,14 @@ function AppContent() {
               element={
                 <RequirePermission anyOf={["view_hospital_settings", "manage_hospital_settings"]}>
                   <GeneralSettings hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/backups"
+              element={
+                <RequirePermission anyOf={["manage_hospital_settings"]}>
+                  <BackupManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
             />

@@ -326,6 +326,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                   min-height: 100%;
                   padding: 40px;
                   background: white;
+                  display: block !important;
                 }
                 @page { margin: 0; }
               }

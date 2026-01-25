@@ -88,6 +88,8 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'view_transactions', 'display_name' => 'View Transactions', 'category' => 'Pharmacy'],
             ['name' => 'manage_stocks', 'display_name' => 'Manage Stocks', 'category' => 'Pharmacy'],
             ['name' => 'view_stocks', 'display_name' => 'View Stocks', 'category' => 'Pharmacy'],
+            ['name' => 'manage_stock_reconciliation', 'display_name' => 'Manage Stock Reconciliation', 'category' => 'Pharmacy'],
+            ['name' => 'view_stock_reconciliation', 'display_name' => 'View Stock Reconciliation', 'category' => 'Pharmacy'],
             ['name' => 'view_reports', 'display_name' => 'View Reports', 'category' => 'Reports'],
             ['name' => 'manage_reports', 'display_name' => 'Manage Reports', 'category' => 'Reports'],
             ['name' => 'schedule_appointments', 'display_name' => 'Schedule Appointments', 'category' => 'Appointments'],
@@ -103,6 +105,8 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'manage_contact_messages', 'display_name' => 'Manage Contact Messages', 'category' => 'Support'],
             ['name' => 'view_hospital_settings', 'display_name' => 'View Hospital Settings', 'category' => 'Settings'],
             ['name' => 'manage_hospital_settings', 'display_name' => 'Manage Hospital Settings', 'category' => 'Settings'],
+            ['name' => 'view_backups', 'display_name' => 'View Backups', 'category' => 'Settings'],
+            ['name' => 'manage_backups', 'display_name' => 'Manage Backups', 'category' => 'Settings'],
         ];
 
         $permissionIds = [];

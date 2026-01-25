@@ -14,10 +14,18 @@ class Stock extends Model
         'medicine_id',
         'batch_no',
         'stock_qty',
+        'bonus_qty',
+        'expiry_date',
+        'purchase_price',
+        'sale_price',
     ];
 
     protected $casts = [
         'stock_qty' => 'integer',
+        'bonus_qty' => 'integer',
+        'expiry_date' => 'date',
+        'purchase_price' => 'decimal:2',
+        'sale_price' => 'decimal:2',
     ];
 
     public function hospital()

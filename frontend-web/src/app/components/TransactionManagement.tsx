@@ -10,10 +10,12 @@ import { useSuppliers } from '../context/SupplierContext';
 import { usePatients } from '../context/PatientContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import api from '../../api/axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { formatOnlyDate } from '../utils/date';
 
 interface TransactionManagementProps {
   hospital: Hospital;
@@ -43,6 +45,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { patients } = usePatients();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
+  const { loadHospitalSetting, getPrintColumnSettings } = useSettings();
   const canManage = hasPermission('manage_transactions');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,6 +85,43 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   const getHospital = (id: string) => hospitals.find((h) => h.id === id);
   const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
+  const activePrintColumns = getPrintColumnSettings(selectedTransaction?.hospitalId || currentHospital.id);
+  const getAvailableStock = (medicineId?: string, batchNo?: string, hospitalId?: string) => {
+    if (!medicineId || !hospitalId) return 0;
+    const scoped = stocks.filter((s) => String(s.hospitalId) === String(hospitalId) && String(s.medicineId) === String(medicineId));
+    if (!scoped.length) return 0;
+    if (batchNo) {
+      return scoped
+        .filter((s) => (s.batchNo || '') === batchNo)
+        .reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
+    }
+    return scoped.reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
+  };
+
+  const validateSalesStock = () => {
+    if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
+    const requiredByKey: Record<string, number> = {};
+    formData.items.forEach((item) => {
+      if (!item.medicineId) return;
+      const required = Number(item.qtty || 0) + Number(item.bonus || 0);
+      if (required <= 0) return;
+      const key = `${item.medicineId}::${item.batchNo || '__all__'}`;
+      requiredByKey[key] = (requiredByKey[key] || 0) + required;
+    });
+
+    for (const key of Object.keys(requiredByKey)) {
+      const [medicineId, batchNo] = key.split('::');
+      const available = getAvailableStock(medicineId, batchNo === '__all__' ? undefined : batchNo, formData.hospitalId);
+      if (available < requiredByKey[key]) {
+        const label = getMedicineName(medicineId);
+        const batchLabel = batchNo !== '__all__' ? ` (Batch: ${batchNo})` : '';
+        toast.error(`Insufficient stock for ${label}${batchLabel}. Available: ${available}, Required: ${requiredByKey[key]}.`);
+        return false;
+      }
+    }
+
+    return true;
+  };
 
   const loadImageAsDataUrl = async (url?: string) => {
     if (!url) return undefined;
@@ -112,30 +152,38 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}`.trim();
   };
 
-  const getExpiryFromHistory = (medicineId: string, batchNo: string) => {
-    if (!medicineId || !batchNo) return undefined;
-    const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
-    let matchDate: Date | undefined;
-    scoped.forEach((t) => {
-      (t.details || []).forEach((d) => {
-        if (d.medicineId === medicineId && (d.batchNo || '') === batchNo && d.expiryDate) {
-          if (!matchDate || (d.expiryDate && d.expiryDate > matchDate)) {
-            matchDate = d.expiryDate;
-          }
-        }
-      });
-    });
-    return matchDate;
+  const getExpiryDisplay = (date: Date | string | undefined, hospitalId: string) => {
+    const h = getHospital(hospitalId);
+    return formatOnlyDate(date ?? undefined, h?.timezone || 'Asia/Kabul', (h?.calendarType as 'gregorian' | 'shamsi') || 'gregorian');
   };
+
+  const getExpiryFromStock = (medicineId: string, batchNo: string) => {
+    if (!medicineId || !batchNo) return undefined;
+    const match = stocks.find(
+      (s) =>
+        String(s.hospitalId) === String(formData.hospitalId) &&
+        s.medicineId === medicineId &&
+        (s.batchNo || '') === batchNo
+    );
+    return match?.expiryDate;
+  };
+
+  useEffect(() => {
+    if (selectedTransaction?.hospitalId) {
+      loadHospitalSetting(selectedTransaction.hospitalId);
+    } else if (selectedHospitalId) {
+      loadHospitalSetting(selectedHospitalId);
+    }
+  }, [selectedTransaction?.hospitalId, selectedHospitalId, loadHospitalSetting]);
 
   const getNearestExpiryForMedicine = (medicineId: string) => {
     if (!medicineId) return undefined;
-    const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
-    const dates = scoped.flatMap((t) =>
-      (t.details || [])
-        .filter((d) => d.medicineId === medicineId && d.expiryDate)
-        .map((d) => d.expiryDate as Date)
+    const scoped = stocks.filter(
+      (s) => String(s.hospitalId) === String(formData.hospitalId) && s.medicineId === medicineId
     );
+    const dates = scoped
+      .map((s) => s.expiryDate)
+      .filter((d): d is Date => Boolean(d));
     if (!dates.length) return undefined;
     const now = new Date();
     const future = dates.filter((d) => d >= now).sort((a, b) => a.getTime() - b.getTime());
@@ -148,27 +196,44 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       (s) =>
         String(s.hospitalId) === String(formData.hospitalId) &&
         s.medicineId === medicineId &&
-        Number(s.stockQty || 0) > 0
+        Number(s.stockQty || 0) + Number(s.bonusQty || 0) > 0
     );
     const withMeta = scoped
       .map((s) => {
         const batchNo = s.batchNo || '';
         return {
           batchNo,
-          stockQty: Number(s.stockQty || 0),
-          expiryDate: batchNo ? getExpiryFromHistory(medicineId, batchNo) : undefined,
+          stockQty: Number(s.stockQty || 0) + Number(s.bonusQty || 0),
+          expiryDate: s.expiryDate,
         };
       })
       .filter((b) => b.batchNo);
     if (!withMeta.length) return undefined;
+
     const now = new Date();
     const future = withMeta
       .filter((b) => b.expiryDate && b.expiryDate >= now)
       .sort((a, b) => (a.expiryDate as Date).getTime() - (b.expiryDate as Date).getTime());
     if (future.length) return future[0];
-    const withExpiry = withMeta.filter((b) => b.expiryDate).sort((a, b) => (a.expiryDate as Date).getTime() - (b.expiryDate as Date).getTime());
+
+    const withExpiry = withMeta
+      .filter((b) => b.expiryDate)
+      .sort((a, b) => (a.expiryDate as Date).getTime() - (b.expiryDate as Date).getTime());
     if (withExpiry.length) return withExpiry[0];
-    return withMeta.sort((a, b) => b.stockQty - a.stockQty)[0];
+
+    const getBatchNumber = (batchNo: string) => {
+      const numeric = Number(String(batchNo).replace(/\D/g, ''));
+      return Number.isFinite(numeric) && String(batchNo).match(/\d/) ? numeric : Number.POSITIVE_INFINITY;
+    };
+
+    const sortedByBatchNumber = [...withMeta].sort((a, b) => {
+      const aNum = getBatchNumber(a.batchNo);
+      const bNum = getBatchNumber(b.batchNo);
+      if (aNum !== bNum) return aNum - bNum;
+      return a.batchNo.localeCompare(b.batchNo);
+    });
+
+    return sortedByBatchNumber[0];
   };
   const getMedicinePrice = (id: string, type: Transaction['trxType']) => {
     const med = medicines.find((m) => m.id === id);
@@ -560,6 +625,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       toast.error('Please select a patient');
       return;
     }
+    if (!validateSalesStock()) {
+      return;
+    }
     setSubmitting(true);
     try {
       const grandTotal = calculateTotals(formData.items);
@@ -599,6 +667,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     }
     if ((formData.trxType === 'sales' || formData.trxType === 'sales_return') && !formData.patientId) {
       toast.error('Please select a patient');
+      return;
+    }
+    if (!validateSalesStock()) {
       return;
     }
     setSubmitting(true);
@@ -984,9 +1055,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <tr>
                         <th className="px-3 py-2">SN</th>
                         <th className="px-3 py-2">Medicine</th>
-                        <th className="px-3 py-2">Batch</th>
+                        {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
+                        {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
                         <th className="px-3 py-2">Qty</th>
-                        <th className="px-3 py-2">Bonus</th>
+                        {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
                         <th className="px-3 py-2">Price</th>
                         <th className="px-3 py-2">Discount</th>
                         <th className="px-3 py-2">Tax</th>
@@ -998,9 +1070,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         <tr key={`${d.medicineId}-${idx}`}>
                           <td className="px-3 py-2">{idx + 1}</td>
                           <td className="px-3 py-2">{d.medicineName || getMedicineName(d.medicineId)}</td>
-                          <td className="px-3 py-2">{d.batchNo || '—'}</td>
+                          {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
+                          {activePrintColumns.showExpiryDateColumn && (
+                            <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
+                          )}
                           <td className="px-3 py-2">{d.qtty}</td>
-                          <td className="px-3 py-2">{d.bonus ?? 0}</td>
+                          {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
                           <td className="px-3 py-2">{d.price}</td>
                           <td className="px-3 py-2">{d.discount ?? 0}%</td>
                           <td className="px-3 py-2">{d.tax ?? 0}%</td>
@@ -1044,9 +1119,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
                       <tr>
                         <th className="px-3 py-2">Medicine</th>
-                        <th className="px-3 py-2">Batch</th>
+                        {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
+                        {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
                         <th className="px-3 py-2">Qty</th>
-                        <th className="px-3 py-2">Bonus</th>
+                        {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
                         <th className="px-3 py-2">Price</th>
                         <th className="px-3 py-2">Discount</th>
                         <th className="px-3 py-2">Tax</th>
@@ -1057,9 +1133,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       {(selectedTransaction.details || []).map((d, idx) => (
                         <tr key={`${d.medicineId}-${idx}`}>
                           <td className="px-3 py-2">{d.medicineName || getMedicineName(d.medicineId)}</td>
-                          <td className="px-3 py-2">{d.batchNo || '—'}</td>
+                          {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
+                          {activePrintColumns.showExpiryDateColumn && (
+                            <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
+                          )}
                           <td className="px-3 py-2">{d.qtty}</td>
-                          <td className="px-3 py-2">{d.bonus ?? 0}</td>
+                          {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
                           <td className="px-3 py-2">{d.price}</td>
                           <td className="px-3 py-2">{d.discount ?? 0}%</td>
                           <td className="px-3 py-2">{d.tax ?? 0}%</td>
@@ -1221,6 +1300,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               trxType: opt.value as Transaction['trxType'],
                               supplierId: ['purchase', 'purchase_return'].includes(opt.value) ? prev.supplierId : '',
                               patientId: ['sales', 'sales_return'].includes(opt.value) ? prev.patientId : '',
+                              items: prev.items.map((item) => item.medicineId
+                                ? { ...item, price: getMedicinePrice(item.medicineId, opt.value as Transaction['trxType']) }
+                                : item
+                              ),
                             }));
                             setSupplierSearch('');
                             setPatientSearch('');
@@ -1278,7 +1361,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div
+                className={`space-y-2 pr-1 ${openMedicineDropdownIndex !== null ? 'overflow-visible' : 'max-h-64 overflow-y-auto'}`}
+              >
                 {formData.items.map((item, index) => (
                   <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-2">
                     <div className="lg:col-span-3 space-y-1">
@@ -1301,7 +1386,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           required
                         />
                         {openMedicineDropdownIndex === index && (medicineQueries[index] || '').trim().length > 0 && (
-                          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
+                          <div className="absolute z-30 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
                             {availableMedicines
                               .filter((m) => {
                                 const term = (medicineQueries[index] || '').toLowerCase();
@@ -1311,6 +1396,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               .slice(0, 25)
                               .map((m) => {
                                 const display = `${m.brandName} ${m.genericName ? `(${m.genericName})` : ''} ${m.strength || ''} ${m.type || ''}`.replace(/\s+/g, ' ').trim();
+                                const available = ['sales', 'purchase_return'].includes(formData.trxType)
+                                  ? getAvailableStock(m.id, undefined, formData.hospitalId)
+                                  : null;
                                 return (
                                   <button
                                     key={m.id}
@@ -1322,7 +1410,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                       setOpenMedicineDropdownIndex(null);
                                     }}
                                   >
-                                    {display}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span>{display}</span>
+                                      {available !== null && (
+                                        <span className={`text-[10px] font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                          {available}
+                                        </span>
+                                      )}
+                                    </div>
                                   </button>
                                 );
                               })}
@@ -1344,7 +1439,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           let expiryDate = item.expiryDate;
                           if (formData.trxType === 'sales' || formData.trxType === 'sales_return') {
                             if (batchNo && item.medicineId) {
-                              expiryDate = getExpiryFromHistory(item.medicineId, batchNo) || expiryDate;
+                              expiryDate = getExpiryFromStock(item.medicineId, batchNo) || expiryDate;
                             }
                             if (!batchNo && item.medicineId) {
                               expiryDate = getNearestExpiryForMedicine(item.medicineId) || expiryDate;
@@ -1375,6 +1470,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         value={item.qtty}
                         onChange={(e) => handleItemChange(index, { qtty: Number(e.target.value) })}
                       />
+                      {['sales', 'purchase_return'].includes(formData.trxType) && item.medicineId && (
+                        <div className="text-[9px] text-gray-500 dark:text-gray-400">
+                          Available: {getAvailableStock(item.medicineId, item.batchNo || undefined, formData.hospitalId)}
+                        </div>
+                      )}
                     </div>
                     <div className="lg:col-span-1 space-y-1">
                       <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Bonus</label>

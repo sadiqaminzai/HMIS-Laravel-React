@@ -8,6 +8,8 @@ import { useHospitals } from '../context/HospitalContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import api from '../../api/axios';
+import { toast } from 'sonner';
 
 interface StockManagementProps {
   hospital: Hospital;
@@ -24,6 +26,9 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
   const [selectedMedicineId, setSelectedMedicineId] = useState('all');
   const [batchFilter, setBatchFilter] = useState('');
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showReconcileModal, setShowReconcileModal] = useState(false);
+  const [reconcileDate, setReconcileDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reconcileRows, setReconcileRows] = useState<Array<any>>([]);
 
   const scopedStocks = filterByHospital(stocks);
 
@@ -52,6 +57,8 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
       Medicine: s.medicineName || getMedicineName(s.medicineId),
       Batch: s.batchNo || '',
       StockQty: s.stockQty,
+      BonusQty: s.bonusQty ?? 0,
+      TotalQty: Number(s.stockQty || 0) + Number(s.bonusQty || 0),
       Hospital: getHospitalName(s.hospitalId),
     })));
     const workBook = XLSX.utils.book_new();
@@ -78,11 +85,13 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
     }
 
     autoTable(doc, {
-      head: [['Medicine', 'Batch', 'Stock Qty', 'Hospital']],
+      head: [['Medicine', 'Batch', 'Stock Qty', 'Bonus Qty', 'Total Qty', 'Hospital']],
       body: filteredStocks.map((s) => [
         s.medicineName || getMedicineName(s.medicineId),
         s.batchNo || '—',
         s.stockQty,
+        s.bonusQty ?? 0,
+        Number(s.stockQty || 0) + Number(s.bonusQty || 0),
         getHospitalName(s.hospitalId),
       ]),
       startY: isAllHospitals ? 40 : 50,
@@ -104,6 +113,53 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
       return matchesSearch && matchesMedicine && matchesBatch;
     });
   }, [scopedStocks, searchTerm, selectedMedicineId, batchFilter, medicines]);
+
+  const totalStockQty = useMemo(() => {
+    return filteredStocks.reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
+  }, [filteredStocks]);
+
+  const loadReconciliation = async () => {
+    const hospitalId = isAllHospitals ? null : selectedHospitalId || currentHospital.id;
+    if (!hospitalId) {
+      toast.error('Please select a hospital for reconciliation');
+      return;
+    }
+    try {
+      const { data } = await api.get('/stock-reconciliation', {
+        params: {
+          date: reconcileDate,
+          hospital_id: hospitalId,
+        },
+      });
+      setReconcileRows(data.rows || []);
+      setShowReconcileModal(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load reconciliation');
+    }
+  };
+
+  const saveReconciliation = async () => {
+    const hospitalId = isAllHospitals ? null : selectedHospitalId || currentHospital.id;
+    if (!hospitalId) {
+      toast.error('Please select a hospital for reconciliation');
+      return;
+    }
+    try {
+      await api.post('/stock-reconciliation', {
+        date: reconcileDate,
+        hospital_id: hospitalId,
+        items: reconcileRows.map((row) => ({
+          medicine_id: row.medicine_id,
+          batch_no: row.batch_no || null,
+          physical_qty: row.physical_qty ?? 0,
+          physical_bonus: row.physical_bonus ?? 0,
+        })),
+      });
+      toast.success('Reconciliation saved');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to save reconciliation');
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -149,6 +205,9 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             <FileText className="w-3.5 h-3.5" />
             PDF
           </button>
+          <button onClick={loadReconciliation} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-xs font-medium shadow-sm" title="Reconciliation">
+            Reconcile
+          </button>
           <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">
             Print
           </button>
@@ -165,6 +224,8 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Medicine</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Batch</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Stock Qty</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Bonus Qty</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Total Qty</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Hospital</th>
               </tr>
             </thead>
@@ -182,12 +243,14 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.batchNo || '—'}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.stockQty}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.bonusQty ?? 0}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{Number(stock.stockQty || 0) + Number(stock.bonusQty || 0)}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getHospitalName(stock.hospitalId)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     {loading ? 'Loading stocks...' : 'No stocks found'}
                   </td>
                 </tr>
@@ -198,6 +261,9 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
         <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span>
             Showing <strong>{filteredStocks.length}</strong> of <strong>{scopedStocks.length}</strong> stock rows {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
+          </span>
+          <span>
+            Total Stock Qty (incl. bonus): <strong>{totalStockQty}</strong>
           </span>
         </div>
       </div>
@@ -268,6 +334,8 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                       <th className="px-3 py-2">Medicine</th>
                       <th className="px-3 py-2">Batch</th>
                       <th className="px-3 py-2">Stock Qty</th>
+                      <th className="px-3 py-2">Bonus Qty</th>
+                      <th className="px-3 py-2">Total Qty</th>
                       <th className="px-3 py-2">Hospital</th>
                     </tr>
                   </thead>
@@ -277,16 +345,133 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                         <td className="px-3 py-2">{stock.medicineName || getMedicineName(stock.medicineId)}</td>
                         <td className="px-3 py-2">{stock.batchNo || '—'}</td>
                         <td className="px-3 py-2">{stock.stockQty}</td>
+                        <td className="px-3 py-2">{stock.bonusQty ?? 0}</td>
+                        <td className="px-3 py-2">{Number(stock.stockQty || 0) + Number(stock.bonusQty || 0)}</td>
                         <td className="px-3 py-2">{getHospitalName(stock.hospitalId)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <div className="text-xs text-gray-600">
+                Total Stock Qty (incl. bonus): <span className="font-semibold text-gray-900">{totalStockQty}</span>
+              </div>
             </div>
           </div>
           <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto print:hidden">
             <p className="text-sm text-gray-600 dark:text-gray-300">Use the Print button to generate a printable stock report with hospital details.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Reconciliation Modal */}
+      <div className={`fixed inset-0 z-50 ${showReconcileModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-6xl border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Stock Reconciliation</h3>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={reconcileDate}
+                onChange={(e) => setReconcileDate(e.target.value)}
+                aria-label="Reconciliation date"
+                className="px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+              />
+              <button
+                onClick={loadReconciliation}
+                className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={saveReconciliation}
+                className="px-2 py-1 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                Save
+              </button>
+              <button onClick={() => setShowReconcileModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="p-4 max-h-[70vh] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2">Medicine</th>
+                  <th className="px-3 py-2">Batch</th>
+                  <th className="px-3 py-2">Expiry</th>
+                  <th className="px-3 py-2">System Qty</th>
+                  <th className="px-3 py-2">System Bonus</th>
+                  <th className="px-3 py-2">System Total</th>
+                  <th className="px-3 py-2">Physical Qty</th>
+                  <th className="px-3 py-2">Physical Bonus</th>
+                  <th className="px-3 py-2">Variance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {reconcileRows.map((row, idx) => {
+                  const physicalTotal = (Number(row.physical_qty || 0) + Number(row.physical_bonus || 0));
+                  const variance = row.physical_qty !== null || row.physical_bonus !== null
+                    ? physicalTotal - Number(row.system_total || 0)
+                    : null;
+                  return (
+                    <tr key={`${row.medicine_id}-${row.batch_no || 'n/a'}-${idx}`}>
+                      <td className="px-3 py-2">{row.medicine_name}</td>
+                      <td className="px-3 py-2">{row.batch_no || '—'}</td>
+                      <td className="px-3 py-2">{row.expiry_date || '—'}</td>
+                      <td className="px-3 py-2">{row.system_qty}</td>
+                      <td className="px-3 py-2">{row.system_bonus}</td>
+                      <td className="px-3 py-2">{row.system_total}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          value={row.physical_qty ?? 0}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            setReconcileRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], physical_qty: value };
+                              return next;
+                            });
+                          }}
+                          aria-label="Physical quantity"
+                          className="w-20 px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          value={row.physical_bonus ?? 0}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            setReconcileRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], physical_bonus: value };
+                              return next;
+                            });
+                          }}
+                          aria-label="Physical bonus quantity"
+                          className="w-20 px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                        />
+                      </td>
+                      <td className={`px-3 py-2 ${variance === null ? 'text-gray-400' : variance < 0 ? 'text-rose-600' : variance > 0 ? 'text-emerald-600' : 'text-gray-600'}`}>
+                        {variance === null ? '—' : variance}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {reconcileRows.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-6 text-center text-xs text-gray-500">
+                      No reconciliation data for this date.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

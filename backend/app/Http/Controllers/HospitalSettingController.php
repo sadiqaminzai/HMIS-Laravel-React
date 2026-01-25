@@ -31,6 +31,9 @@ class HospitalSettingController extends Controller
             'patient_id_prefix' => ['sometimes', 'string', 'max:10'],
             'patient_id_start' => ['sometimes', 'integer', 'min:1'],
             'patient_id_digits' => ['sometimes', 'integer', 'min:1', 'max:10'],
+            'print_show_batch_column' => ['boolean'],
+            'print_show_expiry_date_column' => ['boolean'],
+            'print_show_bonus_column' => ['boolean'],
         ]);
 
         $setting = $this->getOrCreateSetting($hospital->id);
@@ -64,6 +67,9 @@ class HospitalSettingController extends Controller
                 'patient_id_prefix' => 'P',
                 'patient_id_start' => 1,
                 'patient_id_digits' => 5,
+                'print_show_batch_column' => true,
+                'print_show_expiry_date_column' => true,
+                'print_show_bonus_column' => true,
             ]
         );
     }
