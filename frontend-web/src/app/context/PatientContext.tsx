@@ -28,6 +28,7 @@ const mapPatient = (p: any): Patient => ({
   image: p.image_url ?? p.image_path ?? '',
   createdAt: p.created_at ? new Date(p.created_at) : new Date(),
   updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+  verificationToken: p.verification_token ?? undefined,
 });
 
 export function PatientProvider({ children }: { children: React.ReactNode }) {

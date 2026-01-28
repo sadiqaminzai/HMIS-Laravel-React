@@ -63,6 +63,7 @@ export interface Patient {
   updatedBy?: string;
   status?: 'active' | 'inactive';
   image?: string;
+  verificationToken?: string;
 }
 
 export interface Manufacturer {
@@ -119,6 +120,38 @@ export interface Supplier {
   updatedAt?: Date;
 }
 
+export interface ExpenseCategory {
+  id: string;
+  hospitalId: string;
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive';
+  createdAt?: Date;
+  createdBy?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
+export interface Expense {
+  id: string;
+  hospitalId: string;
+  expenseCategoryId: string;
+  sequenceId: number;
+  title: string;
+  amount: number;
+  expenseDate: Date;
+  paymentMethod?: string;
+  reference?: string;
+  documentUrl?: string | null;
+  notes?: string;
+  status: 'approved' | 'pending' | 'rejected';
+  category?: ExpenseCategory;
+  createdAt?: Date;
+  createdBy?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
 export interface TransactionDetail {
   id: string;
   trxId: string;
@@ -137,6 +170,7 @@ export interface TransactionDetail {
 export interface Transaction {
   id: string;
   hospitalId: string;
+  serialNo?: number;
   supplierId?: string;
   supplierName?: string;
   patientId?: string;
@@ -201,6 +235,7 @@ export interface Prescription {
   updatedBy?: string;
   status?: 'active' | 'cancelled';
   qrCode?: string; // QR code data
+  verificationToken?: string;
 }
 
 export interface User {
@@ -288,6 +323,7 @@ export interface LabTest {
   createdBy: string;
   updatedAt?: Date;
   updatedBy?: string;
+  verificationToken?: string;
 }
 
 // Result for each parameter

@@ -80,9 +80,7 @@ class AppointmentController extends Controller
         $this->syncDoctorHospital($data);
         $this->syncPatientSnapshot($data);
 
-        if (empty($data['appointment_number'])) {
-            $data['appointment_number'] = $this->generateAppointmentNumber($data['hospital_id']);
-        }
+        $data['appointment_number'] = $data['appointment_number'] ?? null;
 
         $appointment = Appointment::create($data);
 
@@ -111,7 +109,7 @@ class AppointmentController extends Controller
         $this->syncPatientSnapshot($data);
 
         if (empty($data['appointment_number'])) {
-            $data['appointment_number'] = $appointment->appointment_number ?? $this->generateAppointmentNumber($appointment->hospital_id);
+            unset($data['appointment_number']);
         }
 
         $appointment->update($data);
@@ -131,14 +129,22 @@ class AppointmentController extends Controller
 
     private function validatePayload(Request $request, ?int $appointmentId = null): array
     {
+        $hospitalId = $request->user()->role !== 'super_admin'
+            ? $request->user()->hospital_id
+            : $request->integer('hospital_id');
+
         return $request->validate([
             'hospital_id' => ['sometimes', 'required', 'exists:hospitals,id'],
             'patient_id' => ['nullable', 'exists:patients,id'],
-            'doctor_id' => [
-                'required',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
+            'doctor_id' => ['required', 'integer'],
+            'appointment_number' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('appointments', 'appointment_number')
+                    ->where(fn ($q) => $hospitalId ? $q->where('hospital_id', $hospitalId) : $q)
+                    ->ignore($appointmentId),
             ],
-            'appointment_number' => ['nullable', 'string', 'max:100', Rule::unique('appointments', 'appointment_number')->ignore($appointmentId)],
             'patient_name' => ['required_without:patient_id', 'string', 'max:255'],
             'patient_age' => ['nullable', 'integer', 'min:0', 'max:150'],
             'patient_gender' => ['nullable', 'in:male,female,other'],
@@ -152,10 +158,7 @@ class AppointmentController extends Controller
 
     private function syncDoctorHospital(array &$data, ?Appointment $existing = null): void
     {
-        $doctor = User::query()
-            ->whereKey($data['doctor_id'])
-            ->where('role', 'doctor')
-            ->firstOrFail();
+        $doctor = $this->resolveDoctorUser((int) $data['doctor_id']);
 
         if (!isset($data['hospital_id'])) {
             $data['hospital_id'] = $existing?->hospital_id ?? $doctor->hospital_id;
@@ -164,6 +167,29 @@ class AppointmentController extends Controller
         if ((int) $doctor->hospital_id !== (int) $data['hospital_id']) {
             abort(422, 'Doctor does not belong to the selected hospital');
         }
+
+        $data['doctor_id'] = $doctor->id;
+    }
+
+    private function resolveDoctorUser(int $doctorId): User
+    {
+        $doctor = User::query()
+            ->whereKey($doctorId)
+            ->where('role', 'doctor')
+            ->first();
+
+        if (!$doctor) {
+            $doctor = User::query()
+                ->where('doctor_id', $doctorId)
+                ->where('role', 'doctor')
+                ->first();
+        }
+
+        if (!$doctor) {
+            abort(422, 'Invalid doctor selection');
+        }
+
+        return $doctor;
     }
 
     private function syncPatientSnapshot(array &$data): void
@@ -201,11 +227,4 @@ class AppointmentController extends Controller
         }
     }
 
-    private function generateAppointmentNumber(int $hospitalId): string
-    {
-        $sequence = Appointment::where('hospital_id', $hospitalId)->count() + 1;
-        $year = now()->format('Y');
-
-        return sprintf('APT-%d-%s-%s', $hospitalId, $year, str_pad((string) $sequence, 5, '0', STR_PAD_LEFT));
-    }
 }

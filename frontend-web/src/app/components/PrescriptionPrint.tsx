@@ -4,6 +4,7 @@ import { Hospital, Patient, Doctor, PrescriptionMedicine } from '../types';
 import { instructionOptions } from '../data/mockData';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatDate } from '../utils/date';
+import { buildVerificationUrl } from '../utils/verification';
 
 // Extended type for medicine with additional display fields
 type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
@@ -22,6 +23,8 @@ interface PrescriptionPrintProps {
   prescriptionDate?: Date;
   onClose: () => void;
   viewOnly?: boolean;
+  embedded?: boolean;
+  verificationToken?: string;
   // Audit fields
   createdBy?: string;
   updatedAt?: Date;
@@ -39,6 +42,8 @@ export function PrescriptionPrint({
   prescriptionDate = new Date(),
   onClose,
   viewOnly = false,
+  embedded = false,
+  verificationToken,
   createdBy,
   updatedAt,
   updatedBy
@@ -89,9 +94,17 @@ export function PrescriptionPrint({
     date: prescriptionDate.toISOString(),
     medicineCount: medicines.length
   });
+  const verificationUrl = buildVerificationUrl('prescription', verificationToken);
+  const qrValue = verificationUrl || qrData;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+    <div
+      className={
+        embedded
+          ? 'min-h-screen bg-gray-50 dark:bg-gray-900 py-6 px-4'
+          : 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm'
+      }
+    >
       {/* Robust Print Styles */}
       <style>
         {`
@@ -115,12 +128,14 @@ export function PrescriptionPrint({
               left: 0;
               top: 0;
               width: 210mm;
-              height: 297mm; /* Exact A4 Height */
+              min-height: 297mm; /* Exact A4 Height */
+              height: auto;
               padding: 20mm !important;
               margin: 0;
               background: white;
               box-sizing: border-box !important; /* CRITICAL FIX */
               z-index: 9999;
+              overflow: visible;
               
               /* Layout */
               display: flex !important;
@@ -128,6 +143,18 @@ export function PrescriptionPrint({
               justify-content: space-between;
             }
             
+
+            /* Force Prescribed Medicines heading to print white with blue background */
+            #prescription-print-content h3.prescribed-medicines-print {
+              color: #fff !important;
+              background: #2563eb !important;
+              padding: 0.25rem 0.75rem !important;
+              border-radius: 0.5rem 0.5rem 0 0 !important;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              box-decoration-break: clone;
+            }
+
             /* Ensure all children are visible */
             #prescription-print-content * {
               visibility: visible;
@@ -149,6 +176,15 @@ export function PrescriptionPrint({
               z-index: 10000;
               break-inside: avoid;
               page-break-inside: avoid;
+            }
+
+            #print-signatures {
+               display: flex !important;
+               justify-content: space-between !important;
+               align-items: flex-end !important;
+               width: 100% !important;
+               visibility: visible !important;
+               page-break-inside: avoid;
             }
             
             /* Ensure QR Code prints properly */
@@ -181,28 +217,30 @@ export function PrescriptionPrint({
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
         
         {/* Header - Screen Only */}
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10 print-hide rounded-t-xl">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            {viewOnly ? 'View Prescription' : 'Print Preview'}
-          </h2>
-          <div className="flex gap-3">
-            {!viewOnly && (
+        {!embedded && (
+          <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10 print-hide rounded-t-xl">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+              {viewOnly ? 'View Prescription' : 'Print Preview'}
+            </h2>
+            <div className="flex gap-3">
+              {!viewOnly && (
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print
+                </button>
+              )}
               <button
-                onClick={handlePrint}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
+                onClick={onClose}
+                className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
-                <Printer className="w-4 h-4" />
-                Print
+                <X className="w-5 h-5" />
               </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Printable Content */}
         <div id="prescription-print-content" className="p-8 bg-white text-gray-900 flex flex-col min-h-full">
@@ -301,7 +339,7 @@ export function PrescriptionPrint({
               <div className="flex-1">
                  <div className="flex items-center gap-2 mb-2 border-b border-gray-200 pb-1">
                     <span className="text-amber-600 font-bold">⚠</span>
-                    <h3 className="text-xs font-bold text-gray-700 uppercase">Advice</h3>
+                    <h3 className="text-xs font-bold text-gray-700 uppercase">Instructions</h3>
                  </div>
                  {advice ? (
                    <div className="text-xs text-gray-800" dangerouslySetInnerHTML={{ __html: advice }} />
@@ -318,7 +356,7 @@ export function PrescriptionPrint({
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-t-lg flex justify-between items-center mb-0"
                 style={{ backgroundColor: hospital.brandColor }}
               >
-                <h3 className="font-bold text-xs uppercase tracking-wide">Prescribed Medicines</h3>
+                <h3 className="font-bold text-xs uppercase text-white tracking-wide prescribed-medicines-print">Prescribed Medicines</h3>
                 <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded text-white">{medicines.length} Items</span>
               </div>
               <table className="w-full border-collapse border-x border-b border-gray-200">
@@ -359,11 +397,11 @@ export function PrescriptionPrint({
 
           {/* Footer Section */}
           <div id="print-footer" className="mt-auto">
-            <div className="pt-8 border-t border-gray-200 flex items-end justify-between">
+            <div id="print-signatures" className="pt-8 border-t border-gray-200 flex items-end justify-between">
               {/* QR Code */}
               <div className="flex flex-col items-center">
                 <div className="bg-white p-1 border border-gray-200 rounded-lg">
-                  <QRCodeSVG value={qrData} size={80} />
+                  <QRCodeSVG value={qrValue} size={80} />
                 </div>
                 <span className="text-[10px] text-gray-500 mt-1 uppercase tracking-wide">Scan to Verify</span>
               </div>

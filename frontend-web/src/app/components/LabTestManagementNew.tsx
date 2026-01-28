@@ -128,6 +128,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[]): LabTest 
     createdBy: order.createdBy || 'system',
     updatedAt: order.updatedAt || undefined,
     updatedBy: order.updatedBy || undefined,
+    verificationToken: order.verificationToken || undefined,
   };
 };
 

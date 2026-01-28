@@ -74,6 +74,7 @@ class PatientController extends Controller
 
         $data = $this->validatePayload($request, null, (int) $hospitalId);
         $data['hospital_id'] = $hospitalId;
+        $data['patient_id'] = null;
 
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('patients/images', 'public');
@@ -140,12 +141,14 @@ class PatientController extends Controller
                 : $request->integer('hospital_id');
         }
 
+        $patientIdRule = $patientId === null
+            ? ['nullable', 'string', 'max:50']
+            : ['required', 'string', 'max:50'];
+
         $data = $request->validate([
             'hospital_id' => ['sometimes', 'required', 'exists:hospitals,id'],
             'patient_id' => [
-                'required',
-                'string',
-                'max:50',
+                ...$patientIdRule,
                 Rule::unique('patients', 'patient_id')
                     ->where(fn ($q) => $q->where('hospital_id', $hospitalId))
                     ->ignore($patientId),

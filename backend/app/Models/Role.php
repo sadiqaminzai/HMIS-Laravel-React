@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Spatie\Permission\Models\Role as SpatieRole;
+use App\Models\Traits\Sequenceable;
 
 class Role extends SpatieRole
 {
-    use HasFactory;
+    use HasFactory, Sequenceable;
+
+    protected static $sequenceModule = 'role';
+    protected static $sequenceColumn = 'serial_no';
 
     protected string $guard_name = 'web';
 

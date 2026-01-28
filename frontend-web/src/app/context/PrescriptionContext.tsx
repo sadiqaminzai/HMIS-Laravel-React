@@ -65,6 +65,7 @@ const mapPrescription = (p: any): Prescription => ({
   updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
   updatedBy: undefined,
   status: (p.status ?? 'active') as Prescription['status'],
+  verificationToken: p.verification_token ?? undefined,
 });
 
 export function PrescriptionProvider({ children }: { children: React.ReactNode }) {

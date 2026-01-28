@@ -11,15 +11,20 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Doctor;
+use App\Models\Traits\Sequenceable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasRoles {
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasRoles, Sequenceable {
         hasAnyPermission as spatieHasAnyPermission;
         hasPermissionTo as spatieHasPermissionTo;
     }
+
+    protected static $sequenceModule = 'user';
+    protected static $sequenceColumn = 'serial_no';
 
     protected string $guard_name = 'web';
 
@@ -73,6 +78,60 @@ class User extends Authenticatable
             'availability_schedule' => 'array',
             'last_login_at' => 'datetime',
         ];
+    }
+
+    protected static function booted()
+    {
+        static::saved(function (User $user) {
+            $user->syncDoctorProfile();
+        });
+
+        static::deleted(function (User $user) {
+            if (!empty($user->doctor_id)) {
+                Doctor::whereKey($user->doctor_id)->delete();
+            }
+        });
+    }
+
+    private function syncDoctorProfile(): void
+    {
+        if ($this->role !== 'doctor' || empty($this->hospital_id)) {
+            if (!empty($this->doctor_id)) {
+                Doctor::whereKey($this->doctor_id)->delete();
+            }
+            return;
+        }
+
+        $doctor = null;
+        if (!empty($this->doctor_id)) {
+            $doctor = Doctor::withTrashed()->find($this->doctor_id);
+        }
+
+        if (!$doctor) {
+            $doctor = new Doctor();
+        }
+
+        $doctor->hospital_id = $this->hospital_id;
+        $doctor->name = $this->name;
+        $doctor->email = $this->email;
+        $doctor->phone = $this->phone;
+        $doctor->specialization = $this->specialization ?: 'General';
+        $doctor->registration_number = $this->registration_number;
+        $doctor->consultation_fee = $this->consultation_fee ?? 0;
+        $doctor->status = $this->doctor_status ?? 'active';
+        $doctor->availability_schedule = $this->availability_schedule;
+        $doctor->image_path = $this->image_path;
+        $doctor->signature_path = $this->signature_path;
+
+        if ($doctor->exists && method_exists($doctor, 'trashed') && $doctor->trashed()) {
+            $doctor->restore();
+        }
+
+        $doctor->save();
+
+        if (empty($this->doctor_id) || (int) $this->doctor_id !== (int) $doctor->id) {
+            $this->updateQuietly(['doctor_id' => $doctor->id]);
+        }
     }
 
     public function getRoleAttribute($value): string

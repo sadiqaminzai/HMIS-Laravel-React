@@ -5,10 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\Sequenceable;
+use Illuminate\Support\Str;
 
 class Prescription extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Sequenceable;
+
+    protected static $sequenceModule = 'prescription';
+    protected static $sequenceColumn = 'prescription_number';
 
     protected $fillable = [
         'hospital_id',
@@ -25,12 +30,23 @@ class Prescription extends Model
         'prescription_number',
         'status',
         'created_by',
+        'verification_token',
     ];
 
     protected $casts = [
         'patient_age' => 'integer',
         'is_walk_in' => 'boolean',
     ];
+
+    protected static function booted()
+    {
+        static::creating(function (Prescription $prescription) {
+            if (empty($prescription->verification_token)) {
+                $prescription->verification_token = (string) Str::uuid();
+            }
+        });
+    }
+
 
     public function items()
     {

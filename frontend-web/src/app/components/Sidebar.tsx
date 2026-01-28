@@ -177,6 +177,32 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
+    id: 'expenses',
+    translationKey: 'nav.expenses',
+    icon: <Receipt className="w-3.5 h-3.5" />,
+    anyPermissions: ['view_expenses', 'manage_expenses', 'view_expense_categories', 'manage_expense_categories'],
+    subItems: [
+      {
+        id: '/expenses/categories',
+        translationKey: 'nav.expenseCategories',
+        icon: <ClipboardList className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_expense_categories', 'manage_expense_categories']
+      },
+      {
+        id: '/expenses/entries',
+        translationKey: 'nav.expenseEntries',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_expenses', 'manage_expenses']
+      },
+      {
+        id: '/expenses/report',
+        translationKey: 'nav.expenseReport',
+        icon: <BarChart className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_expenses', 'manage_expenses']
+      }
+    ]
+  },
+  {
     id: '/reports',
     translationKey: 'nav.reports',
     icon: <BarChart className="w-3.5 h-3.5" />,

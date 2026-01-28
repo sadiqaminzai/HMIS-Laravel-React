@@ -631,6 +631,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}
           updatedBy={selectedPrescription.updatedBy}
+          verificationToken={selectedPrescription.verificationToken}
           onClose={() => setShowPrint(false)}
         />
       )}
@@ -657,6 +658,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}
           updatedBy={selectedPrescription.updatedBy}
+          verificationToken={selectedPrescription.verificationToken}
           onClose={() => setShowViewModal(false)}
           viewOnly={true}
         />

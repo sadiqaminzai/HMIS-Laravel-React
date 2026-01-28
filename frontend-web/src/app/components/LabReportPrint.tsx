@@ -1,6 +1,7 @@
 import React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Hospital, LabTest } from '../types';
+import { buildVerificationUrl } from '../utils/verification';
 
 interface LabReportPrintProps {
   test: LabTest;
@@ -12,7 +13,8 @@ export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
   const brandColor = hospital.brandColor || '#1e40af';
 
   // Generate QR Code data
-  const qrData = `LAB TEST REPORT\nTest#: ${test.testNumber}\nPatient: ${test.patientName}\nTest: ${test.testName}\nDate: ${test.createdAt.toLocaleDateString()}\nHospital: ${hospital.name}`;
+  const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
+  const qrData = verificationUrl || `LAB TEST REPORT\nTest#: ${test.testNumber}\nPatient: ${test.patientName}\nTest: ${test.testName}\nDate: ${test.createdAt.toLocaleDateString()}\nHospital: ${hospital.name}`;
 
   // Parse test results into table format
   const parseResults = (resultString: string) => {

@@ -5,10 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\ModuleSequence;
+use App\Models\Traits\Sequenceable;
+use Illuminate\Support\Str;
 
 class LabOrder extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Sequenceable;
+
+    protected static $sequenceModule = 'lab';
+    protected static $sequenceColumn = 'order_number';
 
     protected $fillable = [
         'hospital_id',
@@ -38,6 +44,7 @@ class LabOrder extends Model
         'remarks',
         'created_by',
         'updated_by',
+        'verification_token',
     ];
 
     protected $casts = [
@@ -48,6 +55,15 @@ class LabOrder extends Model
         'sample_collected_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+
+    protected static function booted()
+    {
+        static::creating(function (LabOrder $order) {
+            if (empty($order->verification_token)) {
+                $order->verification_token = (string) Str::uuid();
+            }
+        });
+    }
 
     public function hospital()
     {
@@ -82,16 +98,7 @@ class LabOrder extends Model
     // Generate unique order number
     public static function generateOrderNumber(int $hospitalId): string
     {
-        $prefix = 'LAB';
-        $date = now()->format('Ymd');
-        $lastOrder = self::where('hospital_id', $hospitalId)
-            ->whereDate('created_at', today())
-            ->orderByDesc('id')
-            ->first();
-
-        $sequence = $lastOrder ? ((int) substr($lastOrder->order_number, -4)) + 1 : 1;
-
-        return sprintf('%s-%s-%04d', $prefix, $date, $sequence);
+        return (string) ModuleSequence::incrementFor($hospitalId, (new self())->getSequenceModuleName());
     }
 
     // Calculate total from items

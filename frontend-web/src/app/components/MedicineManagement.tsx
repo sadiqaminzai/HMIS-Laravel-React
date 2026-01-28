@@ -506,7 +506,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
 
       {/* Add Modal */}
       <div className={`fixed inset-0 z-50 ${showAddModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add Medicine</h3>
             <button onClick={() => setShowAddModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
@@ -514,7 +514,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </button>
           </div>
           <form className="p-4 space-y-4 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitAdd}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
                 <input
@@ -654,7 +654,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
 
       {/* Edit Modal */}
       <div className={`fixed inset-0 z-50 ${showEditModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Edit Medicine</h3>
             <button onClick={() => setShowEditModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
@@ -662,7 +662,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </button>
           </div>
           <form className="p-4 space-y-4 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitEdit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
                 <input

@@ -2,6 +2,7 @@ import React from 'react';
 import { LabTest, Hospital } from '../types';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatDate } from '../utils/date';
+import { buildVerificationUrl } from '../utils/verification';
 
 
 interface LabReportTemplateProps {
@@ -11,7 +12,8 @@ interface LabReportTemplateProps {
 
 export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
   const brandColor = hospital?.brandColor || '#2563eb';
-  const qrValue = `LAB-${test.testNumber}-${test.patientId}`;
+  const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
+  const qrValue = verificationUrl || `LAB-${test.testNumber}-${test.patientId}`;
 
   // Explicit hex colors
   const colors = {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -31,7 +31,7 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -62,6 +62,9 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     showBonusColumn: true,
   });
 
+  const [showOutOfStockMedicines, setShowOutOfStockMedicines] = useState(false);
+  const [showOutOfStockMedicinesForPharmacy, setShowOutOfStockMedicinesForPharmacy] = useState(false);
+
   // Get doctors for currently selected hospital
   const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
 
@@ -76,10 +79,13 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       const printConfig = getPrintColumnSettings(selectedHospital.id);
       setPrintColumns(printConfig);
 
+      setShowOutOfStockMedicines(getShowOutOfStockMedicines(selectedHospital.id));
+      setShowOutOfStockMedicinesForPharmacy(getShowOutOfStockMedicinesForPharmacy(selectedHospital.id));
+
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
     });
-  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings]);
+  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy]);
 
   const handleSaveDefaultDoctor = () => {
     saveHospitalSetting(selectedHospital.id, { defaultDoctorId: selectedDoctorId || undefined })
@@ -108,6 +114,28 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     saveHospitalSetting(selectedHospital.id, { defaultToWalkIn: newValue })
       .then(() => toast.success(newValue ? 'Walk-in patient mode enabled by default' : 'Search patient mode enabled by default'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to update walk-in mode'));
+  };
+
+  const handleOutOfStockToggle = () => {
+    const newValue = !showOutOfStockMedicines;
+    setShowOutOfStockMedicines(newValue);
+    saveHospitalSetting(selectedHospital.id, { showOutOfStockMedicines: newValue })
+      .then(() => toast.success(newValue ? 'Out-of-stock medicines are now visible to doctors' : 'Out-of-stock medicines are now hidden from doctors'))
+      .catch((err) => {
+        setShowOutOfStockMedicines(!newValue);
+        toast.error(err?.response?.data?.message || 'Failed to update medicine visibility');
+      });
+  };
+
+  const handleOutOfStockPharmacyToggle = () => {
+    const newValue = !showOutOfStockMedicinesForPharmacy;
+    setShowOutOfStockMedicinesForPharmacy(newValue);
+    saveHospitalSetting(selectedHospital.id, { showOutOfStockMedicinesForPharmacy: newValue })
+      .then(() => toast.success(newValue ? 'Out-of-stock medicines are now visible to pharmacy' : 'Out-of-stock medicines are now hidden from pharmacy'))
+      .catch((err) => {
+        setShowOutOfStockMedicinesForPharmacy(!newValue);
+        toast.error(err?.response?.data?.message || 'Failed to update pharmacy medicine visibility');
+      });
   };
 
   const selectedDoctor = hospitalDoctors.find(d => d.id === selectedDoctorId);
@@ -425,6 +453,112 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 <strong>Note:</strong> Users can still manually toggle between modes when creating prescriptions.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Medicine Visibility for Doctors */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Pill className="w-4 h-4 text-teal-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription Medicine Visibility</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Control whether doctors can see out-of-stock medicines while creating prescriptions.
+          </p>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Show out-of-stock medicines</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                When disabled, only medicines with stock above zero appear in the doctor dropdown.
+              </p>
+            </div>
+            <button
+              onClick={handleOutOfStockToggle}
+              aria-label="Toggle out-of-stock medicine visibility for doctors"
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                ${showOutOfStockMedicines
+                  ? 'bg-teal-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${showOutOfStockMedicines ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+
+          <div className={`p-2 rounded-lg border mt-3 ${
+            showOutOfStockMedicines
+              ? 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800'
+              : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+          }`}>
+            <p className={`text-xs font-semibold ${
+              showOutOfStockMedicines
+                ? 'text-teal-700 dark:text-teal-300'
+                : 'text-gray-700 dark:text-gray-300'
+            }`}>
+              {showOutOfStockMedicines ? '✓ Out-of-stock medicines visible to doctors' : 'Out-of-stock medicines hidden from doctors'}
+            </p>
+          </div>
+        </div>
+
+        {/* Medicine Visibility for Pharmacy */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Pill className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Pharmacy Medicine Visibility</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Control whether pharmacy can sell medicines when stock is zero.
+          </p>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Allow out-of-stock sales</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                When disabled, pharmacy cannot sell medicines with zero stock.
+              </p>
+            </div>
+            <button
+              onClick={handleOutOfStockPharmacyToggle}
+              aria-label="Toggle out-of-stock medicine visibility for pharmacy"
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                ${showOutOfStockMedicinesForPharmacy
+                  ? 'bg-indigo-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${showOutOfStockMedicinesForPharmacy ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+
+          <div className={`p-2 rounded-lg border mt-3 ${
+            showOutOfStockMedicinesForPharmacy
+              ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800'
+              : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+          }`}>
+            <p className={`text-xs font-semibold ${
+              showOutOfStockMedicinesForPharmacy
+                ? 'text-indigo-700 dark:text-indigo-300'
+                : 'text-gray-700 dark:text-gray-300'
+            }`}>
+              {showOutOfStockMedicinesForPharmacy
+                ? '✓ Out-of-stock medicines visible to pharmacy'
+                : 'Out-of-stock medicines hidden from pharmacy'}
+            </p>
           </div>
         </div>
 

@@ -126,10 +126,12 @@ class LabOrderController extends Controller
         }
 
         // Ensure doctor belongs to hospital and is marked as doctor.
-        $doctor = User::query()->whereKey($data['doctor_id'])->where('role', 'doctor')->first();
-        if (!$doctor || (int) $doctor->hospital_id !== (int) $hospitalId) {
+        $doctor = $this->resolveDoctorUser((int) $data['doctor_id']);
+        if ((int) $doctor->hospital_id !== (int) $hospitalId) {
             return response()->json(['message' => 'Doctor does not belong to the selected hospital'], 422);
         }
+
+        $data['doctor_id'] = $doctor->id;
 
         return DB::transaction(function () use ($data, $hospitalId, $isWalkIn, $request, $doctor) {
             // Handle walk-in patient
@@ -163,7 +165,7 @@ class LabOrderController extends Controller
             // Create lab order
             $order = LabOrder::create([
                 'hospital_id' => $hospitalId,
-                'order_number' => LabOrder::generateOrderNumber($hospitalId),
+                'order_number' => null,
                 'patient_id' => $patientId,
                 'walk_in_patient_id' => $walkInPatientId,
                 'is_walk_in' => $isWalkIn,
@@ -221,6 +223,27 @@ class LabOrderController extends Controller
                 'message' => 'Lab order created successfully'
             ], Response::HTTP_CREATED);
         });
+    }
+
+    private function resolveDoctorUser(int $doctorId): User
+    {
+        $doctor = User::query()
+            ->whereKey($doctorId)
+            ->where('role', 'doctor')
+            ->first();
+
+        if (!$doctor) {
+            $doctor = User::query()
+                ->where('doctor_id', $doctorId)
+                ->where('role', 'doctor')
+                ->first();
+        }
+
+        if (!$doctor) {
+            abort(422, 'Invalid doctor selection');
+        }
+
+        return $doctor;
     }
 
     /**

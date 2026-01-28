@@ -45,7 +45,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { patients } = usePatients();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const { loadHospitalSetting, getPrintColumnSettings } = useSettings();
+  const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy } = useSettings();
   const canManage = hasPermission('manage_transactions');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -100,6 +100,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   const validateSalesStock = () => {
     if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
+    if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
     const requiredByKey: Record<string, number> = {};
     formData.items.forEach((item) => {
       if (!item.medicineId) return;
@@ -484,19 +485,23 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const calculateTotalsSummary = (items: TransactionDetail[]) => {
     let totalDiscount = 0;
     let totalTax = 0;
+    let totalBonus = 0;
     items.forEach((item) => {
       const price = Number(item.price || 0);
       const discount = Number(item.discount || 0);
       const tax = Number(item.tax || 0);
       const qtty = Number(item.qtty || 0);
+      const bonus = Number(item.bonus || 0);
       const unitDiscount = (price * discount) / 100;
       const unitTax = (price * tax) / 100;
       totalDiscount += qtty * unitDiscount;
       totalTax += qtty * unitTax;
+      totalBonus += bonus;
     });
     return {
       totalDiscount: Number(totalDiscount.toFixed(2)),
       totalTax: Number(totalTax.toFixed(2)),
+      totalBonus: Number(totalBonus.toFixed(2)),
     };
   };
 
@@ -714,6 +719,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   const totalPreview = calculateTotals(formData.items);
   const totalsSummary = calculateTotalsSummary(formData.items);
+  const isCompactReceipt = receiptSize !== 'a4';
+  const isPharmacyCompact = isCompactReceipt && printTemplate === 'sale';
+  const invoiceNo = useMemo(() => {
+    if (showEditModal && selectedTransaction?.serialNo) return selectedTransaction.serialNo;
+    const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
+    const maxSerial = scoped.reduce((max, t) => Math.max(max, t.serialNo ?? 0), 0);
+    return maxSerial + 1;
+  }, [formData.hospitalId, selectedTransaction?.serialNo, showEditModal, transactions]);
+  const printTotalsSummary = selectedTransaction
+    ? calculateTotalsSummary(selectedTransaction.details || [])
+    : { totalDiscount: 0, totalTax: 0, totalBonus: 0 };
+  const printNetTotal = selectedTransaction
+    ? calculateTotals(selectedTransaction.details || [])
+    : 0;
   const itemsCount = formData.items.length;
 
   useEffect(() => {
@@ -1011,6 +1030,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       </h1>
                       <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Hospital: {getHospitalName(selectedTransaction.hospitalId)}</p>
                       <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Code: {getHospital(selectedTransaction.hospitalId)?.code || '—'}</p>
+                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Invoice No: {selectedTransaction.serialNo ?? '—'}</p>
                       <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Transaction ID: #{selectedTransaction.id}</p>
                     </div>
                   </div>
@@ -1019,72 +1039,120 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <p className="font-semibold text-gray-900">{new Date().toLocaleDateString()}</p>
                   </div>
                 </div>
-                <div className={`flex flex-wrap items-center gap-6 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
-                  <div>
-                    <p className="text-gray-500">Type</p>
-                    <p className="font-semibold text-gray-900">{selectedTransaction.trxType}</p>
-                  </div>
-                  {printTemplate === 'sale' && (
+                {!isCompactReceipt && (
+                  <div className={`flex flex-wrap items-center gap-6 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
                     <div>
-                      <p className="text-gray-500">Patient</p>
-                      <p className="font-semibold text-gray-900">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
+                      <p className="text-gray-500">Type</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.trxType}</p>
                     </div>
-                  )}
-                  {(printTemplate === 'purchase' || printTemplate === 'supplier') && (
                     <div>
-                      <p className="text-gray-500">Supplier</p>
-                      <p className="font-semibold text-gray-900">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
+                      <p className="text-gray-500">Invoice No</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</p>
                     </div>
-                  )}
-                  <div>
-                    <p className="text-gray-500">Grand Total</p>
-                    <p className="font-semibold text-gray-900">{selectedTransaction.grandTotal}</p>
+                    {printTemplate === 'sale' && (
+                      <div>
+                        <p className="text-gray-500">Patient</p>
+                        <p className="font-semibold text-gray-900">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
+                      </div>
+                    )}
+                    {(printTemplate === 'purchase' || printTemplate === 'supplier') && (
+                      <div>
+                        <p className="text-gray-500">Supplier</p>
+                        <p className="font-semibold text-gray-900">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-gray-500">Grand Total</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.grandTotal}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Paid</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Due</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-gray-500">Paid</p>
-                    <p className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Due</p>
-                    <p className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</p>
-                  </div>
-                </div>
+                )}
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <table className="w-full text-left text-xs">
+                  <table className={`w-full text-left text-xs ${isCompactReceipt ? 'table-fixed' : ''}`}>
                     <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-3 py-2">SN</th>
-                        <th className="px-3 py-2">Medicine</th>
-                        {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
-                        {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
-                        <th className="px-3 py-2">Qty</th>
-                        {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
-                        <th className="px-3 py-2">Price</th>
-                        <th className="px-3 py-2">Discount</th>
-                        <th className="px-3 py-2">Tax</th>
-                        <th className="px-3 py-2">Amount</th>
-                      </tr>
+                      {isCompactReceipt ? (
+                        <tr>
+                          <th className="px-1 py-1 w-4 text-center">#</th>
+                          <th className="px-1 py-1">Medicine</th>
+                          <th className="px-1 py-1 w-6 text-center">Qty</th>
+                          <th className="px-1 py-1 w-8 text-right">Price</th>
+                          {!isPharmacyCompact && <th className="px-1 py-1">Disc</th>}
+                          {!isPharmacyCompact && <th className="px-1 py-1">Tax</th>}
+                          <th className="px-1 py-1 w-8 text-right">Amt</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th className="px-3 py-2">SN</th>
+                          <th className="px-3 py-2">Medicine</th>
+                          {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
+                          {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
+                          <th className="px-3 py-2">Qty</th>
+                          {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
+                          <th className="px-3 py-2">Price</th>
+                          <th className="px-3 py-2">Discount</th>
+                          <th className="px-3 py-2">Tax</th>
+                          <th className="px-3 py-2">Amount</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {(selectedTransaction.details || []).map((d, idx) => (
                         <tr key={`${d.medicineId}-${idx}`}>
-                          <td className="px-3 py-2">{idx + 1}</td>
-                          <td className="px-3 py-2">{d.medicineName || getMedicineName(d.medicineId)}</td>
-                          {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
-                          {activePrintColumns.showExpiryDateColumn && (
-                            <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
+                          {isCompactReceipt ? (
+                            <>
+                              <td className="px-1 py-1 align-top text-center w-4">{idx + 1}</td>
+                              <td className="px-1 py-1 break-words align-top">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
+                              <td className="px-1 py-1 align-top text-center w-6">{d.qtty}</td>
+                              <td className="px-1 py-1 align-top text-right w-8">{d.price}</td>
+                              {!isPharmacyCompact && <td className="px-1 py-1 align-top">{d.discount ?? 0}%</td>}
+                              {!isPharmacyCompact && <td className="px-1 py-1 align-top">{d.tax ?? 0}%</td>}
+                              <td className="px-1 py-1 align-top text-right w-8">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-3 py-2">{idx + 1}</td>
+                              <td className="px-3 py-2">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
+                              {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
+                              {activePrintColumns.showExpiryDateColumn && (
+                                <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
+                              )}
+                              <td className="px-3 py-2">{d.qtty}</td>
+                              {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
+                              <td className="px-3 py-2">{d.price}</td>
+                              <td className="px-3 py-2">{d.discount ?? 0}%</td>
+                              <td className="px-3 py-2">{d.tax ?? 0}%</td>
+                              <td className="px-3 py-2">{d.amount ?? 0}</td>
+                            </>
                           )}
-                          <td className="px-3 py-2">{d.qtty}</td>
-                          {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
-                          <td className="px-3 py-2">{d.price}</td>
-                          <td className="px-3 py-2">{d.discount ?? 0}%</td>
-                          <td className="px-3 py-2">{d.tax ?? 0}%</td>
-                          <td className="px-3 py-2">{d.amount ?? 0}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {isCompactReceipt && (
+                  <div className="border-t border-gray-300 pt-2 text-[10px] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Net Total</span>
+                      <span className="font-semibold text-gray-900">{printNetTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Paid</span>
+                      <span className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Due</span>
+                      <span className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1132,7 +1200,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {(selectedTransaction.details || []).map((d, idx) => (
                         <tr key={`${d.medicineId}-${idx}`}>
-                          <td className="px-3 py-2">{d.medicineName || getMedicineName(d.medicineId)}</td>
+                          <td className="px-3 py-2">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
                           {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
                           {activePrintColumns.showExpiryDateColumn && (
                             <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
@@ -1159,9 +1227,25 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-5xl border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {showAddModal ? 'Add Transaction' : 'Edit Transaction'}
-              </h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {showAddModal ? 'Add Transaction' : 'Edit Transaction'}
+                </h3>
+                  {userRole === 'super_admin' && (
+                    <select
+                      className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-xs"
+                      title="Hospital"
+                      value={formData.hospitalId}
+                      onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
+                      required
+                    >
+                      <option value="">Select hospital</option>
+                      {hospitals.map((h) => (
+                        <option key={h.id} value={h.id}>{h.name}</option>
+                      ))}
+                    </select>
+                  )}
+              </div>
               <button
                 onClick={() => {
                   setShowAddModal(false);
@@ -1174,126 +1258,126 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               </button>
             </div>
             <form className="p-4 space-y-4 max-h-[75vh] overflow-y-auto" onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm">
+                <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
                 {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="space-y-1 min-w-[220px]">
-                      <label className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Find Patient</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={patientSearch}
-                          onChange={(e) => {
-                            setPatientSearch(e.target.value);
-                            setOpenPatientDropdown(true);
-                          }}
-                          onFocus={() => setOpenPatientDropdown(true)}
-                          onBlur={() => setTimeout(() => setOpenPatientDropdown(false), 200)}
-                          placeholder="Search patient..."
-                          className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-[11px]"
-                        />
-                        {openPatientDropdown && patientSearch.trim().length > 0 && (
-                          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
-                            {availablePatients
-                              .filter((p) => {
-                                const term = patientSearch.toLowerCase();
-                                return p.name.toLowerCase().includes(term) ||
-                                  (p.patientId || '').toLowerCase().includes(term) ||
-                                  (p.phone || '').toLowerCase().includes(term) ||
-                                  (p.address || '').toLowerCase().includes(term);
-                              })
-                              .slice(0, 25)
-                              .map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  onMouseDown={() => {
-                                    setFormData({ ...formData, patientId: p.id });
-                                    setPatientSearch(`${p.name} ${p.patientId ? `(${p.patientId})` : ''}`.trim());
-                                    setOpenPatientDropdown(false);
-                                  }}
-                                >
-                                  {p.name} {p.patientId ? `(${p.patientId})` : ''}
-                                </button>
-                              ))}
-                            {availablePatients.length === 0 && (
-                              <div className="px-2 py-2 text-xs text-gray-500">No patients found</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                  <div className="space-y-1 min-w-[180px] max-w-[220px]">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">Find Patient</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={patientSearch}
+                        onChange={(e) => {
+                          setPatientSearch(e.target.value);
+                          setOpenPatientDropdown(true);
+                        }}
+                        onFocus={() => setOpenPatientDropdown(true)}
+                        onBlur={() => setTimeout(() => setOpenPatientDropdown(false), 200)}
+                        placeholder="Search patient..."
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                      />
+                      {openPatientDropdown && (
+                        <div className="absolute z-20 mt-1 w-[250px] max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                          {availablePatients
+                            .filter((p) => {
+                              const term = patientSearch.toLowerCase();
+                              if (!term) return true;
+                              return p.name.toLowerCase().includes(term) ||
+                                (p.patientId || '').toLowerCase().includes(term) ||
+                                (p.phone || '').toLowerCase().includes(term) ||
+                                (p.address || '').toLowerCase().includes(term);
+                            })
+                            .sort((a, b) => (b.createdAt && a.createdAt ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : 0))
+                            .slice(0, 30)
+                            .map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
+                                onMouseDown={() => {
+                                  setFormData({ ...formData, patientId: p.id });
+                                  setPatientSearch(`${p.name} ${p.patientId ? `(${p.patientId})` : ''}`.trim());
+                                  setOpenPatientDropdown(false);
+                                }}
+                              >
+                                {p.name} {p.patientId ? `(${p.patientId})` : ''}
+                              </button>
+                            ))}
+                          {availablePatients.length === 0 && (
+                            <div className="px-2 py-2 text-xs text-gray-500">No patients found</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {(formData.trxType === 'purchase' || formData.trxType === 'purchase_return') && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="space-y-1 min-w-[220px]">
-                      <label className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Find Supplier</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={supplierSearch}
-                          onChange={(e) => {
-                            setSupplierSearch(e.target.value);
-                            setOpenSupplierDropdown(true);
-                          }}
-                          onFocus={() => setOpenSupplierDropdown(true)}
-                          onBlur={() => setTimeout(() => setOpenSupplierDropdown(false), 200)}
-                          placeholder="Search supplier..."
-                          className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-[11px]"
-                        />
-                        {openSupplierDropdown && supplierSearch.trim().length > 0 && (
-                          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
-                            {availableSuppliers
-                              .filter((s) => {
-                                const term = supplierSearch.toLowerCase();
-                                return s.name.toLowerCase().includes(term) ||
-                                  (s.contactInfo || '').toLowerCase().includes(term) ||
-                                  (s.address || '').toLowerCase().includes(term);
-                              })
-                              .slice(0, 25)
-                              .map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  onMouseDown={() => {
-                                    setFormData({ ...formData, supplierId: s.id });
-                                    setSupplierSearch(s.name);
-                                    setOpenSupplierDropdown(false);
-                                  }}
-                                >
-                                  {s.name}
-                                </button>
-                              ))}
-                            {availableSuppliers.length === 0 && (
-                              <div className="px-2 py-2 text-xs text-gray-500">No suppliers found</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                  <div className="space-y-1 min-w-[180px] max-w-[220px]">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">Find Supplier</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={supplierSearch}
+                        onChange={(e) => {
+                          setSupplierSearch(e.target.value);
+                          setOpenSupplierDropdown(true);
+                        }}
+                        onFocus={() => setOpenSupplierDropdown(true)}
+                        onBlur={() => setTimeout(() => setOpenSupplierDropdown(false), 200)}
+                        placeholder="Search supplier..."
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                      />
+                      {openSupplierDropdown && (
+                        <div className="absolute z-20 mt-1 w-[250px] max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                          {availableSuppliers
+                            .filter((s) => {
+                              const term = supplierSearch.toLowerCase();
+                              if (!term) return true;
+                              return s.name.toLowerCase().includes(term) ||
+                                (s.contactInfo || '').toLowerCase().includes(term) ||
+                                (s.address || '').toLowerCase().includes(term);
+                            })
+                            .slice(0, 30)
+                            .map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
+                                onMouseDown={() => {
+                                  setFormData({ ...formData, supplierId: s.id });
+                                  setSupplierSearch(s.name);
+                                  setOpenSupplierDropdown(false);
+                                }}
+                              >
+                                {s.name}
+                              </button>
+                            ))}
+                          {availableSuppliers.length === 0 && (
+                            <div className="px-2 py-2 text-xs text-gray-500">No suppliers found</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-1 min-w-[220px]">
-                  <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">Transaction Type</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-gray-600 dark:text-gray-300">Type</label>
                   <div className="flex flex-wrap gap-1 text-[10px]">
                     {[
                       { value: 'purchase', label: 'Purchase' },
                       { value: 'sales', label: 'Sales' },
-                      { value: 'purchase_return', label: 'Purchase Return' },
-                      { value: 'sales_return', label: 'Sales Return' },
+                      { value: 'purchase_return', label: 'Return Out' },
+                      { value: 'sales_return', label: 'Return In' },
                     ].map((opt) => (
-                      <label key={opt.value} className={`flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] cursor-pointer transition ${formData.trxType === opt.value ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 dark:bg-gray-800/60 dark:border-gray-700 dark:text-gray-300'}`}>
+                      <label key={opt.value} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] cursor-pointer transition h-8 ${formData.trxType === opt.value ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 dark:bg-gray-800/60 dark:border-gray-700 dark:text-gray-300'}`}>
                         <input
                           type="radio"
                           name="trxType"
                           value={opt.value}
                           checked={formData.trxType === opt.value}
-                          className="h-3 w-3"
+                          className="h-2.5 w-2.5"
                           onChange={() => {
                             setFormData((prev) => ({
                               ...prev,
@@ -1316,49 +1400,43 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   </div>
                 </div>
 
+                <div className="pb-0.5">
+                   <button
+                    type="button"
+                    onClick={addItemRow}
+                    className="px-2.5 py-1.5 text-xs rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Item
+                  </button>
+                </div>
+                
                 {userRole === 'super_admin' && (
-                  <div className="space-y-1 min-w-[200px]">
-                    <label className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Hospital</label>
-                    <select
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-[11px]"
-                      title="Hospital"
-                      value={formData.hospitalId}
-                      onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
-                      required
-                    >
-                      <option value="">Select hospital</option>
-                      {hospitals.map((h) => (
-                        <option key={h.id} value={h.id}>{h.name}</option>
-                      ))}
-                    </select>
+                  <div className="hidden">
+                    {/* Hospital selector moved to header */}
                   </div>
                 )}
+                <div className="space-y-1 w-[90px] ml-auto">
+                  <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">Invoice No</label>
+                  <input
+                    type="text"
+                    readOnly
+                    className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-[11px] h-8 text-gray-700 dark:text-gray-200"
+                    value={invoiceNo}
+                  />
+                </div>
 
-                <div className="space-y-1 min-w-[160px]">
-                  <label className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Date</label>
+                <div className="space-y-1 w-[120px]">
+                  <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">Invoice Date</label>
                   <input
                     type="date"
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-[11px]"
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                     title="Transaction date"
                     value={formData.transactionDate ? new Date(formData.transactionDate).toISOString().slice(0, 10) : ''}
                     onChange={(e) => setFormData({ ...formData, transactionDate: e.target.value ? new Date(e.target.value) : new Date() })}
                   />
                 </div>
               </div>
-
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Receipt className="w-4 h-4" /> Items
-                </h4>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={addItemRow}
-                    className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    Add Item
-                  </button>
-                </div>
               </div>
 
               <div
@@ -1385,15 +1463,21 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           }}
                           required
                         />
-                        {openMedicineDropdownIndex === index && (medicineQueries[index] || '').trim().length > 0 && (
+                        {openMedicineDropdownIndex === index && (
                           <div className="absolute z-30 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
                             {availableMedicines
                               .filter((m) => {
                                 const term = (medicineQueries[index] || '').toLowerCase();
+                                if (!term) return true;
                                 const display = `${m.brandName} ${m.genericName || ''} ${m.strength || ''} ${m.type || ''}`.toLowerCase();
                                 return display.includes(term);
                               })
-                              .slice(0, 25)
+                              .filter((m) => {
+                                if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
+                                if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
+                                return getAvailableStock(m.id, undefined, formData.hospitalId) > 0;
+                              })
+                              .slice(0, 50)
                               .map((m) => {
                                 const display = `${m.brandName} ${m.genericName ? `(${m.genericName})` : ''} ${m.strength || ''} ${m.type || ''}`.replace(/\s+/g, ' ').trim();
                                 const available = ['sales', 'purchase_return'].includes(formData.trxType)
@@ -1544,6 +1628,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <span className="text-gray-600 dark:text-gray-300">Items: <strong className="text-gray-900 dark:text-white">{itemsCount}</strong></span>
                 </div>
                 <span className="text-gray-600 dark:text-gray-300">Grand Total: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>
+                <span className="text-gray-600 dark:text-gray-300">Bonus: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalBonus.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Discount: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalDiscount.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Tax: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalTax.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Net: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>

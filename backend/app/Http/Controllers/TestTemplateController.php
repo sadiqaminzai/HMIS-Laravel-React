@@ -38,6 +38,10 @@ class TestTemplateController extends Controller
         $parameters = $data['parameters'] ?? [];
         unset($data['parameters']);
 
+        if (empty($data['test_code'])) {
+            $data['test_code'] = null;
+        }
+
         $template = DB::transaction(function () use ($data, $parameters, $request) {
             $template = TestTemplate::create([
                 ...$data,
@@ -86,12 +90,14 @@ class TestTemplateController extends Controller
         $input = $request->all();
         $input['parameters'] = $this->normalizeParameters($input['parameters'] ?? []);
 
+        $testCodeRule = $id === null
+            ? ['nullable', 'string', 'max:100']
+            : ['required', 'string', 'max:100'];
+
         $validator = Validator::make($input, [
             'hospital_id' => ['required', 'exists:hospitals,id'],
             'test_code' => [
-                'required',
-                'string',
-                'max:100',
+                ...$testCodeRule,
                 Rule::unique('test_templates', 'test_code')
                     ->ignore($id)
                     ->where(fn ($q) => $hospitalId ? $q->where('hospital_id', $hospitalId) : $q),

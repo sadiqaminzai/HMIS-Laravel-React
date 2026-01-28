@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -15,6 +15,8 @@ import { MedicineProvider } from './context/MedicineContext';
 import { SupplierProvider } from './context/SupplierContext';
 import { TransactionProvider } from './context/TransactionContext';
 import { StockProvider } from './context/StockContext';
+import { ExpenseCategoryProvider } from './context/ExpenseCategoryContext';
+import { ExpenseProvider } from './context/ExpenseContext';
 import { LandingThemeProvider } from './contexts/LandingThemeContext';
 import { LandingLanguageProvider } from './contexts/LandingLanguageContext';
 import { PrescriptionProvider } from './context/PrescriptionContext';
@@ -45,9 +47,13 @@ import { GeneralSettings } from './components/GeneralSettings';
 import { BackupManagement } from './components/BackupManagement';
 import { ContactMessages } from './components/ContactMessages';
 import { Reports } from './components/Reports';
+import { ExpenseCategories } from './components/ExpenseCategories';
+import { ExpenseManagement } from './components/ExpenseManagement';
+import { ExpenseReport } from './components/ExpenseReport';
 import { RequirePermission } from './components/RequirePermission';
 import { LicenseExpiryWarning } from './components/LicenseExpiryWarning';
 import { LicenseExpired } from './components/LicenseExpired';
+import { VerificationRoutes } from './components/verification/VerificationRoutes';
 import { UserRole, Hospital } from './types';
 import { useLicenseCheck, shouldShowWarningToday, markWarningShownToday } from './hooks/useLicenseCheck';
 import api from '../api/axios';
@@ -66,6 +72,7 @@ function AppContent() {
   const { i18n } = useTranslation();
   const { user, isAuthenticated, authLoading, logout } = useAuth();
   const { hospitals, getHospital, loading, refresh } = useHospitals();
+  const location = useLocation();
   const [showLanding, setShowLanding] = useState(() => {
     if (typeof window === 'undefined') return true;
     const token = localStorage.getItem('auth_token');
@@ -226,6 +233,10 @@ function AppContent() {
       markWarningShownToday(currentHospital.id);
     }
   };
+
+  if (location.pathname.startsWith('/verify/')) {
+    return <VerificationRoutes />;
+  }
 
   // While auth is resolving (refresh), avoid redirect flicker
   if (authLoading) {
@@ -555,6 +566,30 @@ function AppContent() {
                 </RequirePermission>
               }
             />
+            <Route
+              path="/expenses/categories"
+              element={
+                <RequirePermission anyOf={["view_expense_categories", "manage_expense_categories"]}>
+                  <ExpenseCategories hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/expenses/entries"
+              element={
+                <RequirePermission anyOf={["view_expenses", "manage_expenses"]}>
+                  <ExpenseManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/expenses/report"
+              element={
+                <RequirePermission anyOf={["view_expenses", "manage_expenses"]}>
+                  <ExpenseReport hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
             {/* Fallback route */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -580,14 +615,18 @@ export default function App() {
                           <SupplierProvider>
                             <TransactionProvider>
                               <StockProvider>
-                                <PrescriptionProvider>
-                                  <AppointmentProvider>
-                                    <BrowserRouter>
-                                      <Toaster richColors closeButton position="top-right" />
-                                      <AppContent />
-                                    </BrowserRouter>
-                                  </AppointmentProvider>
-                                </PrescriptionProvider>
+                                <ExpenseCategoryProvider>
+                                  <ExpenseProvider>
+                                    <PrescriptionProvider>
+                                      <AppointmentProvider>
+                                        <BrowserRouter>
+                                          <Toaster richColors closeButton position="top-right" />
+                                          <AppContent />
+                                        </BrowserRouter>
+                                      </AppointmentProvider>
+                                    </PrescriptionProvider>
+                                  </ExpenseProvider>
+                                </ExpenseCategoryProvider>
                               </StockProvider>
                             </TransactionProvider>
                           </SupplierProvider>

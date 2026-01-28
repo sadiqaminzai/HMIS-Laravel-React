@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   FileText,
@@ -20,6 +20,8 @@ import {
   Package
 } from 'lucide-react';
 import { UserRole, Hospital } from '../types';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import api from '../../api/axios';
 import {
   XAxis,
@@ -72,6 +74,8 @@ interface DashboardSummary {
 }
 
 export function Dashboard({ role, hospital }: DashboardProps) {
+  const navigate = useNavigate();
+  const { hasPermission } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
   useEffect(() => {
@@ -359,6 +363,41 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     </div>
   );
 
+  const doctorQuickActions = useMemo(() => {
+    const actions = [
+      {
+        key: 'create_prescription',
+        label: 'Create New Prescription',
+        icon: <ClipboardList className="w-3.5 h-3.5" />,
+        to: '/prescriptions/create',
+        className: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'
+      },
+      {
+        key: 'view_appointments',
+        label: 'View Appointments',
+        icon: <Calendar className="w-3.5 h-3.5" />,
+        to: '/appointments',
+        className: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+      },
+      {
+        key: 'view_lab_orders',
+        label: 'Order Lab Tests',
+        icon: <TestTube className="w-3.5 h-3.5" />,
+        to: '/lab-tests',
+        className: 'from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
+      },
+      {
+        key: 'view_prescriptions',
+        label: 'View Prescriptions',
+        icon: <FileText className="w-3.5 h-3.5" />,
+        to: '/prescriptions',
+        className: 'from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
+      }
+    ];
+
+    return actions.filter((action) => hasPermission(action.key));
+  }, [hasPermission]);
+
   // Doctor Dashboard
   const DoctorDashboard = () => (
     <div className="space-y-3">
@@ -425,18 +464,21 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Quick Actions</h3>
           <div className="space-y-2">
-            <button className="w-full p-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all text-xs font-medium flex items-center justify-center gap-2">
-              <ClipboardList className="w-3.5 h-3.5" />
-              Create New Prescription
-            </button>
-            <button className="w-full p-2.5 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all text-xs font-medium flex items-center justify-center gap-2">
-              <Calendar className="w-3.5 h-3.5" />
-              View Appointments
-            </button>
-            <button className="w-full p-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all text-xs font-medium flex items-center justify-center gap-2">
-              <TestTube className="w-3.5 h-3.5" />
-              Order Lab Tests
-            </button>
+            {doctorQuickActions.map((action) => (
+              <button
+                key={action.key}
+                onClick={() => navigate(action.to)}
+                className={`w-full p-2.5 bg-gradient-to-r ${action.className} text-white rounded-lg transition-all text-xs font-medium flex items-center justify-center gap-2`}
+              >
+                {action.icon}
+                {action.label}
+              </button>
+            ))}
+            {doctorQuickActions.length === 0 && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">
+                No quick actions available for your permissions.
+              </div>
+            )}
           </div>
         </div>
       </div>

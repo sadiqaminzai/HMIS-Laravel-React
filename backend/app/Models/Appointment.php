@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Traits\Sequenceable;
 
 class Appointment extends Model
 {
-    use HasFactory;
+    use HasFactory, Sequenceable;
+
+    protected static $sequenceModule = 'appointment';
+    protected static $sequenceColumn = 'appointment_number';
 
     protected $fillable = [
         'hospital_id',
@@ -27,6 +31,7 @@ class Appointment extends Model
     protected $casts = [
         'appointment_date' => 'date',
     ];
+
 
     public function hospital()
     {

@@ -70,9 +70,8 @@ class PrescriptionController extends Controller
         }
 
         $prescription = DB::transaction(function () use ($data) {
-            $rxNumber = $this->generateRxNumber();
             $prescription = Prescription::create(array_merge($data, [
-                'prescription_number' => $rxNumber,
+                'prescription_number' => $data['prescription_number'] ?? null,
                 'status' => 'active',
             ]));
 
@@ -154,10 +153,7 @@ class PrescriptionController extends Controller
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_age' => ['required', 'integer', 'min:0'],
             'patient_gender' => ['nullable', 'string', 'max:20'],
-            'doctor_id' => [
-                'required',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
-            ],
+            'doctor_id' => ['required', 'integer'],
             'doctor_name' => ['required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
             'advice' => ['nullable', 'string'],
@@ -199,15 +195,35 @@ class PrescriptionController extends Controller
             }
         }
 
-        $doctor = User::query()
-            ->whereKey($data['doctor_id'])
-            ->where('role', 'doctor')
-            ->firstOrFail();
+        $doctor = $this->resolveDoctorUser((int) $data['doctor_id']);
         if ((int) $doctor->hospital_id !== (int) $hospitalId) {
             abort(422, 'Doctor does not belong to the selected hospital');
         }
 
+        $data['doctor_id'] = $doctor->id;
+
         $data['hospital_id'] = $hospitalId;
+    }
+
+    private function resolveDoctorUser(int $doctorId): User
+    {
+        $doctor = User::query()
+            ->whereKey($doctorId)
+            ->where('role', 'doctor')
+            ->first();
+
+        if (!$doctor) {
+            $doctor = User::query()
+                ->where('doctor_id', $doctorId)
+                ->where('role', 'doctor')
+                ->first();
+        }
+
+        if (!$doctor) {
+            abort(422, 'Invalid doctor selection');
+        }
+
+        return $doctor;
     }
 
     private function authorizePrescription($user): void
@@ -224,9 +240,4 @@ class PrescriptionController extends Controller
         }
     }
 
-    private function generateRxNumber(): string
-    {
-        $countToday = Prescription::whereDate('created_at', today())->count();
-        return 'RX-' . now()->format('Ymd') . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
-    }
 }

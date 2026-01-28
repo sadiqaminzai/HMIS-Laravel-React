@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Traits\Sequenceable;
 
 class WalkInPatient extends Model
 {
-    use HasFactory;
+    use HasFactory, Sequenceable;
+
+    protected static $sequenceModule = 'walk_in_patient';
+    protected static $sequenceColumn = 'serial_no';
 
     protected $fillable = [
         'hospital_id',

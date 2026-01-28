@@ -22,6 +22,8 @@ export interface HospitalSetting {
   defaultToWalkIn: boolean;
   patientIdConfig: PatientIdConfig;
   printColumns: PrintColumnSettings;
+  showOutOfStockMedicines: boolean;
+  showOutOfStockMedicinesForPharmacy: boolean;
 }
 
 interface Settings {
@@ -38,6 +40,8 @@ interface SettingsContextType {
   getDefaultToWalkIn: (hospitalId: string) => boolean;
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
   getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
+  getShowOutOfStockMedicines: (hospitalId: string) => boolean;
+  getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
@@ -71,6 +75,8 @@ const SettingsContext = createContext<SettingsContextType>({
   getDefaultToWalkIn: () => false,
   getPatientIdConfig: () => defaultPatientIdConfig,
   getPrintColumnSettings: () => defaultPrintColumns,
+  getShowOutOfStockMedicines: () => false,
+  getShowOutOfStockMedicinesForPharmacy: () => false,
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -146,6 +152,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.print_show_expiry_date_column = payload.printColumns.showExpiryDateColumn;
       body.print_show_bonus_column = payload.printColumns.showBonusColumn;
     }
+    if (payload.showOutOfStockMedicines !== undefined) {
+      body.show_out_of_stock_medicines_to_doctors = payload.showOutOfStockMedicines;
+    }
+    if (payload.showOutOfStockMedicinesForPharmacy !== undefined) {
+      body.show_out_of_stock_medicines_to_pharmacy = payload.showOutOfStockMedicinesForPharmacy;
+    }
 
     const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
     setSettingsByHospital((prev) => ({
@@ -170,6 +182,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         showExpiryDateColumn: raw.print_show_expiry_date_column ?? true,
         showBonusColumn: raw.print_show_bonus_column ?? true,
       },
+      showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
+      showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
     };
   };
 
@@ -180,6 +194,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       defaultToWalkIn: false,
       patientIdConfig: { ...defaultPatientIdConfig },
       printColumns: { ...defaultPrintColumns },
+      showOutOfStockMedicines: false,
+      showOutOfStockMedicinesForPharmacy: false,
     };
   };
 
@@ -199,6 +215,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).printColumns;
   };
 
+  const getShowOutOfStockMedicines = (hospitalId: string): boolean => {
+    return getHospitalSetting(hospitalId).showOutOfStockMedicines;
+  };
+
+  const getShowOutOfStockMedicinesForPharmacy = (hospitalId: string): boolean => {
+    return getHospitalSetting(hospitalId).showOutOfStockMedicinesForPharmacy;
+  };
+
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
     const config = getPatientIdConfig(hospitalId);
     const number = (config.startNumber + currentCount).toString().padStart(config.digits, '0');
@@ -213,6 +237,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getDefaultToWalkIn,
       getPatientIdConfig,
       getPrintColumnSettings,
+      getShowOutOfStockMedicines,
+      getShowOutOfStockMedicinesForPharmacy,
       generatePatientId,
       loadHospitalSetting,
       saveHospitalSetting

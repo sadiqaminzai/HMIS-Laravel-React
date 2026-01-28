@@ -1,31 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Calendar as CalendarIcon, 
-  BarChart, 
-  PieChart, 
-  LineChart, 
-  Users, 
-  FileText, 
-  Activity, 
-  Building2, 
+import {
+  Calendar as CalendarIcon,
+  BarChart,
+  PieChart,
+  LineChart,
+  Users,
+  FileText,
+  Activity,
+  Building2,
   Download,
   Filter
 } from 'lucide-react';
 import { format, subDays, isWithinInterval, startOfDay, endOfDay, parseISO } from 'date-fns';
-import { 
-  BarChart as RechartsBarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer, 
-  LineChart as RechartsLineChart, 
-  Line, 
-  PieChart as RechartsPieChart, 
-  Pie, 
-  Cell 
+import {
+  BarChart as RechartsBarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart as RechartsLineChart,
+  Line,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -141,8 +141,8 @@ const generateMockLabTests = (hospitalId: string): LabTest[] => [
 ];
 
 interface ReportsProps {
-  hospital: Hospital;
-  userRole: UserRole;
+    hospital: Hospital;
+    userRole: UserRole;
 }
 
 type ReportType = 'date' | 'doctor' | 'patient' | 'lab' | 'hospital' | 'other';
@@ -158,7 +158,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
   const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
     const [trxTypeFilter, setTrxTypeFilter] = useState<'all' | Transaction['trxType']>('all');
-  
+
   // Data State
   const [filteredData, setFilteredData] = useState<any[]>([]);
   const [summaryStats, setSummaryStats] = useState({
@@ -311,7 +311,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         printWindow.focus();
         printWindow.print();
     };
-  
+
   useEffect(() => {
     // Filter logic based on Date Range and Report Type
     const start = startOfDay(parseISO(startDate));
@@ -320,12 +320,12 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     const isInRange = (date: Date) => isWithinInterval(date, { start, end });
 
     // Filter Prescriptions
-    const prescriptions = mockPrescriptions.filter(p => 
+    const prescriptions = mockPrescriptions.filter(p =>
       p.hospitalId === hospital.id && isInRange(new Date(p.createdAt))
     );
 
     // Filter Lab Tests
-    const labTests = allLabTests.filter(lt => 
+    const labTests = allLabTests.filter(lt =>
       lt.hospitalId === hospital.id && isInRange(new Date(lt.createdAt))
     );
 
@@ -421,7 +421,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             ];
         }
         break;
-        
+
       default:
         break;
     }
@@ -434,18 +434,18 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
-    
+
     // -- Header Section --
     // Blue background for header
     doc.setFillColor(37, 99, 235); // Blue-600
     doc.rect(0, 0, pageWidth, 40, 'F');
-    
+
     // Hospital Name (White)
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
     doc.text(hospital.name, 14, 20);
-    
+
     // Report Title (White, smaller)
     doc.setFontSize(14);
     doc.setFont('helvetica', 'normal');
@@ -478,7 +478,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
     stats.forEach((stat, index) => {
         const x = margin + (index * (cardWidth + gap));
-        
+
         // Card background
         doc.setFillColor(248, 250, 252); // Gray-50
         doc.setDrawColor(226, 232, 240); // Gray-200
@@ -523,15 +523,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         head: [tableHead],
         body: tableBody,
         theme: 'grid',
-        headStyles: { 
-            fillColor: [255, 255, 255], 
+        headStyles: {
+            fillColor: [255, 255, 255],
             textColor: [37, 99, 235], // Blue-600
             fontStyle: 'bold',
             lineWidth: 0.1,
-            lineColor: [226, 232, 240] 
+            lineColor: [226, 232, 240]
         },
-        styles: { 
-            fontSize: 10, 
+        styles: {
+            fontSize: 10,
             cellPadding: 4,
             lineColor: [226, 232, 240],
             lineWidth: 0.1
@@ -565,7 +565,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-           <button 
+           <button
              onClick={handleExportPDF}
              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
            >
@@ -578,11 +578,11 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
         <div className="flex flex-col md:flex-row gap-4 items-end md:items-center">
-            
+
             {/* Report Type */}
             <div className="flex-1 w-full md:w-auto">
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Report Type</label>
-                <select 
+                <select
                     value={reportType}
                     onChange={(e) => setReportType(e.target.value as ReportType)}
                     title="Report type"
@@ -601,8 +601,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             <div className="flex-1 flex gap-2 w-full md:w-auto">
                 <div className="flex-1">
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
                         title="Start date"
@@ -611,8 +611,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 </div>
                 <div className="flex-1">
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
                         title="End date"
@@ -625,7 +625,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             {reportType === 'doctor' && (
                 <div className="flex-1 w-full md:w-auto">
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Specific Doctor</label>
-                    <select 
+                    <select
                         value={selectedEntityId}
                         onChange={(e) => setSelectedEntityId(e.target.value)}
                         title="Specific doctor"
@@ -654,7 +654,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 </div>
             </div>
         </div>
-        
+
         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-start">
                 <div>
@@ -692,13 +692,13 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         </div>
       </div>
 
-      {/* Main Chart Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+            {/* Main Chart Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 capitalize">
                 {reportType === 'date' ? 'Activity Over Time' : `${reportType} Analysis`}
             </h3>
-            
+
             <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     {reportType === 'date' ? (
@@ -706,8 +706,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                             <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
                             <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                            <Tooltip 
-                                contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                            <Tooltip
+                                contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                             />
                             <Legend />
                             <Line type="monotone" dataKey="prescriptions" stroke="#2563eb" strokeWidth={2} name="Prescriptions" dot={{ r: 4 }} activeDot={{ r: 6 }} />
@@ -718,9 +718,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={true} vertical={false} />
                             <XAxis type={reportType === 'doctor' || reportType === 'patient' ? "number" : "category"} dataKey={reportType === 'doctor' || reportType === 'patient' ? undefined : "name"} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
                             <YAxis type={reportType === 'doctor' || reportType === 'patient' ? "category" : "number"} dataKey={reportType === 'doctor' || reportType === 'patient' ? "name" : undefined} width={100} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                            <Tooltip 
+                            <Tooltip
                                 cursor={{ fill: '#f3f4f6' }}
-                                contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                                contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                             />
                             <Legend />
                             {reportType === 'doctor' ? (
@@ -737,40 +737,39 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             </div>
         </div>
 
-        {/* Distribution Chart (Pie) */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Distribution</h3>
-            <div className="h-[350px] w-full relative">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart>
-                        <Pie
-                            data={[
-                                { name: 'Prescriptions', value: summaryStats.totalPrescriptions },
-                                { name: 'Lab Tests', value: summaryStats.totalLabTests }
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={100}
-                            fill="#8884d8"
-                            paddingAngle={5}
-                            dataKey="value"
-                        >
-                            <Cell key="cell-0" fill="#2563eb" />
-                            <Cell key="cell-1" fill="#7c3aed" />
-                        </Pie>
-                        <Tooltip />
-                        <Legend verticalAlign="bottom" height={36}/>
-                    </RechartsPieChart>
-                </ResponsiveContainer>
-                {/* Center Text */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                    <span className="text-2xl font-bold text-gray-900 dark:text-white">{summaryStats.totalPrescriptions + summaryStats.totalLabTests}</span>
-                    <span className="block text-xs text-gray-500">Total Items</span>
-                </div>
+                                {/* Distribution Chart (Pie) */}
+                                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Distribution</h3>
+                                        <div className="h-[350px] w-full relative">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                        <RechartsPieChart>
+                                                                <Pie
+                                                                        data={[
+                                                                                { name: 'Prescriptions', value: summaryStats.totalPrescriptions },
+                                                                                { name: 'Lab Tests', value: summaryStats.totalLabTests }
+                                                                        ]}
+                                                                        cx="50%"
+                                                                        cy="50%"
+                                                                        innerRadius={60}
+                                                                        outerRadius={100}
+                                                                        fill="#8884d8"
+                                                                        paddingAngle={5}
+                                                                        dataKey="value"
+                                                                >
+                                                                        <Cell key="cell-0" fill="#2563eb" />
+                                                                        <Cell key="cell-1" fill="#7c3aed" />
+                                                                </Pie>
+                                                                <Tooltip />
+                                                                <Legend verticalAlign="bottom" height={36} />
+                                                        </RechartsPieChart>
+                                                </ResponsiveContainer>
+                                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                                                        <span className="text-2xl font-bold text-gray-900 dark:text-white">{summaryStats.totalPrescriptions + summaryStats.totalLabTests}</span>
+                                                        <span className="block text-xs text-gray-500">Total Items</span>
+                                                </div>
+                                        </div>
+                                </div>
             </div>
-        </div>
-      </div>
 
             {/* Pharmacy Transactions Report */}
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-4">
@@ -983,6 +982,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             </table>
         </div>
       </div>
+
     </div>
   );
 }

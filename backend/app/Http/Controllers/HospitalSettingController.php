@@ -34,6 +34,8 @@ class HospitalSettingController extends Controller
             'print_show_batch_column' => ['boolean'],
             'print_show_expiry_date_column' => ['boolean'],
             'print_show_bonus_column' => ['boolean'],
+            'show_out_of_stock_medicines_to_doctors' => ['boolean'],
+            'show_out_of_stock_medicines_to_pharmacy' => ['boolean'],
         ]);
 
         $setting = $this->getOrCreateSetting($hospital->id);
@@ -70,6 +72,8 @@ class HospitalSettingController extends Controller
                 'print_show_batch_column' => true,
                 'print_show_expiry_date_column' => true,
                 'print_show_bonus_column' => true,
+                'show_out_of_stock_medicines_to_doctors' => false,
+                'show_out_of_stock_medicines_to_pharmacy' => false,
             ]
         );
     }

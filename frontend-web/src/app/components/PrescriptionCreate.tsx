@@ -25,6 +25,7 @@ interface PrescriptionCreateProps {
 
 interface MedicineRow extends Medicine {
   rowId: string;
+  isTemporary?: boolean;
 }
 
 const formatMedicineDisplay = (brand: string, generic?: string, type?: string, strength?: string, includeStrength: boolean = true) => {
@@ -42,7 +43,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   // Hospital filtering for super_admin with "All Hospitals" support (but for create, we use currentHospital as the target)
   const userRole = currentUser.role as UserRole;
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  const { settings, getDefaultToWalkIn } = useSettings();
+  const { settings, getDefaultToWalkIn, getShowOutOfStockMedicines, loadHospitalSetting } = useSettings();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { medicines: inventory } = useMedicines();
@@ -121,22 +122,41 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   // Honor hospital-specific default walk-in preference from settings
   useEffect(() => {
+    if (editPrescriptionData) return;
     const defaultWalkIn = getDefaultToWalkIn(currentHospital.id) || settings.defaultToWalkIn || false;
     setIsWalkIn(defaultWalkIn);
     if (defaultWalkIn && walkInDefaultPatient) {
       setSelectedPatient(walkInDefaultPatient);
       setPatientSearch(walkInDefaultPatient.name);
     }
-  }, [currentHospital.id, getDefaultToWalkIn, settings.defaultToWalkIn, walkInDefaultPatient]);
+  }, [currentHospital.id, editPrescriptionData, getDefaultToWalkIn, settings.defaultToWalkIn, walkInDefaultPatient]);
+
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
 
   // Populate form when editing existing prescription
   useEffect(() => {
     if (editPrescriptionData) {
-      // Find and set the patient
-      const patient = patients.find(p => p.id === editPrescriptionData.patientId);
-      if (patient) {
-        setSelectedPatient(patient);
-        setPatientSearch(patient.name);
+      const isWalkInEdit = Boolean(editPrescriptionData.isWalkIn) || !editPrescriptionData.patientId;
+
+      setIsWalkIn(isWalkInEdit);
+
+      if (isWalkInEdit) {
+        setSelectedPatient(null);
+        setPatientSearch(editPrescriptionData.patientName || '');
+        setWalkInPatient({
+          name: editPrescriptionData.patientName || '',
+          age: String(editPrescriptionData.patientAge ?? ''),
+          gender: (editPrescriptionData.patientGender || 'male').toString().toLowerCase(),
+        });
+      } else {
+        // Find and set the patient
+        const patient = patients.find(p => p.id === editPrescriptionData.patientId);
+        if (patient) {
+          setSelectedPatient(patient);
+          setPatientSearch(patient.name);
+        }
       }
 
       // Find and set the doctor
@@ -168,7 +188,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           duration: med.duration || '5 days',
           instruction: med.instruction || 'after_meal',
           quantity: med.quantity || 0,
-          type: medType
+          type: medType,
+          isTemporary: !originalMed && !med.medicineId
         };
       });
       
@@ -304,7 +325,24 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       dose: '1-0-1',
       duration: '5 days',
       instruction: 'after_meal',
-      quantity: 10
+      quantity: 10,
+      isTemporary: false
+    };
+    setMedicines([...medicines, newRow]);
+  };
+
+  const addTemporaryMedicineRow = () => {
+    const newRow: MedicineRow = {
+      rowId: Date.now().toString(),
+      medicineId: '',
+      brandName: '',
+      genericName: '',
+      strength: '',
+      dose: '1-0-1',
+      duration: '5 days',
+      instruction: 'after_meal',
+      quantity: 10,
+      isTemporary: true
     };
     setMedicines([...medicines, newRow]);
   };
@@ -383,6 +421,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     return Math.ceil(dosePerDay * days);
   };
 
+  const role = String(currentUser.role || '').toLowerCase();
+  const hideOutOfStockForDoctors = role === 'doctor' && !getShowOutOfStockMedicines(currentHospital.id);
+
   const handleMedicineSearch = (rowId: string, searchTerm: string) => {
     updateMedicineRow(rowId, 'brandName', searchTerm);
     
@@ -390,6 +431,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     const medicine = inventory.find(m =>
       m.hospitalId === currentHospital.id &&
       m.status === 'active' &&
+      (!hideOutOfStockForDoctors || (m.stock ?? 0) > 0) &&
       m.brandName.toLowerCase() === searchTerm.toLowerCase()
     );
     
@@ -402,7 +444,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         brandName: displayName,
         genericName: medicine.genericName || '',
         strength: medicine.strength || '',
-        type: medType
+        type: medType,
+        isTemporary: false
       });
     }
   };
@@ -736,13 +779,23 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5">
           <div className="flex items-center justify-between mb-1.5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Medicines</h2>
-            <button
-              onClick={addMedicineRow}
-              className="w-7 h-7 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
-              title="Add Medicine"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={addTemporaryMedicineRow}
+                className="px-2.5 py-1.5 flex items-center justify-center bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium"
+                title="Add Temporary Medicine"
+              >
+                <Pill className="w-3.5 h-3.5 mr-1" />
+                Manual
+              </button>
+              <button
+                onClick={addMedicineRow}
+                className="w-7 h-7 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
+                title="Add Medicine"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Scrollable table container - only show scrollbar when 5+ medicines */}
@@ -771,6 +824,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     index={index}
                     hospital={currentHospital}
                     medicineOptions={inventory}
+                    hideOutOfStock={hideOutOfStockForDoctors}
                     onUpdate={updateMedicineRow}
                     onUpdateBatch={updateMedicineRowBatch}
                     onRemove={removeMedicineRow}
@@ -846,6 +900,7 @@ interface MedicineRowProps {
   index: number;
   hospital: Hospital;
   medicineOptions: Medicine[];
+  hideOutOfStock: boolean;
   onUpdate: (rowId: string, field: keyof MedicineRow, value: any) => void;
   onUpdateBatch: (rowId: string, updates: Partial<MedicineRow>) => void;
   onRemove: (rowId: string) => void;
@@ -854,7 +909,7 @@ interface MedicineRowProps {
   onDropdownToggle: (open: boolean) => void;
 }
 
-function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew, onDropdownToggle }: MedicineRowProps) {
+function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hideOutOfStock, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew, onDropdownToggle }: MedicineRowProps) {
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -870,6 +925,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
   const localMatches = medicineOptions.filter(m =>
     m.hospitalId === hospital.id &&
     m.status === 'active' &&
+    (!hideOutOfStock || (m.stock ?? 0) > 0) &&
     searchTerm.length > 0 &&
     (m.brandName.toLowerCase().includes(searchTerm.toLowerCase()) ||
      m.genericName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -905,11 +961,15 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
           genericName: m.generic_name ?? '',
           strength: m.strength ?? '',
           type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
+          stock: typeof m.stock === 'number' ? m.stock : (m.stock ? Number(m.stock) : undefined),
           status: (m.status ?? 'active') as Medicine['status'],
           createdAt: m.created_at ? new Date(m.created_at) : undefined,
           updatedAt: m.updated_at ? new Date(m.updated_at) : undefined,
         })) as Medicine[];
-        setRemoteMedicines(mapped);
+        const filtered = hideOutOfStock
+          ? mapped.filter((m) => (m.stock ?? 0) > 0)
+          : mapped;
+        setRemoteMedicines(filtered);
       } catch {
         if (active) setRemoteMedicines([]);
       }
@@ -919,7 +979,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
       active = false;
       clearTimeout(timer);
     };
-  }, [hospital.id, localMatches.length, searchTerm]);
+  }, [hospital.id, localMatches.length, searchTerm, hideOutOfStock]);
 
   // Reset highlighted index when filtered medicines change
   React.useEffect(() => {
@@ -978,7 +1038,8 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
       brandName: displayName,
       genericName: med.genericName || '',
       strength: med.strength || '',
-      type: medType
+      type: medType,
+      isTemporary: false
     });
     
     setShowMedicineDropdown(false);
@@ -994,6 +1055,11 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, onUp
     <tr className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
       <td className="py-0.5 px-2">
         <div className="relative">
+          {medicine.isTemporary && (
+            <span className="absolute -top-2 right-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800">
+              Manual
+            </span>
+          )}
           <input
             ref={medicineInputRef}
             type="text"

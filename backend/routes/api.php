@@ -8,6 +8,8 @@ use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\HospitalSettingController;
 use App\Http\Controllers\LabOrderController;
+use App\Http\Controllers\ExpenseCategoryController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\PatientController;
 use App\Http\Controllers\HospitalController;
 use App\Http\Controllers\ManufacturerController;
@@ -23,10 +25,14 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TestTemplateController;
 use App\Http\Controllers\ShifaaScriptController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VerificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/contact-messages', [ContactMessageController::class, 'store']);
+Route::get('/verify/prescriptions/{token}', [VerificationController::class, 'prescription']);
+Route::get('/verify/patients/{token}', [VerificationController::class, 'patient']);
+Route::get('/verify/lab-reports/{token}', [VerificationController::class, 'labReport']);
 
 Route::middleware('auth:sanctum')->group(function () {
 	Route::get('/me', [AuthController::class, 'me']);
@@ -94,6 +100,24 @@ Route::middleware('auth:sanctum')->group(function () {
 		'store' => 'permission:manage_suppliers',
 		'update' => 'permission:manage_suppliers',
 		'destroy' => 'permission:manage_suppliers',
+	]);
+
+	// Expense Categories
+	Route::apiResource('expense-categories', ExpenseCategoryController::class)->except(['create', 'edit'])->middleware([
+		'index' => 'permission:view_expense_categories,manage_expense_categories',
+		'show' => 'permission:view_expense_categories,manage_expense_categories',
+		'store' => 'permission:manage_expense_categories',
+		'update' => 'permission:manage_expense_categories',
+		'destroy' => 'permission:manage_expense_categories',
+	]);
+
+	// Expenses
+	Route::apiResource('expenses', ExpenseController::class)->except(['create', 'edit'])->middleware([
+		'index' => 'permission:view_expenses,manage_expenses',
+		'show' => 'permission:view_expenses,manage_expenses',
+		'store' => 'permission:manage_expenses',
+		'update' => 'permission:manage_expenses',
+		'destroy' => 'permission:manage_expenses',
 	]);
 
 	// Transactions

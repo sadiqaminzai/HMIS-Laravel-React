@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Image as ImageIcon, CreditCard, QrCode, Download, FileImage } from 'lucide-react';
+import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Image as ImageIcon, CreditCard, Download, FileImage } from 'lucide-react';
 import { Hospital, UserRole, Patient } from '../types';
 import { usePatients } from '../context/PatientContext';
 import { toast } from 'sonner';
@@ -14,6 +14,8 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { toPng } from 'html-to-image';
 import { useAuth } from '../context/AuthContext';
+import { QRCodeSVG } from 'qrcode.react';
+import { buildVerificationUrl } from '../utils/verification';
 
 // Helper to convert hex to RGB array for jsPDF
 const hexToRgb = (hex?: string): [number, number, number] | null => {
@@ -1200,7 +1202,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                      </div>
                      {/* QR Code Placeholder */}
                      <div className="opacity-80">
-                         <QrCode className="w-8 h-8 text-gray-800" />
+                       <QRCodeSVG
+                        value={buildVerificationUrl('patient', selectedPatient.verificationToken) || selectedPatient.patientId}
+                        size={32}
+                       />
                      </div>
                   </div>
                </div>

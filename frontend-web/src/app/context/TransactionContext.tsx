@@ -33,6 +33,7 @@ const mapDetail = (d: any): TransactionDetail => ({
 const mapTransaction = (t: any): Transaction => ({
   id: String(t.id),
   hospitalId: String(t.hospital_id),
+  serialNo: t.serial_no !== undefined && t.serial_no !== null ? Number(t.serial_no) : undefined,
   supplierId: t.supplier_id !== undefined && t.supplier_id !== null ? String(t.supplier_id) : undefined,
   supplierName: t.supplier_name ?? undefined,
   patientId: t.patient_id !== undefined && t.patient_id !== null ? String(t.patient_id) : undefined,

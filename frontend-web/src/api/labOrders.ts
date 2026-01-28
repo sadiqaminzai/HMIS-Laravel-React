@@ -5,6 +5,7 @@ export interface LabOrderResponse {
   id: number;
   hospital_id: number;
   order_number: string;
+  verification_token?: string | null;
   patient_id: number | null;
   walk_in_patient_id: number | null;
   is_walk_in: boolean;
@@ -87,6 +88,7 @@ export interface LabOrder {
   id: string;
   hospitalId: string;
   orderNumber: string;
+  verificationToken?: string;
   patientId: string | null;
   walkInPatientId: string | null;
   isWalkIn: boolean;
@@ -196,6 +198,7 @@ function transformToFrontend(order: LabOrderResponse): LabOrder {
     id: String(order.id),
     hospitalId: String(order.hospital_id),
     orderNumber: order.order_number,
+    verificationToken: order.verification_token ?? undefined,
     patientId: order.patient_id ? String(order.patient_id) : null,
     walkInPatientId: order.walk_in_patient_id ? String(order.walk_in_patient_id) : null,
     isWalkIn: order.is_walk_in,
