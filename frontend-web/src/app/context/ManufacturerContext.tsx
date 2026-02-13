@@ -71,7 +71,7 @@ export function ManufacturerProvider({ children }: { children: React.ReactNode }
     const body: any = {};
     if (payload.hospitalId) body.hospital_id = payload.hospitalId;
     if (payload.name) body.name = payload.name;
-    if (payload.licenseNumber) body.license_number = payload.licenseNumber;
+    if (payload.licenseNumber !== undefined) body.license_number = payload.licenseNumber;
     if (payload.country !== undefined) body.country = payload.country;
     if (payload.status) body.status = payload.status;
     return body;

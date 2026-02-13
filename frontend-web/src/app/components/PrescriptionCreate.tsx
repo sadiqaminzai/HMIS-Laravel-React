@@ -29,10 +29,17 @@ interface MedicineRow extends Medicine {
 }
 
 const formatMedicineDisplay = (brand: string, generic?: string, type?: string, strength?: string, includeStrength: boolean = true) => {
-  const parts = [brand || '', generic ? `(${generic})` : null];
-  if (includeStrength && strength) parts.push(strength);
+  const parts = [];
   if (type) parts.push(type);
+  if (brand) parts.push(brand);
+  if (generic) parts.push(`(${generic})`);
+  if (includeStrength && strength) parts.push(strength);
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+};
+
+const toMaxLength = (value: string | undefined | null, max = 255) => {
+  if (!value) return '';
+  return String(value).slice(0, max);
 };
 
 export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreateProps) {
@@ -62,12 +69,34 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0);
   const [openMedicineDropdownRowId, setOpenMedicineDropdownRowId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [isWalkIn, setIsWalkIn] = useState(settings.defaultToWalkIn || false);
   const [walkInPatient, setWalkInPatient] = useState({
     name: '',
     age: '',
     gender: 'male'
   });
+
+  const insertDiagnosisBlock = (html: string) => {
+    setDiagnosis((prev) => (prev ? `${prev}<br/>${html}` : html));
+  };
+
+  const insertDiagnosisLabel = (label: string, value: string = '') => {
+    const html = `<strong>${label}</strong>${value ? ` ${value}` : ''}`;
+    insertDiagnosisBlock(html);
+  };
+
+  const insertDiagnosisTemplate = () => {
+    const doctorName = selectedDoctor?.name ? ` ${selectedDoctor.name}` : '';
+    const template = [
+      '<strong>H/O</strong>',
+      '<strong>C/C</strong>',
+      '<strong>BP</strong>',
+      '<strong>Weight</strong>',
+      `<strong>Doctor</strong>${doctorName}`
+    ].join('<br/>');
+    insertDiagnosisBlock(template);
+  };
 
   const walkInDefaultPatient = useMemo(
     () => patients.find((p) => p.hospitalId === currentHospital.id && p.patientId?.toUpperCase().startsWith('WALKIN')),
@@ -143,7 +172,24 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       setIsWalkIn(isWalkInEdit);
 
       if (isWalkInEdit) {
-        setSelectedPatient(null);
+        const walkInSerial = editPrescriptionData.walkInPatientId || `WALKIN-${editPrescriptionData.id || Date.now()}`;
+        const tempPatient: Patient = {
+          id: `WALKIN-${walkInSerial}`,
+          hospitalId: currentHospital.id,
+          patientId: String(walkInSerial),
+          name: editPrescriptionData.patientName || 'Walk-in Patient',
+          age: Number(editPrescriptionData.patientAge ?? 0),
+          gender: (editPrescriptionData.patientGender || 'male').toString().toLowerCase() as Patient['gender'],
+          contact: '',
+          address: '',
+          bloodGroup: '',
+          allergies: [],
+          medicalHistory: '',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        };
+
+        setSelectedPatient(tempPatient);
         setPatientSearch(editPrescriptionData.patientName || '');
         setWalkInPatient({
           name: editPrescriptionData.patientName || '',
@@ -184,10 +230,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           brandName: displayName,
           genericName: generic || '',
           strength,
-          dose: med.dose || '1-0-1',
-          duration: med.duration || '5 days',
-          instruction: med.instruction || 'after_meal',
-          quantity: med.quantity || 0,
+          dose: med.dose ?? '',
+          duration: med.duration ?? '',
+          instruction: med.instruction ?? '',
+          quantity: med.quantity ?? 0,
           type: medType,
           isTemporary: !originalMed && !med.medicineId
         };
@@ -322,10 +368,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       brandName: '',
       genericName: '',
       strength: '',
-      dose: '1-0-1',
-      duration: '5 days',
-      instruction: 'after_meal',
-      quantity: 10,
+      dose: '',
+      duration: '',
+      instruction: '',
+      quantity: 0,
       isTemporary: false
     };
     setMedicines([...medicines, newRow]);
@@ -338,10 +384,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       brandName: '',
       genericName: '',
       strength: '',
-      dose: '1-0-1',
-      duration: '5 days',
-      instruction: 'after_meal',
-      quantity: 10,
+      dose: '',
+      duration: '',
+      instruction: '',
+      quantity: 0,
       isTemporary: true
     };
     setMedicines([...medicines, newRow]);
@@ -451,6 +497,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (medicines.length === 0) {
       toast.error('Add at least one medicine');
       return;
@@ -502,13 +549,13 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     const payloadMedicines = medicines.map((m) => ({
       // Keep medicineId nullable so validation doesn't fail when a free-text brand is used
       medicineId: m.medicineId || '',
-      medicineName: m.brandName,
-      strength: m.strength,
-      dose: m.dose || '1-0-1',
-      duration: m.duration || '5 days',
-      instruction: (m.instruction as any) || 'after_meal',
+      medicineName: toMaxLength(m.brandName, 255),
+      strength: toMaxLength(m.strength, 255),
+      dose: toMaxLength(m.dose, 255),
+      duration: toMaxLength(m.duration, 255),
+      instruction: toMaxLength(m.instruction as any, 255),
       quantity: m.quantity || 0,
-      type: (m as any).type,
+      type: toMaxLength((m as any).type, 255),
     }));
 
     const payload = {
@@ -526,21 +573,26 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       createdBy: currentUser.name,
     };
 
-    if (editPrescriptionData?.id) {
-      await updatePrescription({ id: editPrescriptionData.id, ...payload });
-    } else {
-      const created = await addPrescription(payload);
-      if (!created) return;
-    }
+    try {
+      setIsSaving(true);
+      if (editPrescriptionData?.id) {
+        await updatePrescription({ id: editPrescriptionData.id, ...payload });
+      } else {
+        const created = await addPrescription(payload);
+        if (!created) return;
+      }
 
-    navigate('/prescriptions');
-    setSelectedPatient(null);
-    setSelectedDoctor(null);
-    setPatientSearch('');
-    setMedicines([]);
-    setDiagnosis('');
-    setAdvice('');
-    setShowPrint(false);
+      navigate('/prescriptions');
+      setSelectedPatient(null);
+      setSelectedDoctor(null);
+      setPatientSearch('');
+      setMedicines([]);
+      setDiagnosis('');
+      setAdvice('');
+      setShowPrint(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handlePrint = () => {
@@ -586,11 +638,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         <div className="flex gap-1.5">
           <button
             onClick={handleSave}
-            disabled={medicines.length === 0 || (!isWalkIn && !selectedPatient)}
+            disabled={isSaving || medicines.length === 0 || (!isWalkIn && !selectedPatient)}
             className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
           >
             <Save className="w-3 h-3" />
-            Save Prescription
+            {isSaving ? 'Saving...' : 'Save Prescription'}
           </button>
           <button
             onClick={handlePrint}
@@ -758,6 +810,50 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         {/* RIGHT COLUMN - Diagnosis */}
         <div className="bg-white border border-gray-200 rounded-lg p-1.5">
           <label className="block text-xs font-medium text-gray-700 mb-0.5">Diagnosis / Chief Complaint</label>
+          <div className="flex flex-wrap gap-1 mb-1">
+            <button
+              type="button"
+              onClick={insertDiagnosisTemplate}
+              className="px-2 py-0.5 text-[11px] rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+            >
+              Insert Template
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('H/O')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              H/O
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('C/C')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              C/C
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('BP')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              BP
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('Weight')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Weight
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('Doctor', selectedDoctor?.name || '')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Doctor
+            </button>
+          </div>
           <ReactQuill
             value={diagnosis}
             onChange={setDiagnosis}
@@ -886,7 +982,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           })}
           diagnosis={diagnosis}
           advice={advice}
-          prescriptionNumber={`RX-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`}
+          prescriptionNumber={editPrescriptionData?.prescriptionNumber || `RX-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`}
           onClose={() => setShowPrint(false)}
         />
       )}
@@ -932,6 +1028,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
   );
 
   const filteredMedicines = localMatches.length > 0 ? localMatches : remoteMedicines;
+
 
   // Fetch remote suggestions when local cache has no matches
   React.useEffect(() => {
@@ -1051,6 +1148,15 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
     }, 100);
   };
 
+  const getInstructionLabel = (value: string) => {
+    return instructionOptions.find((opt) => opt.value === value)?.label || value;
+  };
+
+  const normalizeInstructionValue = (value: string) => {
+    const match = instructionOptions.find((opt) => opt.label === value);
+    return match ? match.value : value;
+  };
+
   return (
     <tr className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
       <td className="py-0.5 px-2">
@@ -1113,9 +1219,8 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
                         }`}
                         data-index={idx}
                       >
-                        <div className="font-semibold text-xs text-gray-900 dark:text-white">{med.brandName}</div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                          {med.genericName} • {med.strength}
+                        <div className="font-semibold text-xs text-gray-900 dark:text-white">
+                          {formatMedicineDisplay(med.brandName, med.genericName, med.type, med.strength)}
                         </div>
                       </button>
                     );
@@ -1169,16 +1274,19 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
         </datalist>
       </td>
       <td className="py-0.5 px-2">
-        <select
-          value={medicine.instruction}
-          onChange={(e) => onUpdate(medicine.rowId, 'instruction', e.target.value as any)}
+        <input
+          list={`instruction-options-${medicine.rowId}`}
+          value={getInstructionLabel(medicine.instruction)}
+          onChange={(e) => onUpdate(medicine.rowId, 'instruction', normalizeInstructionValue(e.target.value) as any)}
           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           aria-label="Medicine instruction"
-        >
+          placeholder="Select/Type"
+        />
+        <datalist id={`instruction-options-${medicine.rowId}`}>
           {instructionOptions.map(inst => (
-            <option key={inst.value} value={inst.value}>{inst.label}</option>
+            <option key={inst.value} value={inst.label} />
           ))}
-        </select>
+        </datalist>
       </td>
       <td className="py-0.5 px-2">
         <input

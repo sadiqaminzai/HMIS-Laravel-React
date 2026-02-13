@@ -41,7 +41,9 @@ const mapPrescription = (p: any): Prescription => ({
   hospitalId: String(p.hospital_id),
   prescriptionNumber: p.prescription_number,
   patientId: p.patient_id ? String(p.patient_id) : null,
-  walkInPatientId: p.walk_in_patient_id ? String(p.walk_in_patient_id) : null,
+  walkInPatientId: p.walk_in_patient?.serial_no
+    ? String(p.walk_in_patient.serial_no)
+    : (p.walk_in_patient_serial_no ? String(p.walk_in_patient_serial_no) : (p.walk_in_patient_id ? String(p.walk_in_patient_id) : null)),
   isWalkIn: Boolean(p.is_walk_in),
   patientName: p.patient_name,
   patientAge: Number(p.patient_age ?? 0),
@@ -55,7 +57,7 @@ const mapPrescription = (p: any): Prescription => ({
     strength: i.strength ?? '',
     dose: i.dose ?? '',
     duration: i.duration ?? '',
-    instruction: (i.instruction ?? 'after_meal') as PrescriptionMedicine['instruction'],
+    instruction: (i.instruction ?? '') as PrescriptionMedicine['instruction'],
     quantity: Number(i.quantity ?? 0),
     type: i.type,
   })),

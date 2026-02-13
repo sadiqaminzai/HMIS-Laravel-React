@@ -20,7 +20,6 @@ import { ExpenseProvider } from './context/ExpenseContext';
 import { LandingThemeProvider } from './contexts/LandingThemeContext';
 import { LandingLanguageProvider } from './contexts/LandingLanguageContext';
 import { PrescriptionProvider } from './context/PrescriptionContext';
-import { LandingPage } from './components/LandingPage';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -73,28 +72,11 @@ function AppContent() {
   const { user, isAuthenticated, authLoading, logout } = useAuth();
   const { hospitals, getHospital, loading, refresh } = useHospitals();
   const location = useLocation();
-  const [showLanding, setShowLanding] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const token = localStorage.getItem('auth_token');
-    return !token; // skip landing if session token exists
-  });
   const [currentHospital, setCurrentHospital] = useState<Hospital | null>(hospitals[0] || null);
   const [myHospitalLoading, setMyHospitalLoading] = useState(false);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
   const [isRTL, setIsRTL] = useState(false);
-
-  // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
-  // This can happen during hot reload
-  if (isAuthenticated && !user) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const shouldShowUserLoading = isAuthenticated && !user;
 
   // Update currentHospital when hospitals context changes (e.g. color update)
   useEffect(() => {
@@ -175,13 +157,6 @@ function AppContent() {
     };
   }, [isAuthenticated, user, currentHospital]);
 
-  // Hide landing page once user is authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      setShowLanding(false);
-    }
-  }, [isAuthenticated]);
-
   // After authentication, re-fetch hospitals (initial fetch may have happened without token)
   useEffect(() => {
     if (isAuthenticated) {
@@ -250,9 +225,16 @@ function AppContent() {
     );
   }
 
-  // Show landing page first
-  if (showLanding && !isAuthenticated) {
-    return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+  // Safety check: if user is null but isAuthenticated is true (shouldn't happen normally)
+  if (shouldShowUserLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   // Show login if not authenticated
@@ -619,7 +601,7 @@ export default function App() {
                                   <ExpenseProvider>
                                     <PrescriptionProvider>
                                       <AppointmentProvider>
-                                        <BrowserRouter>
+                                        <BrowserRouter basename={import.meta.env.BASE_URL}>
                                           <Toaster richColors closeButton position="top-right" />
                                           <AppContent />
                                         </BrowserRouter>

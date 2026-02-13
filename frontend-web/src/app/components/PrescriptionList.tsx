@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Printer, Trash2, Search, Calendar, X, Edit, ArrowUp, ArrowDown, ArrowUpDown, FileText, FileSpreadsheet } from 'lucide-react';
+import { Eye, Printer, Trash2, Search, Calendar, X, Edit, ArrowUp, ArrowDown, ArrowUpDown, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, ChevronFirst, ChevronLast } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { Toast } from './Toast';
@@ -27,6 +27,43 @@ interface PrescriptionListProps {
 
 type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'medicines';
 type SortDirection = 'asc' | 'desc';
+
+const PDF_FONT_NAME = 'NotoSans';
+const PDF_FONT_FILE = 'NotoSansArabic-Regular.ttf';
+const PDF_FONT_URL = `/fonts/${PDF_FONT_FILE}`;
+let cachedPdfFont: string | null = null;
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
+const ensurePdfFont = async (doc: jsPDF) => {
+  if (cachedPdfFont) {
+    doc.addFileToVFS(PDF_FONT_FILE, cachedPdfFont);
+    doc.addFont(PDF_FONT_FILE, PDF_FONT_NAME, 'normal');
+    doc.setFont(PDF_FONT_NAME);
+    return PDF_FONT_NAME;
+  }
+
+  try {
+    const res = await fetch(PDF_FONT_URL);
+    if (!res.ok) throw new Error('font not found');
+    const buffer = await res.arrayBuffer();
+    cachedPdfFont = arrayBufferToBase64(buffer);
+    doc.addFileToVFS(PDF_FONT_FILE, cachedPdfFont);
+    doc.addFont(PDF_FONT_FILE, PDF_FONT_NAME, 'normal');
+    doc.setFont(PDF_FONT_NAME);
+    return PDF_FONT_NAME;
+  } catch {
+    doc.setFont('helvetica');
+    return 'helvetica';
+  }
+};
 
 // Helper to convert hex to RGB array for jsPDF
 const hexToRgb = (hex?: string): [number, number, number] | null => {
@@ -73,11 +110,21 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc'); // Default: newest first
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Update prescriptions when filter dependencies change
   React.useEffect(() => {
     setVisiblePrescriptions(doctorFiltered);
+    setCurrentPage(1); // Reset to page 1 when filters change
   }, [doctorFiltered]);
+
+  // Reset page when search term changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Helper function to check if a prescription was created today
   const isPrescriptionCreatedToday = (prescriptionDate: Date): boolean => {
@@ -186,6 +233,18 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     return 0;
   });
 
+  // Pagination Logic
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const paginatedPrescriptions = sortedPrescriptions.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(sortedPrescriptions.length / itemsPerPage);
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   // Export to Excel
   const exportToExcel = () => {
     const dataToExport = sortedPrescriptions.map((prescription) => ({
@@ -245,8 +304,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   };
 
   // Export Single Prescription to PDF
-  const handleExportSinglePDF = (prescription: any) => {
+  const handleExportSinglePDF = async (prescription: any) => {
     const doc = new jsPDF();
+    const pdfFont = await ensurePdfFont(doc);
     const hospitalInfo = hospitalDirectory.find(h => h.id === prescription.hospitalId) || hospital;
     const patientInfo = patients.find(p => p.id === prescription.patientId) || prescription.patient;
     
@@ -262,8 +322,10 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     
     doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(hospitalInfo.address, 105, 26, { align: 'center' });
-    doc.text(`Phone: ${hospitalInfo.phone} | Email: ${hospitalInfo.email}`, 105, 31, { align: 'center' });
+    doc.text(`Phone: ${hospitalInfo.phone} | Email: ${hospitalInfo.email}`, 105, 26, { align: 'center' });
+    doc.setFontSize(11);
+    doc.setTextColor(60);
+    doc.text('PATIENT PRESCRIPTION', 105, 33, { align: 'center' });
     
     doc.setLineWidth(0.5);
     doc.setDrawColor(200);
@@ -281,7 +343,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     doc.setFont("helvetica", "normal");
     doc.text(`Name: ${prescription.patientName}`, 14, yInfo + 6);
     doc.text(`Age/Gender: ${prescription.patientAge}Y / ${prescription.patientGender}`, 14, yInfo + 11);
-    doc.text(`Patient ID: ${patientInfo?.patientId || 'N/A'}`, 14, yInfo + 16);
+    doc.text(`Patient ID: ${patientInfo?.patientId || prescription.walkInPatientId || 'N/A'}`, 14, yInfo + 16);
 
     // Right: Doctor
     doc.setFont("helvetica", "bold");
@@ -334,8 +396,8 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         head: [['Medicine', 'Strength', 'Dose', 'Duration', 'Instruction', 'Qty']],
         body: tableBody,
         theme: 'grid',
-        headStyles: { fillColor: tableHeaderColor, textColor: 255 },
-        styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: tableHeaderColor, textColor: 255, font: pdfFont },
+      styles: { fontSize: 9, cellPadding: 3, font: pdfFont },
         columnStyles: {
             0: { cellWidth: 60 }, // Medicine Name
             1: { cellWidth: 25 },
@@ -485,8 +547,8 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {sortedPrescriptions.length > 0 ? (
-                sortedPrescriptions.map((prescription) => (
+              {paginatedPrescriptions.length > 0 ? (
+                paginatedPrescriptions.map((prescription) => (
                   <tr key={prescription.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <span className="font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">
@@ -571,10 +633,70 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           </table>
         </div>
         
-        {/* Footer with totals */}
-        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-          <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredPrescriptions.length}</span></span>
-          <span>Showing {sortedPrescriptions.length} of {visiblePrescriptions.length} prescriptions</span>
+        {/* Footer with totals and pagination */}
+        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
+          <div className="flex items-center gap-4">
+             <span>
+              Showing <span className="font-semibold text-gray-900 dark:text-white">{indexOfFirstItem + 1}</span> to <span className="font-semibold text-gray-900 dark:text-white">{Math.min(indexOfLastItem, sortedPrescriptions.length)}</span> of <span className="font-semibold text-gray-900 dark:text-white">{sortedPrescriptions.length}</span> results
+             </span>
+             <div className="flex items-center gap-2">
+               <span>Rows per page:</span>
+               <select 
+                 value={itemsPerPage} 
+                 onChange={(e) => {
+                   setItemsPerPage(Number(e.target.value));
+                   setCurrentPage(1);
+                 }}
+                 className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+               >
+                 <option value={10}>10</option>
+                 <option value={20}>20</option>
+                 <option value={50}>50</option>
+                 <option value={100}>100</option>
+               </select>
+             </div>
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handlePageChange(1)}
+              disabled={currentPage === 1}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="First Page"
+            >
+              <ChevronFirst className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1 mx-2">
+              <span className="font-medium text-gray-900 dark:text-white">Page {currentPage}</span>
+              <span>of {totalPages}</span>
+            </div>
+
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handlePageChange(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Last Page"
+            >
+              <ChevronLast className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 

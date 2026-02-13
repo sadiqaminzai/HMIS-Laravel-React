@@ -209,7 +209,7 @@ export interface PrescriptionMedicine {
   strength: string;
   dose: string;
   duration: string;
-  instruction: 'before_meal' | 'after_meal' | 'with_meal' | 'empty_stomach';
+  instruction: 'before_meal' | 'after_meal' | 'with_meal' | 'empty_stomach' | '';
   quantity: number;
   type?: string; // e.g. Tablet, Syrup, Injection
 }

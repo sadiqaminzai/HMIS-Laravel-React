@@ -4,6 +4,15 @@ import api from '../../../api/axios';
 import { PrescriptionPrint } from '../PrescriptionPrint';
 import { Doctor, Hospital, Patient, PrescriptionMedicine } from '../../types';
 
+const resolveLogoUrl = (path?: string | null): string => {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace('/api', '');
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const withStorage = normalized.startsWith('/storage/') ? normalized : `/storage${normalized}`;
+  return `${base}${withStorage}`;
+};
+
 interface VerificationResponse {
   prescription: any;
   hospital: any;
@@ -29,7 +38,7 @@ const mapHospital = (h: any): Hospital => ({
   licenseIssueDate: h.license_issue_date ?? '',
   licenseExpiryDate: h.license_expiry_date ?? '',
   status: (h.status ?? 'active') as Hospital['status'],
-  logo: h.logo_url ?? h.logo_path ?? '',
+  logo: resolveLogoUrl(h.logo_url ?? h.logo_path ?? ''),
   brandColor: h.brand_color ?? '#2563eb',
   createdAt: h.created_at ? new Date(h.created_at) : undefined,
 });

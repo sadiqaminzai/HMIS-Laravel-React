@@ -18,7 +18,7 @@ const PatientContext = createContext<PatientContextType | undefined>(undefined);
 const mapPatient = (p: any): Patient => ({
   id: String(p.id),
   hospitalId: String(p.hospital_id),
-  patientId: p.patient_id,
+  patientId: p.patient_id ?? '',
   name: p.name,
   age: Number(p.age ?? 0),
   gender: (p.gender ?? 'other') as Patient['gender'],
