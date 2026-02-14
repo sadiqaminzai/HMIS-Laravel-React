@@ -23,6 +23,7 @@ interface Permission {
 export function PermissionManagement({ hospital, userRole }: PermissionManagementProps) {
   const { hasPermission } = useAuth();
   const canManage = hasPermission('manage_permissions');
+  const canImport = hasPermission('import_permissions') || canManage;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -32,6 +33,9 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   const [selectedPermission, setSelectedPermission] = useState<Permission | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [importKey, setImportKey] = useState(0);
   const [formData, setFormData] = useState({
     name: '',
     displayName: '',
@@ -184,6 +188,65 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
       });
   };
 
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!canImport) {
+      toast.warning('You are not authorized to import permissions');
+      return;
+    }
+
+    const formPayload = new FormData();
+    formPayload.append('file', file);
+
+    setImporting(true);
+    try {
+      const { data } = await api.post('/permissions/import', formPayload, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const created = Number(data?.created ?? 0);
+      const skipped = Number(data?.skipped ?? 0);
+      toast.success(`Import complete: ${created} created, ${skipped} skipped.`);
+      await loadPermissions();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to import permissions');
+    } finally {
+      setImporting(false);
+      setImportKey((previous) => previous + 1);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    if (!canImport && !hasPermission('view_permissions')) {
+      toast.warning('You are not authorized to download template');
+      return;
+    }
+
+    setDownloadingTemplate(true);
+    try {
+      const response = await api.get('/permissions/template-download', {
+        responseType: 'blob',
+      });
+
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8;' }));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', 'PERMISSIONS_IMPORT_TEMPLATE_GROUPED.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Template file not available on server');
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -191,14 +254,38 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Permission Management</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Define and manage system permissions</p>
         </div>
-        {canManage && (
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Permission
-          </button>
+        {(canManage || canImport || hasPermission('view_permissions')) && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadTemplate}
+              disabled={downloadingTemplate}
+              className="px-3 py-1.5 rounded-lg transition-colors text-xs bg-gray-600 text-white hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {downloadingTemplate ? 'Downloading...' : 'Download Template'}
+            </button>
+            {canImport && (
+              <label className={`px-3 py-1.5 rounded-lg transition-colors text-xs cursor-pointer ${importing ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>
+                {importing ? 'Importing...' : 'Upload Excel/CSV'}
+                <input
+                  key={importKey}
+                  type="file"
+                  accept=".xlsx,.csv,.txt"
+                  className="hidden"
+                  onChange={handleImportFile}
+                  disabled={importing}
+                />
+              </label>
+            )}
+            {canManage && (
+              <button
+                onClick={handleAdd}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Permission
+              </button>
+            )}
+          </div>
         )}
       </div>
       {/* Search and Filter */}
