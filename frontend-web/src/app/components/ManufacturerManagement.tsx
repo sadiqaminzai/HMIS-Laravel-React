@@ -22,7 +22,10 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
   const { hospitals } = useHospitals();
   const { manufacturers, addManufacturer, updateManufacturer, deleteManufacturer, loading } = useManufacturers();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_manufacturers');
+  const canAdd = hasPermission('add_manufacturers') || hasPermission('manage_manufacturers');
+  const canEdit = hasPermission('edit_manufacturers') || hasPermission('manage_manufacturers');
+  const canDelete = hasPermission('delete_manufacturers') || hasPermission('manage_manufacturers');
+  const canExport = hasPermission('export_manufacturers') || hasPermission('manage_manufacturers');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -270,23 +273,27 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
@@ -374,7 +381,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button
                             onClick={() => handleEdit(manufacturer)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -383,7 +390,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button
                             onClick={() => handleDelete(manufacturer)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"

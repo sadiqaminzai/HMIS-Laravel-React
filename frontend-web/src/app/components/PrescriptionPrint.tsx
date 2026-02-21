@@ -1,10 +1,12 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
 import { X, Phone, Mail, Printer } from 'lucide-react';
 import { Hospital, Patient, Doctor, PrescriptionMedicine } from '../types';
 import { instructionOptions } from '../data/mockData';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
+import { useSettings } from '../context/SettingsContext';
 
 // Extended type for medicine with additional display fields
 type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
@@ -48,6 +50,21 @@ export function PrescriptionPrint({
   updatedAt,
   updatedBy
 }: PrescriptionPrintProps) {
+  const componentRef = useRef<HTMLDivElement>(null);
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
+
+  useEffect(() => {
+    if (!hospital?.id) return;
+    loadHospitalSetting(hospital.id).catch(() => {
+      // Use fallback defaults from SettingsContext when load fails
+    });
+  }, [hospital?.id, loadHospitalSetting]);
+
+  const printAssetSettings = getPrescriptionPrintAssetSettings(hospital.id);
+  const logoWidthPx = printAssetSettings.logoWidth || 176;
+  const logoHeightPx = printAssetSettings.logoHeight || 160;
+  const signatureWidthPx = printAssetSettings.signatureWidth || 200;
+  const signatureHeightPx = printAssetSettings.signatureHeight || 112;
 
   const resolveAssetUrl = (path?: string | null): string => {
     if (!path) return '';
@@ -86,13 +103,284 @@ export function PrescriptionPrint({
     return displayName.replace(/\s+/g, ' ').trim();
   };
 
-  const handlePrint = () => {
-    window.print();
+  const waitForPrintImages = async () => {
+    const root = componentRef.current;
+    if (!root) return;
+
+    const images = Array.from(root.querySelectorAll('img'));
+    if (!images.length) return;
+
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) {
+              resolve();
+              return;
+            }
+
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          })
+      )
+    );
   };
+
+  const pageStyle = `
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    body {
+      visibility: hidden;
+      background-color: white;
+      margin: 0;
+      padding: 0;
+    }
+
+    #prescription-print-content {
+      visibility: visible;
+      position: relative;
+      width: 100%;
+      min-height: auto;
+      height: auto;
+      padding: 14mm !important;
+      padding-bottom: 48mm !important;
+      margin: 0;
+      background: white;
+      box-sizing: border-box !important;
+      z-index: 9999;
+      overflow: visible;
+      display: block !important;
+    }
+
+    #prescription-print-content .prescribed-medicines-header,
+    #prescription-print-content .prescribed-medicines-count {
+      color: #ffffff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    #prescription-print-content * {
+      visibility: visible;
+    }
+
+    #print-footer {
+      visibility: visible !important;
+      display: block !important;
+      position: fixed !important;
+      left: 14mm;
+      right: 14mm;
+      bottom: 16mm;
+      background: white;
+      z-index: 10000;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      page-break-before: avoid;
+    }
+
+    #prescription-print-content .grid.grid-cols-1.sm\\:grid-cols-2 {
+      margin-bottom: 12px !important;
+      gap: 10px !important;
+    }
+
+    #prescription-print-content .grid.grid-cols-1.sm\\:grid-cols-2 > div {
+      padding: 10px !important;
+    }
+
+    #prescription-print-content table th,
+    #prescription-print-content table td {
+      padding-top: 2px !important;
+      padding-bottom: 2px !important;
+    }
+
+    #prescription-print-content thead {
+      display: table-header-group;
+    }
+
+    #prescription-print-content tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    #print-signatures {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: flex-end !important;
+      width: 100% !important;
+      visibility: visible !important;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      padding-top: 1mm !important;
+      gap: 8px !important;
+    }
+
+    #prescription-print-content .print-content-grow {
+      display: block !important;
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+
+    #prescription-print-content .print-content-grow > div {
+      page-break-inside: auto;
+      break-inside: auto;
+    }
+
+    #prescription-print-content .print-content-grow > div:first-child {
+      float: left !important;
+      width: 30% !important;
+      max-width: 30% !important;
+      padding-right: 12px !important;
+    }
+
+    #prescription-print-content .print-content-grow > div:last-child {
+      float: right !important;
+      width: 70% !important;
+      max-width: 70% !important;
+      margin-bottom: 4mm !important;
+    }
+
+    #prescription-print-content .print-content-grow::after {
+      content: "";
+      display: block;
+      clear: both;
+    }
+
+    #print-footer svg {
+      visibility: visible !important;
+      display: block !important;
+      width: 64px !important;
+      height: 64px !important;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    #print-footer img {
+      visibility: visible !important;
+      display: block !important;
+      max-height: none !important;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    #print-footer .text-center.mt-8.pt-4 {
+      margin-top: 2px !important;
+      padding-top: 2px !important;
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+
+    #print-footer p {
+      margin: 0 !important;
+      line-height: 1.1 !important;
+    }
+
+    #print-footer .text-center.mt-8.pt-4 p + p {
+      margin-top: 1px !important;
+    }
+
+    #prescription-print-content .print-page-break {
+      break-before: page;
+      page-break-before: always;
+      margin-top: 8mm !important;
+    }
+
+    #prescription-print-content .rx-print-logo {
+      width: ${logoWidthPx}px !important;
+      height: ${logoHeightPx}px !important;
+      object-fit: contain !important;
+    }
+
+    #prescription-print-content .rx-print-signature {
+      width: ${signatureWidthPx}px !important;
+      height: ${signatureHeightPx}px !important;
+      object-fit: contain !important;
+    }
+
+    .rx-info-grid > div {
+      padding: 2px 4px;
+    }
+
+    .print-hide {
+      display: none !important;
+      visibility: hidden !important;
+    }
+  `;
+
+  const handlePrint = useReactToPrint({
+    contentRef: componentRef,
+    onBeforePrint: waitForPrintImages,
+    pageStyle,
+  });
 
   const getInstructionLabel = (value: string) => {
     return instructionOptions.find(opt => opt.value === value)?.label || value;
   };
+
+  const FIRST_PAGE_MEDICINE_LIMIT = 17;
+  const firstPageMedicines = medicines.slice(0, FIRST_PAGE_MEDICINE_LIMIT);
+  const remainingMedicines = medicines.slice(FIRST_PAGE_MEDICINE_LIMIT);
+
+  const renderMedicineRows = (rows: ExtendedPrescriptionMedicine[], startIndex = 0) =>
+    rows.map((med, index) => (
+      <tr key={`${startIndex}-${index}`} className={(startIndex + index) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+        <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{startIndex + index + 1}</td>
+        <td className="px-2 py-1 border-b border-gray-100 font-medium break-words">
+          {formatMedicineForPrint(med)}
+        </td>
+        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">
+          <span className="inline-block px-1 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-semibold border border-blue-100">
+            {med.dose}
+          </span>
+        </td>
+        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">{med.duration}</td>
+        <td
+          className="px-2 py-1 border-b border-gray-100 text-gray-600 whitespace-pre-wrap break-words max-w-[140px]"
+          title={getInstructionLabel(med.instruction)}
+        >
+          {getInstructionLabel(med.instruction)}
+        </td>
+        <td className="px-2 py-1 border-b border-gray-100 text-center font-medium">{med.quantity ?? '-'}</td>
+      </tr>
+    ));
+
+  const renderHospitalHeader = (extraClassName = 'mb-2') => (
+    <div className={`flex flex-row justify-between items-center gap-3 border-b-4 border-blue-600 pb-1 ${extraClassName}`}>
+      <div className="flex-1">
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900 mb-1">{hospital.name}</h1>
+        <div className="text-xs sm:text-sm text-gray-600 space-y-1">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <div className="flex items-center gap-2">
+              <Phone className="w-4 h-4 text-blue-600" />
+              {hospital.phone}
+            </div>
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-blue-600" />
+              {hospital.email}
+            </div>
+          </div>
+        </div>
+        <div className="mt-1 text-blue-800 font-semibold text-[10px] sm:text-xs uppercase tracking-wide">
+          Patient Prescription
+        </div>
+      </div>
+      <div className="flex flex-col items-end justify-start shrink-0">
+        {hospital.logo ? (
+          <img
+            src={resolveAssetUrl(hospital.logo)}
+            alt="Hospital Logo"
+            className="rx-print-logo max-h-32 sm:max-h-40 h-auto w-auto object-contain"
+            loading="eager"
+            decoding="sync"
+          />
+        ) : (
+          <span className="text-4xl sm:text-5xl font-bold text-blue-600 leading-none">℞</span>
+        )}
+      </div>
+    </div>
+  );
 
   // QR Data
   const qrData = JSON.stringify({
@@ -117,106 +405,6 @@ export function PrescriptionPrint({
       {/* Robust Print Styles */}
       <style>
         {`
-          @media print {
-            @page {
-              size: A4;
-              margin: 0;
-            }
-
-            body {
-              visibility: hidden;
-              background-color: white;
-              margin: 0;
-              padding: 0;
-            }
-
-            /* Reset specific print container */
-            #prescription-print-content {
-              visibility: visible;
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 210mm;
-              min-height: 297mm; /* Exact A4 Height */
-              height: auto;
-              padding: 20mm !important;
-              margin: 0;
-              background: white;
-              box-sizing: border-box !important; /* CRITICAL FIX */
-              z-index: 9999;
-              overflow: visible;
-
-              /* Layout */
-              display: flex !important;
-              flex-direction: column;
-              justify-content: space-between;
-            }
-
-
-            /* Force prescribed medicines header text to white when printing */
-            #prescription-print-content .prescribed-medicines-header,
-            #prescription-print-content .prescribed-medicines-count {
-              color: #ffffff !important;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-
-            /* Ensure all children are visible */
-            #prescription-print-content * {
-              visibility: visible;
-            }
-
-            /* Content Area - allow it to take available space */
-            #prescription-print-content > .flex-grow {
-              flex-grow: 1;
-              overflow: visible;
-            }
-
-            /* Footer Positioning - QR Code and Signature */
-            #print-footer {
-              visibility: visible !important;
-              display: block !important;
-              width: 100%;
-              margin-top: auto !important;
-              background: white;
-              z-index: 10000;
-              break-inside: avoid;
-              page-break-inside: avoid;
-            }
-
-            #print-signatures {
-               display: flex !important;
-               justify-content: space-between !important;
-               align-items: flex-end !important;
-               width: 100% !important;
-               visibility: visible !important;
-               page-break-inside: avoid;
-            }
-
-            /* Ensure QR Code prints properly */
-            #print-footer svg {
-              visibility: visible !important;
-              display: block !important;
-              print-color-adjust: exact;
-              -webkit-print-color-adjust: exact;
-            }
-
-            /* Ensure signature image prints */
-            #print-footer img {
-              visibility: visible !important;
-              display: block !important;
-              max-height: 110px;
-              print-color-adjust: exact;
-              -webkit-print-color-adjust: exact;
-            }
-
-            /* Helper to hide UI elements */
-            .print-hide {
-              display: none !important;
-              visibility: hidden !important;
-            }
-          }
-
           /* Quill content spacing for diagnosis/advice (screen + print) */
           .rx-quill-content,
           .rx-quill-content p {
@@ -278,43 +466,17 @@ export function PrescriptionPrint({
         )}
 
         {/* Printable Content */}
-        <div id="prescription-print-content" className="p-4 sm:p-8 bg-white text-gray-900 flex flex-col min-h-full">
+        <div id="prescription-print-content" ref={componentRef} className="p-4 sm:p-8 bg-white text-gray-900 flex flex-col min-h-full">
 
           {/* Hospital Header */}
-          <div className="flex flex-row justify-between items-center gap-3 border-b-4 border-blue-600 pb-1 mb-2">
-            <div className="flex-1">
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 mb-1">{hospital.name}</h1>
-              <div className="text-xs sm:text-sm text-gray-600 space-y-1">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-blue-600" />
-                    {hospital.phone}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-blue-600" />
-                    {hospital.email}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-1 text-blue-800 font-semibold text-[10px] sm:text-xs uppercase tracking-wide">
-                Patient Prescription
-              </div>
-            </div>
-            <div className="flex flex-col items-end justify-start w-44 shrink-0">
-              {hospital.logo ? (
-                <img src={resolveAssetUrl(hospital.logo)} alt="Hospital Logo" className="h-32 sm:h-40 w-auto object-contain" />
-              ) : (
-                <span className="text-4xl sm:text-5xl font-bold text-blue-600 leading-none">℞</span>
-              )}
-            </div>
-          </div>
+          {renderHospitalHeader('mb-2')}
 
           {/* Info Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mt-2 mb-6 sm:mb-8">
             {/* Patient Info */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Patient Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-y-2 text-sm rx-info-grid">
                 <div>
                   <span className="block text-xs font-bold text-blue-900">Name</span>
                   <span className="font-semibold text-gray-900">{patient.name}</span>
@@ -337,7 +499,7 @@ export function PrescriptionPrint({
             {/* Doctor Info */}
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-2 mb-3">Doctor Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-y-2 text-sm rx-info-grid">
                 <div>
                   <span className="block text-xs font-bold text-blue-900">Doctor Name</span>
                   <span className="font-semibold text-gray-900">{doctor.name}</span>
@@ -359,7 +521,7 @@ export function PrescriptionPrint({
           </div>
 
           {/* Main Body Layout */}
-          <div className="flex flex-col md:flex-row print:flex-row gap-4 lg:gap-6 mb-4 flex-grow print-content-grow">
+          <div className="flex flex-col md:flex-row print:flex-row gap-2 lg:gap-3 mb-4 flex-grow print-content-grow">
             {/* Left Column: Diagnosis & Advice (30%) */}
             <div className="w-full md:w-[30%] print:w-[30%] flex flex-col gap-4 lg:gap-6 border-b md:border-b-0 print:border-b-0 md:border-r print:border-r border-gray-200 pb-4 md:pb-0 print:pb-0 lg:pr-6 print:pr-6">
 
@@ -411,33 +573,45 @@ export function PrescriptionPrint({
                     </tr>
                   </thead>
                   <tbody className="text-[10px] text-gray-700">
-                    {medicines.map((med, index) => (
-                      <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                        <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{index + 1}</td>
-                        <td className="px-2 py-1 border-b border-gray-100 font-medium break-words">
-                          {formatMedicineForPrint(med)}
-                        </td>
-                        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">
-                          <span className="inline-block px-1 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-semibold border border-blue-100">
-                            {med.dose}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">{med.duration}</td>
-                        <td
-                          className="px-2 py-1 border-b border-gray-100 text-gray-600 whitespace-pre-wrap break-words max-w-[140px]"
-                          title={getInstructionLabel(med.instruction)}
-                        >
-                          {getInstructionLabel(med.instruction)}
-                        </td>
-                        <td className="px-2 py-1 border-b border-gray-100 text-center font-medium">{med.quantity ?? '-'}</td>
-                      </tr>
-                    ))}
+                    {renderMedicineRows(firstPageMedicines)}
                     {/* Fill empty rows to maintain layout consistency if needed, though flex container handles height */}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
+
+          {remainingMedicines.length > 0 && (
+            <div className="print-page-break">
+              {renderHospitalHeader('mb-3')}
+
+              <div className="mb-4">
+                <div
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded-t-lg flex justify-between items-center mb-0"
+                  style={{ backgroundColor: hospital.brandColor }}
+                >
+                  <h3 className="font-bold text-xs uppercase tracking-wide prescribed-medicines-header">Prescribed Medicines (Continued)</h3>
+                </div>
+                <div className="overflow-x-auto border-x border-b border-gray-200">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-8">#</th>
+                        <th className="px-2 py-1 text-left font-semibold border-b border-gray-200">Medicine Name</th>
+                        <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-16">Dosage</th>
+                        <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-16">Duration</th>
+                        <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-20">Instr.</th>
+                        <th className="px-2 py-1 text-center font-semibold border-b border-gray-200 w-10">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[10px] text-gray-700">
+                      {renderMedicineRows(remainingMedicines, FIRST_PAGE_MEDICINE_LIMIT)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Footer Section */}
           <div id="print-footer" className="mt-auto">
@@ -453,7 +627,13 @@ export function PrescriptionPrint({
               {/* Signature */}
               <div className="text-center min-w-[200px]">
                 {doctor.signature ? (
-                  <img src={resolveAssetUrl(doctor.signature)} alt="Signature" className="h-28 mx-auto mb-1 object-contain" />
+                  <img
+                    src={resolveAssetUrl(doctor.signature)}
+                    alt="Signature"
+                    className="rx-print-signature max-h-28 h-auto mx-auto mb-1 object-contain"
+                    loading="eager"
+                    decoding="sync"
+                  />
                 ) : (
                   <div className="h-28 mb-1"></div>
                 )}

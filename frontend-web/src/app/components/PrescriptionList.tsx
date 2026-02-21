@@ -18,6 +18,7 @@ import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useMedicines } from '../context/MedicineContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 
 interface PrescriptionListProps {
   hospital: Hospital;
@@ -76,9 +77,42 @@ const hexToRgb = (hex?: string): [number, number, number] | null => {
   ] : null;
 };
 
+// Helper: Resolve asset URL (from PrescriptionPrint)
+const resolveAssetUrl = (path?: string | null): string => {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace('/api', '');
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const withStorage = normalized.startsWith('/storage/') ? normalized : `/storage${normalized}`;
+  return `${base}${withStorage}`;
+};
+
+// Helper: Load image as Base64 for PDF
+const loadImage = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+};
+
 export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
   const { prescriptions, deletePrescription } = usePrescriptions();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -138,12 +172,16 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   };
 
   const canManagePrescriptions = hasPermission('manage_prescriptions');
-  const canCreatePrescriptions = hasPermission('create_prescription') || canManagePrescriptions;
+  const canCreatePrescriptions = hasPermission('create_prescription') || hasPermission('add_prescriptions') || canManagePrescriptions;
+  const canEditPrescriptions = hasPermission('edit_prescriptions') || canManagePrescriptions;
+  const canDeletePrescriptions = hasPermission('delete_prescriptions') || canManagePrescriptions;
+  const canExportPrescriptions = hasPermission('export_prescriptions') || canManagePrescriptions;
+  const canPrintPrescriptions = hasPermission('print_prescriptions') || canManagePrescriptions;
 
   // Check if user can edit a prescription
   const canEditPrescription = (prescription: any): boolean => {
     // Manage permission allows editing any prescription
-    if (canManagePrescriptions) {
+    if (canEditPrescriptions) {
       return true;
     }
     
@@ -303,87 +341,310 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     doc.save('Prescriptions_Report.pdf');
   };
 
-  // Export Single Prescription to PDF
+  // Helper to get instruction label
+  const getInstructionLabel = (value: string) => {
+    return instructionOptions.find(opt => opt.value === value)?.label || value;
+  };
+
+  const formatMedicineForPrint = (med: any, inventory: any[]) => {
+    const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
+    
+    // Fallback values
+    const brandName = med.brandName || med.medicineName || '';
+    const genericName = med.genericName || originalMed?.genericName || '';
+    const type = (med.type || originalMed?.type || '').trim();
+    const strength = (med.strength || '').trim();
+
+    // Start with type
+    let displayName = type;
+
+    // Add Brand Name
+    if (brandName && !displayName.toLowerCase().includes(brandName.toLowerCase())) {
+        displayName += ` ${brandName}`;
+    }
+
+    // Add generic name in parentheses
+    if (genericName && !displayName.toLowerCase().includes(genericName.toLowerCase())) {
+      displayName += ` (${genericName})`;
+    }
+
+    // Add strength
+    if (strength && !displayName.toLowerCase().includes(strength.toLowerCase())) {
+      displayName += ` ${strength}`;
+    }
+
+    return displayName.replace(/\s+/g, ' ').trim();
+  };
+
+  // Export Single Prescription to PDF (Refined Design)
   const handleExportSinglePDF = async (prescription: any) => {
     const doc = new jsPDF();
     const pdfFont = await ensurePdfFont(doc);
     const hospitalInfo = hospitalDirectory.find(h => h.id === prescription.hospitalId) || hospital;
     const patientInfo = patients.find(p => p.id === prescription.patientId) || prescription.patient;
+    const doctorInfo = doctors.find(d => d.id === prescription.doctorId) || prescription.doctor;
     
-    // Get brand color or use defaults
-    const brandRgb = hexToRgb(hospitalInfo.brandColor);
-    const primaryColor = brandRgb || [41, 128, 185]; // Default Header Blue
-    const tableHeaderColor = brandRgb || [66, 139, 202]; // Default Table Blue
+    // Load Settings
+    await loadHospitalSetting(hospitalInfo.id);
+    const printAssetSettings = getPrescriptionPrintAssetSettings(hospitalInfo.id);
+
+    // Load Images
+    const logoUrl = resolveAssetUrl(hospitalInfo.logo);
+    const signatureUrl = resolveAssetUrl(doctorInfo?.signature);
+    const logoBase64 = logoUrl ? await loadImage(logoUrl) : null;
+    const signatureBase64 = signatureUrl ? await loadImage(signatureUrl) : null;
+
+    // Colors
+    const brandColor = hospitalInfo.brandColor || '#3b82f6'; 
+    const brandRgb = hexToRgb(brandColor) || [59, 130, 246];
+    
+    // Convert RGB array to hex string for jsPDF
+    const brandHex = `#${((1 << 24) + (brandRgb[0] << 16) + (brandRgb[1] << 8) + brandRgb[2]).toString(16).slice(1)}`;
+
+    const gray50 = '#f9fafb';
+    const gray200 = '#e5e7eb';
+    const blue50 = '#eff6ff';
+    const blue200 = '#bfdbfe';
+    const textGray900 = '#111827';
+    const textGray600 = '#4b5563';
+    const textBlue900 = '#1e3a8a';
+
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 14;
+    const usableWidth = pageWidth - (margin * 2);
 
     // --- Header ---
+    let currentY = 15;
+
+    // Hospital Name (Left)
+    doc.setFont(pdfFont, "bold");
     doc.setFontSize(22);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(hospitalInfo.name, 105, 20, { align: 'center' });
+    doc.setTextColor(textGray900);
+    doc.text(hospitalInfo.name, margin, currentY);
     
+    // Logo (Right)
+    const logoSize = Math.min(printAssetSettings.logoHeight || 20, 25);
+    const logoX = pageWidth - margin - logoSize;
+    const logoY = currentY - 10;
+    
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', logoX, logoY, printAssetSettings.logoWidth || logoSize, printAssetSettings.logoHeight || logoSize, undefined, 'FAST');
+    } else {
+      // Fallback Rx
+      doc.setFontSize(30);
+      doc.setTextColor(brandHex);
+      doc.text("Rx", pageWidth - margin - 15, currentY + 5);
+    }
+
+    currentY += 8;
+
+    // Contact Info (Phone | Email)
+    doc.setFont(pdfFont, "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(textGray600);
+    const contactText = [];
+    if (hospitalInfo.phone) contactText.push(`Phone: ${hospitalInfo.phone}`);
+    if (hospitalInfo.email) contactText.push(`Email: ${hospitalInfo.email}`);
+    doc.text(contactText.join('   '), margin, currentY);
+
+    currentY += 8;
+    
+    // "PATIENT PRESCRIPTION" Label
+    doc.setFont(pdfFont, "bold");
     doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Phone: ${hospitalInfo.phone} | Email: ${hospitalInfo.email}`, 105, 26, { align: 'center' });
-    doc.setFontSize(11);
-    doc.setTextColor(60);
-    doc.text('PATIENT PRESCRIPTION', 105, 33, { align: 'center' });
+    doc.setTextColor(brandHex); 
+    doc.text("PATIENT PRESCRIPTION", margin, currentY);
+
+    currentY += 3;
     
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(200);
-    doc.line(14, 36, 196, 36);
+    // Separator Line
+    doc.setDrawColor(brandHex);
+    doc.setLineWidth(0.8);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
 
-    // --- Patient & Doctor Info ---
-    doc.setFontSize(10);
-    doc.setTextColor(0);
+    currentY += 10;
+
+    // --- Info Cards (Side-by-Side) ---
+    const cardGap = 6;
+    const cardWidth = (usableWidth - cardGap) / 2;
+    const cardHeight = 42; // Increased slightly for spacing
+
+    // Patient Card Background
+    doc.setFillColor(gray50);
+    doc.setDrawColor(gray200);
+    doc.setLineWidth(0.1);
+    doc.roundedRect(margin, currentY, cardWidth, cardHeight, 1, 1, 'FD');
+
+    // Doctor Card Background
+    doc.setFillColor(blue50);
+    doc.setDrawColor(blue200);
+    doc.roundedRect(margin + cardWidth + cardGap, currentY, cardWidth, cardHeight, 1, 1, 'FD');
+
+    // Headers
+    const pX = margin + 4;
+    const pY = currentY + 7;
+    const dX = margin + cardWidth + cardGap + 4;
+    const dY = currentY + 7;
+
+    doc.setFontSize(8);
+    doc.setFont(pdfFont, "bold");
+    doc.setTextColor(textBlue900);
     
-    const yInfo = 45;
+    doc.text("PATIENT INFORMATION", pX, pY);
+    doc.setDrawColor(gray200);
+    doc.line(pX, pY + 2, pX + cardWidth - 8, pY + 2);
+
+    doc.text("DOCTOR INFORMATION", dX, dY);
+    doc.setDrawColor(blue200);
+    doc.line(dX, dY + 2, dX + cardWidth - 8, dY + 2);
+
+    // Fields Helper
+    const drawField = (label: string, value: string, x: number, y: number, maxWidth?: number) => {
+        doc.setFont(pdfFont, "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(textBlue900);
+        doc.text(label, x, y);
+        
+        doc.setFont(pdfFont, "normal");
+        doc.setFontSize(9); // Increased value size slightly
+        doc.setTextColor(textGray900);
+        
+        // Handle wrapping if maxWidth provided
+        if (maxWidth) {
+             const lines = doc.splitTextToSize(value, maxWidth);
+             doc.text(lines, x, y + 4);
+        } else {
+             doc.text(value, x, y + 4);
+        }
+    };
+
+    // Patient Data (Grid)
+    const row1 = pY + 10;
+    const row2 = pY + 22;
+    const pCol2 = pX + (cardWidth / 2);
+
+    drawField("Name", prescription.patientName, pX, row1);
+    drawField("Patient ID", patientInfo?.patientId || prescription.walkInPatientId || '-', pCol2, row1);
+    drawField("Age / Gender", `${prescription.patientAge} Y / ${prescription.patientGender}`, pX, row2);
+    drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row2);
+
+    // Doctor Data (Grid + Wrap)
+    const dCol2 = dX + (cardWidth / 2);
     
-    // Left: Patient
-    doc.setFont("helvetica", "bold");
-    doc.text("Patient Details", 14, yInfo);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Name: ${prescription.patientName}`, 14, yInfo + 6);
-    doc.text(`Age/Gender: ${prescription.patientAge}Y / ${prescription.patientGender}`, 14, yInfo + 11);
-    doc.text(`Patient ID: ${patientInfo?.patientId || prescription.walkInPatientId || 'N/A'}`, 14, yInfo + 16);
+    drawField("Doctor Name", prescription.doctorName, dX, row1);
+    drawField("Reg. No", doctorInfo?.registrationNumber || '-', dCol2, row1);
+    
+    // Specialization (Wrapped)
+    // Max width is column width minus padding
+    const specMaxWidth = (cardWidth / 2) - 4; 
+    drawField("Specialization", doctorInfo?.specialization || '-', dX, row2, (cardWidth - 8)); // Use full width for spec if needed or half?
+    // Actually spec often long, lets give it full width on next row or keep in grid but wrap
+    // Screenshot shows spec on bottom left. 
+    // Doctor Name | Reg No
+    // Spec | Rx #
+    
+    // Re-check screenshot:
+    // Doctor Name (Row1 Col1) | Reg No (Row1 Col2)
+    // Specialization (Row2 Col1) | Rx # (Row2 Col2)
+    // Spec wraps badly. 
+    
+    // We will use wrapping for specialization column
+    drawField("Specialization", doctorInfo?.specialization || '-', dX, row2, specMaxWidth);
+    
+    drawField("Rx #", prescription.prescriptionNumber, dCol2, row2);
 
-    // Right: Doctor
-    doc.setFont("helvetica", "bold");
-    doc.text("Doctor Details", 120, yInfo);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Dr. ${prescription.doctorName}`, 120, yInfo + 6);
-    doc.text(`Rx #: ${prescription.prescriptionNumber}`, 120, yInfo + 11);
-    doc.text(`Date: ${formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType)}`, 120, yInfo + 16);
+    currentY += cardHeight + 12;
 
-    let currentY = yInfo + 25;
+    // --- Body Columns ---
+    const leftWidth = usableWidth * 0.3;
+    const rightWidth = usableWidth * 0.7;
+    const colGap = 8;
+    
+    let leftY = currentY;
+    let rightY = currentY;
 
-    // --- Diagnosis ---
     const stripHtml = (html: string) => {
        const tmp = document.createElement("DIV");
        tmp.innerHTML = html;
        return tmp.textContent || tmp.innerText || "";
     };
 
-    if (prescription.diagnosis) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Diagnosis:", 14, currentY);
-        doc.setFont("helvetica", "normal");
+    // --- Left Col: Clinical Record ---
+    // "CR" Large Blue Serif
+    doc.setFont("times", "bold"); // Serif
+    doc.setFontSize(14);
+    doc.setTextColor(brandHex);
+    doc.text("CR", margin, leftY);
+    
+    const crWidth = doc.getTextWidth("CR");
+    
+    doc.setFont(pdfFont, "bold"); // Sans
+    doc.setFontSize(9);
+    doc.setTextColor(textGray600);
+    doc.text("CLINICAL RECORD", margin + crWidth + 4, leftY);
+
+    leftY += 3;
+    doc.setDrawColor(gray200);
+    doc.setLineWidth(0.5);
+    doc.line(margin, leftY, margin + leftWidth - 4, leftY);
+    leftY += 6;
+
+    // Diagnosis Content
+    const diagnosisText = prescription.diagnosis ? stripHtml(prescription.diagnosis) : "No clinical record";
+    doc.setFont(pdfFont, "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(prescription.diagnosis ? textGray900 : '#9ca3af');
+    const diagLines = doc.splitTextToSize(diagnosisText, leftWidth - 4);
+    doc.text(diagLines, margin, leftY);
+    leftY += (diagLines.length * 5) + 12;
+
+    // --- Left Col: Advice ---
+    if (prescription.advice) {
+        // Warning Icon + NOTE
+        doc.setFont(pdfFont, "bold");
+        doc.setFontSize(11);
+        doc.setTextColor('#d97706'); // Amber
+        doc.text("!", margin +1, leftY);
         
-        const diagnosisText = stripHtml(prescription.diagnosis);
-        const diagnosisLines = doc.splitTextToSize(diagnosisText, 180);
-        doc.text(diagnosisLines, 14, currentY + 6);
-        currentY += (diagnosisLines.length * 5) + 12;
+        doc.setFontSize(9);
+        doc.setTextColor(textGray600);
+        doc.text("NOTE", margin + 10, leftY);
+
+        leftY += 3;
+        doc.setDrawColor(gray200);
+        doc.line(margin, leftY, margin + leftWidth - 4, leftY);
+        leftY += 6;
+
+        doc.setFont(pdfFont, "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(textGray900);
+        const adviceText = stripHtml(prescription.advice);
+        const adviceLines = doc.splitTextToSize(adviceText, leftWidth - 4);
+        doc.text(adviceLines, margin, leftY);
+        leftY += (adviceLines.length * 5);
     }
 
-    // --- Medicines Table ---
-    const tableBody = prescription.medicines.map((med: any) => {
-        const originalMed = inventory.find(m => m.id === med.medicineId || m.brandName === med.medicineName);
-        const medType = med.type || originalMed?.type || '';
-        const displayName = medType && !med.medicineName.includes(medType)
-          ? `${med.medicineName} ${medType}`
-          : med.medicineName;
-            
+    // --- Right Col: Medicines Table ---
+    const tableX = margin + leftWidth + colGap;
+
+    // Header Bar
+    doc.setFillColor(brandHex);
+    doc.rect(tableX, rightY - 6, rightWidth - colGap, 9, 'F');
+
+    doc.setFont(pdfFont, "bold");
+    doc.setFontSize(9);
+    doc.setTextColor("#ffffff");
+    doc.text("PRESCRIBED MEDICINES", tableX + 3, rightY);
+    
+    doc.setFontSize(8);
+    doc.text(`${prescription.medicines.length} ITEMS`, tableX + rightWidth - colGap - 18, rightY);
+
+    rightY += 4;
+
+    const tableBody = prescription.medicines.map((med: any, index: number) => {
         return [
-            displayName,
-            med.strength,
+            index + 1,
+            formatMedicineForPrint(med, inventory),
             med.dose,
             med.duration,
             instructionOptions.find(opt => opt.value === med.instruction)?.label || med.instruction,
@@ -392,53 +653,106 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     });
 
     autoTable(doc, {
-        startY: currentY,
-        head: [['Medicine', 'Strength', 'Dose', 'Duration', 'Instruction', 'Qty']],
+        startY: rightY,
+        margin: { left: tableX },
+        tableWidth: rightWidth - colGap,
+        head: [['#', 'Medicine Name', 'Dosage', 'Duration', 'Instr.', 'Qty']],
         body: tableBody,
-        theme: 'grid',
-      headStyles: { fillColor: tableHeaderColor, textColor: 255, font: pdfFont },
-      styles: { fontSize: 9, cellPadding: 3, font: pdfFont },
-        columnStyles: {
-            0: { cellWidth: 60 }, // Medicine Name
-            1: { cellWidth: 25 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 25 },
-            4: { cellWidth: 30 },
-            5: { cellWidth: 15, halign: 'center' }
+        theme: 'plain', // Custom styling
+        headStyles: { 
+            fillColor: gray50, 
+            textColor: textGray600, 
+            fontStyle: 'bold', 
+            lineWidth: 0.1,
+            lineColor: gray200,
+            fontSize: 8,
+            cellPadding: 3
         },
+        styles: { 
+            fontSize: 8, 
+            cellPadding: 3, 
+            font: pdfFont,
+            textColor: textGray900,
+            lineWidth: 0.1,
+            lineColor: gray200
+        },
+        columnStyles: {
+            0: { cellWidth: 8, halign: 'center', textColor: '#9ca3af' },
+            1: { cellWidth: 'auto', fontStyle: 'bold' }, // Name bold
+            2: { cellWidth: 20, cellPadding: {top: 3, bottom: 3, left: 2, right: 2} }, // Dosage
+            3: { cellWidth: 15 },
+            4: { cellWidth: 22 },
+            5: { cellWidth: 10, halign: 'center' }
+        },
+        didParseCell: (data) => {
+            // Style Dosage like a badge? Hard in generic autotable, but we can assume text
+        }
     });
 
-    currentY = (doc as any).lastAutoTable.finalY + 15;
+    rightY = (doc as any).lastAutoTable.finalY + 10;
+    currentY = Math.max(leftY, rightY);
 
-    // --- Advice ---
-    if (prescription.advice) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Advice / Instructions:", 14, currentY);
-        doc.setFont("helvetica", "normal");
-        
-        const adviceText = stripHtml(prescription.advice);
-        const adviceLines = doc.splitTextToSize(adviceText, 180);
-        doc.text(adviceLines, 14, currentY + 6);
-        currentY += (adviceLines.length * 5) + 15;
-    } else {
-        currentY += 15;
-    }
-
-    // --- Footer ---
-    if (currentY > 250) {
+    // --- Footer & Signatures ---
+    if (currentY > 230) {
         doc.addPage();
         currentY = 40;
+    } else {
+        currentY = Math.max(currentY, 230); 
+    }
+
+    const sigY = 255;
+
+    // QR Code
+    doc.setDrawColor(gray200);
+    doc.rect(margin, sigY, 22, 22); 
+    // To actually render a QR code image we'd need a library to generate base64 QR on fly (like qrcode)
+    // For now we use placeholder text or fetch if possible.
+    // 'qrcode' lib is imported as QRCode.toDataURL(text)
+    try {
+        const qrData = JSON.stringify({
+            id: prescription.id,
+            rx: prescription.prescriptionNumber
+        });
+        const qrUrl = await QRCode.toDataURL(qrData, { margin: 1, width: 80 });
+        doc.addImage(qrUrl, 'PNG', margin + 1, sigY + 1, 20, 20);
+    } catch(e) {
+        // Fallback
+    }
+
+    doc.setFontSize(6);
+    doc.setTextColor(textGray600);
+    doc.text("SCAN TO VERIFY", margin, sigY + 25);
+
+    // Doctor Signature
+    const sigW = printAssetSettings.signatureWidth || 40;
+    const sigH = printAssetSettings.signatureHeight || 20;
+    const sigX = usableWidth - sigW;
+
+    if (signatureBase64) {
+        doc.addImage(signatureBase64, 'PNG', sigX, sigY, sigW, sigH, undefined, 'FAST');
     }
     
-    // Signature
-    doc.setFontSize(10);
-    doc.text("Doctor's Signature", 160, currentY + 20, { align: 'center' });
-    doc.line(140, currentY + 15, 180, currentY + 15);
+    // Line under signature
+    doc.setDrawColor(textGray900);
+    doc.setLineWidth(0.5);
+    doc.line(usableWidth - 40, sigY + 15, usableWidth, sigY + 15);
     
-    // Disclaimer
-    doc.setFontSize(8);
-    doc.setTextColor(150);
-    doc.text("This is a computer-generated prescription.", 105, 285, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont(pdfFont, "bold");
+    doc.setTextColor(textGray900);
+    doc.text(doctorInfo?.name || '', usableWidth - 20, sigY + 20, { align: "center" });
+    
+    doc.setFontSize(7);
+    doc.setFont(pdfFont, "normal");
+    doc.setTextColor(textGray600);
+    doc.text("DOCTOR'S SIGNATURE", usableWidth - 20, sigY + 24, { align: "center" });
+
+    // Legal Footer
+    doc.setFontSize(7);
+    doc.setTextColor('#9ca3af');
+    doc.text(`${hospitalInfo.name} • ${hospitalInfo.address || ''}`, pageWidth / 2, 280, { align: 'center' });
+    doc.text(`License No: ${hospitalInfo.license || ''}`, pageWidth / 2, 283, { align: 'center' });
+    doc.text("Powered by: Soft Care IT Solutions", pageWidth / 2, 287, { align: 'center' });
 
     doc.save(`Prescription_${prescription.prescriptionNumber}.pdf`);
   };
@@ -481,22 +795,26 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
+          {canExportPrescriptions && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExportPrescriptions && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
         </div>
       </div>
 
@@ -580,20 +898,24 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handlePrintPrescription(prescription)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="Print"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleExportSinglePDF(prescription)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                          title="Download PDF"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                        </button>
+                        {canPrintPrescriptions && (
+                          <button
+                            onClick={() => handlePrintPrescription(prescription)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                            title="Print"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canPrintPrescriptions && (
+                          <button
+                            onClick={() => handleExportSinglePDF(prescription)}
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                            title="Download PDF"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {canEditPrescription(prescription) && (
                           <button
                             onClick={() => navigate('/prescriptions/create', { state: { editPrescriptionData: prescription } })}
@@ -603,7 +925,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canManagePrescriptions && (
+                        {canDeletePrescriptions && (
                           <button
                             onClick={() => handleDeletePrescription(prescription)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
@@ -733,7 +1055,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       {/* Existing Print & View Modals */}
       {showPrint && selectedPrescription && (
         <PrescriptionPrint
-          hospital={hospital}
+          hospital={hospitalDirectory.find(h => h.id === selectedPrescription.hospitalId) || hospital}
           patient={selectedPrescription.patient || patients.find(p => p.id === selectedPrescription.patientId)}
           doctor={selectedPrescription.doctor || doctors.find(d => d.id === selectedPrescription.doctorId)}
           medicines={selectedPrescription.medicines.map((med: any) => {
@@ -760,7 +1082,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
 
       {showViewModal && selectedPrescription && (
         <PrescriptionPrint
-          hospital={hospital}
+          hospital={hospitalDirectory.find(h => h.id === selectedPrescription.hospitalId) || hospital}
           patient={selectedPrescription.patient || patients.find(p => p.id === selectedPrescription.patientId)}
           doctor={selectedPrescription.doctor || doctors.find(d => d.id === selectedPrescription.doctorId)}
           medicines={selectedPrescription.medicines.map((med: any) => {

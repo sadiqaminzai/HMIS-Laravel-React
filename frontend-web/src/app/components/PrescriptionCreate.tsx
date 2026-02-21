@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
 import { Hospital, Patient, Medicine, Doctor, UserRole } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
@@ -12,6 +13,7 @@ import { useDoctors } from '../context/DoctorContext';
 import { useMedicines } from '../context/MedicineContext';
 import { usePrescriptions } from '../context/PrescriptionContext';
 import { useAppointments } from '../context/AppointmentContext';
+import { useAuth } from '../context/AuthContext';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
@@ -51,6 +53,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const userRole = currentUser.role as UserRole;
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { settings, getDefaultToWalkIn, getShowOutOfStockMedicines, loadHospitalSetting } = useSettings();
+  const { hasPermission } = useAuth();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { medicines: inventory } = useMedicines();
@@ -76,6 +79,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     age: '',
     gender: 'male'
   });
+
+  const isEditMode = Boolean(editPrescriptionData?.id);
+  const canCreatePrescription = hasPermission('create_prescription') || hasPermission('add_prescriptions') || hasPermission('manage_prescriptions');
+  const canEditPrescription = hasPermission('edit_prescriptions') || hasPermission('manage_prescriptions');
+  const canPrintPrescription = hasPermission('print_prescriptions') || hasPermission('manage_prescriptions');
+  const canSavePrescription = isEditMode ? canEditPrescription : canCreatePrescription;
 
   const insertDiagnosisBlock = (html: string) => {
     setDiagnosis((prev) => (prev ? `${prev}<br/>${html}` : html));
@@ -110,6 +119,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   }, [userRole, editPrescriptionData?.hospitalId, setSelectedHospitalId]);
 
   const patientInputRef = useRef<HTMLInputElement>(null);
+  const medicinesScrollRef = useRef<HTMLDivElement>(null);
+  const shouldScrollMedicinesToBottomRef = useRef(false);
 
   const fallbackLoggedInDoctor: Doctor | null = useMemo(() => {
     const role = String(currentUser.role || '').toLowerCase();
@@ -163,6 +174,17 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   useEffect(() => {
     loadHospitalSetting(currentHospital.id);
   }, [currentHospital.id, loadHospitalSetting]);
+
+  useEffect(() => {
+    if (!shouldScrollMedicinesToBottomRef.current) return;
+    const container = medicinesScrollRef.current;
+    if (!container) return;
+
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      shouldScrollMedicinesToBottomRef.current = false;
+    });
+  }, [medicines.length]);
 
   // Populate form when editing existing prescription
   useEffect(() => {
@@ -374,6 +396,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       quantity: 0,
       isTemporary: false
     };
+    shouldScrollMedicinesToBottomRef.current = true;
     setMedicines([...medicines, newRow]);
   };
 
@@ -390,6 +413,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       quantity: 0,
       isTemporary: true
     };
+    shouldScrollMedicinesToBottomRef.current = true;
     setMedicines([...medicines, newRow]);
   };
 
@@ -497,6 +521,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   };
 
   const handleSave = async () => {
+    if (!canSavePrescription) {
+      toast.error(isEditMode ? 'You are not authorized to edit prescriptions' : 'You are not authorized to create prescriptions');
+      return;
+    }
+
     if (isSaving) return;
     if (medicines.length === 0) {
       toast.error('Add at least one medicine');
@@ -596,6 +625,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   };
 
   const handlePrint = () => {
+    if (!canPrintPrescription) {
+      toast.error('You are not authorized to print prescriptions');
+      return;
+    }
+
     if (!selectedPatient || medicines.length === 0) {
       alert('Please complete the prescription before printing');
       return;
@@ -636,22 +670,26 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           </p>
         </div>
         <div className="flex gap-1.5">
-          <button
-            onClick={handleSave}
-            disabled={isSaving || medicines.length === 0 || (!isWalkIn && !selectedPatient)}
-            className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
-          >
-            <Save className="w-3 h-3" />
-            {isSaving ? 'Saving...' : 'Save Prescription'}
-          </button>
-          <button
-            onClick={handlePrint}
-            disabled={medicines.length === 0 || (!isWalkIn && !selectedPatient)}
-            className="px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
-          >
-            <Printer className="w-3 h-3" />
-            Print
-          </button>
+          {canSavePrescription && (
+            <button
+              onClick={handleSave}
+              disabled={isSaving || medicines.length === 0 || (!isWalkIn && !selectedPatient)}
+              className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
+            >
+              <Save className="w-3 h-3" />
+              {isSaving ? 'Saving...' : isEditMode ? 'Update Prescription' : 'Save Prescription'}
+            </button>
+          )}
+          {canPrintPrescription && (
+            <button
+              onClick={handlePrint}
+              disabled={medicines.length === 0 || (!isWalkIn && !selectedPatient)}
+              className="px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
+            >
+              <Printer className="w-3 h-3" />
+              Print
+            </button>
+          )}
         </div>
       </div>
 
@@ -872,7 +910,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
       {/* Medicine Entry Table */}
       {selectedPatient && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5">
+        <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5 relative ${openMedicineDropdownRowId ? 'z-30' : 'z-10'}`}>
           <div className="flex items-center justify-between mb-1.5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Medicines</h2>
             <div className="flex items-center gap-2">
@@ -895,10 +933,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           </div>
 
           {/* Scrollable table container - only show scrollbar when 5+ medicines */}
-          <div className={`border border-gray-200 dark:border-gray-700 rounded-lg ${
-            openMedicineDropdownRowId
-              ? 'overflow-visible'
-              : `overflow-x-auto ${medicines.length >= 5 ? 'max-h-[240px] overflow-y-auto' : 'overflow-y-visible'}`
+          <div ref={medicinesScrollRef} className={`border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto ${
+            medicines.length >= 5
+              ? `${openMedicineDropdownRowId ? 'max-h-[420px]' : 'max-h-[240px]'} overflow-y-auto`
+              : 'overflow-y-visible'
           }`}>
             <table className="w-full">
               <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900 z-10">
@@ -967,7 +1005,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       {/* Print Modal */}
       {showPrint && selectedPatient && (
         <PrescriptionPrint
-          hospital={hospital}
+          hospital={currentHospital}
           patient={selectedPatient}
           doctor={selectedDoctor || doctors[0]}
           medicines={medicines.map(m => {
@@ -1010,8 +1048,34 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [remoteMedicines, setRemoteMedicines] = useState<Medicine[]>([]);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const medicineInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const updateDropdownPosition = React.useCallback(() => {
+    if (showMedicineDropdown && medicineInputRef.current) {
+      const rect = medicineInputRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'fixed',
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+        zIndex: 99999,
+      });
+    }
+  }, [showMedicineDropdown]);
+
+  React.useEffect(() => {
+    if (showMedicineDropdown) {
+      updateDropdownPosition();
+      window.addEventListener('scroll', updateDropdownPosition, true);
+      window.addEventListener('resize', updateDropdownPosition);
+      return () => {
+        window.removeEventListener('scroll', updateDropdownPosition, true);
+        window.removeEventListener('resize', updateDropdownPosition);
+      };
+    }
+  }, [showMedicineDropdown, updateDropdownPosition]);
 
   // Update searchTerm when medicine.brandName changes from parent
   React.useEffect(() => {
@@ -1176,10 +1240,20 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
               onMedicineSearch(medicine.rowId, value);
               setShowMedicineDropdown(true);
               onDropdownToggle(true);
+
+              const currentInput = medicineInputRef.current;
+              if (currentInput) {
+                currentInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              }
             }}
             onFocus={() => {
               setShowMedicineDropdown(true);
               onDropdownToggle(true);
+
+              const currentInput = medicineInputRef.current;
+              if (currentInput) {
+                currentInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              }
             }}
             onBlur={() => {
               // Delay to allow click on dropdown items
@@ -1194,10 +1268,11 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
             className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             autoComplete="off"
           />
-          {showMedicineDropdown && searchTerm.length > 0 && (
+          {showMedicineDropdown && searchTerm.length > 0 && createPortal(
             <div
               ref={dropdownRef}
-              className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px] z-50"
+              style={dropdownStyle}
+              className="bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px]"
             >
               {filteredMedicines.length > 0 ? (
                 <div className="overflow-y-auto max-h-[280px]">
@@ -1232,7 +1307,8 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
                   <div className="text-xs text-gray-400 dark:text-gray-500">Try a different search term</div>
                 </div>
               )}
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </td>

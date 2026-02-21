@@ -3,6 +3,7 @@ import { Database, Download, Trash2, RefreshCw, HardDrive, Settings, Save, Clock
 import api from '../../api/axios';
 import { toast } from '../utils/toast';
 import { Hospital, UserRole } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface Backup {
   name: string;
@@ -24,6 +25,12 @@ interface BackupManagementProps {
 }
 
 export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagementProps) {
+  const { hasPermission } = useAuth();
+  const canViewBackups = hasPermission('view_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
+  const canAddBackups = hasPermission('add_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
+  const canEditBackups = hasPermission('edit_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
+  const canDeleteBackups = hasPermission('delete_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
+  const canDownloadBackups = hasPermission('export_backups') || hasPermission('view_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -37,10 +44,10 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
 
   // Load data
   useEffect(() => {
-    if (!hospital) return;
+    if (!hospital || !canViewBackups) return;
     loadBackups();
     loadSettings();
-  }, [hospital?.id, userRole]);
+  }, [hospital?.id, userRole, canViewBackups]);
 
   const resolveHospitalParams = () => {
     if (!hospital || userRole !== 'super_admin') {
@@ -162,33 +169,37 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
           Backups
         </h2>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={`p-1.5 rounded-md transition-colors ${
-              showSettings 
-                ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' 
-                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-            title="Backup Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          {canEditBackups && (
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-1.5 rounded-md transition-colors ${
+                showSettings 
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' 
+                  : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              title="Backup Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={loadBackups}
-            disabled={loading}
+            disabled={loading || !canViewBackups}
             className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
             title="Refresh List"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            onClick={handleCreateBackup}
-            disabled={creating || loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            <Database className="w-3.5 h-3.5" />
-            {creating ? 'Creating...' : 'Create'}
-          </button>
+          {canAddBackups && (
+            <button
+              onClick={handleCreateBackup}
+              disabled={creating || loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              <Database className="w-3.5 h-3.5" />
+              {creating ? 'Creating...' : 'Create'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -204,6 +215,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                   type="time"
                   value={settings.time}
                   onChange={(e) => setSettings(prev => ({ ...prev, time: e.target.value }))}
+                  aria-label="Backup schedule time"
                   className="w-full pl-7 pr-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -218,6 +230,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                   max="365"
                   value={settings.retention}
                   onChange={(e) => setSettings(prev => ({ ...prev, retention: parseInt(e.target.value) || 1 }))}
+                  aria-label="Backup retention days"
                   className="w-full pl-7 pr-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -232,16 +245,18 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                />
                <label htmlFor="auto-backup" className="text-sm text-gray-700 dark:text-gray-300 select-none cursor-pointer">Auto-Backup</label>
              </div>
-             <div className="ml-auto flex items-center">
-                <button
-                  onClick={handleSaveSettings}
-                  disabled={savingSettings}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 dark:bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors disabled:opacity-50"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  Save
-                </button>
-             </div>
+             {canEditBackups && (
+               <div className="ml-auto flex items-center">
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={savingSettings}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 dark:bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Save
+                  </button>
+               </div>
+             )}
           </div>
         </div>
       )}
@@ -283,20 +298,24 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                   </td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleDownload(backup.name)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-                        title="Download"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(backup.name)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDownloadBackups && (
+                        <button
+                          onClick={() => handleDownload(backup.name)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDeleteBackups && (
+                        <button
+                          onClick={() => handleDelete(backup.name)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

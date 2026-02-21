@@ -26,7 +26,10 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_test_templates');
+  const canAdd = hasPermission('add_test_templates') || hasPermission('manage_test_templates');
+  const canEdit = hasPermission('edit_test_templates') || hasPermission('manage_test_templates');
+  const canDelete = hasPermission('delete_test_templates') || hasPermission('manage_test_templates');
+  const canExport = hasPermission('export_test_templates') || hasPermission('manage_test_templates');
   
   const { t, i18n } = useTranslation();
   const [tests, setTests] = useState<TestTemplate[]>([]);
@@ -301,23 +304,27 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button
               onClick={handleAddTest}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
@@ -428,7 +435,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button
                             onClick={() => handleEditTest(test)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -437,7 +444,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button
                             onClick={() => handleDeleteTest(test.id)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"

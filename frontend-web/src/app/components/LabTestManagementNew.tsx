@@ -140,9 +140,14 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const { appointments } = useAppointments();
   const { hasPermission } = useAuth();
   const canManageOrders = hasPermission('manage_lab_orders');
-  const canUpdateStatus = hasPermission('update_lab_order_status') || canManageOrders;
-  const canEnterResults = hasPermission('enter_lab_results') || canManageOrders;
-  const canManagePayments = hasPermission('manage_lab_payments') || canManageOrders;
+  const canAddOrders = hasPermission('add_lab_orders') || canManageOrders;
+  const canEditOrders = hasPermission('edit_lab_orders') || canManageOrders;
+  const canDeleteOrders = hasPermission('delete_lab_orders') || canManageOrders;
+  const canExportOrders = hasPermission('export_lab_orders') || canManageOrders;
+  const canPrintOrders = hasPermission('print_lab_orders') || canManageOrders;
+  const canUpdateStatus = hasPermission('update_lab_order_status') || canEditOrders;
+  const canEnterResults = hasPermission('enter_lab_results') || canEditOrders;
+  const canManagePayments = hasPermission('manage_lab_payments') || canEditOrders;
 
   const [labTests, setLabTests] = useState<LabTest[]>([]);
   const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
@@ -644,10 +649,10 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     return colors[priority];
   };
 
-  const canCreate = canManageOrders;
+  const canCreate = canAddOrders;
   const canProcess = canUpdateStatus;
   const canPayment = canManagePayments;
-  const canDelete = canManageOrders;
+  const canDelete = canDeleteOrders;
   const canChangeAnyStatus = canUpdateStatus;
 
   const handlePayAndPrint = (test: LabTest) => {
@@ -695,22 +700,26 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
             />
           </div>
 
-           <button
-             onClick={exportToExcel}
-             className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-             title="Export to Excel"
-           >
-             <FileSpreadsheet className="w-3.5 h-3.5" />
-             Excel
-           </button>
-           <button
-             onClick={exportToPDF}
-             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-             title="Export to PDF"
-           >
-             <FileText className="w-3.5 h-3.5" />
-             PDF
-           </button>
+           {canExportOrders && (
+             <button
+               onClick={exportToExcel}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+               title="Export to Excel"
+             >
+               <FileSpreadsheet className="w-3.5 h-3.5" />
+               Excel
+             </button>
+           )}
+           {canExportOrders && (
+             <button
+               onClick={exportToPDF}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+               title="Export to PDF"
+             >
+               <FileText className="w-3.5 h-3.5" />
+               PDF
+             </button>
+           )}
 
           <button
             onClick={async () => {
@@ -976,7 +985,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {test.status === 'completed' && (
+                          {canPrintOrders && test.status === 'completed' && (
                             <button
                               onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
                               className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
@@ -986,7 +995,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {test.status === 'completed' && (
+                          {canPrintOrders && test.status === 'completed' && (
                             <button
                               onClick={() => setPdfTest(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"

@@ -18,7 +18,10 @@ type ManagedHospital = Hospital & { id: string };
 export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const { hospitals, addHospital, updateHospital, deleteHospital, refresh, loading } = useHospitals();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_hospitals');
+  const canAdd = hasPermission('add_hospitals') || hasPermission('manage_hospitals');
+  const canEdit = hasPermission('edit_hospitals') || hasPermission('manage_hospitals');
+  const canDelete = hasPermission('delete_hospitals') || hasPermission('manage_hospitals');
+  const canExport = hasPermission('export_hospitals') || hasPermission('manage_hospitals');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
@@ -100,7 +103,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   };
 
   const handleAdd = () => {
-    if (!canManage) {
+    if (!canAdd) {
       toast.warning('You are not authorized to manage hospitals.');
       return;
     }
@@ -124,7 +127,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   };
 
   const handleEdit = (hospital: Hospital) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage hospitals.');
       return;
     }
@@ -148,7 +151,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   };
 
   const handleDelete = (hospital: Hospital) => {
-    if (!canManage) {
+    if (!canDelete) {
       toast.warning('You are not authorized to manage hospitals.');
       return;
     }
@@ -163,7 +166,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!canManage) {
+    if ((modalMode === 'add' && !canAdd) || (modalMode === 'edit' && !canEdit)) {
       toast.warning('You are not authorized to manage hospitals.');
       return;
     }
@@ -282,34 +285,35 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          <button
-            onClick={handleAdd}
-            disabled={!canManage}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium shadow-sm ${
-              canManage
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium shadow-sm bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -518,21 +522,20 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                       Brand Color
                     </label>
                     <div className="flex items-center gap-2">
-                      <div className="relative overflow-hidden w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 shadow-sm">
-                        <input
-                          type="color"
-                          value={formData.brandColor}
-                          onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
-                          className="absolute -top-2 -left-2 w-12 h-12 p-0 border-0 cursor-pointer"
-                        />
-                      </div>
-                      <input 
+                      <input
+                        type="color"
+                        value={formData.brandColor}
+                        onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
+                        className="h-8 w-10 rounded border border-gray-300 dark:border-gray-600 bg-transparent p-0"
+                        title="Brand Color"
+                      />
+                      <input
                         type="text"
-                         value={formData.brandColor}
-                         onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
-                         className="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs uppercase font-mono"
-                         placeholder="#000000"
-                         maxLength={7}
+                        value={formData.brandColor}
+                        onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
+                        className="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs uppercase font-mono"
+                        placeholder="#000000"
+                        maxLength={7}
                       />
                     </div>
                   </div>

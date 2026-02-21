@@ -21,7 +21,11 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
   const { medicineTypes, addMedicineType, updateMedicineType, deleteMedicineType, loading } = useMedicineTypes();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_medicine_types');
+  const canAdd = hasPermission('add_medicine_types') || hasPermission('manage_medicine_types');
+  const canEdit = hasPermission('edit_medicine_types') || hasPermission('manage_medicine_types');
+  const canDelete = hasPermission('delete_medicine_types') || hasPermission('manage_medicine_types');
+  const canExport = hasPermission('export_medicine_types') || hasPermission('manage_medicine_types');
+  const canPrint = hasPermission('print_medicine_types') || hasPermission('manage_medicine_types');
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'view' | 'edit' | 'delete'>('add');
   const [selectedMedicineType, setSelectedMedicineType] = useState<MedicineType | null>(null);
@@ -255,23 +259,27 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
@@ -350,7 +358,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button
                             onClick={() => handleEdit(medicineType)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -359,7 +367,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button
                             onClick={() => handleDelete(medicineType)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
@@ -410,13 +418,15 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     Medicine Type Details
                   </h2>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setTimeout(() => window.print(), 100)}
-                      className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                      title="Print"
-                    >
-                      <Printer className="w-4 h-4" />
-                    </button>
+                    {canPrint && (
+                      <button
+                        onClick={() => setTimeout(() => window.print(), 100)}
+                        className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                        title="Print"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => setShowModal(false)}
                       className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"

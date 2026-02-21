@@ -31,7 +31,7 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -62,6 +62,13 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     showBonusColumn: true,
   });
 
+  const [prescriptionPrintAssetSettings, setPrescriptionPrintAssetSettings] = useState({
+    logoWidth: 176,
+    logoHeight: 160,
+    signatureWidth: 200,
+    signatureHeight: 112,
+  });
+
   const [showOutOfStockMedicines, setShowOutOfStockMedicines] = useState(false);
   const [showOutOfStockMedicinesForPharmacy, setShowOutOfStockMedicinesForPharmacy] = useState(false);
 
@@ -78,6 +85,8 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
       const printConfig = getPrintColumnSettings(selectedHospital.id);
       setPrintColumns(printConfig);
+      const prescriptionPrintConfig = getPrescriptionPrintAssetSettings(selectedHospital.id);
+      setPrescriptionPrintAssetSettings(prescriptionPrintConfig);
 
       setShowOutOfStockMedicines(getShowOutOfStockMedicines(selectedHospital.id));
       setShowOutOfStockMedicinesForPharmacy(getShowOutOfStockMedicinesForPharmacy(selectedHospital.id));
@@ -85,7 +94,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
     });
-  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy]);
+  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy]);
 
   const handleSaveDefaultDoctor = () => {
     saveHospitalSetting(selectedHospital.id, { defaultDoctorId: selectedDoctorId || undefined })
@@ -100,7 +109,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   };
 
   const handleSavePrintColumns = () => {
-    saveHospitalSetting(selectedHospital.id, { printColumns })
+    saveHospitalSetting(selectedHospital.id, { printColumns, prescriptionPrintAssetSettings })
       .then(() => toast.success('Print settings saved successfully'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save print settings'));
   };
@@ -605,6 +614,69 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               />
               Show Bonus Column
             </label>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Prescription Logo Width (px)</label>
+                <input
+                  type="number"
+                  min={40}
+                  max={800}
+                  value={prescriptionPrintAssetSettings.logoWidth}
+                  onChange={(e) => setPrescriptionPrintAssetSettings({
+                    ...prescriptionPrintAssetSettings,
+                    logoWidth: Number(e.target.value || 176),
+                  })}
+                  aria-label="Prescription logo width"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Prescription Logo Height (px)</label>
+                <input
+                  type="number"
+                  min={40}
+                  max={800}
+                  value={prescriptionPrintAssetSettings.logoHeight}
+                  onChange={(e) => setPrescriptionPrintAssetSettings({
+                    ...prescriptionPrintAssetSettings,
+                    logoHeight: Number(e.target.value || 160),
+                  })}
+                  aria-label="Prescription logo height"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Signature Width (px)</label>
+                <input
+                  type="number"
+                  min={40}
+                  max={800}
+                  value={prescriptionPrintAssetSettings.signatureWidth}
+                  onChange={(e) => setPrescriptionPrintAssetSettings({
+                    ...prescriptionPrintAssetSettings,
+                    signatureWidth: Number(e.target.value || 200),
+                  })}
+                  aria-label="Prescription signature width"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Signature Height (px)</label>
+                <input
+                  type="number"
+                  min={40}
+                  max={800}
+                  value={prescriptionPrintAssetSettings.signatureHeight}
+                  onChange={(e) => setPrescriptionPrintAssetSettings({
+                    ...prescriptionPrintAssetSettings,
+                    signatureHeight: Number(e.target.value || 112),
+                  })}
+                  aria-label="Prescription signature height"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
 
             <button
               onClick={handleSavePrintColumns}

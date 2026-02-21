@@ -65,9 +65,11 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     [doctors, filterByHospital]
   );
 
-  const canManage = hasPermission('manage_doctors');
-  const canDelete = canManage;
-  const canEdit = canManage; // Also controls Add action
+  const canAdd = hasPermission('add_doctors') || hasPermission('manage_doctors');
+  const canEdit = hasPermission('edit_doctors') || hasPermission('manage_doctors');
+  const canDelete = hasPermission('delete_doctors') || hasPermission('manage_doctors');
+  const canExport = hasPermission('export_doctors') || hasPermission('manage_doctors');
+  const canPrint = hasPermission('print_doctors') || hasPermission('manage_doctors');
 
   // Filter doctors by search term
   const filteredDoctors = scopedDoctors.filter(d =>
@@ -175,7 +177,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   };
 
   const handleAdd = () => {
-    if (!canManage) {
+    if (!canAdd) {
       toast.warning('You are not authorized to manage doctors');
       return;
     }
@@ -213,7 +215,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   };
 
   const handleEdit = (doctor: Doctor) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage doctors');
       return;
     }
@@ -247,7 +249,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   };
 
   const handleDelete = (doctor: Doctor) => {
-    if (!canManage) {
+    if (!canDelete) {
       toast.warning('You are not authorized to manage doctors');
       return;
     }
@@ -257,7 +259,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManage) {
+    if (!canAdd) {
       toast.warning('You are not authorized to manage doctors');
       return;
     }
@@ -288,7 +290,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManage || !selectedDoctor) {
+    if (!canEdit || !selectedDoctor) {
       toast.warning('You are not authorized to manage doctors');
       return;
     }
@@ -358,23 +360,27 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canEdit && (
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
@@ -387,7 +393,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       </div>
 
       {/* Hospital Selector for Super Admin */}
-      <HospitalSelector 
+      <HospitalSelector
         userRole={userRole}
         selectedHospitalId={selectedHospitalId}
         onHospitalChange={setSelectedHospitalId}
@@ -963,13 +969,15 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 Doctor Details
               </h2>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setTimeout(() => window.print(), 100)}
-                  className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Print"
-                >
-                  <Printer className="w-4 h-4" />
-                </button>
+                {canPrint && (
+                  <button
+                    onClick={() => setTimeout(() => window.print(), 100)}
+                    className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                    title="Print"
+                  >
+                    <Printer className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={() => setShowViewModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"

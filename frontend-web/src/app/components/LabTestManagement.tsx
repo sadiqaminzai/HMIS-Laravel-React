@@ -379,10 +379,13 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
   };
 
   // Check permissions
-  const canCreate = ['doctor', 'admin', 'super_admin'].includes(userRole);
-  const canProcess = ['lab_technician', 'super_admin', 'admin'].includes(userRole);
-  const canDelete = ['super_admin', 'admin', 'doctor'].includes(userRole);
-  const canChangeAnyStatus = ['super_admin', 'admin'].includes(userRole);
+  const canCreate = hasPermission('add_lab_orders') || hasPermission('manage_lab_orders');
+  const canProcess = hasPermission('edit_lab_orders') || hasPermission('update_lab_order_status') || hasPermission('manage_lab_orders');
+  const canDelete = hasPermission('delete_lab_orders') || hasPermission('manage_lab_orders');
+  const canExport = hasPermission('export_lab_orders') || hasPermission('manage_lab_orders');
+  const canPrint = hasPermission('print_lab_orders') || hasPermission('manage_lab_orders');
+  const canEnterResults = hasPermission('enter_lab_results') || hasPermission('manage_lab_orders');
+  const canChangeAnyStatus = hasPermission('update_lab_order_status') || hasPermission('manage_lab_orders');
 
   return (
     <div className="space-y-3">
@@ -408,22 +411,26 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
             />
           </div>
 
-           <button
-             onClick={exportToExcel}
-             className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-             title="Export to Excel"
-           >
-             <FileSpreadsheet className="w-3.5 h-3.5" />
-             Excel
-           </button>
-           <button
-             onClick={exportToPDF}
-             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-             title="Export to PDF"
-           >
-             <FileText className="w-3.5 h-3.5" />
-             PDF
-           </button>
+           {canExport && (
+             <button
+               onClick={exportToExcel}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+               title="Export to Excel"
+             >
+               <FileSpreadsheet className="w-3.5 h-3.5" />
+               Excel
+             </button>
+           )}
+           {canExport && (
+             <button
+               onClick={exportToPDF}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+               title="Export to PDF"
+             >
+               <FileText className="w-3.5 h-3.5" />
+               PDF
+             </button>
+           )}
 
           {canCreate && (
             <button
@@ -618,7 +625,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         
-                        {userRole === 'lab_technician' && test.status === 'in_progress' && (
+                        {canEnterResults && test.status === 'in_progress' && (
                           <button
                             onClick={() => { 
                               setSelectedTest(test); 
@@ -637,7 +644,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
                           </button>
                         )}
                         
-                        {test.status === 'completed' && (
+                        {canPrint && test.status === 'completed' && (
                           <button
                             onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
                             className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"

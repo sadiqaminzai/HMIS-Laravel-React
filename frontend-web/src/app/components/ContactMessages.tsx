@@ -18,7 +18,8 @@ interface ContactMessage {
 export function ContactMessages() {
   const { hasPermission } = useAuth();
   const canView = hasPermission('view_contact_messages') || hasPermission('manage_contact_messages');
-  const canManage = hasPermission('manage_contact_messages');
+  const canEdit = hasPermission('edit_contact_messages') || hasPermission('manage_contact_messages');
+  const canDelete = hasPermission('delete_contact_messages') || hasPermission('manage_contact_messages');
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread' | 'read' | 'responded'>('all');
@@ -52,7 +53,7 @@ export function ContactMessages() {
   const handleView = async (message: ContactMessage) => {
     setSelectedMessage(message);
 
-    if (message.status === 'unread' && canManage) {
+    if (message.status === 'unread' && canEdit) {
       try {
         await api.patch(`/contact-messages/${message.id}`, { status: 'read' });
         setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'read' } : m)));
@@ -64,7 +65,7 @@ export function ContactMessages() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!canManage) {
+    if (!canDelete) {
       toast.warning('You are not authorized to manage messages');
       return;
     }
@@ -84,7 +85,7 @@ export function ContactMessages() {
   };
 
   const markAsResponded = async (id: number) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage messages');
       return;
     }
@@ -241,7 +242,7 @@ export function ContactMessages() {
               <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Message Details</h2>
                 <div className="flex items-center gap-1">
-                  {selectedMessage.status !== 'responded' && canManage && (
+                  {selectedMessage.status !== 'responded' && canEdit && (
                     <button
                       onClick={() => markAsResponded(selectedMessage.id)}
                       className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
@@ -250,7 +251,7 @@ export function ContactMessages() {
                       <CheckCircle2 className="w-4 h-4" />
                     </button>
                   )}
-                  {canManage && (
+                  {canDelete && (
                     <button
                       onClick={() => handleDelete(selectedMessage.id)}
                       className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"

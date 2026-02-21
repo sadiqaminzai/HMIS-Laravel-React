@@ -16,12 +16,20 @@ export interface PrintColumnSettings {
   showBonusColumn: boolean;
 }
 
+export interface PrescriptionPrintAssetSettings {
+  logoWidth: number;
+  logoHeight: number;
+  signatureWidth: number;
+  signatureHeight: number;
+}
+
 export interface HospitalSetting {
   hospitalId: string;
   defaultDoctorId?: string;
   defaultToWalkIn: boolean;
   patientIdConfig: PatientIdConfig;
   printColumns: PrintColumnSettings;
+  prescriptionPrintAssetSettings: PrescriptionPrintAssetSettings;
   showOutOfStockMedicines: boolean;
   showOutOfStockMedicinesForPharmacy: boolean;
 }
@@ -40,6 +48,7 @@ interface SettingsContextType {
   getDefaultToWalkIn: (hospitalId: string) => boolean;
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
   getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
+  getPrescriptionPrintAssetSettings: (hospitalId: string) => PrescriptionPrintAssetSettings;
   getShowOutOfStockMedicines: (hospitalId: string) => boolean;
   getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
@@ -60,11 +69,24 @@ const defaultPrintColumns: PrintColumnSettings = {
   showBonusColumn: true,
 };
 
+const defaultPrescriptionPrintAssetSettings: PrescriptionPrintAssetSettings = {
+  logoWidth: 176,
+  logoHeight: 160,
+  signatureWidth: 200,
+  signatureHeight: 112,
+};
+
 const defaultSettings: Settings = {
   dateFormat: 'gregorian',
   defaultDoctorId: {},
   patientIdConfig: {},
   defaultToWalkIn: false
+};
+
+const toPositiveInt = (value: unknown, fallback: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
 };
 
 // Create context with default value
@@ -75,6 +97,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getDefaultToWalkIn: () => false,
   getPatientIdConfig: () => defaultPatientIdConfig,
   getPrintColumnSettings: () => defaultPrintColumns,
+  getPrescriptionPrintAssetSettings: () => defaultPrescriptionPrintAssetSettings,
   getShowOutOfStockMedicines: () => false,
   getShowOutOfStockMedicinesForPharmacy: () => false,
   generatePatientId: () => 'P0001',
@@ -152,6 +175,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.print_show_expiry_date_column = payload.printColumns.showExpiryDateColumn;
       body.print_show_bonus_column = payload.printColumns.showBonusColumn;
     }
+    if (payload.prescriptionPrintAssetSettings) {
+      body.prescription_logo_width = payload.prescriptionPrintAssetSettings.logoWidth;
+      body.prescription_logo_height = payload.prescriptionPrintAssetSettings.logoHeight;
+      body.prescription_signature_width = payload.prescriptionPrintAssetSettings.signatureWidth;
+      body.prescription_signature_height = payload.prescriptionPrintAssetSettings.signatureHeight;
+    }
     if (payload.showOutOfStockMedicines !== undefined) {
       body.show_out_of_stock_medicines_to_doctors = payload.showOutOfStockMedicines;
     }
@@ -182,6 +211,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         showExpiryDateColumn: raw.print_show_expiry_date_column ?? true,
         showBonusColumn: raw.print_show_bonus_column ?? true,
       },
+      prescriptionPrintAssetSettings: {
+        logoWidth: toPositiveInt(raw.prescription_logo_width, defaultPrescriptionPrintAssetSettings.logoWidth),
+        logoHeight: toPositiveInt(raw.prescription_logo_height, defaultPrescriptionPrintAssetSettings.logoHeight),
+        signatureWidth: toPositiveInt(raw.prescription_signature_width, defaultPrescriptionPrintAssetSettings.signatureWidth),
+        signatureHeight: toPositiveInt(raw.prescription_signature_height, defaultPrescriptionPrintAssetSettings.signatureHeight),
+      },
       showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
     };
@@ -194,6 +229,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       defaultToWalkIn: false,
       patientIdConfig: { ...defaultPatientIdConfig },
       printColumns: { ...defaultPrintColumns },
+      prescriptionPrintAssetSettings: { ...defaultPrescriptionPrintAssetSettings },
       showOutOfStockMedicines: false,
       showOutOfStockMedicinesForPharmacy: false,
     };
@@ -213,6 +249,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const getPrintColumnSettings = (hospitalId: string): PrintColumnSettings => {
     return getHospitalSetting(hospitalId).printColumns;
+  };
+
+  const getPrescriptionPrintAssetSettings = (hospitalId: string): PrescriptionPrintAssetSettings => {
+    return getHospitalSetting(hospitalId).prescriptionPrintAssetSettings;
   };
 
   const getShowOutOfStockMedicines = (hospitalId: string): boolean => {
@@ -237,6 +277,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getDefaultToWalkIn,
       getPatientIdConfig,
       getPrintColumnSettings,
+      getPrescriptionPrintAssetSettings,
       getShowOutOfStockMedicines,
       getShowOutOfStockMedicinesForPharmacy,
       generatePatientId,

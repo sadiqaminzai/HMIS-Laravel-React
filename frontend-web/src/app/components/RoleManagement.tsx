@@ -29,10 +29,12 @@ interface PermissionOption {
 
 export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_roles');
-  const canViewRoles = hasPermission('view_roles') || canManage;
+  const canAdd = hasPermission('add_roles') || hasPermission('manage_roles');
+  const canEdit = hasPermission('edit_roles') || hasPermission('manage_roles');
+  const canDelete = hasPermission('delete_roles') || hasPermission('manage_roles');
+  const canViewRoles = hasPermission('view_roles') || canAdd || canEdit || canDelete;
   const canLoadPermissionOptions =
-    canManage || hasPermission('view_permissions') || hasPermission('manage_permissions');
+    canAdd || canEdit || hasPermission('view_permissions') || hasPermission('manage_permissions');
   const isSuperAdmin = userRole === 'super_admin';
   const [hospitals, setHospitals] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>(hospital?.id ? String(hospital.id) : '');
@@ -98,7 +100,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
 
   const loadPermissions = async () => {
     try {
-      const { data } = await api.get('/permissions', { params: { status: 'active' } });
+      const { data } = await api.get('/permissions', { params: { status: 'active', all: 1 } });
       const records: PermissionOption[] = data.data ?? data;
       setPermissions(records.map((p) => ({
         id: p.id,
@@ -143,7 +145,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const visibleRoles = filteredRoles;
 
   const handleAdd = () => {
-    if (!canManage) {
+    if (!canAdd) {
       toast.warning('Only super admins can manage roles');
       return;
     }
@@ -167,7 +169,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   };
 
   const handleEdit = (role: Role) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage roles');
       return;
     }
@@ -183,7 +185,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   };
 
   const handleDelete = (role: Role) => {
-    if (!canManage) {
+    if (!canDelete) {
       toast.warning('You are not authorized to manage roles');
       return;
     }
@@ -297,14 +299,16 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
               </select>
             </div>
           )}
-          <button
-            onClick={handleAdd}
-            disabled={!canManage || (isSuperAdmin && !selectedHospitalId)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Role
-          </button>
+          {canAdd && (
+            <button
+              onClick={handleAdd}
+              disabled={isSuperAdmin && !selectedHospitalId}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Role
+            </button>
+          )}
         </div>
       </div>
 
@@ -369,22 +373,26 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                          {canManage && (
+                          {(canEdit || canDelete) && (
                             <>
-                              <button
-                                onClick={() => handleEdit(role)}
-                                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(role)}
-                                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={() => handleEdit(role)}
+                                  className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                  title="Edit"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDelete(role)}
+                                  className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </>
                           )}
                     </div>

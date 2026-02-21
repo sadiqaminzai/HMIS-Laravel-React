@@ -46,7 +46,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
   const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy } = useSettings();
-  const canManage = hasPermission('manage_transactions');
+  const canAdd = hasPermission('add_transactions') || hasPermission('manage_transactions');
+  const canEdit = hasPermission('edit_transactions') || hasPermission('manage_transactions');
+  const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
+  const canExport = hasPermission('export_transactions') || hasPermission('manage_transactions');
+  const canPrint = hasPermission('print_transactions') || hasPermission('manage_transactions');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [trxTypeFilter, setTrxTypeFilter] = useState<'all' | Transaction['trxType']>('all');
@@ -60,6 +64,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [printTemplate, setPrintTemplate] = useState<'sale' | 'purchase' | 'supplier'>('sale');
   const [receiptSize, setReceiptSize] = useState<'a4' | '58mm' | '76mm' | '80mm'>('a4');
+  const [isPrintQueued, setIsPrintQueued] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [remoteMedicines, setRemoteMedicines] = useState<typeof medicines>([]);
   const [remoteSuppliers, setRemoteSuppliers] = useState<typeof suppliers>([]);
@@ -176,6 +181,31 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       loadHospitalSetting(selectedHospitalId);
     }
   }, [selectedTransaction?.hospitalId, selectedHospitalId, loadHospitalSetting]);
+
+  useEffect(() => {
+    if (!isPrintQueued || !showViewModal || !selectedTransaction) return;
+
+    let rafOne = 0;
+    let rafTwo = 0;
+
+    rafOne = requestAnimationFrame(() => {
+      rafTwo = requestAnimationFrame(() => {
+        window.print();
+        setIsPrintQueued(false);
+      });
+    });
+
+    return () => {
+      if (rafOne) cancelAnimationFrame(rafOne);
+      if (rafTwo) cancelAnimationFrame(rafTwo);
+    };
+  }, [isPrintQueued, selectedTransaction, showViewModal]);
+
+  useEffect(() => {
+    if (!showViewModal && isPrintQueued) {
+      setIsPrintQueued(false);
+    }
+  }, [isPrintQueued, showViewModal]);
 
   const getNearestExpiryForMedicine = (medicineId: string) => {
     if (!medicineId) return undefined;
@@ -792,15 +822,19 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <option value="purchase_return">Purchase Return</option>
             <option value="sales_return">Sales Return</option>
           </select>
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
               <Plus className="w-3.5 h-3.5" />
               Add
@@ -847,31 +881,33 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.createdAt ? new Date(trx.createdAt).toLocaleString() : '—'}</td>
                     <td className="px-4 py-2 text-xs text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedTransaction(trx);
-                            if (trx.trxType === 'purchase' || trx.trxType === 'purchase_return') {
-                              setPrintTemplate('purchase');
-                            } else {
-                              setPrintTemplate('sale');
-                            }
-                            setShowViewModal(true);
-                            setTimeout(() => window.print(), 100);
-                          }}
-                          className="p-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-200"
-                          title="Print"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
+                        {canPrint && (
+                          <button
+                            onClick={() => {
+                              setSelectedTransaction(trx);
+                              if (trx.trxType === 'purchase' || trx.trxType === 'purchase_return') {
+                                setPrintTemplate('purchase');
+                              } else {
+                                setPrintTemplate('sale');
+                              }
+                              setShowViewModal(true);
+                              setIsPrintQueued(true);
+                            }}
+                            className="p-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-200"
+                            title="Print"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        )}
                         <button onClick={() => handleView(trx)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
                           <Eye className="w-4 h-4" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button onClick={() => handleEdit(trx)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button onClick={() => handleDelete(trx)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -914,40 +950,46 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <option value="76mm">76mm Receipt</option>
                 <option value="80mm">80mm Receipt</option>
               </select>
-              <button
-                onClick={() => {
-                  if (!selectedTransaction) return;
-                  if (selectedTransaction.trxType === 'purchase' || selectedTransaction.trxType === 'purchase_return') {
-                    setPrintTemplate(selectedTransaction.supplierId ? 'supplier' : 'purchase');
-                  } else {
-                    setPrintTemplate('sale');
-                  }
-                  setTimeout(() => window.print(), 100);
-                }}
-                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Print Invoice
-              </button>
-              {canManage && selectedTransaction && (
+              {canPrint && (
+                <button
+                  onClick={() => {
+                    if (!selectedTransaction) return;
+                    if (selectedTransaction.trxType === 'purchase' || selectedTransaction.trxType === 'purchase_return') {
+                      setPrintTemplate(selectedTransaction.supplierId ? 'supplier' : 'purchase');
+                    } else {
+                      setPrintTemplate('sale');
+                    }
+                    setIsPrintQueued(true);
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Print Invoice
+                </button>
+              )}
+              {selectedTransaction && (canEdit || canDelete) && (
                 <>
-                  <button
-                    onClick={() => {
-                      setShowViewModal(false);
-                      handleEdit(selectedTransaction);
-                    }}
-                    className="px-3 py-1.5 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowViewModal(false);
-                      handleDelete(selectedTransaction);
-                    }}
-                    className="px-3 py-1.5 text-xs rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200"
-                  >
-                    Delete
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        setShowViewModal(false);
+                        handleEdit(selectedTransaction);
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => {
+                        setShowViewModal(false);
+                        handleDelete(selectedTransaction);
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </>
               )}
               <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">

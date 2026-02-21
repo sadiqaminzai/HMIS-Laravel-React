@@ -37,9 +37,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     delete api.defaults.headers.common['Authorization'];
   };
 
+  const moduleActions = ['view', 'add', 'edit', 'delete', 'export', 'print', 'import', 'manage'] as const;
+
+  const menuToModules: Record<string, string[]> = {
+    view_pharmacy_menu: ['manufacturers', 'medicine_types', 'medicines', 'suppliers', 'transactions', 'stocks', 'stock_reconciliation'],
+    view_reception_menu: ['doctors', 'patients', 'appointments'],
+    view_laboratory_menu: ['lab_orders', 'test_templates'],
+    view_prescriptions_menu: ['prescriptions'],
+  };
+
   const hasPermission = (permissionName: string) => {
     if (!permissionName) return false;
-    return Boolean(user?.permissions?.includes(permissionName));
+
+    const assigned = user?.permissions ?? [];
+    if (assigned.includes(permissionName)) {
+      return true;
+    }
+
+    const normalized = permissionName.trim();
+    const match = /^(view|manage)_(.+)$/.exec(normalized);
+    if (match) {
+      const permissionType = match[1];
+      const moduleName = match[2];
+      if (permissionType === 'view') {
+        const hasAnyModulePermission = moduleActions.some((action) => assigned.includes(`${action}_${moduleName}`));
+        if (hasAnyModulePermission) {
+          return true;
+        }
+      }
+
+      if (permissionType === 'manage') {
+        return false;
+      }
+    }
+
+    if (normalized in menuToModules) {
+      const modules = menuToModules[normalized] ?? [];
+      const hasAnyMappedModulePermission = modules.some((moduleName) =>
+        moduleActions.some((action) => assigned.includes(`${action}_${moduleName}`))
+      );
+
+      if (hasAnyMappedModulePermission) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   // Check for existing session on mount

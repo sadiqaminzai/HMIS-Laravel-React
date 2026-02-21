@@ -166,7 +166,7 @@ const menuItems: MenuItem[] = [
         id: '/prescriptions/create',
         translationKey: 'nav.createNew',
         icon: <FilePlus className="w-3.5 h-3.5" />,
-        anyPermissions: ['create_prescription', 'manage_prescriptions']
+        anyPermissions: ['create_prescription', 'add_prescriptions', 'edit_prescriptions', 'manage_prescriptions']
       },
       {
         id: '/prescriptions',
@@ -221,22 +221,43 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
 
   const canSeeSettings = [
     'view_users',
+    'add_users',
+    'edit_users',
+    'delete_users',
     'manage_users',
     'view_roles',
+    'add_roles',
+    'edit_roles',
+    'delete_roles',
     'manage_roles',
     'view_permissions',
+    'add_permissions',
+    'edit_permissions',
+    'delete_permissions',
     'manage_permissions',
     'view_hospital_settings',
+    'add_hospital_settings',
+    'edit_hospital_settings',
+    'delete_hospital_settings',
     'manage_hospital_settings',
     'view_contact_messages',
+    'edit_contact_messages',
+    'delete_contact_messages',
     'manage_contact_messages',
+    'view_backups',
+    'add_backups',
+    'edit_backups',
+    'delete_backups',
+    'export_backups',
+    'manage_backups',
   ].some((p) => hasPermission(p));
 
-  const canSeeUsers = hasPermission('view_users') || hasPermission('manage_users');
-  const canSeeRoles = hasPermission('view_roles') || hasPermission('manage_roles');
-  const canSeePermissions = hasPermission('view_permissions') || hasPermission('manage_permissions');
-  const canSeeHospitalSettings = hasPermission('view_hospital_settings') || hasPermission('manage_hospital_settings');
-  const canSeeContactMessages = hasPermission('view_contact_messages') || hasPermission('manage_contact_messages');
+  const canSeeUsers = hasPermission('view_users') || hasPermission('add_users') || hasPermission('edit_users') || hasPermission('delete_users') || hasPermission('manage_users');
+  const canSeeRoles = hasPermission('view_roles') || hasPermission('add_roles') || hasPermission('edit_roles') || hasPermission('delete_roles') || hasPermission('manage_roles');
+  const canSeePermissions = hasPermission('view_permissions') || hasPermission('add_permissions') || hasPermission('edit_permissions') || hasPermission('delete_permissions') || hasPermission('manage_permissions');
+  const canSeeHospitalSettings = hasPermission('view_hospital_settings') || hasPermission('add_hospital_settings') || hasPermission('edit_hospital_settings') || hasPermission('delete_hospital_settings') || hasPermission('manage_hospital_settings');
+  const canSeeBackups = hasPermission('view_backups') || hasPermission('add_backups') || hasPermission('edit_backups') || hasPermission('delete_backups') || hasPermission('export_backups') || hasPermission('manage_backups') || canSeeHospitalSettings;
+  const canSeeContactMessages = hasPermission('view_contact_messages') || hasPermission('edit_contact_messages') || hasPermission('delete_contact_messages') || hasPermission('manage_contact_messages');
   
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
@@ -491,7 +512,19 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
         {canSeeSettings && (
           <div>
             <button
-              onClick={() => isCollapsed ? handleNavigate('/settings/general') : toggleMenu('settings')}
+              onClick={() => {
+                if (!isCollapsed) {
+                  toggleMenu('settings');
+                  return;
+                }
+                if (canSeeHospitalSettings) {
+                  handleNavigate('/settings/general');
+                  return;
+                }
+                if (canSeeBackups) {
+                  handleNavigate('/settings/backups');
+                }
+              }}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
                 ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings/backups', '/settings', '/contact-messages'].includes(currentPath)
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
@@ -522,7 +555,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     <span>General</span>
                   </button>
                 )}
-                {canSeeHospitalSettings && (
+                {canSeeBackups && (
                   <button
                     onClick={() => handleNavigate('/settings/backups')}
                     className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${

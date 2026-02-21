@@ -26,7 +26,10 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const { medicineTypes } = useMedicineTypes();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_medicines');
+  const canAdd = hasPermission('add_medicines') || hasPermission('manage_medicines');
+  const canEdit = hasPermission('edit_medicines') || hasPermission('manage_medicines');
+  const canDelete = hasPermission('delete_medicines') || hasPermission('manage_medicines');
+  const canExport = hasPermission('export_medicines') || hasPermission('manage_medicines');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -334,15 +337,19 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
               <Plus className="w-3.5 h-3.5" />
               Add
@@ -410,12 +417,12 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                         <button onClick={() => handleView(medicine)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
                           <Eye className="w-4 h-4" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button onClick={() => handleEdit(medicine)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button onClick={() => handleDelete(medicine)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </button>

@@ -354,7 +354,7 @@ function AppContent() {
             <Route
               path="/hospitals"
               element={
-                <RequirePermission anyOf={["view_hospitals", "manage_hospitals"]}>
+                <RequirePermission anyOf={["view_hospitals", "add_hospitals", "edit_hospitals", "delete_hospitals", "export_hospitals", "print_hospitals", "manage_hospitals"]}>
                   <HospitalManagement userRole={currentRole} />
                 </RequirePermission>
               }
@@ -362,7 +362,7 @@ function AppContent() {
             <Route
               path="/doctors"
               element={
-                <RequirePermission anyOf={["view_doctors", "manage_doctors"]}>
+                <RequirePermission anyOf={["view_doctors", "add_doctors", "edit_doctors", "delete_doctors", "export_doctors", "print_doctors", "manage_doctors"]}>
                   <DoctorManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -370,7 +370,7 @@ function AppContent() {
             <Route
               path="/patients"
               element={
-                <RequirePermission anyOf={["view_patients", "manage_patients", "register_patients"]}>
+                <RequirePermission anyOf={["view_patients", "add_patients", "edit_patients", "delete_patients", "export_patients", "print_patients", "manage_patients", "register_patients"]}>
                   <PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
                 </RequirePermission>
               }
@@ -378,7 +378,7 @@ function AppContent() {
             <Route
               path="/manufacturers"
               element={
-                <RequirePermission anyOf={["view_manufacturers", "manage_manufacturers"]}>
+                <RequirePermission anyOf={["view_manufacturers", "add_manufacturers", "edit_manufacturers", "delete_manufacturers", "export_manufacturers", "print_manufacturers", "manage_manufacturers"]}>
                   <ManufacturerManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -386,7 +386,7 @@ function AppContent() {
             <Route
               path="/medicines"
               element={
-                <RequirePermission anyOf={["view_medicines", "manage_medicines", "dispense_medicines"]}>
+                <RequirePermission anyOf={["view_medicines", "add_medicines", "edit_medicines", "delete_medicines", "export_medicines", "print_medicines", "manage_medicines", "dispense_medicines"]}>
                   <MedicineManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -394,7 +394,7 @@ function AppContent() {
             <Route
               path="/medicine-types"
               element={
-                <RequirePermission anyOf={["view_medicine_types", "manage_medicine_types"]}>
+                <RequirePermission anyOf={["view_medicine_types", "add_medicine_types", "edit_medicine_types", "delete_medicine_types", "export_medicine_types", "print_medicine_types", "manage_medicine_types"]}>
                   <MedicineTypeManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -402,7 +402,7 @@ function AppContent() {
             <Route
               path="/suppliers"
               element={
-                <RequirePermission anyOf={["view_suppliers", "manage_suppliers"]}>
+                <RequirePermission anyOf={["view_suppliers", "add_suppliers", "edit_suppliers", "delete_suppliers", "export_suppliers", "print_suppliers", "manage_suppliers"]}>
                   <SupplierManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -410,7 +410,7 @@ function AppContent() {
             <Route
               path="/transactions"
               element={
-                <RequirePermission anyOf={["view_transactions", "manage_transactions"]}>
+                <RequirePermission anyOf={["view_transactions", "add_transactions", "edit_transactions", "delete_transactions", "export_transactions", "print_transactions", "manage_transactions"]}>
                   <TransactionManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -418,7 +418,7 @@ function AppContent() {
             <Route
               path="/stocks"
               element={
-                <RequirePermission anyOf={["view_stocks", "manage_stocks"]}>
+                <RequirePermission anyOf={["view_stocks", "add_stocks", "edit_stocks", "delete_stocks", "export_stocks", "print_stocks", "manage_stocks"]}>
                   <StockManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -426,7 +426,7 @@ function AppContent() {
             <Route
               path="/appointments"
               element={
-                <RequirePermission anyOf={["view_appointments", "manage_appointments", "schedule_appointments"]}>
+                <RequirePermission anyOf={["view_appointments", "add_appointments", "edit_appointments", "delete_appointments", "export_appointments", "print_appointments", "manage_appointments", "schedule_appointments", "update_appointment_status"]}>
                   <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
                 </RequirePermission>
               }
@@ -434,7 +434,7 @@ function AppContent() {
             <Route
               path="/lab-tests"
               element={
-                <RequirePermission anyOf={["view_lab_orders", "manage_lab_orders", "enter_lab_results", "manage_lab_payments"]}>
+                <RequirePermission anyOf={["view_lab_orders", "add_lab_orders", "edit_lab_orders", "delete_lab_orders", "export_lab_orders", "print_lab_orders", "manage_lab_orders", "update_lab_order_status", "enter_lab_results", "manage_lab_payments"]}>
                   <LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.doctorId || currentUser.id} />
                 </RequirePermission>
               }
@@ -442,7 +442,7 @@ function AppContent() {
             <Route
               path="/test-management"
               element={
-                <RequirePermission anyOf={["view_test_templates", "manage_test_templates"]}>
+                <RequirePermission anyOf={["view_test_templates", "add_test_templates", "edit_test_templates", "delete_test_templates", "export_test_templates", "print_test_templates", "manage_test_templates"]}>
                   <TestManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -450,7 +450,7 @@ function AppContent() {
             <Route
               path="/prescriptions/create"
               element={
-                <RequirePermission anyOf={["create_prescription", "manage_prescriptions"]}>
+                <RequirePermission anyOf={["create_prescription", "add_prescriptions", "edit_prescriptions", "manage_prescriptions"]}>
                   <PrescriptionCreate hospital={currentHospital} currentUser={currentUser} />
                 </RequirePermission>
               }
@@ -458,7 +458,7 @@ function AppContent() {
             <Route
               path="/prescriptions"
               element={
-                <RequirePermission anyOf={["view_prescriptions", "manage_prescriptions"]}>
+                <RequirePermission anyOf={["view_prescriptions", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "export_prescriptions", "print_prescriptions", "manage_prescriptions", "create_prescription"]}>
                   <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
                 </RequirePermission>
               }
@@ -466,7 +466,7 @@ function AppContent() {
             <Route
               path="/users"
               element={
-                <RequirePermission anyOf={["view_users", "manage_users"]}>
+                <RequirePermission anyOf={["view_users", "add_users", "edit_users", "delete_users", "export_users", "print_users", "manage_users"]}>
                   <UserManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -474,7 +474,7 @@ function AppContent() {
             <Route
               path="/settings/users"
               element={
-                <RequirePermission anyOf={["view_users", "manage_users"]}>
+                <RequirePermission anyOf={["view_users", "add_users", "edit_users", "delete_users", "export_users", "print_users", "manage_users"]}>
                   <UserManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -482,7 +482,7 @@ function AppContent() {
             <Route
               path="/settings/roles"
               element={
-                <RequirePermission anyOf={["view_roles", "manage_roles"]}>
+                <RequirePermission anyOf={["view_roles", "add_roles", "edit_roles", "delete_roles", "manage_roles"]}>
                   <RoleManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -490,7 +490,7 @@ function AppContent() {
             <Route
               path="/settings/permissions"
               element={
-                <RequirePermission anyOf={["view_permissions", "manage_permissions"]}>
+                <RequirePermission anyOf={["view_permissions", "add_permissions", "edit_permissions", "delete_permissions", "import_permissions", "manage_permissions"]}>
                   <PermissionManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -501,15 +501,35 @@ function AppContent() {
                 <RequirePermission
                   anyOf={[
                     "view_users",
+                    "add_users",
+                    "edit_users",
+                    "delete_users",
                     "manage_users",
                     "view_roles",
+                    "add_roles",
+                    "edit_roles",
+                    "delete_roles",
                     "manage_roles",
                     "view_permissions",
+                    "add_permissions",
+                    "edit_permissions",
+                    "delete_permissions",
                     "manage_permissions",
                     "view_hospital_settings",
+                    "add_hospital_settings",
+                    "edit_hospital_settings",
+                    "delete_hospital_settings",
                     "manage_hospital_settings",
                     "view_contact_messages",
+                    "edit_contact_messages",
+                    "delete_contact_messages",
                     "manage_contact_messages",
+                    "view_backups",
+                    "add_backups",
+                    "edit_backups",
+                    "delete_backups",
+                    "export_backups",
+                    "manage_backups",
                   ]}
                 >
                   <Settings />
@@ -519,7 +539,7 @@ function AppContent() {
             <Route
               path="/settings/general"
               element={
-                <RequirePermission anyOf={["view_hospital_settings", "manage_hospital_settings"]}>
+                <RequirePermission anyOf={["view_hospital_settings", "add_hospital_settings", "edit_hospital_settings", "delete_hospital_settings", "manage_hospital_settings"]}>
                   <GeneralSettings hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -527,7 +547,7 @@ function AppContent() {
             <Route
               path="/settings/backups"
               element={
-                <RequirePermission anyOf={["manage_hospital_settings"]}>
+                <RequirePermission anyOf={["view_backups", "add_backups", "edit_backups", "delete_backups", "export_backups", "manage_backups", "view_hospital_settings", "manage_hospital_settings"]}>
                   <BackupManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -535,7 +555,7 @@ function AppContent() {
             <Route
               path="/contact-messages"
               element={
-                <RequirePermission anyOf={["view_contact_messages", "manage_contact_messages"]}>
+                <RequirePermission anyOf={["view_contact_messages", "edit_contact_messages", "delete_contact_messages", "manage_contact_messages"]}>
                   <ContactMessages />
                 </RequirePermission>
               }
@@ -543,7 +563,7 @@ function AppContent() {
             <Route
               path="/reports"
               element={
-                <RequirePermission anyOf={["view_reports", "manage_reports"]}>
+                <RequirePermission anyOf={["view_reports", "add_reports", "edit_reports", "delete_reports", "export_reports", "print_reports", "manage_reports"]}>
                   <Reports hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -551,7 +571,7 @@ function AppContent() {
             <Route
               path="/expenses/categories"
               element={
-                <RequirePermission anyOf={["view_expense_categories", "manage_expense_categories"]}>
+                <RequirePermission anyOf={["view_expense_categories", "add_expense_categories", "edit_expense_categories", "delete_expense_categories", "export_expense_categories", "print_expense_categories", "manage_expense_categories"]}>
                   <ExpenseCategories hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -559,7 +579,7 @@ function AppContent() {
             <Route
               path="/expenses/entries"
               element={
-                <RequirePermission anyOf={["view_expenses", "manage_expenses"]}>
+                <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
                   <ExpenseManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
@@ -567,7 +587,7 @@ function AppContent() {
             <Route
               path="/expenses/report"
               element={
-                <RequirePermission anyOf={["view_expenses", "manage_expenses"]}>
+                <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
                   <ExpenseReport hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }

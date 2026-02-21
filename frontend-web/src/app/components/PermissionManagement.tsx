@@ -22,8 +22,10 @@ interface Permission {
 
 export function PermissionManagement({ hospital, userRole }: PermissionManagementProps) {
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_permissions');
-  const canImport = hasPermission('import_permissions') || canManage;
+  const canAdd = hasPermission('add_permissions') || hasPermission('manage_permissions');
+  const canEdit = hasPermission('edit_permissions') || hasPermission('manage_permissions');
+  const canDelete = hasPermission('delete_permissions') || hasPermission('manage_permissions');
+  const canImport = hasPermission('import_permissions') || canAdd || canEdit;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -50,7 +52,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
 
   const loadPermissions = async () => {
     try {
-      const { data } = await api.get('/permissions');
+      const { data } = await api.get('/permissions', { params: { all: 1 } });
       const records: any[] = data.data ?? data;
       setPermissions(records.map((p) => ({
         id: p.id,
@@ -85,7 +87,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   }, {} as Record<string, Permission[]>);
 
   const handleAdd = () => {
-    if (!canManage) {
+    if (!canAdd) {
       toast.warning('You are not authorized to manage permissions');
       return;
     }
@@ -105,7 +107,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   };
 
   const handleEdit = (permission: Permission) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage permissions');
       return;
     }
@@ -121,7 +123,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   };
 
   const handleDelete = (permission: Permission) => {
-    if (!canManage) {
+    if (!canDelete) {
       toast.warning('You are not authorized to manage permissions');
       return;
     }
@@ -254,7 +256,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Permission Management</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Define and manage system permissions</p>
         </div>
-        {(canManage || canImport || hasPermission('view_permissions')) && (
+        {(canAdd || canEdit || canDelete || canImport || hasPermission('view_permissions')) && (
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownloadTemplate}
@@ -276,7 +278,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 />
               </label>
             )}
-            {canManage && (
+            {canAdd && (
               <button
                 onClick={handleAdd}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
@@ -365,7 +367,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          {canManage && (
+                          {canEdit && (
                             <button
                               onClick={() => handleEdit(permission)}
                               disabled={submitting}
@@ -375,7 +377,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          {canManage && (
+                          {canDelete && (
                             <button
                               onClick={() => handleDelete(permission)}
                               className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"

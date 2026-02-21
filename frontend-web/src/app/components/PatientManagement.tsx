@@ -101,10 +101,12 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     return doctors.find((d) => String(d.id) === String(defaultDoctorId));
   }, [currentHospital.id, doctors, getDefaultDoctorId, isAllHospitals]);
 
-  const canManage = hasPermission('manage_patients');
   const canRegister = hasPermission('register_patients');
-  const canCreate = canRegister || canManage;
-  const canDelete = canManage;
+  const canCreate = hasPermission('add_patients') || canRegister || hasPermission('manage_patients');
+  const canEdit = hasPermission('edit_patients') || hasPermission('manage_patients');
+  const canDelete = hasPermission('delete_patients') || hasPermission('manage_patients');
+  const canExport = hasPermission('export_patients') || hasPermission('manage_patients');
+  const canPrint = hasPermission('print_patients') || hasPermission('manage_patients');
 
   const filteredPatients = doctorFiltered.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -314,7 +316,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   };
 
   const handleEdit = (patient: Patient) => {
-    if (!canManage) {
+    if (!canEdit) {
       toast.warning('You are not authorized to manage patients');
       return;
     }
@@ -428,7 +430,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPatient || !canManage) {
+    if (!selectedPatient || !canEdit) {
       toast.warning('You are not authorized to manage patients');
       return;
     }
@@ -496,22 +498,26 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
           {canCreate && (
             <button
               onClick={handleAdd}
@@ -631,13 +637,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handlePrintIdCard(patient)}
-                          className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md transition-colors"
-                          title="Print ID Card"
-                        >
-                          <CreditCard className="w-3.5 h-3.5" />
-                        </button>
+                        {canPrint && (
+                          <button
+                            onClick={() => handlePrintIdCard(patient)}
+                            className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md transition-colors"
+                            title="Print ID Card"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleView(patient)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
@@ -645,7 +653,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button
                             onClick={() => handleEdit(patient)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"

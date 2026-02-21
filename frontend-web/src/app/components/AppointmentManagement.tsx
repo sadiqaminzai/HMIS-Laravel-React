@@ -432,9 +432,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   // Check permissions
-  const canCreate = hasPermission('schedule_appointments') || hasPermission('manage_appointments');
-  const canEdit = hasPermission('manage_appointments');
-  const canDelete = hasPermission('manage_appointments');
+  const canCreate = hasPermission('add_appointments') || hasPermission('schedule_appointments') || hasPermission('manage_appointments');
+  const canEdit = hasPermission('edit_appointments') || hasPermission('manage_appointments');
+  const canDelete = hasPermission('delete_appointments') || hasPermission('manage_appointments');
+  const canExport = hasPermission('export_appointments') || hasPermission('manage_appointments');
+  const canPrint = hasPermission('print_appointments') || hasPermission('manage_appointments');
   const canChangeAnyStatus = hasPermission('update_appointment_status') || hasPermission('manage_appointments');
 
   return (
@@ -469,22 +471,26 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
+          {canExport && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
           {canCreate && (
             <button
               onClick={() => {
@@ -669,13 +675,15 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handlePrint(apt)}
-                          className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-md transition-colors"
-                          title="Print Fees Card"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                        </button>
+                        {canPrint && (
+                          <button
+                            onClick={() => handlePrint(apt)}
+                            className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-md transition-colors"
+                            title="Print Fees Card"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {canEdit && (
                           <button
                             onClick={() => openEditModal(apt)}

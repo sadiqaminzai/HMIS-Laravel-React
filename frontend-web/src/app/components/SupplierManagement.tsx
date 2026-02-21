@@ -20,7 +20,11 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
   const { suppliers, addSupplier, updateSupplier, deleteSupplier, loading } = useSuppliers();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const canManage = hasPermission('manage_suppliers');
+  const canAdd = hasPermission('add_suppliers') || hasPermission('manage_suppliers');
+  const canEdit = hasPermission('edit_suppliers') || hasPermission('manage_suppliers');
+  const canDelete = hasPermission('delete_suppliers') || hasPermission('manage_suppliers');
+  const canExport = hasPermission('export_suppliers') || hasPermission('manage_suppliers');
+  const canPrint = hasPermission('print_suppliers') || hasPermission('manage_suppliers');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -214,15 +218,19 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          {canManage && (
+          {canExport && (
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
               <Plus className="w-3.5 h-3.5" />
               Add
@@ -265,12 +273,12 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                         <button onClick={() => handleView(supplier)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
                           <Eye className="w-4 h-4" />
                         </button>
-                        {canManage && (
+                        {canEdit && (
                           <button onClick={() => handleEdit(supplier)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
-                        {canManage && (
+                        {canDelete && (
                           <button onClick={() => handleDelete(supplier)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -302,12 +310,14 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Supplier Details</h3>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setTimeout(() => window.print(), 100)}
-                className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-              >
-                Print
-              </button>
+              {canPrint && (
+                <button
+                  onClick={() => setTimeout(() => window.print(), 100)}
+                  className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  Print
+                </button>
+              )}
               <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
                 <X className="w-4 h-4" />
               </button>

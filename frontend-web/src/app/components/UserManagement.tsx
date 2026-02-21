@@ -46,8 +46,11 @@ type RoleOption = {
 
 export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const { hasPermission } = useAuth();
-  const canManageUsers = hasPermission('manage_users');
-  const canViewUsers = hasPermission('view_users') || canManageUsers;
+  const canAddUsers = hasPermission('add_users') || hasPermission('manage_users');
+  const canEditUsers = hasPermission('edit_users') || hasPermission('manage_users');
+  const canDeleteUsers = hasPermission('delete_users') || hasPermission('manage_users');
+  const canExportUsers = hasPermission('export_users') || hasPermission('manage_users');
+  const canViewUsers = hasPermission('view_users') || canAddUsers || canEditUsers || canDeleteUsers;
   const canViewRoles = hasPermission('view_roles') || hasPermission('manage_roles');
   const isSuperAdmin = userRole === 'super_admin';
   const [searchTerm, setSearchTerm] = useState('');
@@ -295,7 +298,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   };
 
   const handleAdd = () => {
-    if (!canManageUsers) {
+    if (!canAddUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -327,7 +330,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   };
 
   const handleEdit = (user: ManagedUser) => {
-    if (!canManageUsers) {
+    if (!canEditUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -358,7 +361,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   };
 
   const handleDelete = (user: ManagedUser) => {
-    if (!canManageUsers) {
+    if (!canDeleteUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -372,7 +375,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageUsers) {
+    if (!canAddUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -417,7 +420,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
-    if (!canManageUsers) {
+    if (!canEditUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -458,7 +461,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
 
   const handleConfirmDelete = async () => {
     if (!selectedUser) return;
-    if (!canManageUsers) {
+    if (!canDeleteUsers) {
       toast.warning('You are not authorized to manage users');
       return;
     }
@@ -532,29 +535,35 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
           )}
 
           {/* Action Buttons */}
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={exportToPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-            title="Export to PDF"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add User
-          </button>
+          {canExportUsers && (
+            <button
+              onClick={exportToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExportUsers && (
+            <button
+              onClick={exportToPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
+              title="Export to PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canAddUsers && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add User
+            </button>
+          )}
         </div>
       </div>
 
@@ -640,22 +649,26 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleEdit(user)}
-                          disabled={!canManageTarget(user)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(user)}
-                          disabled={!canManageTarget(user)}
-                          className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEditUsers && (
+                          <button
+                            onClick={() => handleEdit(user)}
+                            disabled={!canManageTarget(user)}
+                            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDeleteUsers && (
+                          <button
+                            onClick={() => handleDelete(user)}
+                            disabled={!canManageTarget(user)}
+                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

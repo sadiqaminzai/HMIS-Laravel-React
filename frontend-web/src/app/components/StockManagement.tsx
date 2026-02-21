@@ -5,6 +5,7 @@ import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useStocks } from '../context/StockContext';
 import { useMedicines } from '../context/MedicineContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -21,6 +22,10 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
   const { stocks, loading } = useStocks();
   const { medicines } = useMedicines();
   const { hospitals } = useHospitals();
+  const { hasPermission } = useAuth();
+  const canExport = hasPermission('export_stocks') || hasPermission('manage_stocks');
+  const canPrint = hasPermission('print_stocks') || hasPermission('manage_stocks');
+  const canReconcile = hasPermission('edit_stocks') || hasPermission('manage_stocks');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMedicineId, setSelectedMedicineId] = useState('all');
@@ -197,20 +202,28 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             placeholder="Batch no"
             className="w-32 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
           />
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel
-          </button>
-          <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
-            <FileText className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          <button onClick={loadReconciliation} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-xs font-medium shadow-sm" title="Reconciliation">
-            Reconcile
-          </button>
-          <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">
-            Print
-          </button>
+          {canExport && (
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Excel
+            </button>
+          )}
+          {canExport && (
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+              <FileText className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          )}
+          {canReconcile && (
+            <button onClick={loadReconciliation} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-xs font-medium shadow-sm" title="Reconciliation">
+              Reconcile
+            </button>
+          )}
+          {canPrint && (
+            <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">
+              Print
+            </button>
+          )}
         </div>
       </div>
 
@@ -269,17 +282,19 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
       </div>
 
       {/* Print Modal */}
-      <div className={`fixed inset-0 z-50 ${showPrintModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
+      <div className={`fixed inset-0 z-50 ${showPrintModal && canPrint ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-5xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Stock Print View</h3>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setTimeout(() => window.print(), 100)}
-                className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-              >
-                Print
-              </button>
+              {canPrint && (
+                <button
+                  onClick={() => setTimeout(() => window.print(), 100)}
+                  className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  Print
+                </button>
+              )}
               <button onClick={() => setShowPrintModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
                 <X className="w-4 h-4" />
               </button>
@@ -383,12 +398,14 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
               >
                 Refresh
               </button>
-              <button
-                onClick={saveReconciliation}
-                className="px-2 py-1 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
-              >
-                Save
-              </button>
+              {canReconcile && (
+                <button
+                  onClick={saveReconciliation}
+                  className="px-2 py-1 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+                >
+                  Save
+                </button>
+              )}
               <button onClick={() => setShowReconcileModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
                 <X className="w-4 h-4" />
               </button>
