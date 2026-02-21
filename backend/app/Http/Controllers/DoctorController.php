@@ -36,7 +36,7 @@ class DoctorController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeDoctorAction($request->user(), 'add_doctors');
 
         $data = $this->validatePayload($request);
 
@@ -90,7 +90,7 @@ class DoctorController extends Controller
 
     public function update(Request $request, User $doctor)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeDoctorAction($request->user(), 'edit_doctors');
         $this->authorizeScope($request->user(), $doctor);
 
         if ($doctor->role !== 'doctor') {
@@ -126,7 +126,7 @@ class DoctorController extends Controller
 
     public function destroy(Request $request, User $doctor)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeDoctorAction($request->user(), 'delete_doctors');
         $this->authorizeScope($request->user(), $doctor);
 
         if ($doctor->role !== 'doctor') {
@@ -138,11 +138,13 @@ class DoctorController extends Controller
         return response()->json(['message' => 'Doctor deleted']);
     }
 
-    private function authorizeReceptionOrAbove($user): void
+    private function authorizeDoctorAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['receptionist', 'admin', 'super_admin'])) {
-            abort(403, 'Only receptionists, admins or super admins can manage doctors');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_doctors'],
+            'Only users with doctor permissions can manage doctors'
+        );
     }
 
     private function authorizeScope($user, User $doctor): void

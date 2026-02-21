@@ -61,7 +61,7 @@ class PatientController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizePatientAction($request->user(), ['add_patients', 'register_patients', 'manage_patients']);
 
         $actor = $request->user();
         $hospitalId = $actor->role !== 'super_admin'
@@ -94,7 +94,7 @@ class PatientController extends Controller
 
     public function update(Request $request, Patient $patient)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizePatientAction($request->user(), ['edit_patients', 'manage_patients']);
         $this->authorizeScope($request->user(), $patient);
 
         $data = $this->validatePayload($request, $patient->id, (int) $patient->hospital_id);
@@ -110,7 +110,7 @@ class PatientController extends Controller
 
     public function destroy(Request $request, Patient $patient)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizePatientAction($request->user(), ['delete_patients', 'manage_patients']);
         $this->authorizeScope($request->user(), $patient);
 
         $patient->delete();
@@ -118,11 +118,9 @@ class PatientController extends Controller
         return response()->json(['message' => 'Patient deleted']);
     }
 
-    private function authorizeReceptionOrAbove($user): void
+    private function authorizePatientAction($user, array $permissions): void
     {
-        if (!in_array($user->role, ['receptionist', 'admin', 'super_admin'])) {
-            abort(403, 'Only receptionists, admins or super admins can manage patients');
-        }
+        $this->ensureAnyPermission($user, $permissions, 'Only users with patient permissions can manage patients');
     }
 
     private function authorizeScope($user, Patient $patient): void

@@ -34,7 +34,7 @@ class SupplierController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeSupplierAction($request->user(), 'add_suppliers');
 
         $data = $this->validatePayload($request);
 
@@ -56,7 +56,7 @@ class SupplierController extends Controller
 
     public function update(Request $request, Supplier $supplier)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeSupplierAction($request->user(), 'edit_suppliers');
         $this->authorizeScope($request->user(), $supplier);
 
         $data = $this->validatePayload($request, $supplier->id, $supplier->hospital_id);
@@ -72,7 +72,7 @@ class SupplierController extends Controller
 
     public function destroy(Request $request, Supplier $supplier)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeSupplierAction($request->user(), 'delete_suppliers');
         $this->authorizeScope($request->user(), $supplier);
 
         $supplier->delete();
@@ -99,11 +99,13 @@ class SupplierController extends Controller
         ]);
     }
 
-    private function authorizePharmacy($user): void
+    private function authorizeSupplierAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'pharmacist'])) {
-            abort(403, 'Only admins, pharmacists, or super admins can manage suppliers');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_suppliers'],
+            'Only users with supplier permissions can manage suppliers'
+        );
     }
 
     private function authorizeScope($user, Supplier $supplier): void

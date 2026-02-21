@@ -36,7 +36,7 @@ class TransactionController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeTransactionAction($request->user(), 'add_transactions');
 
         $data = $this->validatePayload($request);
 
@@ -101,7 +101,7 @@ class TransactionController extends Controller
 
     public function update(Request $request, Transaction $transaction)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeTransactionAction($request->user(), 'edit_transactions');
         $this->authorizeScope($request->user(), $transaction);
 
         $data = $this->validatePayload($request, $transaction->hospital_id, true, $transaction->trx_type);
@@ -184,7 +184,7 @@ class TransactionController extends Controller
 
     public function destroy(Request $request, Transaction $transaction)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeTransactionAction($request->user(), 'delete_transactions');
         $this->authorizeScope($request->user(), $transaction);
 
         $actor = $request->user()->name ?? null;
@@ -449,11 +449,13 @@ class TransactionController extends Controller
         ]);
     }
 
-    private function authorizePharmacy($user): void
+    private function authorizeTransactionAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'pharmacist'])) {
-            abort(403, 'Only admins, pharmacists, or super admins can manage transactions');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_transactions'],
+            'Only users with transaction permissions can manage transactions'
+        );
     }
 
     private function authorizeScope($user, Transaction $transaction): void

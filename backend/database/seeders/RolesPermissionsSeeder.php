@@ -113,6 +113,8 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'manage_backups', 'display_name' => 'Manage Backups', 'category' => 'Settings'],
         ];
 
+        $permissions = $this->deduplicatePermissions(array_merge($permissions, $this->granularPermissions()));
+
         $permissionIds = [];
         foreach ($permissions as $perm) {
             $permission = Permission::updateOrCreate(
@@ -141,5 +143,76 @@ class RolesPermissionsSeeder extends Seeder
             'is_active' => true,
             'last_login_at' => now(),
         ]);
+    }
+
+    /**
+     * @return array<int, array{name: string, display_name: string, category: string}>
+     */
+    private function granularPermissions(): array
+    {
+        $actions = [
+            'view' => 'View',
+            'add' => 'Add',
+            'edit' => 'Edit',
+            'delete' => 'Delete',
+            'export' => 'Export',
+            'print' => 'Print',
+            'import' => 'Import',
+        ];
+
+        $resources = [
+            ['name' => 'hospitals', 'label' => 'Hospitals', 'category' => 'Hospitals'],
+            ['name' => 'users', 'label' => 'Users', 'category' => 'User Management'],
+            ['name' => 'doctors', 'label' => 'Doctors', 'category' => 'User Management'],
+            ['name' => 'patients', 'label' => 'Patients', 'category' => 'Patient Management'],
+            ['name' => 'appointments', 'label' => 'Appointments', 'category' => 'Appointments'],
+            ['name' => 'prescriptions', 'label' => 'Prescriptions', 'category' => 'Prescription'],
+            ['name' => 'medicines', 'label' => 'Medicines', 'category' => 'Pharmacy'],
+            ['name' => 'manufacturers', 'label' => 'Manufacturers', 'category' => 'Pharmacy'],
+            ['name' => 'medicine_types', 'label' => 'Medicine Types', 'category' => 'Pharmacy'],
+            ['name' => 'suppliers', 'label' => 'Suppliers', 'category' => 'Pharmacy'],
+            ['name' => 'transactions', 'label' => 'Transactions', 'category' => 'Pharmacy'],
+            ['name' => 'stocks', 'label' => 'Stocks', 'category' => 'Pharmacy'],
+            ['name' => 'stock_reconciliation', 'label' => 'Stock Reconciliation', 'category' => 'Pharmacy'],
+            ['name' => 'expense_categories', 'label' => 'Expense Categories', 'category' => 'Finance'],
+            ['name' => 'expenses', 'label' => 'Expenses', 'category' => 'Finance'],
+            ['name' => 'reports', 'label' => 'Reports', 'category' => 'Reports'],
+            ['name' => 'test_templates', 'label' => 'Test Templates', 'category' => 'Laboratory'],
+            ['name' => 'lab_orders', 'label' => 'Lab Orders', 'category' => 'Laboratory'],
+            ['name' => 'contact_messages', 'label' => 'Contact Messages', 'category' => 'Support'],
+            ['name' => 'hospital_settings', 'label' => 'Hospital Settings', 'category' => 'Settings'],
+            ['name' => 'backups', 'label' => 'Backups', 'category' => 'Settings'],
+            ['name' => 'roles', 'label' => 'Roles', 'category' => 'RBAC'],
+            ['name' => 'permissions', 'label' => 'Permissions', 'category' => 'RBAC'],
+        ];
+
+        $permissions = [];
+
+        foreach ($resources as $resource) {
+            foreach ($actions as $action => $display) {
+                $permissions[] = [
+                    'name' => $action . '_' . $resource['name'],
+                    'display_name' => $display . ' ' . $resource['label'],
+                    'category' => $resource['category'],
+                ];
+            }
+        }
+
+        return $permissions;
+    }
+
+    /**
+     * @param  array<int, array{name: string, display_name: string, category: string}>  $permissions
+     * @return array<int, array{name: string, display_name: string, category: string}>
+     */
+    private function deduplicatePermissions(array $permissions): array
+    {
+        $deduplicated = [];
+
+        foreach ($permissions as $permission) {
+            $deduplicated[$permission['name']] = $permission;
+        }
+
+        return array_values($deduplicated);
     }
 }

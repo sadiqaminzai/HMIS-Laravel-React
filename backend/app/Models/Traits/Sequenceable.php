@@ -46,6 +46,10 @@ trait Sequenceable
                 return;
             }
 
+            if (method_exists($model, 'isForceDeleting') && !$model->isForceDeleting()) {
+                return;
+            }
+
             $module = $model->getSequenceModuleName();
             ModuleSequence::decrementFor((int) $model->hospital_id, $module);
         });

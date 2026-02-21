@@ -1,0 +1,5 @@
+password:5z9BXb@F+J
+MySQL database name:
+u814835276_hmis
+MySQL username
+u814835276_hmis

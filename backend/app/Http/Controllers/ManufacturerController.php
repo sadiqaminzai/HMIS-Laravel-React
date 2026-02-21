@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Manufacturer;
+use App\Models\ModuleSequence;
 use Illuminate\Http\Request;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ManufacturerController extends Controller
@@ -40,7 +43,7 @@ class ManufacturerController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeManufacturerAction($request->user(), 'add_manufacturers');
 
         $data = $this->validatePayload($request);
 
@@ -48,7 +51,37 @@ class ManufacturerController extends Controller
             $data['hospital_id'] = $request->user()->hospital_id;
         }
 
-        $manufacturer = Manufacturer::create($data);
+        $manufacturer = null;
+        $attempts = 0;
+
+        while ($attempts < 3 && !$manufacturer) {
+            try {
+                $manufacturer = Manufacturer::create($data);
+            } catch (UniqueConstraintViolationException $e) {
+                $attempts++;
+                if (!str_contains($e->getMessage(), 'manufacturers_hospital_id_serial_no_unique')) {
+                    throw $e;
+                }
+
+                $hospitalId = (int) ($data['hospital_id'] ?? 0);
+                if ($hospitalId <= 0) {
+                    throw $e;
+                }
+
+                $maxNumber = (int) Manufacturer::withTrashed()
+                    ->where('hospital_id', $hospitalId)
+                    ->max('serial_no');
+
+                ModuleSequence::updateOrCreate(
+                    ['hospital_id' => $hospitalId, 'module' => 'manufacturer'],
+                    ['last_number' => $maxNumber]
+                );
+            }
+        }
+
+        if (!$manufacturer) {
+            abort(500, 'Unable to generate a unique manufacturer serial number.');
+        }
 
         return response()->json($manufacturer, 201);
     }
@@ -62,7 +95,7 @@ class ManufacturerController extends Controller
 
     public function update(Request $request, Manufacturer $manufacturer)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeManufacturerAction($request->user(), 'edit_manufacturers');
         $this->authorizeScope($request->user(), $manufacturer);
 
         $data = $this->validatePayload($request, $manufacturer->id, $manufacturer->hospital_id);
@@ -78,7 +111,7 @@ class ManufacturerController extends Controller
 
     public function destroy(Request $request, Manufacturer $manufacturer)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeManufacturerAction($request->user(), 'delete_manufacturers');
         $this->authorizeScope($request->user(), $manufacturer);
 
         $manufacturer->delete();
@@ -94,7 +127,7 @@ class ManufacturerController extends Controller
             'hospital_id' => [$request->user()->role === 'super_admin' ? 'required' : 'sometimes', 'exists:hospitals,id'],
             'name' => ['required', 'string', 'max:255'],
             'license_number' => [
-                'required',
+                'nullable',
                 'string',
                 'max:255',
                 Rule::unique('manufacturers', 'license_number')
@@ -104,13 +137,21 @@ class ManufacturerController extends Controller
             'country' => ['nullable', 'string', 'max:255'],
             'status' => ['required', 'in:active,inactive'],
         ]);
+
+        if (array_key_exists('license_number', $validated) && $validated['license_number'] === '') {
+            $validated['license_number'] = null;
+        }
+
+        return $validated;
     }
 
-    private function authorizePharmacy($user): void
+    private function authorizeManufacturerAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'pharmacist'])) {
-            abort(403, 'Only admins, pharmacists, or super admins can manage manufacturers');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_manufacturers'],
+            'Only users with manufacturer permissions can manage manufacturers'
+        );
     }
 
     private function authorizeScope($user, Manufacturer $manufacturer): void

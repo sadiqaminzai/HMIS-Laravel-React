@@ -1,0 +1,1383 @@
+﻿{
+    "permissions":  [
+                        {
+                            "name":  "add_appointments",
+                            "display_name":  "Add Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_backups",
+                            "display_name":  "Add Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_contact_messages",
+                            "display_name":  "Add Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_doctors",
+                            "display_name":  "Add Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_expense_categories",
+                            "display_name":  "Add Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_expenses",
+                            "display_name":  "Add Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_hospital_settings",
+                            "display_name":  "Add Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_hospitals",
+                            "display_name":  "Add Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_lab_orders",
+                            "display_name":  "Add Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_manufacturers",
+                            "display_name":  "Add Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_medicine_types",
+                            "display_name":  "Add Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_medicines",
+                            "display_name":  "Add Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_patients",
+                            "display_name":  "Add Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_permissions",
+                            "display_name":  "Add Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_prescriptions",
+                            "display_name":  "Add Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_reports",
+                            "display_name":  "Add Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_roles",
+                            "display_name":  "Add Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_stock_reconciliation",
+                            "display_name":  "Add Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_stocks",
+                            "display_name":  "Add Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_suppliers",
+                            "display_name":  "Add Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_test_templates",
+                            "display_name":  "Add Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_transactions",
+                            "display_name":  "Add Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "add_users",
+                            "display_name":  "Add Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "create_prescription",
+                            "display_name":  "Create Prescription",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_appointments",
+                            "display_name":  "Delete Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_backups",
+                            "display_name":  "Delete Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_contact_messages",
+                            "display_name":  "Delete Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_doctors",
+                            "display_name":  "Delete Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_expense_categories",
+                            "display_name":  "Delete Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_expenses",
+                            "display_name":  "Delete Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_hospital_settings",
+                            "display_name":  "Delete Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_hospitals",
+                            "display_name":  "Delete Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_lab_orders",
+                            "display_name":  "Delete Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_manufacturers",
+                            "display_name":  "Delete Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_medicine_types",
+                            "display_name":  "Delete Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_medicines",
+                            "display_name":  "Delete Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_patients",
+                            "display_name":  "Delete Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_permissions",
+                            "display_name":  "Delete Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_prescriptions",
+                            "display_name":  "Delete Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_reports",
+                            "display_name":  "Delete Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_roles",
+                            "display_name":  "Delete Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_stock_reconciliation",
+                            "display_name":  "Delete Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_stocks",
+                            "display_name":  "Delete Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_suppliers",
+                            "display_name":  "Delete Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_test_templates",
+                            "display_name":  "Delete Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_transactions",
+                            "display_name":  "Delete Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "delete_users",
+                            "display_name":  "Delete Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "dispense_medicines",
+                            "display_name":  "Dispense Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_appointments",
+                            "display_name":  "Edit Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_backups",
+                            "display_name":  "Edit Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_contact_messages",
+                            "display_name":  "Edit Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_doctors",
+                            "display_name":  "Edit Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_expense_categories",
+                            "display_name":  "Edit Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_expenses",
+                            "display_name":  "Edit Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_hospital_settings",
+                            "display_name":  "Edit Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_hospitals",
+                            "display_name":  "Edit Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_lab_orders",
+                            "display_name":  "Edit Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_manufacturers",
+                            "display_name":  "Edit Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_medicine_types",
+                            "display_name":  "Edit Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_medicines",
+                            "display_name":  "Edit Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_patients",
+                            "display_name":  "Edit Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_permissions",
+                            "display_name":  "Edit Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_prescriptions",
+                            "display_name":  "Edit Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_reports",
+                            "display_name":  "Edit Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_roles",
+                            "display_name":  "Edit Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_stock_reconciliation",
+                            "display_name":  "Edit Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_stocks",
+                            "display_name":  "Edit Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_suppliers",
+                            "display_name":  "Edit Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_test_templates",
+                            "display_name":  "Edit Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_transactions",
+                            "display_name":  "Edit Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "edit_users",
+                            "display_name":  "Edit Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "enter_lab_results",
+                            "display_name":  "Enter Lab Results",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_appointments",
+                            "display_name":  "Export Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_backups",
+                            "display_name":  "Export Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_contact_messages",
+                            "display_name":  "Export Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_doctors",
+                            "display_name":  "Export Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_expense_categories",
+                            "display_name":  "Export Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_expenses",
+                            "display_name":  "Export Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_hospital_settings",
+                            "display_name":  "Export Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_hospitals",
+                            "display_name":  "Export Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_lab_orders",
+                            "display_name":  "Export Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_manufacturers",
+                            "display_name":  "Export Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_medicine_types",
+                            "display_name":  "Export Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_medicines",
+                            "display_name":  "Export Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_patients",
+                            "display_name":  "Export Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_permissions",
+                            "display_name":  "Export Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_prescriptions",
+                            "display_name":  "Export Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_reports",
+                            "display_name":  "Export Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_roles",
+                            "display_name":  "Export Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_stock_reconciliation",
+                            "display_name":  "Export Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_stocks",
+                            "display_name":  "Export Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_suppliers",
+                            "display_name":  "Export Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_test_templates",
+                            "display_name":  "Export Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_transactions",
+                            "display_name":  "Export Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "export_users",
+                            "display_name":  "Export Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_appointments",
+                            "display_name":  "Import Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_backups",
+                            "display_name":  "Import Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_contact_messages",
+                            "display_name":  "Import Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_doctors",
+                            "display_name":  "Import Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_expense_categories",
+                            "display_name":  "Import Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_expenses",
+                            "display_name":  "Import Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_hospital_settings",
+                            "display_name":  "Import Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_hospitals",
+                            "display_name":  "Import Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_lab_orders",
+                            "display_name":  "Import Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_manufacturers",
+                            "display_name":  "Import Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_medicine_types",
+                            "display_name":  "Import Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_medicines",
+                            "display_name":  "Import Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_patients",
+                            "display_name":  "Import Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_permissions",
+                            "display_name":  "Import Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_prescriptions",
+                            "display_name":  "Import Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_reports",
+                            "display_name":  "Import Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_roles",
+                            "display_name":  "Import Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_stock_reconciliation",
+                            "display_name":  "Import Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_stocks",
+                            "display_name":  "Import Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_suppliers",
+                            "display_name":  "Import Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_test_templates",
+                            "display_name":  "Import Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_transactions",
+                            "display_name":  "Import Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "import_users",
+                            "display_name":  "Import Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_appointments",
+                            "display_name":  "Manage Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_backups",
+                            "display_name":  "Manage Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_contact_messages",
+                            "display_name":  "Manage Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_doctors",
+                            "display_name":  "Manage Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_expense_categories",
+                            "display_name":  "Manage Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_expenses",
+                            "display_name":  "Manage Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_hospital_settings",
+                            "display_name":  "Manage Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_hospitals",
+                            "display_name":  "Manage Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_lab_orders",
+                            "display_name":  "Manage Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_lab_payments",
+                            "display_name":  "Manage Lab Payments",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_manufacturers",
+                            "display_name":  "Manage Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_medicine_types",
+                            "display_name":  "Manage Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_medicines",
+                            "display_name":  "Manage Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_patients",
+                            "display_name":  "Manage Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_permissions",
+                            "display_name":  "Manage Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_prescriptions",
+                            "display_name":  "Manage Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_reports",
+                            "display_name":  "Manage Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_roles",
+                            "display_name":  "Manage Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_stock_reconciliation",
+                            "display_name":  "Manage Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_stocks",
+                            "display_name":  "Manage Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_suppliers",
+                            "display_name":  "Manage Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_test_templates",
+                            "display_name":  "Manage Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_transactions",
+                            "display_name":  "Manage Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "manage_users",
+                            "display_name":  "Manage Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_appointments",
+                            "display_name":  "Print Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_backups",
+                            "display_name":  "Print Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_contact_messages",
+                            "display_name":  "Print Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_doctors",
+                            "display_name":  "Print Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_expense_categories",
+                            "display_name":  "Print Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_expenses",
+                            "display_name":  "Print Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_hospital_settings",
+                            "display_name":  "Print Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_hospitals",
+                            "display_name":  "Print Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_lab_orders",
+                            "display_name":  "Print Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_manufacturers",
+                            "display_name":  "Print Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_medicine_types",
+                            "display_name":  "Print Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_medicines",
+                            "display_name":  "Print Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_patients",
+                            "display_name":  "Print Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_permissions",
+                            "display_name":  "Print Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_prescriptions",
+                            "display_name":  "Print Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_reports",
+                            "display_name":  "Print Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_roles",
+                            "display_name":  "Print Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_stock_reconciliation",
+                            "display_name":  "Print Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_stocks",
+                            "display_name":  "Print Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_suppliers",
+                            "display_name":  "Print Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_test_templates",
+                            "display_name":  "Print Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_transactions",
+                            "display_name":  "Print Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "print_users",
+                            "display_name":  "Print Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "register_patients",
+                            "display_name":  "Register Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "schedule_appointments",
+                            "display_name":  "Schedule Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "update_appointment_status",
+                            "display_name":  "Update Appointment Status",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "update_lab_order_status",
+                            "display_name":  "Update Lab Order Status",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_appointments",
+                            "display_name":  "View Appointments",
+                            "category":  "Appointments",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_backups",
+                            "display_name":  "View Backups",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_contact_messages",
+                            "display_name":  "View Contact Messages",
+                            "category":  "Support",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_dashboard",
+                            "display_name":  "View Dashboard",
+                            "category":  "Navigation",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_doctors",
+                            "display_name":  "View Doctors",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_expense_categories",
+                            "display_name":  "View Expense Categories",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_expenses",
+                            "display_name":  "View Expenses",
+                            "category":  "Finance",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_hospital_settings",
+                            "display_name":  "View Hospital Settings",
+                            "category":  "Settings",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_hospitals",
+                            "display_name":  "View Hospitals",
+                            "category":  "Hospitals",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_lab_orders",
+                            "display_name":  "View Lab Orders",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_laboratory_menu",
+                            "display_name":  "View Laboratory Menu",
+                            "category":  "Navigation",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_manufacturers",
+                            "display_name":  "View Manufacturers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_medicine_types",
+                            "display_name":  "View Medicine Types",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_medicines",
+                            "display_name":  "View Medicines",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_patients",
+                            "display_name":  "View Patients",
+                            "category":  "Patient Management",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_permissions",
+                            "display_name":  "View Permissions",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_pharmacy_menu",
+                            "display_name":  "View Pharmacy Menu",
+                            "category":  "Navigation",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_prescriptions",
+                            "display_name":  "View Prescriptions",
+                            "category":  "Prescription",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_prescriptions_menu",
+                            "display_name":  "View Prescriptions Menu",
+                            "category":  "Navigation",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_reception_menu",
+                            "display_name":  "View Reception Menu",
+                            "category":  "Navigation",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_reports",
+                            "display_name":  "View Reports",
+                            "category":  "Reports",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_roles",
+                            "display_name":  "View Roles",
+                            "category":  "RBAC",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_stock_reconciliation",
+                            "display_name":  "View Stock Reconciliation",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_stocks",
+                            "display_name":  "View Stocks",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_suppliers",
+                            "display_name":  "View Suppliers",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_test_templates",
+                            "display_name":  "View Test Templates",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_transactions",
+                            "display_name":  "View Transactions",
+                            "category":  "Pharmacy",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
+                            "name":  "view_users",
+                            "display_name":  "View Users",
+                            "category":  "User Management",
+                            "status":  "active",
+                            "is_system":  true
+                        }
+                    ]
+}

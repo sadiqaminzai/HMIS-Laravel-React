@@ -49,7 +49,7 @@ class MedicineController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineAction($request->user(), 'add_medicines');
 
         $data = $this->validatePayload($request);
 
@@ -73,7 +73,7 @@ class MedicineController extends Controller
 
     public function update(Request $request, Medicine $medicine)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineAction($request->user(), 'edit_medicines');
         $this->authorizeScope($request->user(), $medicine);
 
         $data = $this->validatePayload($request, $medicine->hospital_id);
@@ -91,7 +91,7 @@ class MedicineController extends Controller
 
     public function destroy(Request $request, Medicine $medicine)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineAction($request->user(), 'delete_medicines');
         $this->authorizeScope($request->user(), $medicine);
 
         $medicine->delete();
@@ -135,11 +135,13 @@ class MedicineController extends Controller
         $data['hospital_id'] = $hospitalId;
     }
 
-    private function authorizePharmacy($user): void
+    private function authorizeMedicineAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'pharmacist'])) {
-            abort(403, 'Only admins, pharmacists, or super admins can manage medicines');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_medicines'],
+            'Only users with medicine permissions can manage medicines'
+        );
     }
 
     private function authorizeScope($user, Medicine $medicine): void

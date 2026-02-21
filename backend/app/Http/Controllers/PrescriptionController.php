@@ -7,7 +7,9 @@ use App\Models\Prescription;
 use App\Models\PrescriptionItem;
 use App\Models\User;
 use App\Models\WalkInPatient;
+use App\Models\ModuleSequence;
 use Illuminate\Http\Request;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -17,7 +19,7 @@ class PrescriptionController extends Controller
     {
         $user = $request->user();
 
-        $query = Prescription::with(['items'])->orderByDesc('created_at');
+        $query = Prescription::with(['items', 'walkInPatient'])->orderByDesc('created_at');
 
         if ($user->role !== 'super_admin') {
             $query->where('hospital_id', $user->hospital_id ?? 0);
@@ -47,7 +49,7 @@ class PrescriptionController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePrescription($request->user());
+        $this->authorizePrescriptionAction($request->user(), ['add_prescriptions', 'create_prescription', 'manage_prescriptions']);
 
         $data = $this->validatePayload($request);
 
@@ -69,18 +71,54 @@ class PrescriptionController extends Controller
             $data['patient_id'] = null;
         }
 
-        $prescription = DB::transaction(function () use ($data) {
-            $prescription = Prescription::create(array_merge($data, [
-                'prescription_number' => $data['prescription_number'] ?? null,
-                'status' => 'active',
-            ]));
+        $prescription = null;
+        $attempts = 0;
 
-            foreach ($data['items'] as $item) {
-                $prescription->items()->create($item);
+        while ($attempts < 3 && !$prescription) {
+            try {
+                $prescription = DB::transaction(function () use ($data) {
+                    $prescription = Prescription::create(array_merge($data, [
+                        'prescription_number' => $data['prescription_number'] ?? null,
+                        'status' => 'active',
+                    ]));
+
+                    foreach ($data['items'] as $item) {
+                        $prescription->items()->create($item);
+                    }
+
+                    return $prescription->load('items');
+                });
+            } catch (UniqueConstraintViolationException $e) {
+                $attempts++;
+                if (!str_contains($e->getMessage(), 'prescriptions_hospital_id_prescription_number_unique')) {
+                    throw $e;
+                }
+
+                $hospitalId = (int) ($data['hospital_id'] ?? 0);
+                if ($hospitalId <= 0) {
+                    throw $e;
+                }
+
+                $maxNumber = Prescription::withTrashed()
+                    ->where('hospital_id', $hospitalId)
+                    ->get(['prescription_number'])
+                    ->reduce(function (int $max, Prescription $row) {
+                        $numeric = (int) preg_replace('/\D+/', '', (string) $row->prescription_number);
+                        return max($max, $numeric);
+                    }, 0);
+
+                ModuleSequence::updateOrCreate(
+                    ['hospital_id' => $hospitalId, 'module' => 'prescription'],
+                    ['last_number' => $maxNumber]
+                );
+
+                $data['prescription_number'] = null;
             }
+        }
 
-            return $prescription->load('items');
-        });
+        if (!$prescription) {
+            abort(500, 'Unable to generate a unique prescription number.');
+        }
 
         return response()->json($prescription, 201);
     }
@@ -93,7 +131,7 @@ class PrescriptionController extends Controller
 
     public function update(Request $request, Prescription $prescription)
     {
-        $this->authorizePrescription($request->user());
+        $this->authorizePrescriptionAction($request->user(), ['edit_prescriptions', 'manage_prescriptions']);
         $this->authorizeScope($request->user(), $prescription);
 
         $data = $this->validatePayload($request, $prescription->hospital_id, true);
@@ -132,10 +170,13 @@ class PrescriptionController extends Controller
 
     public function destroy(Request $request, Prescription $prescription)
     {
-        $this->authorizePrescription($request->user());
+        $this->authorizePrescriptionAction($request->user(), ['delete_prescriptions', 'manage_prescriptions']);
         $this->authorizeScope($request->user(), $prescription);
 
-        $prescription->delete();
+        DB::transaction(function () use ($prescription) {
+            $prescription->items()->delete();
+            $prescription->forceDelete();
+        });
         return response()->json(['message' => 'Prescription deleted']);
     }
 
@@ -226,11 +267,9 @@ class PrescriptionController extends Controller
         return $doctor;
     }
 
-    private function authorizePrescription($user): void
+    private function authorizePrescriptionAction($user, array $permissions): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'doctor'])) {
-            abort(403, 'Only admins, doctors, or super admins can manage prescriptions');
-        }
+        $this->ensureAnyPermission($user, $permissions, 'Only users with prescription permissions can manage prescriptions');
     }
 
     private function authorizeScope($user, Prescription $prescription): void

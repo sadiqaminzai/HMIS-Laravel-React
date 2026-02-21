@@ -45,7 +45,7 @@ class RoleController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeManageRoles($request->user());
+        $this->authorizeRoleAction($request->user(), ['add_roles', 'manage_roles']);
 
         $actor = $request->user();
         $hospitalId = $actor->role === 'super_admin'
@@ -106,7 +106,7 @@ class RoleController extends Controller
 
     public function update(Request $request, Role $role)
     {
-        $this->authorizeManageRoles($request->user());
+        $this->authorizeRoleAction($request->user(), ['edit_roles', 'manage_roles']);
 
 
         $actor = $request->user();
@@ -135,7 +135,7 @@ class RoleController extends Controller
 
     public function destroy(Request $request, Role $role)
     {
-        $this->authorizeManageRoles($request->user());
+        $this->authorizeRoleAction($request->user(), ['delete_roles', 'manage_roles']);
 
         $actor = $request->user();
         if ($actor && $actor->role !== 'super_admin' && (int) $role->hospital_id !== (int) $actor->hospital_id) {
@@ -149,10 +149,8 @@ class RoleController extends Controller
         return response()->json(['message' => 'Role deleted']);
     }
 
-    private function authorizeManageRoles($user): void
+    private function authorizeRoleAction($user, array $permissions): void
     {
-        if (! $user || ! $user->hasPermission('manage_roles')) {
-            abort(403, 'Not authorized to manage roles');
-        }
+        $this->ensureAnyPermission($user, $permissions, 'Not authorized to manage roles');
     }
 }

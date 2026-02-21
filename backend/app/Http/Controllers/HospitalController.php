@@ -58,7 +58,7 @@ class HospitalController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeHospitalAction($request->user(), 'add_hospitals');
 
                 $data = $this->validatePayload($request);
                 $data['slug'] = $data['slug'] ?? Str::slug($data['name']);
@@ -85,7 +85,7 @@ class HospitalController extends Controller
 
     public function update(Request $request, Hospital $hospital)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeHospitalAction($request->user(), 'edit_hospitals');
 
         $data = $this->validatePayload($request, $hospital->id);
 
@@ -100,18 +100,20 @@ class HospitalController extends Controller
 
     public function destroy(Request $request, Hospital $hospital)
     {
-        $this->authorizeSuperAdmin($request->user());
+        $this->authorizeHospitalAction($request->user(), 'delete_hospitals');
 
         $hospital->delete();
 
         return response()->json(['message' => 'Hospital deleted']);
     }
 
-    private function authorizeSuperAdmin($user): void
+    private function authorizeHospitalAction($user, string $permission): void
     {
-        if ($user->role !== 'super_admin') {
-            abort(403, 'Only super admins can manage hospitals');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_hospitals'],
+            'Only users with hospital permissions can manage hospitals'
+        );
     }
 
     private function validatePayload(Request $request, ?int $hospitalId = null): array

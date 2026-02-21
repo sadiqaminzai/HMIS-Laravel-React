@@ -37,7 +37,7 @@ class MedicineTypeController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineTypeAction($request->user(), 'add_medicine_types');
 
         $data = $this->validatePayload($request);
 
@@ -59,7 +59,7 @@ class MedicineTypeController extends Controller
 
     public function update(Request $request, MedicineType $medicineType)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineTypeAction($request->user(), 'edit_medicine_types');
         $this->authorizeScope($request->user(), $medicineType);
 
         $data = $this->validatePayload($request, $medicineType->id, $medicineType->hospital_id);
@@ -75,7 +75,7 @@ class MedicineTypeController extends Controller
 
     public function destroy(Request $request, MedicineType $medicineType)
     {
-        $this->authorizePharmacy($request->user());
+        $this->authorizeMedicineTypeAction($request->user(), 'delete_medicine_types');
         $this->authorizeScope($request->user(), $medicineType);
 
         $medicineType->delete();
@@ -102,11 +102,13 @@ class MedicineTypeController extends Controller
         ]);
     }
 
-    private function authorizePharmacy($user): void
+    private function authorizeMedicineTypeAction($user, string $permission): void
     {
-        if (!in_array($user->role, ['admin', 'super_admin', 'pharmacist'])) {
-            abort(403, 'Only admins, pharmacists, or super admins can manage medicine types');
-        }
+        $this->ensureAnyPermission(
+            $user,
+            [$permission, 'manage_medicine_types'],
+            'Only users with medicine type permissions can manage medicine types'
+        );
     }
 
     private function authorizeScope($user, MedicineType $medicineType): void

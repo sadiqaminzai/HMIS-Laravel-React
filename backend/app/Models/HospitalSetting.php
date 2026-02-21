@@ -24,6 +24,10 @@ class HospitalSetting extends Model
         'print_show_batch_column',
         'print_show_expiry_date_column',
         'print_show_bonus_column',
+        'prescription_logo_width',
+        'prescription_logo_height',
+        'prescription_signature_width',
+        'prescription_signature_height',
         'show_out_of_stock_medicines_to_doctors',
         'show_out_of_stock_medicines_to_pharmacy',
     ];
@@ -34,6 +38,10 @@ class HospitalSetting extends Model
         'print_show_batch_column' => 'boolean',
         'print_show_expiry_date_column' => 'boolean',
         'print_show_bonus_column' => 'boolean',
+        'prescription_logo_width' => 'integer',
+        'prescription_logo_height' => 'integer',
+        'prescription_signature_width' => 'integer',
+        'prescription_signature_height' => 'integer',
         'show_out_of_stock_medicines_to_doctors' => 'boolean',
         'show_out_of_stock_medicines_to_pharmacy' => 'boolean',
     ];

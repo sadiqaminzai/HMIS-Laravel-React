@@ -69,7 +69,7 @@ class AppointmentController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeAppointmentAction($request->user(), ['add_appointments', 'schedule_appointments', 'manage_appointments']);
 
         $data = $this->validatePayload($request);
 
@@ -96,7 +96,7 @@ class AppointmentController extends Controller
 
     public function update(Request $request, Appointment $appointment)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeAppointmentAction($request->user(), ['edit_appointments', 'update_appointment_status', 'manage_appointments']);
         $this->authorizeScope($request->user(), $appointment);
 
         $data = $this->validatePayload($request, $appointment->id);
@@ -119,7 +119,7 @@ class AppointmentController extends Controller
 
     public function destroy(Request $request, Appointment $appointment)
     {
-        $this->authorizeReceptionOrAbove($request->user());
+        $this->authorizeAppointmentAction($request->user(), ['delete_appointments', 'manage_appointments']);
         $this->authorizeScope($request->user(), $appointment);
 
         $appointment->delete();
@@ -209,11 +209,9 @@ class AppointmentController extends Controller
         $data['patient_gender'] = $data['patient_gender'] ?? $patient->gender;
     }
 
-    private function authorizeReceptionOrAbove($user): void
+    private function authorizeAppointmentAction($user, array $permissions): void
     {
-        if (!in_array($user->role, ['receptionist', 'admin', 'super_admin'])) {
-            abort(403, 'Only receptionists, admins or super admins can manage appointments');
-        }
+        $this->ensureAnyPermission($user, $permissions, 'Only users with appointment permissions can manage appointments');
     }
 
     private function authorizeScope($user, Appointment $appointment): void
