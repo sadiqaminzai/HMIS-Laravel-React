@@ -27,6 +27,7 @@ class Prescription extends Model
         'doctor_name',
         'diagnosis',
         'advice',
+        'next_visit',
         'prescription_number',
         'status',
         'created_by',
@@ -36,6 +37,7 @@ class Prescription extends Model
     protected $casts = [
         'patient_age' => 'integer',
         'is_walk_in' => 'boolean',
+        'next_visit' => 'date',
     ];
 
     protected static function booted()
@@ -71,5 +73,10 @@ class Prescription extends Model
     public function doctor()
     {
         return $this->belongsTo(User::class, 'doctor_id');
+    }
+
+    public function itemGroupLinks()
+    {
+        return $this->hasMany(PrescriptionItemGroupLink::class);
     }
 }

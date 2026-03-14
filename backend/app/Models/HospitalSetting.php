@@ -17,6 +17,7 @@ class HospitalSetting extends Model
         'hospital_id',
         'default_doctor_id',
         'default_to_walk_in',
+        'default_prescription_next_visit',
         'auto_generate_patient_ids',
         'patient_id_prefix',
         'patient_id_start',
@@ -34,6 +35,7 @@ class HospitalSetting extends Model
 
     protected $casts = [
         'default_to_walk_in' => 'boolean',
+        'default_prescription_next_visit' => 'boolean',
         'auto_generate_patient_ids' => 'boolean',
         'print_show_batch_column' => 'boolean',
         'print_show_expiry_date_column' => 'boolean',

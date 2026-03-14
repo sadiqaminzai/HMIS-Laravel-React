@@ -31,7 +31,7 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -153,6 +153,14 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const previewPatientId = generatePatientId(selectedHospital.id, 0);
   const previewNextId = generatePatientId(selectedHospital.id, 1);
   const defaultToWalkIn = getDefaultToWalkIn(selectedHospital.id);
+  const defaultPrescriptionNextVisit = getDefaultPrescriptionNextVisit(selectedHospital.id);
+
+  const handleDefaultNextVisitToggle = () => {
+    const newValue = !defaultPrescriptionNextVisit;
+    saveHospitalSetting(selectedHospital.id, { defaultPrescriptionNextVisit: newValue })
+      .then(() => toast.success(newValue ? 'Next visit defaults to Yes' : 'Next visit defaults to No'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to update next visit default'));
+  };
 
   return (
     <div className="space-y-3">
@@ -461,6 +469,33 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               <p className="text-xs text-amber-700 dark:text-amber-300">
                 <strong>Note:</strong> Users can still manually toggle between modes when creating prescriptions.
               </p>
+            </div>
+
+            <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+              <div className="flex-1">
+                <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Default Next Visit</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  If enabled, prescription form starts with Next Visit = Yes
+                </p>
+              </div>
+              <button
+                onClick={handleDefaultNextVisitToggle}
+                aria-label="Toggle default next visit option"
+                className={`
+                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                  ${defaultPrescriptionNextVisit
+                    ? 'bg-purple-600'
+                    : 'bg-gray-300 dark:bg-gray-600'
+                  }
+                `}
+              >
+                <span
+                  className={`
+                    inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                    ${defaultPrescriptionNextVisit ? 'translate-x-6' : 'translate-x-1'}
+                  `}
+                />
+              </button>
             </div>
           </div>
         </div>

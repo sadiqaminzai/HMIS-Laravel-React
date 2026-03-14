@@ -15,6 +15,7 @@ interface AddPrescriptionInput {
   doctorId: string;
   doctorName: string;
   diagnosis?: string;
+  nextVisit?: string | null;
   medicines: PrescriptionMedicine[];
   advice: string;
   createdBy?: string;
@@ -36,10 +37,36 @@ interface PrescriptionContextType {
 
 const PrescriptionContext = createContext<PrescriptionContextType | undefined>(undefined);
 
+const buildGroupPayload = (savedPrescription: any, medicines: PrescriptionMedicine[]) => {
+  const savedItems: any[] = savedPrescription?.items ?? [];
+
+  return medicines
+    .map((medicine, index) => {
+      const item = savedItems[index];
+      if (!item?.id || !medicine.groupKey) {
+        return null;
+      }
+
+      return {
+        prescription_item_id: Number(item.id),
+        group_key: medicine.groupKey,
+        group_label: medicine.groupLabel || null,
+        sort_order: Number(medicine.groupOrder ?? index),
+      };
+    })
+    .filter(Boolean) as Array<{
+      prescription_item_id: number;
+      group_key: string;
+      group_label: string | null;
+      sort_order: number;
+    }>;
+};
+
 const mapPrescription = (p: any): Prescription => ({
   id: String(p.id),
   hospitalId: String(p.hospital_id),
   prescriptionNumber: p.prescription_number,
+  nextVisit: p.next_visit ? new Date(p.next_visit) : null,
   patientId: p.patient_id ? String(p.patient_id) : null,
   walkInPatientId: p.walk_in_patient?.serial_no
     ? String(p.walk_in_patient.serial_no)
@@ -60,6 +87,9 @@ const mapPrescription = (p: any): Prescription => ({
     instruction: (i.instruction ?? '') as PrescriptionMedicine['instruction'],
     quantity: Number(i.quantity ?? 0),
     type: i.type,
+    groupKey: i.group_link?.group_key ?? undefined,
+    groupLabel: i.group_link?.group_label ?? undefined,
+    groupOrder: i.group_link?.sort_order !== undefined ? Number(i.group_link.sort_order) : undefined,
   })),
   advice: p.advice ?? '',
   createdAt: p.created_at ? new Date(p.created_at) : new Date(),
@@ -126,6 +156,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       doctor_id: input.doctorId,
       doctor_name: input.doctorName,
       diagnosis: input.diagnosis,
+      next_visit: input.nextVisit || null,
       advice: input.advice,
       items: input.medicines.map((m) => ({
         medicine_id: m.medicineId || null,
@@ -141,7 +172,20 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
 
     try {
       const { data } = await api.post('/prescriptions', payload);
-      const mapped = mapPrescription(data.data ?? data);
+      const saved = data.data ?? data;
+
+      const groups = buildGroupPayload(saved, input.medicines);
+      let groupedResponse = saved;
+      if (groups.length > 0) {
+        try {
+          const syncResponse = await api.put(`/prescriptions/${saved.id}/item-groups`, { groups });
+          groupedResponse = syncResponse.data?.data ?? syncResponse.data ?? saved;
+        } catch {
+          toast.error('Prescription saved, but medicine grouping could not be attached');
+        }
+      }
+
+      const mapped = mapPrescription(groupedResponse);
       await refresh();
       toast.success('Prescription saved');
       return mapped;
@@ -165,6 +209,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
     if (input.doctorId) payload.doctor_id = input.doctorId;
     if (input.doctorName) payload.doctor_name = input.doctorName;
     if (input.diagnosis !== undefined) payload.diagnosis = input.diagnosis;
+    if (input.nextVisit !== undefined) payload.next_visit = input.nextVisit || null;
     if (input.advice !== undefined) payload.advice = input.advice;
     if (input.status) payload.status = input.status;
     if (input.medicines) {
@@ -180,7 +225,21 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       }));
     }
 
-    await api.put(`/prescriptions/${input.id}`, payload);
+    const { data } = await api.put(`/prescriptions/${input.id}`, payload);
+
+    if (input.medicines) {
+      const updated = data?.data ?? data;
+      const groups = buildGroupPayload(updated, input.medicines);
+
+      if (groups.length > 0) {
+        try {
+          await api.put(`/prescriptions/${input.id}/item-groups`, { groups });
+        } catch {
+          toast.error('Prescription updated, but medicine grouping could not be attached');
+        }
+      }
+    }
+
     await refresh();
     toast.success('Prescription updated');
   };

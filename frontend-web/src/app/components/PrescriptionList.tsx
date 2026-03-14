@@ -26,7 +26,7 @@ interface PrescriptionListProps {
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
 }
 
-type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'medicines';
+type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'nextVisit' | 'medicines';
 type SortDirection = 'asc' | 'desc';
 
 const PDF_FONT_NAME = 'NotoSans';
@@ -122,6 +122,11 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [showNextVisitOnly, setShowNextVisitOnly] = useState(false);
+  const [nextVisitStatusFilter, setNextVisitStatusFilter] = useState<'all' | 'overdue' | 'today' | 'upcoming' | 'thisWeek'>('all');
+  const [nextVisitDoctorFilter, setNextVisitDoctorFilter] = useState<string>('all');
+  const [nextVisitFrom, setNextVisitFrom] = useState('');
+  const [nextVisitTo, setNextVisitTo] = useState('');
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -160,6 +165,19 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     setCurrentPage(1);
   }, [searchTerm]);
 
+  React.useEffect(() => {
+    setCurrentPage(1);
+    if (showNextVisitOnly) {
+      setSortField('nextVisit');
+      setSortDirection('asc');
+    } else {
+      setNextVisitStatusFilter('all');
+      setNextVisitDoctorFilter('all');
+      setNextVisitFrom('');
+      setNextVisitTo('');
+    }
+  }, [showNextVisitOnly]);
+
   // Helper function to check if a prescription was created today
   const isPrescriptionCreatedToday = (prescriptionDate: Date): boolean => {
     const today = new Date();
@@ -194,11 +212,94 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     return false;
   };
 
-  const filteredPrescriptions = visiblePrescriptions.filter(p =>
-    p.prescriptionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.doctorName.toLowerCase().includes(searchTerm.toLowerCase())
+  const patientKeyForPrescription = (prescription: any) => {
+    if (prescription.patientId) {
+      return `patient:${prescription.patientId}`;
+    }
+    if (prescription.walkInPatientId) {
+      return `walkin:${prescription.walkInPatientId}`;
+    }
+    return `walkin-name:${String(prescription.patientName || '').trim().toLowerCase()}`;
+  };
+
+  const sortedByDateDesc = React.useMemo(() => {
+    return [...visiblePrescriptions].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [visiblePrescriptions]);
+
+  const previousPrescriptionById = React.useMemo(() => {
+    const grouped = new Map<string, any[]>();
+
+    sortedByDateDesc.forEach((prescription) => {
+      const key = patientKeyForPrescription(prescription);
+      const list = grouped.get(key) || [];
+      list.push(prescription);
+      grouped.set(key, list);
+    });
+
+    const result = new Map<string, any | null>();
+    grouped.forEach((list) => {
+      list.forEach((current, index) => {
+        result.set(current.id, list[index + 1] || null);
+      });
+    });
+
+    return result;
+  }, [sortedByDateDesc]);
+
+  const basePrescriptions = React.useMemo(
+    () => (showNextVisitOnly ? visiblePrescriptions.filter((p) => Boolean(p.nextVisit)) : visiblePrescriptions),
+    [showNextVisitOnly, visiblePrescriptions]
   );
+
+  const filteredPrescriptions = basePrescriptions.filter((p) => {
+    const search = searchTerm.toLowerCase();
+    const previous = previousPrescriptionById.get(p.id);
+
+    const nextVisitDate = p.nextVisit ? new Date(p.nextVisit) : null;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+    const weekEnd = new Date(todayStart);
+    weekEnd.setDate(todayStart.getDate() + 7);
+
+    const matchesStatus = !showNextVisitOnly || nextVisitStatusFilter === 'all'
+      ? true
+      : (() => {
+          if (!nextVisitDate) return false;
+          if (nextVisitStatusFilter === 'overdue') return nextVisitDate < todayStart;
+          if (nextVisitStatusFilter === 'today') return nextVisitDate >= todayStart && nextVisitDate < tomorrowStart;
+          if (nextVisitStatusFilter === 'upcoming') return nextVisitDate >= todayStart;
+          if (nextVisitStatusFilter === 'thisWeek') return nextVisitDate >= todayStart && nextVisitDate < weekEnd;
+          return true;
+        })();
+
+    const matchesDoctor = !showNextVisitOnly || nextVisitDoctorFilter === 'all'
+      ? true
+      : p.doctorId === nextVisitDoctorFilter;
+
+    const fromDate = nextVisitFrom ? new Date(`${nextVisitFrom}T00:00:00`) : null;
+    const toDate = nextVisitTo ? new Date(`${nextVisitTo}T23:59:59`) : null;
+    const matchesDateRange = !showNextVisitOnly || (!fromDate && !toDate)
+      ? true
+      : !!nextVisitDate && (!fromDate || nextVisitDate >= fromDate) && (!toDate || nextVisitDate <= toDate);
+
+    const matchesSearch =
+      p.prescriptionNumber.toLowerCase().includes(search) ||
+      p.patientName.toLowerCase().includes(search) ||
+      p.doctorName.toLowerCase().includes(search) ||
+      (p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType).toLowerCase().includes(search) : false) ||
+      (showNextVisitOnly && previous?.prescriptionNumber ? previous.prescriptionNumber.toLowerCase().includes(search) : false);
+
+    return matchesStatus && matchesDoctor && matchesDateRange && matchesSearch;
+  });
+
+  const nextVisitDoctorOptions = React.useMemo(() => {
+    const ids = new Set(basePrescriptions.map((p) => p.doctorId));
+    return doctors.filter((d) => ids.has(d.id));
+  }, [basePrescriptions, doctors]);
 
   const handleViewPrescription = (prescription: any) => {
     const patient = prescription.patientId
@@ -254,10 +355,33 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
   };
 
-  const sortedPrescriptions = filteredPrescriptions.sort((a, b) => {
+  const sortedPrescriptions = [...filteredPrescriptions].sort((a, b) => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+
     if (sortField === 'createdAt') {
       const dateA = new Date(a.createdAt).getTime();
       const dateB = new Date(b.createdAt).getTime();
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    } else if (sortField === 'nextVisit') {
+      const dateA = a.nextVisit ? new Date(a.nextVisit).getTime() : 0;
+      const dateB = b.nextVisit ? new Date(b.nextVisit).getTime() : 0;
+
+      if (showNextVisitOnly && sortDirection === 'asc') {
+        const rank = (timestamp: number) => {
+          const date = new Date(timestamp);
+          if (date >= todayStart && date < tomorrowStart) return 0; // today first
+          if (date >= tomorrowStart) return 1; // upcoming next
+          return 2; // overdue last
+        };
+
+        const rankA = rank(dateA);
+        const rankB = rank(dateB);
+        if (rankA !== rankB) return rankA - rankB;
+      }
+
       return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     } else if (sortField === 'prescriptionNumber') {
       return sortDirection === 'asc' ? a.prescriptionNumber.localeCompare(b.prescriptionNumber) : b.prescriptionNumber.localeCompare(a.prescriptionNumber);
@@ -292,6 +416,11 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       'Gender': prescription.patientGender,
       'Doctor': prescription.doctorName,
       'Date': formatDate(prescription.createdAt, currentHospital.timezone, currentHospital.calendarType),
+      'Next Visit': prescription.nextVisit ? formatDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+      'Last Prescription #': previousPrescriptionById.get(prescription.id)?.prescriptionNumber || '-',
+      'Last Prescription Date': previousPrescriptionById.get(prescription.id)?.createdAt
+        ? formatDate(previousPrescriptionById.get(prescription.id).createdAt, currentHospital.timezone, currentHospital.calendarType)
+        : '-',
       'Medicines Count': prescription.medicines.length,
       'Diagnosis': prescription.diagnosis?.replace(/<[^>]*>/g, '') || '',
       'Advice': prescription.advice?.replace(/<[^>]*>/g, '') || '',
@@ -300,8 +429,8 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Prescriptions');
-    XLSX.writeFile(workbook, "Prescriptions_List.xlsx");
+    XLSX.utils.book_append_sheet(workbook, worksheet, showNextVisitOnly ? 'Next Visits' : 'Prescriptions');
+    XLSX.writeFile(workbook, showNextVisitOnly ? 'Next_Visit_Patients_List.xlsx' : 'Prescriptions_List.xlsx');
     setToast({ message: 'Exported to Excel successfully!', type: 'success' });
   };
 
@@ -316,7 +445,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     const tableHeaderColor = brandRgb || [66, 139, 202]; // Default Blue
 
     doc.setFontSize(18);
-    doc.text('Prescriptions Report', 14, 22);
+    doc.text(showNextVisitOnly ? 'Next Visit Patients Report' : 'Prescriptions Report', 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Generated on: ${formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}`, 14, 30);
@@ -325,20 +454,36 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     }
 
     autoTable(doc, {
-      head: [['Rx #', 'Patient', 'Doctor', 'Date', 'Meds']],
-      body: sortedPrescriptions.map(p => [
-        p.prescriptionNumber,
-        p.patientName,
-        p.doctorName,
-        formatDate(p.createdAt, currentHospital.timezone, currentHospital.calendarType),
-        p.medicines.length
-      ]),
+      head: showNextVisitOnly
+        ? [['Patient', 'Next Visit', 'Last Rx #', 'Last Rx Date', 'Doctor']]
+        : [['Rx #', 'Patient', 'Doctor', 'Date', 'Next Visit', 'Meds']],
+      body: sortedPrescriptions.map(p => {
+        const previous = previousPrescriptionById.get(p.id);
+        if (showNextVisitOnly) {
+          return [
+            p.patientName,
+            p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+            previous?.prescriptionNumber || '-',
+            previous?.createdAt ? formatDate(previous.createdAt, currentHospital.timezone, currentHospital.calendarType) : '-',
+            p.doctorName,
+          ];
+        }
+
+        return [
+          p.prescriptionNumber,
+          p.patientName,
+          p.doctorName,
+          formatDate(p.createdAt, currentHospital.timezone, currentHospital.calendarType),
+          p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+          p.medicines.length,
+        ];
+      }),
       startY: isAllHospitals ? 40 : 46,
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: tableHeaderColor }
     });
 
-    doc.save('Prescriptions_Report.pdf');
+    doc.save(showNextVisitOnly ? 'Next_Visit_Patients_Report.pdf' : 'Prescriptions_Report.pdf');
   };
 
   // Helper to get instruction label
@@ -777,11 +922,28 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">Prescriptions</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Manage prescriptions for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
+            {showNextVisitOnly ? 'Next visit patients list' : `Manage prescriptions for ${isAllHospitals ? 'All Hospitals' : currentHospital.name}`}
           </p>
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-md p-0.5">
+            <button
+              type="button"
+              onClick={() => setShowNextVisitOnly(false)}
+              className={`px-2.5 py-1 text-xs rounded ${!showNextVisitOnly ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-700 dark:text-gray-300'}`}
+            >
+              All Prescriptions
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNextVisitOnly(true)}
+              className={`px-2.5 py-1 text-xs rounded ${showNextVisitOnly ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-700 dark:text-gray-300'}`}
+            >
+              Next Visit Patients
+            </button>
+          </div>
+
           {/* Compact Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -789,7 +951,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search prescriptions..."
+              placeholder={showNextVisitOnly ? 'Search next visit patients...' : 'Search prescriptions...'}
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -825,6 +987,66 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         onHospitalChange={setSelectedHospitalId}
       />
 
+      {showNextVisitOnly && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <select
+              value={nextVisitStatusFilter}
+              onChange={(e) => setNextVisitStatusFilter(e.target.value as any)}
+              title="Next visit status filter"
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            >
+              <option value="all">All Status</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Today</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="thisWeek">This Week</option>
+            </select>
+
+            <select
+              value={nextVisitDoctorFilter}
+              onChange={(e) => setNextVisitDoctorFilter(e.target.value)}
+              title="Doctor filter"
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            >
+              <option value="all">All Doctors</option>
+              {nextVisitDoctorOptions.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>{doctor.name}</option>
+              ))}
+            </select>
+
+            <input
+              type="date"
+              value={nextVisitFrom}
+              onChange={(e) => setNextVisitFrom(e.target.value)}
+              title="Next visit from date"
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            />
+
+            <input
+              type="date"
+              value={nextVisitTo}
+              onChange={(e) => setNextVisitTo(e.target.value)}
+              title="Next visit to date"
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            />
+
+            <button
+              type="button"
+              onClick={() => {
+                setNextVisitStatusFilter('all');
+                setNextVisitDoctorFilter('all');
+                setNextVisitFrom('');
+                setNextVisitTo('');
+              }}
+              className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Prescriptions Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
         <div className="overflow-x-auto rounded-t-lg" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
@@ -843,12 +1065,21 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     {renderSortIcon('createdAt')}
                   </div>
                 </th>
+                <th onClick={() => handleSort('nextVisit')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <div className="flex items-center gap-1.5">
+                    Next Visit
+                    {renderSortIcon('nextVisit')}
+                  </div>
+                </th>
                 <th onClick={() => handleSort('patientName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
                     Patient
                     {renderSortIcon('patientName')}
                   </div>
                 </th>
+                {showNextVisitOnly && (
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Last Rx</th>
+                )}
                 <th onClick={() => handleSort('doctorName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
                     Doctor
@@ -866,8 +1097,19 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {paginatedPrescriptions.length > 0 ? (
-                paginatedPrescriptions.map((prescription) => (
-                  <tr key={prescription.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+                paginatedPrescriptions.map((prescription) => {
+                  const nextVisitDate = prescription.nextVisit ? new Date(prescription.nextVisit) : null;
+                  const now = new Date();
+                  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  const tomorrowStart = new Date(todayStart);
+                  tomorrowStart.setDate(todayStart.getDate() + 1);
+                  const isTodayVisit = Boolean(nextVisitDate && nextVisitDate >= todayStart && nextVisitDate < tomorrowStart);
+
+                  return (
+                  <tr
+                    key={prescription.id}
+                    className={`${isTodayVisit ? 'bg-amber-50/80 dark:bg-amber-900/20' : ''} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group`}
+                  >
                     <td className="px-4 py-2">
                       <span className="font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">
                         {prescription.prescriptionNumber}
@@ -879,10 +1121,34 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                         {formatDate(prescription.createdAt, currentHospital.timezone, currentHospital.calendarType)}
                       </div>
                     </td>
+                    <td className="px-4 py-2 text-xs">
+                      {prescription.nextVisit ? (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded border ${isTodayVisit ? 'border-amber-300 text-amber-800 bg-amber-100 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300 font-semibold' : 'border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300'}`}>
+                          {isTodayVisit && <span className="mr-1">Today:</span>}
+                          {formatDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2">
                       <div className="text-xs font-medium text-gray-900 dark:text-white">{prescription.patientName}</div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400">{prescription.patientAge}Y • {prescription.patientGender}</div>
                     </td>
+                    {showNextVisitOnly && (
+                      <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
+                        {previousPrescriptionById.get(prescription.id)?.prescriptionNumber ? (
+                          <div>
+                            <div className="font-mono text-[10px]">{previousPrescriptionById.get(prescription.id).prescriptionNumber}</div>
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {formatDate(previousPrescriptionById.get(prescription.id).createdAt, currentHospital.timezone, currentHospital.calendarType)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{prescription.doctorName}</td>
                     <td className="px-4 py-2 text-center">
                       <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
@@ -937,10 +1203,10 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                       </div>
                     </td>
                   </tr>
-                ))
+                )})
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={showNextVisitOnly ? 8 : 7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
                         <Search className="w-6 h-6 text-gray-400 opacity-50" />
@@ -969,6 +1235,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                    setItemsPerPage(Number(e.target.value));
                    setCurrentPage(1);
                  }}
+                 title="Rows per page"
                  className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
                >
                  <option value={10}>10</option>
@@ -1072,6 +1339,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           prescriptionNumber={selectedPrescription.prescriptionNumber}
           diagnosis={selectedPrescription.diagnosis}
           prescriptionDate={new Date(selectedPrescription.createdAt)}
+          nextVisit={selectedPrescription.nextVisit ? new Date(selectedPrescription.nextVisit) : null}
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}
           updatedBy={selectedPrescription.updatedBy}
@@ -1099,6 +1367,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           prescriptionNumber={selectedPrescription.prescriptionNumber}
           diagnosis={selectedPrescription.diagnosis}
           prescriptionDate={new Date(selectedPrescription.createdAt)}
+          nextVisit={selectedPrescription.nextVisit ? new Date(selectedPrescription.nextVisit) : null}
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}
           updatedBy={selectedPrescription.updatedBy}

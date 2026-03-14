@@ -159,6 +159,7 @@ export function PrescriptionVerificationPage() {
       prescriptionNumber={payload.prescription?.prescription_number ?? ''}
       diagnosis={payload.prescription?.diagnosis ?? ''}
       prescriptionDate={payload.prescription?.created_at ? new Date(payload.prescription.created_at) : new Date()}
+      nextVisit={payload.prescription?.next_visit ? new Date(payload.prescription.next_visit) : null}
       verificationToken={payload.prescription?.verification_token ?? token}
       embedded
       viewOnly

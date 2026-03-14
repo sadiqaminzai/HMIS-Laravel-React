@@ -27,6 +27,7 @@ class HospitalSettingController extends Controller
                 Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', 'doctor')),
             ],
             'default_to_walk_in' => ['boolean'],
+            'default_prescription_next_visit' => ['boolean'],
             'auto_generate_patient_ids' => ['boolean'],
             'patient_id_prefix' => ['sometimes', 'string', 'max:10'],
             'patient_id_start' => ['sometimes', 'integer', 'min:1'],
@@ -86,6 +87,7 @@ class HospitalSettingController extends Controller
             ['hospital_id' => $hospitalId],
             [
                 'default_to_walk_in' => false,
+                'default_prescription_next_visit' => false,
                 'auto_generate_patient_ids' => true,
                 'patient_id_prefix' => 'P',
                 'patient_id_start' => 1,

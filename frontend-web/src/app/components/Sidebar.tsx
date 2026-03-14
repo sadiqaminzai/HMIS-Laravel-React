@@ -173,6 +173,12 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.viewAll',
         icon: <List className="w-3.5 h-3.5" />,
         anyPermissions: ['view_prescriptions', 'manage_prescriptions']
+      },
+      {
+        id: '/settings/treatment-sets',
+        translationKey: 'nav.treatmentSets',
+        icon: <Pill className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_treatment_sets', 'add_treatment_sets', 'edit_treatment_sets', 'delete_treatment_sets', 'manage_treatment_sets', 'add_prescriptions', 'edit_prescriptions', 'delete_prescriptions', 'manage_prescriptions']
       }
     ]
   },
@@ -303,7 +309,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     }
     
     // If navigating to a non-prescription page and prescription menu is expanded, collapse it
-    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions'].includes(path);
+    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions', '/settings/treatment-sets'].includes(path);
     if (!isPrescriptionSubItem && path !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'prescription-menu'));
     }

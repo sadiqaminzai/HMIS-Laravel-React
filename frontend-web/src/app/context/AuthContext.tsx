@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     view_pharmacy_menu: ['manufacturers', 'medicine_types', 'medicines', 'suppliers', 'transactions', 'stocks', 'stock_reconciliation'],
     view_reception_menu: ['doctors', 'patients', 'appointments'],
     view_laboratory_menu: ['lab_orders', 'test_templates'],
-    view_prescriptions_menu: ['prescriptions'],
+    view_prescriptions_menu: ['prescriptions', 'treatment_sets'],
   };
 
   const hasPermission = (permissionName: string) => {

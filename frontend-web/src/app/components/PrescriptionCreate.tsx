@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
-import { Hospital, Patient, Medicine, Doctor, UserRole } from '../types';
+import { Hospital, Patient, Medicine, Doctor, UserRole, PrescriptionMedicine, MedicineSet } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import api from '../../api/axios';
 import { PrescriptionPrint } from './PrescriptionPrint';
@@ -25,8 +25,20 @@ interface PrescriptionCreateProps {
   currentUser: { id?: string; name: string; email: string; role: string; doctorId?: string };
 }
 
-interface MedicineRow extends Medicine {
+interface MedicineRow {
   rowId: string;
+  medicineId: string;
+  brandName: string;
+  genericName: string;
+  strength: string;
+  dose: string;
+  duration: string;
+  instruction: PrescriptionMedicine['instruction'];
+  quantity: number;
+  type?: string;
+  groupKey?: string;
+  groupLabel?: string;
+  groupOrder?: number;
   isTemporary?: boolean;
 }
 
@@ -44,6 +56,22 @@ const toMaxLength = (value: string | undefined | null, max = 255) => {
   return String(value).slice(0, max);
 };
 
+const toDateInputValue = (value?: Date | string | null) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeWalkInGender = (value?: string | null): 'male' | 'female' => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'female' || normalized === 'f') return 'female';
+  return 'male';
+};
+
 export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreateProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -52,7 +80,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   // Hospital filtering for super_admin with "All Hospitals" support (but for create, we use currentHospital as the target)
   const userRole = currentUser.role as UserRole;
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  const { settings, getDefaultToWalkIn, getShowOutOfStockMedicines, loadHospitalSetting } = useSettings();
+  const { settings, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getShowOutOfStockMedicines, loadHospitalSetting } = useSettings();
   const { hasPermission } = useAuth();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -67,6 +95,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [medicines, setMedicines] = useState<MedicineRow[]>([]);
   const [diagnosis, setDiagnosis] = useState('');
   const [advice, setAdvice] = useState('');
+  const [hasNextVisit, setHasNextVisit] = useState(false);
+  const [nextVisitDate, setNextVisitDate] = useState('');
+  const [nextVisitQuickKey, setNextVisitQuickKey] = useState<string | null>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
@@ -74,6 +105,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [openMedicineDropdownRowId, setOpenMedicineDropdownRowId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isWalkIn, setIsWalkIn] = useState(settings.defaultToWalkIn || false);
+  const [medicineSets, setMedicineSets] = useState<MedicineSet[]>([]);
+  const [selectedMedicineSetId, setSelectedMedicineSetId] = useState('');
+  const [medicineSetSearch, setMedicineSetSearch] = useState('');
+  const [showMedicineSetDropdown, setShowMedicineSetDropdown] = useState(false);
+  const [highlightedMedicineSetIndex, setHighlightedMedicineSetIndex] = useState(0);
+  const [isLoadingMedicineSets, setIsLoadingMedicineSets] = useState(false);
   const [walkInPatient, setWalkInPatient] = useState({
     name: '',
     age: '',
@@ -119,6 +156,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   }, [userRole, editPrescriptionData?.hospitalId, setSelectedHospitalId]);
 
   const patientInputRef = useRef<HTMLInputElement>(null);
+  const treatmentSetContainerRef = useRef<HTMLDivElement>(null);
   const medicinesScrollRef = useRef<HTMLDivElement>(null);
   const shouldScrollMedicinesToBottomRef = useRef(false);
 
@@ -164,16 +202,78 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   useEffect(() => {
     if (editPrescriptionData) return;
     const defaultWalkIn = getDefaultToWalkIn(currentHospital.id) || settings.defaultToWalkIn || false;
+    const defaultNextVisit = getDefaultPrescriptionNextVisit(currentHospital.id) || false;
     setIsWalkIn(defaultWalkIn);
+    setHasNextVisit(defaultNextVisit);
+    if (!defaultNextVisit) {
+      setNextVisitDate('');
+      setNextVisitQuickKey(null);
+    }
     if (defaultWalkIn && walkInDefaultPatient) {
       setSelectedPatient(walkInDefaultPatient);
       setPatientSearch(walkInDefaultPatient.name);
     }
-  }, [currentHospital.id, editPrescriptionData, getDefaultToWalkIn, settings.defaultToWalkIn, walkInDefaultPatient]);
+  }, [currentHospital.id, editPrescriptionData, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, settings.defaultToWalkIn, walkInDefaultPatient]);
 
   useEffect(() => {
     loadHospitalSetting(currentHospital.id);
   }, [currentHospital.id, loadHospitalSetting]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMedicineSets = async () => {
+      setIsLoadingMedicineSets(true);
+      try {
+        const { data } = await api.get('/medicine-sets', {
+          params: {
+            hospital_id: currentHospital.id,
+            status: 'active',
+          },
+        });
+
+        if (!active) return;
+
+        const records: any[] = data.data ?? data;
+        const mapped: MedicineSet[] = records.map((set) => ({
+          id: String(set.id),
+          hospitalId: String(set.hospital_id),
+          name: set.name ?? '',
+          description: set.description ?? '',
+          status: (set.status ?? 'active') as MedicineSet['status'],
+          items: (set.items ?? []).map((item: any) => ({
+            id: String(item.id),
+            medicineSetId: String(item.medicine_set_id),
+            medicineId: item.medicine_id ? String(item.medicine_id) : undefined,
+            medicineName: item.medicine_name ?? '',
+            strength: item.strength ?? '',
+            dose: item.dose ?? '',
+            duration: item.duration ?? '',
+            instruction: (item.instruction ?? '') as PrescriptionMedicine['instruction'],
+            quantity: Number(item.quantity ?? 0),
+            type: item.type ?? '',
+            sortOrder: Number(item.sort_order ?? 0),
+          })),
+        }));
+
+        setMedicineSets(mapped);
+      } catch {
+        if (active) {
+          setMedicineSets([]);
+        }
+      } finally {
+        if (active) {
+          setIsLoadingMedicineSets(false);
+        }
+      }
+    };
+
+    loadMedicineSets();
+
+    return () => {
+      active = false;
+    };
+  }, [currentHospital.id]);
 
   useEffect(() => {
     if (!shouldScrollMedicinesToBottomRef.current) return;
@@ -202,13 +302,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           name: editPrescriptionData.patientName || 'Walk-in Patient',
           age: Number(editPrescriptionData.patientAge ?? 0),
           gender: (editPrescriptionData.patientGender || 'male').toString().toLowerCase() as Patient['gender'],
-          contact: '',
+          phone: '',
           address: '',
-          bloodGroup: '',
-          allergies: [],
-          medicalHistory: '',
           status: 'active',
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(),
         };
 
         setSelectedPatient(tempPatient);
@@ -216,7 +313,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         setWalkInPatient({
           name: editPrescriptionData.patientName || '',
           age: String(editPrescriptionData.patientAge ?? ''),
-          gender: (editPrescriptionData.patientGender || 'male').toString().toLowerCase(),
+          gender: normalizeWalkInGender(editPrescriptionData.patientGender),
         });
       } else {
         // Find and set the patient
@@ -236,6 +333,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       // Set diagnosis and advice
       setDiagnosis(editPrescriptionData.diagnosis || '');
       setAdvice(editPrescriptionData.advice || '');
+      const editNextVisit = toDateInputValue(editPrescriptionData.nextVisit);
+      setHasNextVisit(Boolean(editNextVisit));
+      setNextVisitDate(editNextVisit);
+      setNextVisitQuickKey(null);
 
       // Convert medicines to medicine rows
       const medicineRows: MedicineRow[] = editPrescriptionData.medicines.map((med: any) => {
@@ -257,6 +358,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           instruction: med.instruction ?? '',
           quantity: med.quantity ?? 0,
           type: medType,
+          groupKey: (med as any).groupKey,
+          groupLabel: (med as any).groupLabel,
+          groupOrder: (med as any).groupOrder,
           isTemporary: !originalMed && !med.medicineId
         };
       });
@@ -345,13 +449,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       name: walkInPatient.name,
       age: parseInt(walkInPatient.age),
       gender: walkInPatient.gender as Patient['gender'],
-      contact: '',
+      phone: '',
       address: '',
-      bloodGroup: '',
-      allergies: [],
-      medicalHistory: '',
       status: 'active',
-      createdAt: new Date().toISOString()
+      createdAt: new Date(),
     };
 
     setSelectedPatient(tempPatient);
@@ -381,6 +482,21 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       // Clear doctor for admin/super_admin creating walk-in prescriptions
       setSelectedDoctor(null);
     }
+  };
+
+  const setQuickNextVisit = (quickKey: '3d' | '5d' | '7d' | '14d' | '1m') => {
+    const next = new Date();
+
+    if (quickKey === '1m') {
+      next.setMonth(next.getMonth() + 1);
+    } else {
+      const days = Number(quickKey.replace('d', ''));
+      next.setDate(next.getDate() + days);
+    }
+
+    setHasNextVisit(true);
+    setNextVisitQuickKey(quickKey);
+    setNextVisitDate(toDateInputValue(next));
   };
 
   const addMedicineRow = () => {
@@ -416,6 +532,126 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     shouldScrollMedicinesToBottomRef.current = true;
     setMedicines([...medicines, newRow]);
   };
+
+  const addMedicineSetRows = () => {
+    if (!selectedMedicineSetId) {
+      toast.error('Select a treatment set first');
+      return;
+    }
+
+    const selectedSet = medicineSets.find((set) => set.id === selectedMedicineSetId);
+    if (!selectedSet || selectedSet.items.length === 0) {
+      toast.error('Selected treatment set has no medicines');
+      return;
+    }
+
+    const groupKey = `set-${Date.now()}`;
+    const appendedRows: MedicineRow[] = selectedSet.items
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item, index) => {
+        const matchedInventoryMedicine = item.medicineId
+          ? inventory.find((invMedicine) => invMedicine.id === item.medicineId)
+          : inventory.find(
+              (invMedicine) =>
+                invMedicine.hospitalId === currentHospital.id &&
+                invMedicine.brandName.toLowerCase() === item.medicineName.toLowerCase()
+            );
+
+        const brand = matchedInventoryMedicine?.brandName || item.medicineName;
+        const generic = matchedInventoryMedicine?.genericName || '';
+        const medType = item.type || matchedInventoryMedicine?.type || '';
+        const strength = item.strength || matchedInventoryMedicine?.strength || '';
+
+        return {
+          rowId: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+          medicineId: matchedInventoryMedicine?.id || item.medicineId || '',
+          brandName: formatMedicineDisplay(brand, generic, medType, strength, true),
+          genericName: generic,
+          strength,
+          dose: item.dose || '',
+          duration: item.duration || '',
+          instruction: item.instruction || '',
+          quantity: Number(item.quantity ?? 0),
+          type: medType,
+          groupKey,
+          groupLabel: selectedSet.name,
+          groupOrder: Number(item.sortOrder ?? index),
+          isTemporary: !matchedInventoryMedicine && !item.medicineId,
+        };
+      });
+
+    shouldScrollMedicinesToBottomRef.current = true;
+    setMedicines((prev) => [...prev, ...appendedRows]);
+    toast.success(`${selectedSet.name} added`);
+  };
+
+  const filteredMedicineSets = useMemo(() => {
+    const term = medicineSetSearch.trim().toLowerCase();
+    if (!term) return medicineSets;
+    return medicineSets.filter((set) => set.name.toLowerCase().includes(term));
+  }, [medicineSetSearch, medicineSets]);
+
+  const handleSelectMedicineSet = (set: MedicineSet) => {
+    setSelectedMedicineSetId(set.id);
+    setMedicineSetSearch(set.name);
+    setShowMedicineSetDropdown(false);
+  };
+
+  const handleMedicineSetSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showMedicineSetDropdown) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setShowMedicineSetDropdown(true);
+        setHighlightedMedicineSetIndex(0);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedMedicineSetIndex((prev) =>
+        prev < filteredMedicineSets.length - 1 ? prev + 1 : prev
+      );
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedMedicineSetIndex((prev) => (prev > 0 ? prev - 1 : 0));
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredMedicineSets[highlightedMedicineSetIndex]) {
+        handleSelectMedicineSet(filteredMedicineSets[highlightedMedicineSetIndex]);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowMedicineSetDropdown(false);
+    }
+  };
+
+  useEffect(() => {
+    const selectedSet = medicineSets.find((set) => set.id === selectedMedicineSetId);
+    if (selectedSet) {
+      setMedicineSetSearch(selectedSet.name);
+    }
+  }, [selectedMedicineSetId, medicineSets]);
+
+  useEffect(() => {
+    const onClickOutside = (event: MouseEvent) => {
+      if (!treatmentSetContainerRef.current?.contains(event.target as Node)) {
+        setShowMedicineSetDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
 
   const removeMedicineRow = (rowId: string) => {
     setMedicines(medicines.filter(m => m.rowId !== rowId));
@@ -532,6 +768,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       return;
     }
 
+    if (hasNextVisit && !nextVisitDate) {
+      toast.error('Please select next visit date');
+      return;
+    }
+
     let patient: Patient | null = selectedPatient;
 
     const isWalkInMode = isWalkIn || !selectedPatient;
@@ -582,9 +823,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       strength: toMaxLength(m.strength, 255),
       dose: toMaxLength(m.dose, 255),
       duration: toMaxLength(m.duration, 255),
-      instruction: toMaxLength(m.instruction as any, 255),
+      instruction: toMaxLength(m.instruction as any, 255) as PrescriptionMedicine['instruction'],
       quantity: m.quantity || 0,
       type: toMaxLength((m as any).type, 255),
+      groupKey: m.groupKey,
+      groupLabel: toMaxLength(m.groupLabel, 255) || undefined,
+      groupOrder: m.groupOrder,
     }));
 
     const payload = {
@@ -594,9 +838,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       patientName: isWalkInMode ? walkInPatient.name : patient?.name || '',
       patientAge: Number(isWalkInMode ? walkInPatient.age || 0 : patient?.age ?? 0),
       patientGender: (isWalkInMode ? walkInPatient.gender : patient?.gender || 'other').toString().toLowerCase(),
-      doctorId: doctor?.id || null,
+      doctorId: doctor?.id || '',
       doctorName: doctor?.name || '',
       diagnosis,
+      nextVisit: hasNextVisit ? nextVisitDate : null,
       medicines: payloadMedicines,
       advice,
       createdBy: currentUser.name,
@@ -618,6 +863,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       setMedicines([]);
       setDiagnosis('');
       setAdvice('');
+      setHasNextVisit(false);
+      setNextVisitDate('');
+      setNextVisitQuickKey(null);
+      setSelectedMedicineSetId('');
+      setMedicineSetSearch('');
       setShowPrint(false);
     } finally {
       setIsSaving(false);
@@ -707,6 +957,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
             setMedicines([]);
             setDiagnosis('');
             setAdvice('');
+            setHasNextVisit(false);
+            setNextVisitDate('');
+            setNextVisitQuickKey(null);
+            setSelectedMedicineSetId('');
+            setMedicineSetSearch('');
           }}
         />
       )}
@@ -830,8 +1085,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Walk-in patient gender"
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
                   </select>
                 </div>
               </div>
@@ -914,6 +1169,58 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           <div className="flex items-center justify-between mb-1.5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Medicines</h2>
             <div className="flex items-center gap-2">
+              <div ref={treatmentSetContainerRef} className="relative min-w-[220px]">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={medicineSetSearch}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setMedicineSetSearch(value);
+                      setSelectedMedicineSetId('');
+                      setShowMedicineSetDropdown(true);
+                      setHighlightedMedicineSetIndex(0);
+                    }}
+                    onFocus={() => {
+                      setShowMedicineSetDropdown(true);
+                      setHighlightedMedicineSetIndex(0);
+                    }}
+                    onKeyDown={handleMedicineSetSearchKeyDown}
+                    className="w-full pl-8 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Search treatment set..."
+                    title="Search treatment set"
+                  />
+                </div>
+                {showMedicineSetDropdown && (
+                  <div className="absolute z-40 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+                    {filteredMedicineSets.length > 0 ? (
+                      filteredMedicineSets.map((set, index) => (
+                        <button
+                          key={set.id}
+                          type="button"
+                          onClick={() => handleSelectMedicineSet(set)}
+                          className={`w-full px-2.5 py-1.5 text-left text-xs transition-colors ${
+                            index === highlightedMedicineSetIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {set.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-2.5 py-1.5 text-xs text-gray-500">No treatment sets found</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={addMedicineSetRows}
+                disabled={!selectedMedicineSetId || isLoadingMedicineSets}
+                className="px-2.5 py-1.5 flex items-center justify-center bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                title="Add selected treatment set"
+              >
+                Add Set
+              </button>
               <button
                 onClick={addTemporaryMedicineRow}
                 className="px-2.5 py-1.5 flex items-center justify-center bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium"
@@ -982,23 +1289,81 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         </div>
       )}
 
-      {/* Advice Section */}
       {selectedPatient && medicines.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Advice & Instructions</h2>
-          <ReactQuill
-            value={advice}
-            onChange={setAdvice}
-            placeholder="Enter advice and instructions for the patient..."
-            className="custom-quill-editor"
-            theme="snow"
-            modules={{
-              toolbar: [
-                ['bold', 'italic', 'underline'],
-                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-              ]
-            }}
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-2">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Advice & Instructions</h2>
+            <ReactQuill
+              value={advice}
+              onChange={setAdvice}
+              placeholder="Enter advice and instructions for the patient..."
+              className="custom-quill-editor"
+              theme="snow"
+              modules={{
+                toolbar: [
+                  ['bold', 'italic', 'underline'],
+                  [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                ]
+              }}
+            />
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Next Visit?</span>
+              <button
+                type="button"
+                onClick={() => setHasNextVisit(true)}
+                className={`px-2 py-1 text-xs rounded border ${hasNextVisit ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHasNextVisit(false);
+                  setNextVisitDate('');
+                  setNextVisitQuickKey(null);
+                }}
+                className={`px-2 py-1 text-xs rounded border ${!hasNextVisit ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}
+              >
+                No
+              </button>
+            </div>
+
+            {hasNextVisit && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Next Visit:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => setQuickNextVisit('3d')} className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === '3d' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}>3 Days</button>
+                  <button type="button" onClick={() => setQuickNextVisit('5d')} className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === '5d' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}>5 Days</button>
+                  <button type="button" onClick={() => setQuickNextVisit('7d')} className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === '7d' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}>7 Days</button>
+                  <button type="button" onClick={() => setQuickNextVisit('14d')} className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === '14d' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}>14 Days</button>
+                  <button type="button" onClick={() => setQuickNextVisit('1m')} className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === '1m' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}>1 Month</button>
+                  <button
+                    type="button"
+                    onClick={() => setNextVisitQuickKey('custom')}
+                    className={`px-2 py-1 text-xs rounded border ${nextVisitQuickKey === 'custom' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700'}`}
+                  >
+                    Custom
+                  </button>
+                </div>
+
+                <div>
+                  <input
+                    type="date"
+                    value={nextVisitDate}
+                    onChange={(e) => {
+                      setNextVisitDate(e.target.value);
+                      setNextVisitQuickKey('custom');
+                    }}
+                    title="Next visit date"
+                    className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1014,12 +1379,16 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               ...m,
               medicineName: m.brandName,
               type: m.type,
+              groupKey: m.groupKey,
+              groupLabel: m.groupLabel,
+              groupOrder: m.groupOrder,
               genericName: originalMed?.genericName || m.genericName || '',
               brandName: originalMed?.brandName || m.brandName
             };
           })}
           diagnosis={diagnosis}
           advice={advice}
+          nextVisit={hasNextVisit && nextVisitDate ? new Date(nextVisitDate) : null}
           prescriptionNumber={editPrescriptionData?.prescriptionNumber || `RX-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`}
           onClose={() => setShowPrint(false)}
         />

@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Patient;
 use App\Models\Prescription;
-use App\Models\PrescriptionItem;
 use App\Models\User;
 use App\Models\WalkInPatient;
 use App\Models\ModuleSequence;
@@ -19,7 +18,7 @@ class PrescriptionController extends Controller
     {
         $user = $request->user();
 
-        $query = Prescription::with(['items', 'walkInPatient'])->orderByDesc('created_at');
+        $query = Prescription::with(['items.groupLink', 'walkInPatient'])->orderByDesc('created_at');
 
         if ($user->role !== 'super_admin') {
             $query->where('hospital_id', $user->hospital_id ?? 0);
@@ -86,7 +85,7 @@ class PrescriptionController extends Controller
                         $prescription->items()->create($item);
                     }
 
-                    return $prescription->load('items');
+                    return $prescription->load('items.groupLink');
                 });
             } catch (UniqueConstraintViolationException $e) {
                 $attempts++;
@@ -126,7 +125,7 @@ class PrescriptionController extends Controller
     public function show(Request $request, Prescription $prescription)
     {
         $this->authorizeScope($request->user(), $prescription);
-        return response()->json($prescription->load('items'));
+        return response()->json($prescription->load('items.groupLink'));
     }
 
     public function update(Request $request, Prescription $prescription)
@@ -162,7 +161,7 @@ class PrescriptionController extends Controller
                 $prescription->items()->create($item);
             }
 
-            return $prescription->load('items');
+            return $prescription->load('items.groupLink');
         });
 
         return response()->json($updated);
@@ -198,6 +197,7 @@ class PrescriptionController extends Controller
             'doctor_name' => ['required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
             'advice' => ['nullable', 'string'],
+            'next_visit' => ['nullable', 'date'],
             'status' => ['sometimes', Rule::in(['active', 'cancelled'])],
             'items' => ['required', 'array', 'min:1'],
             'items.*.medicine_id' => ['nullable', 'exists:medicines,id'],

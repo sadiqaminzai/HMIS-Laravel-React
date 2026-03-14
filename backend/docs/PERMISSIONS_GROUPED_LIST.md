@@ -140,14 +140,22 @@
 
 ## Prescription
 - add_prescriptions
+- add_treatment_sets
 - create_prescription
 - delete_prescriptions
+- delete_treatment_sets
 - edit_prescriptions
+- edit_treatment_sets
 - export_prescriptions
+- export_treatment_sets
 - import_prescriptions
+- import_treatment_sets
 - manage_prescriptions
+- manage_treatment_sets
 - print_prescriptions
+- print_treatment_sets
 - view_prescriptions
+- view_treatment_sets
 
 ## RBAC
 - add_permissions

@@ -38,6 +38,7 @@ import { LabTestManagementNew } from './components/LabTestManagementNew';
 import { TestManagement } from './components/TestManagement';
 import { PrescriptionCreate } from './components/PrescriptionCreate';
 import { PrescriptionList } from './components/PrescriptionList';
+import { MedicineSetManagement } from './components/MedicineSetManagement';
 import { UserManagement } from './components/UserManagement';
 import { RoleManagement } from './components/RoleManagement';
 import { PermissionManagement } from './components/PermissionManagement';
@@ -460,6 +461,14 @@ function AppContent() {
               element={
                 <RequirePermission anyOf={["view_prescriptions", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "export_prescriptions", "print_prescriptions", "manage_prescriptions", "create_prescription"]}>
                   <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/treatment-sets"
+              element={
+                <RequirePermission anyOf={["view_treatment_sets", "add_treatment_sets", "edit_treatment_sets", "delete_treatment_sets", "manage_treatment_sets", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "manage_prescriptions"]}>
+                  <MedicineSetManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
             />

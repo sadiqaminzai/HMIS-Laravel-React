@@ -212,12 +212,39 @@ export interface PrescriptionMedicine {
   instruction: 'before_meal' | 'after_meal' | 'with_meal' | 'empty_stomach' | '';
   quantity: number;
   type?: string; // e.g. Tablet, Syrup, Injection
+  groupKey?: string;
+  groupLabel?: string;
+  groupOrder?: number;
+}
+
+export interface MedicineSetItemTemplate {
+  id: string;
+  medicineSetId: string;
+  medicineId?: string;
+  medicineName: string;
+  strength: string;
+  dose: string;
+  duration: string;
+  instruction: PrescriptionMedicine['instruction'];
+  quantity: number;
+  type?: string;
+  sortOrder: number;
+}
+
+export interface MedicineSet {
+  id: string;
+  hospitalId: string;
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive';
+  items: MedicineSetItemTemplate[];
 }
 
 export interface Prescription {
   id: string;
   hospitalId: string;
   prescriptionNumber: string;
+  nextVisit?: Date | null;
   patientId: string | null;
   walkInPatientId?: string | null;
   isWalkIn?: boolean;

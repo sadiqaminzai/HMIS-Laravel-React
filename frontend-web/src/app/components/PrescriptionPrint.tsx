@@ -23,6 +23,7 @@ interface PrescriptionPrintProps {
   prescriptionNumber: string;
   diagnosis?: string;
   prescriptionDate?: Date;
+  nextVisit?: Date | null;
   onClose: () => void;
   viewOnly?: boolean;
   embedded?: boolean;
@@ -42,6 +43,7 @@ export function PrescriptionPrint({
   prescriptionNumber,
   diagnosis = '',
   prescriptionDate = new Date(),
+  nextVisit = null,
   onClose,
   viewOnly = false,
   embedded = false,
@@ -146,8 +148,7 @@ export function PrescriptionPrint({
       width: 100%;
       min-height: auto;
       height: auto;
-      padding: 14mm !important;
-      padding-bottom: 48mm !important;
+      padding: 6mm 8mm 30mm 8mm !important;
       margin: 0;
       background: white;
       box-sizing: border-box !important;
@@ -171,9 +172,9 @@ export function PrescriptionPrint({
       visibility: visible !important;
       display: block !important;
       position: fixed !important;
-      left: 14mm;
-      right: 14mm;
-      bottom: 16mm;
+      left: 8mm;
+      right: 8mm;
+      bottom: 6mm;
       background: white;
       z-index: 10000;
       break-inside: avoid;
@@ -213,7 +214,7 @@ export function PrescriptionPrint({
       visibility: visible !important;
       page-break-inside: avoid;
       break-inside: avoid;
-      padding-top: 1mm !important;
+      padding-top: 0 !important;
       gap: 8px !important;
     }
 
@@ -323,28 +324,48 @@ export function PrescriptionPrint({
   const firstPageMedicines = medicines.slice(0, FIRST_PAGE_MEDICINE_LIMIT);
   const remainingMedicines = medicines.slice(FIRST_PAGE_MEDICINE_LIMIT);
 
-  const renderMedicineRows = (rows: ExtendedPrescriptionMedicine[], startIndex = 0) =>
-    rows.map((med, index) => (
-      <tr key={`${startIndex}-${index}`} className={(startIndex + index) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-        <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{startIndex + index + 1}</td>
-        <td className="px-2 py-1 border-b border-gray-100 font-medium break-words">
-          {formatMedicineForPrint(med)}
-        </td>
-        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">
-          <span className="inline-block px-1 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-semibold border border-blue-100">
-            {med.dose}
-          </span>
-        </td>
-        <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">{med.duration}</td>
-        <td
-          className="px-2 py-1 border-b border-gray-100 text-gray-600 whitespace-pre-wrap break-words max-w-[140px]"
-          title={getInstructionLabel(med.instruction)}
-        >
-          {getInstructionLabel(med.instruction)}
-        </td>
-        <td className="px-2 py-1 border-b border-gray-100 text-center font-medium">{med.quantity ?? '-'}</td>
-      </tr>
-    ));
+  const renderMedicineRows = (rows: ExtendedPrescriptionMedicine[], startIndex = 0) => {
+    const renderedRows: React.ReactNode[] = [];
+
+    rows.forEach((med, index) => {
+      const previousMedicine = index > 0 ? rows[index - 1] : null;
+      const startsNewGroup = Boolean(med.groupKey) && med.groupKey !== previousMedicine?.groupKey;
+
+      if (startsNewGroup) {
+        renderedRows.push(
+          <tr key={`group-${startIndex}-${index}`} className="bg-indigo-50/70">
+            <td colSpan={6} className="px-2 py-1 border-b border-indigo-100 text-[10px] font-semibold text-indigo-700 uppercase tracking-wide">
+              {med.groupLabel || 'Treatment Set'}
+            </td>
+          </tr>
+        );
+      }
+
+      renderedRows.push(
+        <tr key={`${startIndex}-${index}`} className={(startIndex + index) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+          <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{startIndex + index + 1}</td>
+          <td className="px-2 py-1 border-b border-gray-100 font-medium break-words">
+            {formatMedicineForPrint(med)}
+          </td>
+          <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">
+            <span className="inline-block px-1 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-semibold border border-blue-100">
+              {med.dose}
+            </span>
+          </td>
+          <td className="px-2 py-1 border-b border-gray-100 whitespace-nowrap">{med.duration}</td>
+          <td
+            className="px-2 py-1 border-b border-gray-100 text-gray-600 whitespace-pre-wrap break-words max-w-[140px]"
+            title={getInstructionLabel(med.instruction)}
+          >
+            {getInstructionLabel(med.instruction)}
+          </td>
+          <td className="px-2 py-1 border-b border-gray-100 text-center font-medium">{med.quantity ?? '-'}</td>
+        </tr>
+      );
+    });
+
+    return renderedRows;
+  };
 
   const renderHospitalHeader = (extraClassName = 'mb-2') => (
     <div className={`flex flex-row justify-between items-center gap-3 border-b-4 border-blue-600 pb-1 ${extraClassName}`}>
@@ -389,6 +410,7 @@ export function PrescriptionPrint({
     patientId: patient.patientId,
     doctorId: doctor.id,
     date: prescriptionDate.toISOString(),
+    nextVisit: nextVisit ? nextVisit.toISOString() : null,
     medicineCount: medicines.length
   });
   const verificationUrl = buildVerificationUrl('prescription', verificationToken);
@@ -492,6 +514,10 @@ export function PrescriptionPrint({
                 <div>
                   <span className="block text-xs font-bold text-blue-900">Date</span>
                   <span className="text-gray-900">{formatDate(prescriptionDate, hospital.timezone, hospital.calendarType)}</span>
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-blue-900">Next Visit</span>
+                  <span className="text-gray-900">{nextVisit ? formatDate(nextVisit, hospital.timezone, hospital.calendarType) : '-'}</span>
                 </div>
               </div>
             </div>

@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\MedicineSet;
 
-class PrescriptionItem extends Model
+class MedicineSetItem extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'prescription_id',
+        'medicine_set_id',
         'medicine_id',
         'medicine_name',
         'strength',
@@ -19,24 +20,21 @@ class PrescriptionItem extends Model
         'instruction',
         'quantity',
         'type',
+        'sort_order',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'sort_order' => 'integer',
     ];
 
-    public function prescription()
+    public function medicineSet()
     {
-        return $this->belongsTo(Prescription::class);
+        return $this->belongsTo(MedicineSet::class);
     }
 
     public function medicine()
     {
         return $this->belongsTo(Medicine::class);
-    }
-
-    public function groupLink()
-    {
-        return $this->hasOne(PrescriptionItemGroupLink::class);
     }
 }

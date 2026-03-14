@@ -27,6 +27,7 @@ export interface HospitalSetting {
   hospitalId: string;
   defaultDoctorId?: string;
   defaultToWalkIn: boolean;
+  defaultPrescriptionNextVisit: boolean;
   patientIdConfig: PatientIdConfig;
   printColumns: PrintColumnSettings;
   prescriptionPrintAssetSettings: PrescriptionPrintAssetSettings;
@@ -46,6 +47,7 @@ interface SettingsContextType {
   updateSettings: (settings: Partial<Settings>) => void;
   getDefaultDoctorId: (hospitalId: string) => string | undefined;
   getDefaultToWalkIn: (hospitalId: string) => boolean;
+  getDefaultPrescriptionNextVisit: (hospitalId: string) => boolean;
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
   getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
   getPrescriptionPrintAssetSettings: (hospitalId: string) => PrescriptionPrintAssetSettings;
@@ -95,6 +97,7 @@ const SettingsContext = createContext<SettingsContextType>({
   updateSettings: () => {},
   getDefaultDoctorId: () => undefined,
   getDefaultToWalkIn: () => false,
+  getDefaultPrescriptionNextVisit: () => false,
   getPatientIdConfig: () => defaultPatientIdConfig,
   getPrintColumnSettings: () => defaultPrintColumns,
   getPrescriptionPrintAssetSettings: () => defaultPrescriptionPrintAssetSettings,
@@ -164,6 +167,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const body: any = {};
     if (payload.defaultDoctorId !== undefined) body.default_doctor_id = payload.defaultDoctorId || null;
     if (payload.defaultToWalkIn !== undefined) body.default_to_walk_in = payload.defaultToWalkIn;
+    if (payload.defaultPrescriptionNextVisit !== undefined) body.default_prescription_next_visit = payload.defaultPrescriptionNextVisit;
     if (payload.patientIdConfig) {
       body.patient_id_prefix = payload.patientIdConfig.prefix;
       body.patient_id_start = payload.patientIdConfig.startNumber;
@@ -200,6 +204,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       hospitalId: String(raw.hospital_id ?? raw.id ?? ''),
       defaultDoctorId: raw.default_doctor_id ? String(raw.default_doctor_id) : undefined,
       defaultToWalkIn: Boolean(raw.default_to_walk_in),
+      defaultPrescriptionNextVisit: Boolean(raw.default_prescription_next_visit ?? false),
       patientIdConfig: {
         autoGenerate: raw.auto_generate_patient_ids ?? true,
         prefix: raw.patient_id_prefix ?? 'P',
@@ -227,6 +232,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       hospitalId,
       defaultDoctorId: undefined,
       defaultToWalkIn: false,
+      defaultPrescriptionNextVisit: false,
       patientIdConfig: { ...defaultPatientIdConfig },
       printColumns: { ...defaultPrintColumns },
       prescriptionPrintAssetSettings: { ...defaultPrescriptionPrintAssetSettings },
@@ -241,6 +247,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const getDefaultToWalkIn = (hospitalId: string) => {
     return getHospitalSetting(hospitalId).defaultToWalkIn;
+  };
+
+  const getDefaultPrescriptionNextVisit = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).defaultPrescriptionNextVisit;
   };
 
   const getPatientIdConfig = (hospitalId: string): PatientIdConfig => {
@@ -275,6 +285,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       updateSettings, 
       getDefaultDoctorId,
       getDefaultToWalkIn,
+      getDefaultPrescriptionNextVisit,
       getPatientIdConfig,
       getPrintColumnSettings,
       getPrescriptionPrintAssetSettings,

@@ -14,8 +14,10 @@ use App\Http\Controllers\PatientController;
 use App\Http\Controllers\HospitalController;
 use App\Http\Controllers\ManufacturerController;
 use App\Http\Controllers\MedicineController;
+use App\Http\Controllers\MedicineSetController;
 use App\Http\Controllers\MedicineTypeController;
 use App\Http\Controllers\PrescriptionController;
+use App\Http\Controllers\PrescriptionItemGroupController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockReconciliationController;
 use App\Http\Controllers\SupplierController;
@@ -126,6 +128,15 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('prescriptions', [PrescriptionController::class, 'store'])->middleware('permission:add_prescriptions,manage_prescriptions,create_prescription');
 	Route::match(['PUT', 'PATCH'], 'prescriptions/{prescription}', [PrescriptionController::class, 'update'])->middleware('permission:edit_prescriptions,manage_prescriptions');
 	Route::delete('prescriptions/{prescription}', [PrescriptionController::class, 'destroy'])->middleware('permission:delete_prescriptions,manage_prescriptions');
+	Route::get('prescriptions/{prescription}/item-groups', [PrescriptionItemGroupController::class, 'show'])->middleware('permission_or_doctor:view_prescriptions,manage_prescriptions,create_prescription');
+	Route::put('prescriptions/{prescription}/item-groups', [PrescriptionItemGroupController::class, 'sync'])->middleware('permission_or_doctor:edit_prescriptions,add_prescriptions,manage_prescriptions,create_prescription');
+
+	// Medicine Sets (optional grouped-prescription templates)
+	Route::get('medicine-sets', [MedicineSetController::class, 'index'])->middleware('permission_or_doctor:view_treatment_sets,manage_treatment_sets,view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	Route::get('medicine-sets/{medicineSet}', [MedicineSetController::class, 'show'])->middleware('permission_or_doctor:view_treatment_sets,manage_treatment_sets,view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	Route::post('medicine-sets', [MedicineSetController::class, 'store'])->middleware('permission:add_treatment_sets,manage_treatment_sets,add_prescriptions,manage_prescriptions');
+	Route::match(['PUT', 'PATCH'], 'medicine-sets/{medicineSet}', [MedicineSetController::class, 'update'])->middleware('permission:edit_treatment_sets,manage_treatment_sets,edit_prescriptions,manage_prescriptions');
+	Route::delete('medicine-sets/{medicineSet}', [MedicineSetController::class, 'destroy'])->middleware('permission:delete_treatment_sets,manage_treatment_sets,delete_prescriptions,manage_prescriptions');
 
 	Route::get('test-templates', [TestTemplateController::class, 'index'])->middleware('permission_or_doctor:view_test_templates,manage_test_templates');
 	Route::get('test-templates/{testTemplate}', [TestTemplateController::class, 'show'])->middleware('permission_or_doctor:view_test_templates,manage_test_templates');
