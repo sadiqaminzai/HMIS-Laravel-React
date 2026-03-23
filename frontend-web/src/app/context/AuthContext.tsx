@@ -49,6 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = (permissionName: string) => {
     if (!permissionName) return false;
 
+    // Super admin has full access across all permission-gated features.
+    if (user?.role === 'super_admin') {
+      return true;
+    }
+
     const assigned = user?.permissions ?? [];
     if (assigned.includes(permissionName)) {
       return true;

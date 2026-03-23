@@ -40,6 +40,13 @@ const mapAppointment = (a: any): Appointment => ({
   reason: a.reason ?? '',
   status: normalizeStatus(a.status),
   notes: a.notes ?? '',
+  originalFeeAmount: Number(a.original_fee_amount ?? 0),
+  discountEnabled: Boolean(a.discount_enabled ?? false),
+  discountTypeId: a.discount_type_id ? String(a.discount_type_id) : undefined,
+  discountAmount: Number(a.discount_amount ?? 0),
+  totalAmount: Number(a.total_amount ?? 0),
+  currency: a.currency ?? 'AFN',
+  paymentStatus: (a.payment_status ?? 'pending') as Appointment['paymentStatus'],
   createdAt: a.created_at ? new Date(a.created_at) : new Date(),
   updatedAt: a.updated_at ? new Date(a.updated_at) : undefined,
 });
@@ -120,6 +127,13 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
     if (payload.reason !== undefined) body.reason = payload.reason;
     if (payload.status) body.status = payload.status;
     if (payload.notes !== undefined) body.notes = payload.notes;
+    if (payload.originalFeeAmount !== undefined && payload.originalFeeAmount !== null) body.original_fee_amount = payload.originalFeeAmount;
+    if (payload.discountEnabled !== undefined && payload.discountEnabled !== null) body.discount_enabled = payload.discountEnabled;
+    if (payload.discountTypeId !== undefined) body.discount_type_id = payload.discountTypeId || null;
+    if (payload.discountAmount !== undefined && payload.discountAmount !== null) body.discount_amount = payload.discountAmount;
+    if (payload.totalAmount !== undefined && payload.totalAmount !== null) body.total_amount = payload.totalAmount;
+    if (payload.currency !== undefined) body.currency = payload.currency;
+    if (payload.paymentStatus !== undefined) body.payment_status = payload.paymentStatus;
     return body;
   };
 

@@ -296,10 +296,96 @@ export interface Appointment {
   reason: string;
   status: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
   notes?: string;
+  originalFeeAmount?: number;
+  discountEnabled?: boolean;
+  discountTypeId?: string;
+  discountAmount?: number;
+  totalAmount?: number;
+  currency?: string;
+  paymentStatus?: 'pending' | 'paid' | 'partial' | 'cancelled';
   createdAt: Date;
   createdBy: string;
   updatedAt?: Date;
   updatedBy?: string;
+}
+
+export interface DiscountType {
+  id: string;
+  hospitalId: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface DiscountCatalog {
+  id: string;
+  hospitalId: string;
+  name: string;
+  discountTypeId: string;
+  amount: number;
+  currency: string;
+  isActive: boolean;
+}
+
+export interface Room {
+  id: string;
+  hospitalId: string;
+  roomNumber: string;
+  type: 'General' | 'Private' | 'Semi-Private' | 'ICU' | 'Emergency';
+  totalBeds: number;
+  availableBeds: number;
+  costPerBed: number;
+  isActive: boolean;
+}
+
+export interface RoomBooking {
+  id: string;
+  hospitalId: string;
+  roomId: string;
+  patientId: string;
+  doctorId?: string;
+  bookingDate: Date;
+  checkInDate: Date;
+  checkOutDate?: Date;
+  bedNumber?: string;
+  bedsToBook: number;
+  totalCost: number;
+  discountAmount: number;
+  status: 'Pending' | 'Confirmed' | 'Checked-in' | 'Checked-out' | 'Cancelled';
+  paymentStatus: 'pending' | 'paid' | 'partial' | 'cancelled';
+  remarks?: string;
+  isActive: boolean;
+}
+
+export interface SurgeryType {
+  id: string;
+  hospitalId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface Surgery {
+  id: string;
+  hospitalId: string;
+  name: string;
+  typeId: string;
+  cost: number;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface PatientSurgery {
+  id: string;
+  hospitalId: string;
+  patientId: string;
+  doctorId?: string;
+  surgeryId: string;
+  surgeryDate: Date;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  paymentStatus: 'pending' | 'paid' | 'partial' | 'cancelled';
+  cost: number;
+  notes?: string;
+  isActive: boolean;
 }
 
 // New interfaces for Lab Tests

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, ToggleRight } from 'lucide-react';
 import { Hospital, Appointment, UserRole, Patient, Doctor } from '../types';
 import { Toast } from './Toast';
 import { useSettings } from '../context/SettingsContext';
@@ -9,6 +9,7 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useAppointments } from '../context/AppointmentContext';
 import { useHospitals } from '../context/HospitalContext';
+import api from '../../api/axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -19,6 +20,34 @@ interface AppointmentManagementProps {
   userRole: UserRole;
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
 }
+
+interface DiscountTypeOption {
+  id: string;
+  name: string;
+}
+
+interface DiscountCatalogOption {
+  id: string;
+  name: string;
+  discountTypeId: string;
+  amount: number;
+  currency: string;
+}
+
+const truncateText = (value: string, maxLength: number): string => {
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, maxLength - 3)}...`;
+};
+
+const formatDoctorOptionLabel = (doctor: Doctor): string => {
+  const cleanedName = String(doctor.name || '').replace(/^dr\.?\s*/i, '').trim();
+  const nameLabel = cleanedName ? `Dr. ${cleanedName}` : 'Doctor';
+  const specialization = String(doctor.specialization || '').trim();
+
+  if (!specialization) return nameLabel;
+  return `${nameLabel} (${truncateText(specialization, 52)})`;
+};
 
 export function AppointmentManagement({ hospital, userRole, currentUser }: AppointmentManagementProps) {
   
@@ -42,6 +71,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [discountTypes, setDiscountTypes] = useState<DiscountTypeOption[]>([]);
+  const [discountCatalogs, setDiscountCatalogs] = useState<DiscountCatalogOption[]>([]);
   const { getDefaultDoctorId } = useSettings();
   
   // Sorting state
@@ -58,12 +89,68 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     appointmentTime: nowTime(),
     reason: '',
     notes: '',
-    hospitalId: currentHospital.id // Add hospital selection
+    hospitalId: currentHospital.id,
+    originalFeeAmount: '',
+    discountEnabled: false,
+    discountTypeId: '',
+    selectedDiscountId: '',
+    discountAmount: '',
+    paymentStatus: 'pending' as NonNullable<Appointment['paymentStatus']>,
   });
+
+  const filteredDiscountCatalogs = discountCatalogs.filter((item) => {
+    if (!formData.discountTypeId) return true;
+    return item.discountTypeId === formData.discountTypeId;
+  });
+
+  const calculateTotals = () => {
+    const original = Math.max(0, Number(formData.originalFeeAmount || 0));
+    const manualDiscount = Math.max(0, Number(formData.discountAmount || 0));
+    const discount = formData.discountEnabled ? original : Math.min(original, manualDiscount);
+    const total = Math.max(0, original - discount);
+    return { original, discount, total };
+  };
+
+  const feePreview = calculateTotals();
   React.useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    const loadDiscountData = async () => {
+      try {
+        const params: Record<string, any> = { per_page: 100, is_active: 1 };
+        if (userRole === 'super_admin' && selectedHospitalId !== 'all') {
+          params.hospital_id = selectedHospitalId;
+        } else {
+          params.hospital_id = currentHospital.id;
+        }
+
+        const [typesRes, discountsRes] = await Promise.all([
+          api.get('/discount-types', { params }),
+          api.get('/discounts', { params }),
+        ]);
+
+        const typeRows = (typesRes.data?.data ?? typesRes.data ?? []) as any[];
+        setDiscountTypes(typeRows.map((row) => ({ id: String(row.id), name: String(row.name) })));
+
+        const discountRows = (discountsRes.data?.data ?? discountsRes.data ?? []) as any[];
+        setDiscountCatalogs(discountRows.map((row) => ({
+          id: String(row.id),
+          name: String(row.name),
+          discountTypeId: String(row.discount_type_id),
+          amount: Number(row.amount ?? 0),
+          currency: String(row.currency ?? 'AFN'),
+        })));
+      } catch {
+        setDiscountTypes([]);
+        setDiscountCatalogs([]);
+      }
+    };
+
+    loadDiscountData();
+  }, [userRole, selectedHospitalId, currentHospital.id]);
 
   // Get hospital-specific patients and doctors (or all if viewing all hospitals)
   const hospitalPatients = filterByHospital(patients);
@@ -147,6 +234,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       Date: formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
       Time: apt.appointmentTime,
       Reason: apt.reason,
+      OriginalFee: apt.originalFeeAmount ?? 0,
+      Discount: apt.discountAmount ?? 0,
+      TotalFee: apt.totalAmount ?? Math.max(0, (apt.originalFeeAmount ?? 0) - (apt.discountAmount ?? 0)),
+      PaymentStatus: apt.paymentStatus ?? 'pending',
       Status: apt.status,
       Hospital: hospitals.find(h => h.id === apt.hospitalId)?.name || 'Unknown'
     })));
@@ -170,13 +261,16 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
     // Create table
     autoTable(doc, {
-      head: [['Apt #', 'Patient', 'Doctor', 'Date', 'Time', 'Status']],
+      head: [['Apt #', 'Patient', 'Doctor', 'Date', 'Time', 'Original', 'Discount', 'Total', 'Status']],
       body: filteredAppointments.map(apt => [
         apt.appointmentNumber,
         apt.patientName,
         apt.doctorName,
         formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
         apt.appointmentTime,
+        String((apt.originalFeeAmount ?? 0).toFixed(2)),
+        String((apt.discountAmount ?? 0).toFixed(2)),
+        String((apt.totalAmount ?? Math.max(0, (apt.originalFeeAmount ?? 0) - (apt.discountAmount ?? 0))).toFixed(2)),
         apt.status
       ]),
       startY: isAllHospitals ? 40 : 46,
@@ -283,6 +377,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       reason: formData.reason,
       status: 'scheduled',
       notes: formData.notes,
+      originalFeeAmount: feePreview.original,
+      discountEnabled: formData.discountEnabled,
+      discountTypeId: formData.discountTypeId || undefined,
+      discountAmount: feePreview.discount,
+      totalAmount: feePreview.total,
+      currency: 'AFN',
+      paymentStatus: formData.paymentStatus,
       patientName: patient?.name,
       patientAge: patient?.age,
       patientGender: patient?.gender,
@@ -325,6 +426,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       appointmentTime,
       reason: formData.reason,
       notes: formData.notes,
+      originalFeeAmount: feePreview.original,
+      discountEnabled: formData.discountEnabled,
+      discountTypeId: formData.discountTypeId || undefined,
+      discountAmount: feePreview.discount,
+      totalAmount: feePreview.total,
+      currency: 'AFN',
+      paymentStatus: formData.paymentStatus,
       patientName: patient?.name,
       patientAge: patient?.age,
       patientGender: patient?.gender,
@@ -380,9 +488,45 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       appointmentTime: target.appointmentTime,
       reason: target.reason,
       notes: target.notes,
+      originalFeeAmount: target.originalFeeAmount,
+      discountEnabled: target.discountEnabled,
+      discountTypeId: target.discountTypeId,
+      discountAmount: target.discountAmount,
+      totalAmount: target.totalAmount,
+      currency: target.currency,
+      paymentStatus: target.paymentStatus,
     })
       .then(() => setToast({ message: `Appointment marked as ${newStatus}.`, type: 'success' }))
       .catch((err: any) => setToast({ message: err?.response?.data?.message || 'Failed to update status.', type: 'danger' }));
+  };
+
+  const handlePaymentStatusToggle = (apt: Appointment) => {
+    const nextPaymentStatus: NonNullable<Appointment['paymentStatus']> =
+      apt.paymentStatus === 'paid' ? 'pending' : 'paid';
+
+    updateAppointment({
+      id: apt.id,
+      hospitalId: apt.hospitalId,
+      patientId: apt.patientId,
+      doctorId: apt.doctorId,
+      patientName: apt.patientName,
+      patientAge: apt.patientAge,
+      patientGender: apt.patientGender,
+      appointmentDate: apt.appointmentDate,
+      appointmentTime: apt.appointmentTime,
+      reason: apt.reason,
+      notes: apt.notes,
+      status: apt.status,
+      originalFeeAmount: apt.originalFeeAmount,
+      discountEnabled: apt.discountEnabled,
+      discountTypeId: apt.discountTypeId,
+      discountAmount: apt.discountAmount,
+      totalAmount: apt.totalAmount,
+      currency: apt.currency,
+      paymentStatus: nextPaymentStatus,
+    })
+      .then(() => setToast({ message: `Payment marked as ${nextPaymentStatus}.`, type: 'success' }))
+      .catch((err: any) => setToast({ message: err?.response?.data?.message || 'Failed to update payment status.', type: 'danger' }));
   };
 
   const resetForm = () => {
@@ -393,7 +537,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       appointmentTime: nowTime(),
       reason: '',
       notes: '',
-      hospitalId: currentHospital.id // Add hospital selection
+      hospitalId: currentHospital.id,
+      originalFeeAmount: '',
+      discountEnabled: false,
+      discountTypeId: '',
+      selectedDiscountId: '',
+      discountAmount: '',
+      paymentStatus: 'pending',
     });
   };
 
@@ -406,7 +556,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       appointmentTime: apt.appointmentTime,
       reason: apt.reason,
       notes: apt.notes || '',
-      hospitalId: apt.hospitalId // Add hospital selection
+      hospitalId: apt.hospitalId,
+      originalFeeAmount: String(apt.originalFeeAmount ?? ''),
+      discountEnabled: Boolean(apt.discountEnabled ?? false),
+      discountTypeId: apt.discountTypeId ?? '',
+      selectedDiscountId: '',
+      discountAmount: String(apt.discountAmount ?? ''),
+      paymentStatus: apt.paymentStatus ?? 'pending',
     });
     setShowEditModal(true);
   };
@@ -438,6 +594,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const canExport = hasPermission('export_appointments') || hasPermission('manage_appointments');
   const canPrint = hasPermission('print_appointments') || hasPermission('manage_appointments');
   const canChangeAnyStatus = hasPermission('update_appointment_status') || hasPermission('manage_appointments');
+  const canTogglePayment = canEdit || canChangeAnyStatus;
 
   return (
     <div className="space-y-3">
@@ -495,6 +652,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <button
               onClick={() => {
                 const defaultDoctorId = getDefaultDoctorId(currentHospital.id) || '';
+                const defaultDoctor = hospitalDoctors.find((d) => d.id === defaultDoctorId);
                 setFormData({
                   patientId: '',
                   doctorId: defaultDoctorId,
@@ -502,7 +660,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   appointmentTime: nowTime(),
                   reason: '',
                   notes: '',
-                  hospitalId: currentHospital.id // Add hospital selection
+                  hospitalId: currentHospital.id,
+                  originalFeeAmount: defaultDoctor ? String(defaultDoctor.consultationFee ?? 0) : '',
+                  discountEnabled: false,
+                  discountTypeId: '',
+                  selectedDiscountId: '',
+                  discountAmount: '',
+                  paymentStatus: 'pending',
                 });
                 setShowAddModal(true);
               }}
@@ -553,6 +717,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   </div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Reason</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Fees</th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
                     Status
@@ -565,7 +730,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredAppointments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
                         <Calendar className="w-6 h-6 text-gray-400 opacity-50" />
@@ -600,6 +765,16 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-xs text-gray-900 dark:text-white truncate max-w-xs">{apt.reason}</div>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="text-[10px] leading-4 text-gray-700 dark:text-gray-300">
+                        <div>Original: {(apt.originalFeeAmount ?? 0).toFixed(2)} {apt.currency ?? 'AFN'}</div>
+                        <div>Discount: {(apt.discountAmount ?? 0).toFixed(2)}</div>
+                        <div>Payment: {(apt.paymentStatus ?? 'pending').toUpperCase()}</div>
+                        <div className="font-semibold text-gray-900 dark:text-white">
+                          Total: {(apt.totalAmount ?? Math.max(0, (apt.originalFeeAmount ?? 0) - (apt.discountAmount ?? 0))).toFixed(2)}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="relative">
@@ -675,6 +850,20 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        {canTogglePayment && (
+                          <button
+                            onClick={() => handlePaymentStatusToggle(apt)}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              apt.paymentStatus === 'paid'
+                                ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
+                                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/60'
+                            }`}
+                            title={apt.paymentStatus === 'paid' ? 'Set payment pending' : 'Set payment paid'}
+                            aria-label={apt.paymentStatus === 'paid' ? 'Set payment pending' : 'Set payment paid'}
+                          >
+                            <ToggleRight className={`w-4 h-4 transition-transform ${apt.paymentStatus === 'paid' ? '' : 'rotate-180'}`} />
+                          </button>
+                        )}
                         {canPrint && (
                           <button
                             onClick={() => handlePrint(apt)}
@@ -793,14 +982,25 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   <select
                     id="appointment-doctor"
                     value={formData.doctorId}
-                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
+                    onChange={(e) => {
+                      const nextDoctorId = e.target.value;
+                      const nextDoctor = hospitalDoctors.find((d) => d.id === nextDoctorId);
+                      setFormData({
+                        ...formData,
+                        doctorId: nextDoctorId,
+                        originalFeeAmount:
+                          formData.originalFeeAmount === '' || Number(formData.originalFeeAmount) === 0
+                            ? String(nextDoctor?.consultationFee ?? 0)
+                            : formData.originalFeeAmount,
+                      });
+                    }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                     title="Doctor"
                     required
                   >
                     <option value="">Select Doctor</option>
                     {hospitalDoctors.map(d => (
-                      <option key={d.id} value={d.id}>Dr. {d.name} ({d.specialization})</option>
+                      <option key={d.id} value={d.id}>{formatDoctorOptionLabel(d)}</option>
                     ))}
                   </select>
                 </div>
@@ -858,6 +1058,101 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   required
                 />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Original Fee (AFN)</label>
+                  <input
+                    title="Original fee"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.originalFeeAmount}
+                    onChange={(e) => setFormData({ ...formData, originalFeeAmount: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Type</label>
+                  <select
+                    value={formData.discountTypeId}
+                    onChange={(e) => setFormData({ ...formData, discountTypeId: e.target.value, selectedDiscountId: '' })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title="Discount type"
+                  >
+                    <option value="">No discount type</option>
+                    {discountTypes.map((type) => (
+                      <option key={type.id} value={type.id}>{type.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Catalog</label>
+                  <select
+                    value={formData.selectedDiscountId}
+                    onChange={(e) => {
+                      const selectedDiscountId = e.target.value;
+                      const selected = discountCatalogs.find((d) => d.id === selectedDiscountId);
+                      setFormData({
+                        ...formData,
+                        selectedDiscountId,
+                        discountTypeId: selected ? selected.discountTypeId : formData.discountTypeId,
+                        discountAmount: selected ? String(selected.amount) : formData.discountAmount,
+                      });
+                    }}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title="Discount catalog"
+                  >
+                    <option value="">Manual discount</option>
+                    {filteredDiscountCatalogs.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.amount.toFixed(2)} {item.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Amount</label>
+                  <input
+                    title="Discount amount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.discountAmount}
+                    onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })}
+                    disabled={formData.discountEnabled}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Payment Status</label>
+                  <select
+                    value={formData.paymentStatus}
+                    onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as NonNullable<Appointment['paymentStatus']> })}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title="Payment status"
+                  >
+                    <option value="pending">pending</option>
+                    <option value="partial">partial</option>
+                    <option value="paid">paid</option>
+                    <option value="cancelled">cancelled</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5 bg-gray-50 dark:bg-gray-700/30">
+                <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.discountEnabled}
+                    onChange={(e) => setFormData({ ...formData, discountEnabled: e.target.checked })}
+                  />
+                  Full waiver (100% discount)
+                </label>
+                <span className="text-xs font-semibold text-gray-900 dark:text-white">
+                  Total: {feePreview.total.toFixed(2)} AFN
+                </span>
               </div>
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Notes</label>
@@ -1008,11 +1303,21 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     </div>
 
                     <div className="col-span-2 border-t-2 border-dashed border-gray-300 pt-4 mt-2">
-                       <div className="flex justify-between items-center">
-                          <span className="font-bold text-lg uppercase text-gray-700">Consultation Fee</span>
-                          <span className="font-bold text-2xl text-gray-900">
-                            {(hospitalDoctors.find(d => d.id === selectedAppointment.doctorId)?.consultationFee || 0).toFixed(2)}
-                          </span>
+                       <div className="space-y-1">
+                         <div className="flex justify-between items-center text-gray-700">
+                           <span className="font-bold text-sm uppercase">Original Fee</span>
+                           <span className="font-semibold">{(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} {selectedAppointment.currency ?? 'AFN'}</span>
+                         </div>
+                         <div className="flex justify-between items-center text-gray-700">
+                           <span className="font-bold text-sm uppercase">Discount</span>
+                           <span className="font-semibold">{(selectedAppointment.discountAmount ?? 0).toFixed(2)}</span>
+                         </div>
+                         <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">
+                           <span className="font-bold text-lg uppercase text-gray-900">Payable Total</span>
+                           <span className="font-bold text-2xl text-gray-900">
+                             {(selectedAppointment.totalAmount ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0))).toFixed(2)}
+                           </span>
+                         </div>
                        </div>
                     </div>
                  </div>

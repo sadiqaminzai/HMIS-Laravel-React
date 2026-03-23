@@ -4,6 +4,8 @@ import {
   LayoutDashboard,
   Building2,
   Calendar,
+  BedDouble,
+  Scissors,
   UserCheck,
   Stethoscope,
   Users,
@@ -70,7 +72,7 @@ const menuItems: MenuItem[] = [
     id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_reception_menu'],
+    anyPermissions: ['view_reception_menu', 'view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts'],
     subItems: [
       {
         id: '/doctors',
@@ -89,6 +91,36 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.appointments',
         icon: <Calendar className="w-3.5 h-3.5" />,
         anyPermissions: ['view_appointments', 'manage_appointments', 'schedule_appointments']
+      },
+      {
+        id: '/discount-types',
+        translationKey: 'nav.discountTypes',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts']
+      },
+      {
+        id: '/discount-catalog',
+        translationKey: 'nav.discountCatalog',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts']
+      },
+      {
+        id: '/rooms',
+        translationKey: 'nav.rooms',
+        icon: <BedDouble className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_rooms', 'manage_rooms']
+      },
+      {
+        id: '/room-bookings',
+        translationKey: 'nav.roomBookings',
+        icon: <BedDouble className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_room_bookings', 'manage_room_bookings']
+      },
+      {
+        id: '/surgeries',
+        translationKey: 'nav.surgeries',
+        icon: <Scissors className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_surgery_types', 'manage_surgery_types', 'view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries']
       }
     ]
   },
@@ -240,6 +272,9 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     'add_permissions',
     'edit_permissions',
     'delete_permissions',
+    'import_permissions',
+    'export_permissions',
+    'print_permissions',
     'manage_permissions',
     'view_hospital_settings',
     'add_hospital_settings',
@@ -260,7 +295,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
 
   const canSeeUsers = hasPermission('view_users') || hasPermission('add_users') || hasPermission('edit_users') || hasPermission('delete_users') || hasPermission('manage_users');
   const canSeeRoles = hasPermission('view_roles') || hasPermission('add_roles') || hasPermission('edit_roles') || hasPermission('delete_roles') || hasPermission('manage_roles');
-  const canSeePermissions = hasPermission('view_permissions') || hasPermission('add_permissions') || hasPermission('edit_permissions') || hasPermission('delete_permissions') || hasPermission('manage_permissions');
+  const canSeePermissions = hasPermission('view_permissions') || hasPermission('add_permissions') || hasPermission('edit_permissions') || hasPermission('delete_permissions') || hasPermission('import_permissions') || hasPermission('export_permissions') || hasPermission('print_permissions') || hasPermission('manage_permissions');
   const canSeeHospitalSettings = hasPermission('view_hospital_settings') || hasPermission('add_hospital_settings') || hasPermission('edit_hospital_settings') || hasPermission('delete_hospital_settings') || hasPermission('manage_hospital_settings');
   const canSeeBackups = hasPermission('view_backups') || hasPermission('add_backups') || hasPermission('edit_backups') || hasPermission('delete_backups') || hasPermission('export_backups') || hasPermission('manage_backups') || canSeeHospitalSettings;
   const canSeeContactMessages = hasPermission('view_contact_messages') || hasPermission('edit_contact_messages') || hasPermission('delete_contact_messages') || hasPermission('manage_contact_messages');
@@ -321,7 +356,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     }
     
     // If navigating to a non-reception page and reception menu is expanded, collapse it
-    const isReceptionSubItem = ['/doctors', '/patients', '/appointments'].includes(path);
+    const isReceptionSubItem = ['/doctors', '/patients', '/appointments', '/discount-types', '/discount-catalog', '/rooms', '/room-bookings', '/surgeries'].includes(path);
     if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
     }

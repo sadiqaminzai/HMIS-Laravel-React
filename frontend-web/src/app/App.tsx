@@ -34,6 +34,11 @@ import { SupplierManagement } from './components/SupplierManagement';
 import { TransactionManagement } from './components/TransactionManagement';
 import { StockManagement } from './components/StockManagement';
 import { AppointmentManagement } from './components/AppointmentManagement';
+import { DiscountTypeManagement } from './components/DiscountTypeManagement';
+import { DiscountCatalogManagement } from './components/DiscountCatalogManagement';
+import { RoomManagement } from './components/RoomManagement';
+import { RoomBookingManagement } from './components/RoomBookingManagement';
+import { SurgeryManagement } from './components/SurgeryManagement';
 import { LabTestManagementNew } from './components/LabTestManagementNew';
 import { TestManagement } from './components/TestManagement';
 import { PrescriptionCreate } from './components/PrescriptionCreate';
@@ -429,6 +434,46 @@ function AppContent() {
               element={
                 <RequirePermission anyOf={["view_appointments", "add_appointments", "edit_appointments", "delete_appointments", "export_appointments", "print_appointments", "manage_appointments", "schedule_appointments", "update_appointment_status"]}>
                   <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/discount-types"
+              element={
+                <RequirePermission anyOf={["view_discounts", "add_discounts", "edit_discounts", "delete_discounts", "manage_discounts"]}>
+                  <DiscountTypeManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/discount-catalog"
+              element={
+                <RequirePermission anyOf={["view_discounts", "add_discounts", "edit_discounts", "delete_discounts", "manage_discounts"]}>
+                  <DiscountCatalogManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/rooms"
+              element={
+                <RequirePermission anyOf={["view_rooms", "add_rooms", "edit_rooms", "delete_rooms", "manage_rooms"]}>
+                  <RoomManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/room-bookings"
+              element={
+                <RequirePermission anyOf={["view_room_bookings", "add_room_bookings", "edit_room_bookings", "delete_room_bookings", "manage_room_bookings"]}>
+                  <RoomBookingManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/surgeries"
+              element={
+                <RequirePermission anyOf={["view_surgery_types", "manage_surgery_types", "view_surgeries", "manage_surgeries", "view_patient_surgeries", "manage_patient_surgeries"]}>
+                  <SurgeryManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
             />
