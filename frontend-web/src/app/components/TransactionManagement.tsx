@@ -102,26 +102,48 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     }
     return scoped.reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
   };
+  const getAvailableStockBreakdown = (medicineId?: string, batchNo?: string, hospitalId?: string) => {
+    if (!medicineId || !hospitalId) return { qty: 0, bonus: 0, total: 0 };
+    const scoped = stocks.filter(
+      (s) =>
+        String(s.hospitalId) === String(hospitalId) &&
+        String(s.medicineId) === String(medicineId) &&
+        (!batchNo || (s.batchNo || '') === batchNo)
+    );
+    const qty = scoped.reduce((sum, s) => sum + Number(s.stockQty || 0), 0);
+    const bonus = scoped.reduce((sum, s) => sum + Number(s.bonusQty || 0), 0);
+    return { qty, bonus, total: qty + bonus };
+  };
 
   const validateSalesStock = () => {
     if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
     if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
-    const requiredByKey: Record<string, number> = {};
+    const requiredByKey: Record<string, { qty: number; bonus: number }> = {};
     formData.items.forEach((item) => {
       if (!item.medicineId) return;
-      const required = Number(item.qtty || 0) + Number(item.bonus || 0);
-      if (required <= 0) return;
+      const requiredQty = Number(item.qtty || 0);
+      const requiredBonus = Number(item.bonus || 0);
+      if (requiredQty <= 0 && requiredBonus <= 0) return;
       const key = `${item.medicineId}::${item.batchNo || '__all__'}`;
-      requiredByKey[key] = (requiredByKey[key] || 0) + required;
+      requiredByKey[key] = requiredByKey[key] || { qty: 0, bonus: 0 };
+      requiredByKey[key].qty += requiredQty;
+      requiredByKey[key].bonus += requiredBonus;
     });
 
     for (const key of Object.keys(requiredByKey)) {
       const [medicineId, batchNo] = key.split('::');
-      const available = getAvailableStock(medicineId, batchNo === '__all__' ? undefined : batchNo, formData.hospitalId);
-      if (available < requiredByKey[key]) {
+      const available = getAvailableStockBreakdown(medicineId, batchNo === '__all__' ? undefined : batchNo, formData.hospitalId);
+      if (available.qty < requiredByKey[key].qty || available.bonus < requiredByKey[key].bonus) {
         const label = getMedicineName(medicineId);
         const batchLabel = batchNo !== '__all__' ? ` (Batch: ${batchNo})` : '';
-        toast.error(`Insufficient stock for ${label}${batchLabel}. Available: ${available}, Required: ${requiredByKey[key]}.`);
+        const segments = [];
+        if (available.qty < requiredByKey[key].qty) {
+          segments.push(`Qty available: ${available.qty}, required: ${requiredByKey[key].qty}`);
+        }
+        if (available.bonus < requiredByKey[key].bonus) {
+          segments.push(`Bonus available: ${available.bonus}, required: ${requiredByKey[key].bonus}`);
+        }
+        toast.error(`Insufficient stock for ${label}${batchLabel}. ${segments.join('. ')}`);
         return false;
       }
     }
