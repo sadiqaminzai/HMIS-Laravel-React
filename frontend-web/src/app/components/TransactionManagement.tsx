@@ -36,6 +36,17 @@ const emptyItem = (): TransactionDetail => ({
   amount: 0,
 });
 
+const buildInitialFormData = (hospitalId: string) => ({
+  trxType: 'sales' as Transaction['trxType'],
+  paidAmount: 0,
+  dueAmount: 0,
+  supplierId: '',
+  patientId: '',
+  hospitalId,
+  transactionDate: new Date(),
+  items: [emptyItem()],
+});
+
 export function TransactionManagement({ hospital, userRole = 'admin' }: TransactionManagementProps) {
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { transactions, addTransaction, updateTransaction, deleteTransaction, loading } = useTransactions();
@@ -75,16 +86,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [openSupplierDropdown, setOpenSupplierDropdown] = useState(false);
   const [openPatientDropdown, setOpenPatientDropdown] = useState(false);
 
-  const [formData, setFormData] = useState({
-    trxType: 'sales' as Transaction['trxType'],
-    paidAmount: 0,
-    dueAmount: 0,
-    supplierId: '',
-    patientId: '',
-    hospitalId: currentHospital.id,
-    transactionDate: new Date(),
-    items: [emptyItem()],
-  });
+  const [formData, setFormData] = useState(() => buildInitialFormData(currentHospital.id));
 
   const scopedTransactions = filterByHospital(transactions);
 
@@ -539,22 +541,33 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const targetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
       ? selectedHospitalId
       : currentHospital.id;
-    setFormData({
-      trxType: 'sales',
-      paidAmount: 0,
-      dueAmount: 0,
-      supplierId: '',
-      patientId: '',
-      hospitalId: targetHospitalId,
-      transactionDate: new Date(),
-      items: [emptyItem()],
-    });
+    setFormData(buildInitialFormData(targetHospitalId));
     setSupplierSearch('');
     setPatientSearch('');
     setOpenSupplierDropdown(false);
     setOpenPatientDropdown(false);
     setLastEditedTotal('auto');
     setShowAddModal(true);
+  };
+
+  const resetTransactionForm = (targetHospitalId?: string) => {
+    const hospitalId = targetHospitalId || currentHospital.id;
+    setFormData(buildInitialFormData(hospitalId));
+    setSupplierSearch('');
+    setPatientSearch('');
+    setMedicineSearch('');
+    setMedicineQueries({});
+    setOpenSupplierDropdown(false);
+    setOpenPatientDropdown(false);
+    setOpenMedicineDropdownIndex(null);
+    setLastEditedTotal('auto');
+  };
+
+  const closeTransactionModal = () => {
+    setShowAddModal(false);
+    setShowEditModal(false);
+    setSelectedTransaction(null);
+    resetTransactionForm();
   };
 
   const handleView = (trx: Transaction) => {
@@ -680,7 +693,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       });
       await refreshMedicines();
       await refreshStocks();
-      setShowAddModal(false);
+      closeTransactionModal();
       toast.success('Transaction added successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to add transaction');
@@ -725,7 +738,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       });
       await refreshMedicines();
       await refreshStocks();
-      setShowEditModal(false);
+      closeTransactionModal();
       toast.success('Transaction updated successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update transaction');
@@ -1289,10 +1302,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   )}
               </div>
               <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setShowEditModal(false);
-                }}
+                onClick={closeTransactionModal}
                 className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
                 aria-label="Close"
               >
@@ -1692,10 +1702,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setShowEditModal(false);
-                  }}
+                  onClick={closeTransactionModal}
                   className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700"
                 >
                   Cancel

@@ -113,7 +113,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
-  const { prescriptions, deletePrescription } = usePrescriptions();
+  const { prescriptions, deletePrescription, dispensePrescription } = usePrescriptions();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { hospitals: hospitalDirectory } = useHospitals();
@@ -131,6 +131,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const [showPrint, setShowPrint] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDispenseModal, setShowDispenseModal] = useState(false);
+  const [dispensing, setDispensing] = useState(false);
+  const [dispenseItems, setDispenseItems] = useState<Array<{ prescriptionItemId: string; medicineName: string; remaining: number; quantity: number }>>([]);
   
   // Apply hospital filter first
   const hospitalFiltered = React.useMemo(() => 
@@ -195,6 +198,89 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const canDeletePrescriptions = hasPermission('delete_prescriptions') || canManagePrescriptions;
   const canExportPrescriptions = hasPermission('export_prescriptions') || canManagePrescriptions;
   const canPrintPrescriptions = hasPermission('print_prescriptions') || canManagePrescriptions;
+  const canDispensePrescriptions = hasPermission('dispense_medicines') || hasPermission('manage_transactions') || canManagePrescriptions;
+
+  const getDispenseSummary = (prescription: any) => {
+    const medicineItems = (prescription.medicines || []).filter((m: any) => Boolean(m.medicineId));
+    const totalRequired = medicineItems.reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0);
+    const totalDispensed = medicineItems.reduce((sum: number, m: any) => sum + Number(m.dispensedQuantity || 0), 0);
+
+    if (!medicineItems.length || totalRequired <= 0 || totalDispensed <= 0) {
+      return { status: 'not_dispensed' as const, label: 'Not Dispensed' };
+    }
+
+    if (totalDispensed >= totalRequired) {
+      return { status: 'full' as const, label: 'Fully Dispensed' };
+    }
+
+    return { status: 'partial' as const, label: 'Partially Dispensed' };
+  };
+
+  const openDispenseModal = (prescription: any) => {
+    const rows = (prescription.medicines || [])
+      .filter((m: any) => Boolean(m.medicineId) && Number(m.remainingQuantity ?? (Number(m.quantity || 0) - Number(m.dispensedQuantity || 0))) > 0)
+      .map((m: any) => {
+        const remaining = Number(m.remainingQuantity ?? (Number(m.quantity || 0) - Number(m.dispensedQuantity || 0)));
+        return {
+          prescriptionItemId: String(m.prescriptionItemId || ''),
+          medicineName: m.medicineName || 'Medicine',
+          remaining,
+          quantity: remaining,
+        };
+      })
+      .filter((r: any) => r.prescriptionItemId);
+
+    if (!rows.length) {
+      setToast({ message: 'No remaining quantities available for dispensing.', type: 'warning' });
+      return;
+    }
+
+    setSelectedPrescription(prescription);
+    setDispenseItems(rows);
+    setShowDispenseModal(true);
+  };
+
+  const updateDispenseQuantity = (prescriptionItemId: string, quantity: number) => {
+    setDispenseItems((prev) =>
+      prev.map((item) => {
+        if (item.prescriptionItemId !== prescriptionItemId) return item;
+        const bounded = Math.max(0, Math.min(item.remaining, Number.isFinite(quantity) ? quantity : 0));
+        return { ...item, quantity: bounded };
+      })
+    );
+  };
+
+  const confirmDispense = async () => {
+    if (!selectedPrescription) return;
+
+    const payloadItems = dispenseItems
+      .filter((item) => item.quantity > 0)
+      .map((item) => ({
+        prescriptionItemId: item.prescriptionItemId,
+        quantity: item.quantity,
+      }));
+
+    if (!payloadItems.length) {
+      setToast({ message: 'Set at least one quantity greater than zero to dispense.', type: 'warning' });
+      return;
+    }
+
+    setDispensing(true);
+    try {
+      await dispensePrescription({
+        id: selectedPrescription.id,
+        items: payloadItems,
+      });
+      setShowDispenseModal(false);
+      setSelectedPrescription(null);
+      setDispenseItems([]);
+      setToast({ message: 'Dispense completed successfully.', type: 'success' });
+    } catch (error: any) {
+      setToast({ message: error?.response?.data?.message || 'Failed to dispense prescription.', type: 'danger' });
+    } finally {
+      setDispensing(false);
+    }
+  };
 
   // Check if user can edit a prescription
   const canEditPrescription = (prescription: any): boolean => {
@@ -1092,12 +1178,14 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     {renderSortIcon('medicines')}
                   </div>
                 </th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Dispense</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {paginatedPrescriptions.length > 0 ? (
                 paginatedPrescriptions.map((prescription) => {
+                  const dispenseSummary = getDispenseSummary(prescription);
                   const nextVisitDate = prescription.nextVisit ? new Date(prescription.nextVisit) : null;
                   const now = new Date();
                   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1156,6 +1244,23 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                       </span>
                     </td>
                     <td className="px-4 py-2 text-center">
+                      {dispenseSummary.status === 'full' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded border text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300">
+                          Fully Dispensed
+                        </span>
+                      )}
+                      {dispenseSummary.status === 'partial' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded border text-[10px] border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+                          Partially Dispensed
+                        </span>
+                      )}
+                      {dispenseSummary.status === 'not_dispensed' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded border text-[10px] border-gray-300 text-gray-700 bg-gray-50 dark:bg-gray-900/20 dark:border-gray-700 dark:text-gray-300">
+                          Not Dispensed
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleViewPrescription(prescription)}
@@ -1182,6 +1287,15 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                             <FileText className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        {canDispensePrescriptions && prescription.status !== 'cancelled' && getDispenseSummary(prescription).status !== 'full' && (
+                          <button
+                            onClick={() => openDispenseModal(prescription)}
+                            className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
+                            title="Dispense"
+                          >
+                            <Pill className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {canEditPrescription(prescription) && (
                           <button
                             onClick={() => navigate('/prescriptions/create', { state: { editPrescriptionData: prescription } })}
@@ -1206,7 +1320,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                 )})
               ) : (
                 <tr>
-                  <td colSpan={showNextVisitOnly ? 8 : 7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={showNextVisitOnly ? 9 : 8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
                         <Search className="w-6 h-6 text-gray-400 opacity-50" />
@@ -1313,6 +1427,82 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                 className="flex-1 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium text-xs shadow-md"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispense Modal */}
+      {showDispenseModal && selectedPrescription && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dispense Prescription</h2>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  {selectedPrescription.prescriptionNumber} • {selectedPrescription.patientName}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDispenseModal(false);
+                  setDispenseItems([]);
+                }}
+                className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[50vh] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
+                  <tr>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider">Medicine</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">Remaining</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">Dispense Qty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {dispenseItems.map((item) => (
+                    <tr key={item.prescriptionItemId}>
+                      <td className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100">{item.medicineName}</td>
+                      <td className="px-3 py-2 text-sm text-center text-gray-700 dark:text-gray-300">{item.remaining}</td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          max={item.remaining}
+                          value={item.quantity}
+                          onChange={(e) => updateDispenseQuantity(item.prescriptionItemId, Number(e.target.value))}
+                          title={`Dispense quantity for ${item.medicineName}`}
+                          className="w-24 px-2 py-1 text-sm text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDispenseModal(false);
+                  setDispenseItems([]);
+                }}
+                className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDispense}
+                disabled={dispensing}
+                className="px-3 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors text-xs font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {dispensing ? 'Dispensing...' : 'Confirm Dispense'}
               </button>
             </div>
           </div>

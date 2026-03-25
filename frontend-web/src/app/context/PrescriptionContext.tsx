@@ -27,10 +27,19 @@ interface UpdatePrescriptionInput extends Partial<AddPrescriptionInput> {
   status?: 'active' | 'cancelled';
 }
 
+interface DispensePrescriptionInput {
+  id: string;
+  items?: Array<{
+    prescriptionItemId: string;
+    quantity: number;
+  }>;
+}
+
 interface PrescriptionContextType {
   prescriptions: Prescription[];
   addPrescription: (input: AddPrescriptionInput) => Promise<Prescription>;
   updatePrescription: (input: UpdatePrescriptionInput) => Promise<void>;
+  dispensePrescription: (input: DispensePrescriptionInput) => Promise<Prescription>;
   deletePrescription: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -79,6 +88,7 @@ const mapPrescription = (p: any): Prescription => ({
   doctorName: p.doctor_name,
   diagnosis: p.diagnosis,
   medicines: (p.items ?? []).map((i: any) => ({
+    prescriptionItemId: String(i.id),
     medicineId: i.medicine_id ? String(i.medicine_id) : '',
     medicineName: i.medicine_name,
     strength: i.strength ?? '',
@@ -86,6 +96,10 @@ const mapPrescription = (p: any): Prescription => ({
     duration: i.duration ?? '',
     instruction: (i.instruction ?? '') as PrescriptionMedicine['instruction'],
     quantity: Number(i.quantity ?? 0),
+    reservedQuantity: Number(i.reserved_quantity ?? i.quantity ?? 0),
+    dispensedQuantity: Number(i.dispensed_quantity ?? 0),
+    remainingQuantity: Math.max(0, Number(i.quantity ?? 0) - Number(i.dispensed_quantity ?? 0)),
+    dispensedAt: i.dispensed_at ? new Date(i.dispensed_at) : undefined,
     type: i.type,
     groupKey: i.group_link?.group_key ?? undefined,
     groupLabel: i.group_link?.group_label ?? undefined,
@@ -97,6 +111,9 @@ const mapPrescription = (p: any): Prescription => ({
   updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
   updatedBy: undefined,
   status: (p.status ?? 'active') as Prescription['status'],
+  dispensedAt: p.dispensed_at ? new Date(p.dispensed_at) : null,
+  dispensedBy: p.dispensed_by ?? undefined,
+  dispensingTransactionId: p.dispensing_transaction_id ? String(p.dispensing_transaction_id) : null,
   verificationToken: p.verification_token ?? undefined,
 });
 
@@ -244,6 +261,23 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
     toast.success('Prescription updated');
   };
 
+  const dispensePrescription = async (input: DispensePrescriptionInput) => {
+    const payload = {
+      items: input.items?.map((item) => ({
+        prescription_item_id: Number(item.prescriptionItemId),
+        quantity: Number(item.quantity),
+      })),
+    };
+
+    const { data } = await api.post(`/prescriptions/${input.id}/dispense`, payload);
+    const response = data?.data ?? data;
+    const prescriptionPayload = response?.prescription ?? response;
+    const mapped = mapPrescription(prescriptionPayload);
+    await refresh();
+    toast.success(response?.message || 'Prescription dispensed successfully');
+    return mapped;
+  };
+
   const deletePrescription = async (id: string) => {
     await api.delete(`/prescriptions/${id}`);
     await refresh();
@@ -252,7 +286,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
 
   return (
     <PrescriptionContext.Provider
-      value={{ prescriptions, addPrescription, updatePrescription, deletePrescription, refresh }}
+      value={{ prescriptions, addPrescription, updatePrescription, dispensePrescription, deletePrescription, refresh }}
     >
       {children}
     </PrescriptionContext.Provider>
@@ -269,6 +303,9 @@ export function usePrescriptions() {
         throw new Error('PrescriptionProvider missing');
       },
       updatePrescription: async () => {},
+      dispensePrescription: async () => {
+        throw new Error('PrescriptionProvider missing');
+      },
       deletePrescription: async () => {},
       refresh: async () => {},
     } as PrescriptionContextType;

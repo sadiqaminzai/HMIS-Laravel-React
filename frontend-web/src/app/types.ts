@@ -204,6 +204,7 @@ export interface Stock {
 }
 
 export interface PrescriptionMedicine {
+  prescriptionItemId?: string;
   medicineId: string;
   medicineName: string;
   strength: string;
@@ -211,6 +212,10 @@ export interface PrescriptionMedicine {
   duration: string;
   instruction: 'before_meal' | 'after_meal' | 'with_meal' | 'empty_stomach' | '';
   quantity: number;
+  reservedQuantity?: number;
+  dispensedQuantity?: number;
+  remainingQuantity?: number;
+  dispensedAt?: Date;
   type?: string; // e.g. Tablet, Syrup, Injection
   groupKey?: string;
   groupLabel?: string;
@@ -261,6 +266,9 @@ export interface Prescription {
   updatedAt?: Date;
   updatedBy?: string;
   status?: 'active' | 'cancelled';
+  dispensedAt?: Date | null;
+  dispensedBy?: string;
+  dispensingTransactionId?: string | null;
   qrCode?: string; // QR code data
   verificationToken?: string;
 }
