@@ -143,7 +143,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         if (available.bonus < requiredByKey[key].bonus) {
           segments.push(`Bonus available: ${available.bonus}, required: ${requiredByKey[key].bonus}`);
         }
-        toast.error(`Insufficient stock for ${label}${batchLabel}. ${segments.join('. ')}.`);
+        toast.error(`Insufficient stock for ${label}${batchLabel}. ${segments.join('. ')}`);
         return false;
       }
     }
