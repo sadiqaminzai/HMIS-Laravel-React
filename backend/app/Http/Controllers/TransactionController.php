@@ -266,13 +266,18 @@ class TransactionController extends Controller
                 continue;
             }
             $batchNo = $item['batch_no'] ?? null;
-            $required = (int) ($item['qtty'] ?? 0) + (int) ($item['bonus'] ?? 0);
-            if ($required <= 0) {
+            $requiredQty = (int) ($item['qtty'] ?? 0);
+            $requiredBonus = (int) ($item['bonus'] ?? 0);
+            if ($requiredQty <= 0 && $requiredBonus <= 0) {
                 continue;
             }
 
             $key = $medicineId . '::' . ($batchNo ?? '__all__');
-            $requiredByKey[$key] = ($requiredByKey[$key] ?? 0) + $required;
+            if (!isset($requiredByKey[$key])) {
+                $requiredByKey[$key] = ['qty' => 0, 'bonus' => 0];
+            }
+            $requiredByKey[$key]['qty'] += $requiredQty;
+            $requiredByKey[$key]['bonus'] += $requiredBonus;
         }
 
         foreach ($requiredByKey as $key => $required) {
@@ -287,13 +292,24 @@ class TransactionController extends Controller
                 $query->where('batch_no', $batchNo);
             }
 
-            $available = (int) $query->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
-            if ($available < $required) {
+            $availableQty = (int) $query->sum('stock_qty');
+            $availableBonus = (int) $query->sum('bonus_qty');
+
+            if ($availableQty < $required['qty'] || $availableBonus < $required['bonus']) {
                 $medicine = Medicine::find($medicineId);
                 $name = $medicine?->brand_name ?? 'Medicine';
                 $batchLabel = $batchNo !== '__all__' ? " (Batch: {$batchNo})" : '';
+
+                $segments = [];
+                if ($availableQty < $required['qty']) {
+                    $segments[] = "Qty available: {$availableQty}, required: {$required['qty']}";
+                }
+                if ($availableBonus < $required['bonus']) {
+                    $segments[] = "Bonus available: {$availableBonus}, required: {$required['bonus']}";
+                }
+
                 throw ValidationException::withMessages([
-                    'items' => "Insufficient stock for {$name}{$batchLabel}. Available: {$available}, Required: {$required}.",
+                    'items' => "Insufficient stock for {$name}{$batchLabel}. " . implode('. ', $segments) . '.',
                 ]);
             }
         }
@@ -406,11 +422,28 @@ class TransactionController extends Controller
         }
 
         $batchNo = $item['batch_no'] ?? null;
-        $stock = Stock::firstOrNew([
-            'hospital_id' => $hospitalId,
-            'medicine_id' => $medicineId,
-            'batch_no' => $batchNo,
-        ]);
+        $stock = Stock::query()
+            ->where('hospital_id', $hospitalId)
+            ->where('medicine_id', $medicineId)
+            ->where('batch_no', $batchNo)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$stock) {
+            if ($qtyDelta < 0 || $bonusDelta < 0) {
+                throw ValidationException::withMessages([
+                    'items' => 'Stock is not available for the selected medicine batch.',
+                ]);
+            }
+
+            $stock = new Stock([
+                'hospital_id' => $hospitalId,
+                'medicine_id' => $medicineId,
+                'batch_no' => $batchNo,
+                'stock_qty' => 0,
+                'bonus_qty' => 0,
+            ]);
+        }
 
         if ($expiryDate && (!$stock->expiry_date || (string) $stock->expiry_date !== (string) $expiryDate)) {
             $stock->expiry_date = $expiryDate;
@@ -422,13 +455,26 @@ class TransactionController extends Controller
             $stock->sale_price = $price;
         }
 
-        $stock->stock_qty = max(0, ((int) $stock->stock_qty) + $qtyDelta);
-        $stock->bonus_qty = max(0, ((int) ($stock->bonus_qty ?? 0)) + $bonusDelta);
+        $newStockQty = ((int) $stock->stock_qty) + $qtyDelta;
+        $newBonusQty = ((int) ($stock->bonus_qty ?? 0)) + $bonusDelta;
+
+        if ($newStockQty < 0 || $newBonusQty < 0) {
+            throw ValidationException::withMessages([
+                'items' => 'Insufficient stock to apply this transaction for the selected medicine batch.',
+            ]);
+        }
+
+        $stock->stock_qty = $newStockQty;
+        $stock->bonus_qty = $newBonusQty;
         $stock->save();
 
-        $medicine = Medicine::find($medicineId);
+        $medicine = Medicine::query()->whereKey($medicineId)->lockForUpdate()->first();
         if ($medicine) {
-            $medicine->stock = max(0, ((int) $medicine->stock) + ($qtyDelta + $bonusDelta));
+            $totalStock = (int) Stock::query()
+                ->where('hospital_id', $hospitalId)
+                ->where('medicine_id', $medicineId)
+                ->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+            $medicine->stock = max(0, $totalStock);
             $medicine->save();
         }
 
