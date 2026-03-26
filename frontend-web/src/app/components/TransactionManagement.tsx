@@ -1654,7 +1654,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Expiry</label>
                       <input
                         type="date"
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="w-full max-w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Expiry Date"
                         value={item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : ''}
                         onChange={(e) => handleItemChange(index, { expiryDate: e.target.value ? new Date(e.target.value) : undefined })}
@@ -1665,7 +1665,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <input
                         type="number"
                         min={1}
-                        className="w-full max-w-[72px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="w-full max-w-[64px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Quantity"
                         value={item.qtty}
                         onChange={(e) => handleItemChange(index, { qtty: Number(e.target.value) })}
@@ -1681,7 +1681,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <input
                         type="number"
                         min={0}
-                        className="w-full max-w-[80px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Bonus"
                         value={item.bonus ?? 0}
                         onChange={(e) => handleItemChange(index, { bonus: Number(e.target.value) })}
@@ -1706,7 +1706,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         min={0}
                         max={100}
                         step={0.01}
-                        className="w-full max-w-[80px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Discount"
                         value={item.discount ?? 0}
                         onChange={(e) => handleItemChange(index, { discount: Number(e.target.value) })}
@@ -1719,7 +1719,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         min={0}
                         max={100}
                         step={0.01}
-                        className="w-full max-w-[80px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Tax"
                         value={item.tax ?? 0}
                         onChange={(e) => handleItemChange(index, { tax: Number(e.target.value) })}
