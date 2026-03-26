@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Search, Key, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
@@ -27,6 +27,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   const canDelete = hasPermission('delete_permissions') || hasPermission('manage_permissions');
   const canImport = hasPermission('import_permissions') || canAdd || canEdit;
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -78,7 +79,25 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
     return matchesSearch && matchesCategory;
   });
 
-  const groupedPermissions = filteredPermissions.reduce((acc, perm) => {
+  const itemsPerPage = 20;
+  const totalPages = Math.max(1, Math.ceil(filteredPermissions.length / itemsPerPage));
+
+  const paginatedPermissions = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredPermissions.slice(start, start + itemsPerPage);
+  }, [filteredPermissions, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const groupedPermissions = paginatedPermissions.reduce((acc, perm) => {
     if (!acc[perm.category]) {
       acc[perm.category] = [];
     }
@@ -296,7 +315,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search permissions..."
               className="w-full px-3 py-1.5 pl-8 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
             />
@@ -304,7 +326,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
           </div>
           <select
             value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
+            onChange={(e) => {
+              setSelectedCategory(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
           >
             {categories.map(cat => (
@@ -396,6 +421,31 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
           </div>
         ))}
       </div>
+
+      {filteredPermissions.length > 0 && (
+        <div className="px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <span>Showing {paginatedPermissions.length} of {filteredPermissions.length} permissions</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {filteredPermissions.length === 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">

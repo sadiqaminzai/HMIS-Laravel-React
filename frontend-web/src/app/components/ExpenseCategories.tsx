@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Hospital, UserRole, ExpenseCategory } from '../types';
 import { useExpenseCategories } from '../context/ExpenseCategoryContext';
 import { useHospitals } from '../context/HospitalContext';
@@ -14,6 +14,8 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
   const { hospitals } = useHospitals();
   const [editing, setEditing] = useState<ExpenseCategory | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [form, setForm] = useState({
     hospitalId: hospital.id,
     name: '',
@@ -25,6 +27,22 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
     () => categories.filter((c) => c.hospitalId === form.hospitalId),
     [categories, form.hospitalId]
   );
+
+  const totalPages = Math.max(1, Math.ceil(categoriesForHospital.length / itemsPerPage));
+  const paginatedCategories = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return categoriesForHospital.slice(startIndex, startIndex + itemsPerPage);
+  }, [categoriesForHospital, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [form.hospitalId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const resetForm = () => {
     setEditing(null);
@@ -105,7 +123,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {categoriesForHospital.map((category) => (
+              {paginatedCategories.map((category) => (
                 <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{category.name}</td>
                   <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{category.description || '—'}</td>
@@ -138,7 +156,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
                   </td>
                 </tr>
               ))}
-              {categoriesForHospital.length === 0 && (
+              {paginatedCategories.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
@@ -153,6 +171,25 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <span>Page {currentPage} of {totalPages}</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

@@ -28,6 +28,7 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
   const canReconcile = hasPermission('edit_stocks') || hasPermission('manage_stocks');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedMedicineId, setSelectedMedicineId] = useState('all');
   const [batchFilter, setBatchFilter] = useState('');
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -119,6 +120,24 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
     });
   }, [scopedStocks, searchTerm, selectedMedicineId, batchFilter, medicines]);
 
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredStocks.length / itemsPerPage));
+
+  const paginatedStocks = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredStocks.slice(start, start + itemsPerPage);
+  }, [filteredStocks, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedMedicineId, batchFilter, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const totalStockQty = useMemo(() => {
     return filteredStocks.reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
   }, [filteredStocks]);
@@ -179,7 +198,10 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search stock..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -244,7 +266,7 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredStocks.length > 0 ? (
-                filteredStocks.map((stock: Stock) => (
+                paginatedStocks.map((stock: Stock) => (
                   <tr key={stock.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -273,11 +295,30 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
         </div>
         <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span>
-            Showing <strong>{filteredStocks.length}</strong> of <strong>{scopedStocks.length}</strong> stock rows {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
+            Showing <strong>{paginatedStocks.length}</strong> of <strong>{filteredStocks.length}</strong> stock rows {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
           </span>
-          <span>
-            Total Stock Qty (incl. bonus): <strong>{totalStockQty}</strong>
-          </span>
+          <div className="flex items-center gap-3">
+            <span>
+              Total Stock Qty (incl. bonus): <strong>{totalStockQty}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

@@ -24,6 +24,8 @@ export function ContactMessages() {
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread' | 'read' | 'responded'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     if (canView) {
@@ -31,6 +33,10 @@ export function ContactMessages() {
     } else {
       setMessages([]);
     }
+  }, [filter, searchTerm]);
+
+  useEffect(() => {
+    setCurrentPage(1);
   }, [filter, searchTerm]);
 
   const loadMessages = async () => {
@@ -49,6 +55,14 @@ export function ContactMessages() {
   };
 
   const filteredMessages = messages; // filtering handled server-side
+  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / itemsPerPage));
+  const paginatedMessages = filteredMessages.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleView = async (message: ContactMessage) => {
     setSelectedMessage(message);
@@ -206,7 +220,7 @@ export function ContactMessages() {
                 <p className="text-sm">No messages found</p>
               </div>
             ) : (
-              filteredMessages.map((message) => (
+              paginatedMessages.map((message) => (
                 <div
                   key={message.id}
                   onClick={() => handleView(message)}
@@ -232,6 +246,25 @@ export function ContactMessages() {
                 </div>
               ))
             )}
+          </div>
+          <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>Page {currentPage} of {totalPages}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
 

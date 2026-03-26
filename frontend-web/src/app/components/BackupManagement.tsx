@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Download, Trash2, RefreshCw, HardDrive, Settings, Save, Clock, Archive } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from '../utils/toast';
@@ -32,6 +32,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
   const canDeleteBackups = hasPermission('delete_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
   const canDownloadBackups = hasPermission('export_backups') || hasPermission('view_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
   const [backups, setBackups] = useState<Backup[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [settings, setSettings] = useState<BackupSettings>({
@@ -160,6 +161,20 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
     }
   };
 
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(backups.length / itemsPerPage));
+
+  const paginatedBackups = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return backups.slice(start, start + itemsPerPage);
+  }, [backups, currentPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
       {/* Header */}
@@ -280,7 +295,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                 </td>
               </tr>
             ) : (
-              backups.map((backup) => (
+              paginatedBackups.map((backup) => (
                 <tr key={backup.name} className="group hover:bg-gray-50 dark:hover:bg-gray-700/30">
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
@@ -331,6 +346,33 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
           </tbody>
         </table>
       </div>
+
+      {!loading && backups.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <span>
+            Showing {paginatedBackups.length} of {backups.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

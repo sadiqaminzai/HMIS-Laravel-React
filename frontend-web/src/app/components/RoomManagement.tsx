@@ -41,6 +41,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
 
   const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<RoomItem | null>(null);
@@ -79,6 +80,24 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
     const q = search.toLowerCase();
     return rooms.filter((r) => r.roomNumber.toLowerCase().includes(q) || r.type.toLowerCase().includes(q));
   }, [rooms, search]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredRooms.length / itemsPerPage));
+
+  const paginatedRooms = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredRooms.slice(start, start + itemsPerPage);
+  }, [filteredRooms, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedHospitalId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const resetForm = () => {
     setEditing(null);
@@ -183,7 +202,10 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search by room number or type"
             className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
           />
@@ -214,7 +236,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
                 <tr><td className="px-4 py-6" colSpan={6}>Loading...</td></tr>
               ) : filteredRooms.length === 0 ? (
                 <tr><td className="px-4 py-6 text-center" colSpan={6}>No rooms found</td></tr>
-              ) : filteredRooms.map((room) => (
+              ) : paginatedRooms.map((room) => (
                 <tr key={room.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{room.roomNumber}</td>
                   <td className="px-4 py-2">{room.type}</td>
@@ -240,6 +262,31 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
             </tbody>
           </table>
         </div>
+
+        {!loading && filteredRooms.length > 0 && (
+          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>Showing {paginatedRooms.length} of {filteredRooms.length} rooms</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {isModalOpen && (

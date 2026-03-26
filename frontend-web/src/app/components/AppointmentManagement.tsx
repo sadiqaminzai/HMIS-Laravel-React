@@ -63,6 +63,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const { hasPermission } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -207,6 +208,23 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   const filteredAppointments = getFilteredAppointments();
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredAppointments.length / itemsPerPage));
+
+  const paginatedAppointments = React.useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAppointments.slice(start, start + itemsPerPage);
+  }, [filteredAppointments, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -621,7 +639,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search appointments..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -741,7 +762,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   </td>
                 </tr>
               ) : (
-                filteredAppointments.map((apt) => (
+                paginatedAppointments.map((apt) => (
                   <tr key={apt.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 font-mono">{apt.appointmentNumber}</span>
@@ -906,7 +927,26 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredAppointments.length}</span></span>
-          <span>Showing {filteredAppointments.length} of {appointments.length} appointments</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedAppointments.length} of {filteredAppointments.length}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

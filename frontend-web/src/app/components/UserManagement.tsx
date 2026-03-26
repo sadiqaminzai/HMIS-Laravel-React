@@ -54,6 +54,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const canViewRoles = hasPermission('view_roles') || hasPermission('manage_roles');
   const isSuperAdmin = userRole === 'super_admin';
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedHospitalFilter, setSelectedHospitalFilter] = useState<string>('all');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -131,6 +132,24 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
       return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
     });
   }, [filteredUsers, sortDirection, sortField]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedUsers.length / itemsPerPage));
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedUsers.slice(start, start + itemsPerPage);
+  }, [sortedUsers, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalFilter, selectedRoleFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -499,7 +518,10 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search users..."
               aria-label="Search users"
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -610,7 +632,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedUsers.length > 0 ? (
-                sortedUsers.map((user) => (
+                paginatedUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
@@ -693,7 +715,26 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Users: <span className="font-semibold text-gray-900 dark:text-white">{filteredUsers.length}</span></span>
-          <span>Showing {sortedUsers.length} of {users.length} users</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedUsers.length} of {sortedUsers.length} users</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

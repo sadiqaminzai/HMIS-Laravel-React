@@ -22,6 +22,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   const { doctors, addDoctor, updateDoctor, deleteDoctor } = useDoctors();
   const { hasPermission } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -92,6 +93,24 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       return bValue.localeCompare(aValue);
     }
   });
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedDoctors.length / itemsPerPage));
+
+  const paginatedDoctors = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedDoctors.slice(start, start + itemsPerPage);
+  }, [sortedDoctors, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -353,7 +372,10 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search doctors..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -442,7 +464,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedDoctors.length > 0 ? (
-                sortedDoctors.map((doctor) => (
+                paginatedDoctors.map((doctor) => (
                   <tr key={doctor.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
@@ -546,7 +568,26 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredDoctors.length}</span></span>
-          <span>Showing {sortedDoctors.length} of {doctors.length} doctors</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedDoctors.length} of {sortedDoctors.length}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

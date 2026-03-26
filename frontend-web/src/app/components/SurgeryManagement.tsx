@@ -105,6 +105,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
 
   const [activeTab, setActiveTab] = useState<TabKey>('types');
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [types, setTypes] = useState<SurgeryTypeItem[]>([]);
   const [surgeries, setSurgeries] = useState<SurgeryItem[]>([]);
@@ -162,11 +163,57 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const filteredPatients = patients.filter((p) => selectedHospitalId === 'all' || p.hospitalId === currentHospital.id || p.hospitalId === selectedHospitalId);
   const filteredDoctors = doctors.filter((d) => selectedHospitalId === 'all' || d.hospitalId === currentHospital.id || d.hospitalId === selectedHospitalId);
 
+  const filteredTypes = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return types;
+    return types.filter((row) =>
+      row.name.toLowerCase().includes(term) ||
+      (row.description || '').toLowerCase().includes(term)
+    );
+  }, [types, search]);
+
+  const filteredSurgeries = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return surgeries;
+    return surgeries.filter((row) =>
+      row.name.toLowerCase().includes(term) ||
+      (row.typeName || '').toLowerCase().includes(term)
+    );
+  }, [surgeries, search]);
+
+  const filteredPatientSurgeries = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return patientSurgeries;
+    return patientSurgeries.filter((row) =>
+      row.patientName.toLowerCase().includes(term) ||
+      row.surgeryName.toLowerCase().includes(term) ||
+      (row.doctorName || '').toLowerCase().includes(term)
+    );
+  }, [patientSurgeries, search]);
+
   const selectedRows = useMemo(() => {
-    if (activeTab === 'types') return types;
-    if (activeTab === 'surgeries') return surgeries;
-    return patientSurgeries;
-  }, [activeTab, types, surgeries, patientSurgeries]);
+    if (activeTab === 'types') return filteredTypes;
+    if (activeTab === 'surgeries') return filteredSurgeries;
+    return filteredPatientSurgeries;
+  }, [activeTab, filteredTypes, filteredSurgeries, filteredPatientSurgeries]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(selectedRows.length / itemsPerPage));
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return selectedRows.slice(start, start + itemsPerPage);
+  }, [selectedRows, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, search, selectedHospitalId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const currentHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all' ? selectedHospitalId : currentHospital.id;
 
@@ -282,7 +329,15 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
         <div className="relative flex-1 md:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search"
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
+          />
         </div>
       </div>
 
@@ -310,7 +365,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 <tr><td className="px-4 py-6 text-center" colSpan={7}>No records found</td></tr>
               ) : (
                 <>
-                  {activeTab === 'types' && types.map((row) => (
+                  {activeTab === 'types' && (paginatedRows as SurgeryTypeItem[]).map((row) => (
                     <tr key={row.id}>
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
                       <td className="px-4 py-2">{row.description || '-'}</td>
@@ -323,7 +378,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       </td>
                     </tr>
                   ))}
-                  {activeTab === 'surgeries' && surgeries.map((row) => (
+                  {activeTab === 'surgeries' && (paginatedRows as SurgeryItem[]).map((row) => (
                     <tr key={row.id}>
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
                       <td className="px-4 py-2">{row.typeName || row.typeId}</td>
@@ -337,7 +392,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       </td>
                     </tr>
                   ))}
-                  {activeTab === 'patientSurgeries' && patientSurgeries.map((row) => (
+                  {activeTab === 'patientSurgeries' && (paginatedRows as PatientSurgeryItem[]).map((row) => (
                     <tr key={row.id}>
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.patientName}</td>
                       <td className="px-4 py-2">{row.surgeryName}</td>
@@ -359,6 +414,31 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
             </tbody>
           </table>
         </div>
+
+        {!loading && selectedRows.length > 0 && (
+          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>Showing {paginatedRows.length} of {selectedRows.length} rows</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {isTypeModalOpen && (

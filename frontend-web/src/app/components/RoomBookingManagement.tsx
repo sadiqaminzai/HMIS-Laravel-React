@@ -85,6 +85,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [roomOptions, setRoomOptions] = useState<RoomOption[]>([]);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<BookingItem | null>(null);
@@ -175,6 +177,22 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       b.paymentStatus.toLowerCase().includes(q)
     );
   }, [bookings, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paginatedBookings = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(startIndex, startIndex + itemsPerPage);
+  }, [filtered, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedHospitalId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const resetForm = () => {
     setEditing(null);
@@ -546,9 +564,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr><td className="px-4 py-6" colSpan={8}>Loading...</td></tr>
-              ) : filtered.length === 0 ? (
+              ) : paginatedBookings.length === 0 ? (
                 <tr><td className="px-4 py-6 text-center" colSpan={8}>No bookings found</td></tr>
-              ) : filtered.map((item) => (
+              ) : paginatedBookings.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{item.roomNumber}</td>
                   <td className="px-4 py-2">{item.patientName}</td>
@@ -586,6 +604,25 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <span>Page {currentPage} of {totalPages}</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

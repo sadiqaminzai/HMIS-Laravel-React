@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Eye, Edit, Trash2, X, Pill, Search, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Plus, Eye, Edit, Trash2, X, Pill, Search, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Upload, Download } from 'lucide-react';
 import { Hospital, MedicineType, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -26,10 +26,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
   const canDelete = hasPermission('delete_medicine_types') || hasPermission('manage_medicine_types');
   const canExport = hasPermission('export_medicine_types') || hasPermission('manage_medicine_types');
   const canPrint = hasPermission('print_medicine_types') || hasPermission('manage_medicine_types');
+  const canImport = hasPermission('import_medicine_types') || hasPermission('manage_medicine_types');
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'view' | 'edit' | 'delete'>('add');
   const [selectedMedicineType, setSelectedMedicineType] = useState<MedicineType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   
   // Sorting state
@@ -82,6 +85,24 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     }
   });
 
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedMedicineTypes.length / itemsPerPage));
+
+  const paginatedMedicineTypes = React.useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedMedicineTypes.slice(start, start + itemsPerPage);
+  }, [sortedMedicineTypes, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -110,6 +131,141 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "MedicineTypes");
     XLSX.writeFile(workBook, "MedicineTypes_List.xlsx");
+  };
+
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const readField = (row: Record<string, any>, aliases: string[]) => {
+    const map = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
+      acc[normalizeKey(key)] = row[key];
+      return acc;
+    }, {});
+
+    for (const alias of aliases) {
+      const value = map[normalizeKey(alias)];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const resolveImportHospitalId = () => {
+    if (userRole === 'super_admin') {
+      if (!selectedHospitalId || selectedHospitalId === 'all') {
+        toast.error('Please select a specific hospital before importing medicine types.');
+        return '';
+      }
+      return selectedHospitalId;
+    }
+    return currentHospital.id;
+  };
+
+  const downloadImportTemplate = () => {
+    const templateRows = [
+      { name: 'Tablet', description: 'Oral solid dosage form', status: 'active' },
+      { name: 'Syrup', description: 'Liquid dosage form', status: 'inactive' },
+    ];
+    const sheet = XLSX.utils.json_to_sheet(templateRows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'MedicineTypeTemplate');
+    XLSX.writeFile(book, 'MedicineTypes_Import_Template.xlsx');
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const hospitalId = resolveImportHospitalId();
+    if (!hospitalId) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
+
+      if (!rows.length) {
+        toast.error('Import file is empty.');
+        return;
+      }
+
+      let success = 0;
+      let failed = 0;
+      const failureReasons: Record<string, number> = {};
+      const seenNames = new Set<string>();
+
+      const addFailureReason = (reason: string) => {
+        failureReasons[reason] = (failureReasons[reason] ?? 0) + 1;
+      };
+
+      const parseStatus = (rawValue: string): 'active' | 'inactive' => {
+        const value = rawValue.trim().toLowerCase();
+        if (['inactive', '0', 'false', 'no', 'disabled'].includes(value)) {
+          return 'inactive';
+        }
+        return 'active';
+      };
+
+      for (const row of rows) {
+        const name = readField(row, ['name', 'medicine_type', 'medicinetype', 'type_name', 'typename', 'type']);
+        const description = readField(row, ['description']);
+        const statusRaw = readField(row, ['status']);
+        const status = parseStatus(statusRaw);
+        const normalizedName = name.toLowerCase().trim();
+
+        if (!name) {
+          failed++;
+          addFailureReason('Missing required name column (accepted: name, medicine_type, type_name).');
+          continue;
+        }
+
+        if (seenNames.has(normalizedName)) {
+          failed++;
+          addFailureReason(`Duplicate name in file: ${name}`);
+          continue;
+        }
+        seenNames.add(normalizedName);
+
+        try {
+          await addMedicineType({ hospitalId, name, description, status });
+          success++;
+        } catch (error: any) {
+          failed++;
+          const apiMessage = error?.response?.data?.message;
+          const validationItems = error?.response?.data?.errors
+            ? Object.values(error.response.data.errors).flat().join(' ')
+            : '';
+
+          if (validationItems) {
+            addFailureReason(String(validationItems));
+          } else if (apiMessage) {
+            addFailureReason(String(apiMessage));
+          } else {
+            addFailureReason('Unknown API validation error while creating medicine type.');
+          }
+        }
+      }
+
+      if (success > 0) {
+        toast.success(`Medicine type import completed. Success: ${success}${failed ? `, Failed: ${failed}` : ''}`);
+      } else {
+        const topReasons = Object.entries(failureReasons)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([reason, count]) => `${reason}${count > 1 ? ` (${count})` : ''}`)
+          .join(' | ');
+
+        toast.error(
+          topReasons
+            ? `No medicine types were imported. ${topReasons}`
+            : 'No medicine types were imported. Please verify template columns and values.'
+        );
+      }
+    } catch {
+      toast.error('Failed to read import file. Please upload a valid CSV or XLSX file.');
+    }
   };
 
   const exportToPDF = async () => {
@@ -252,7 +408,10 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search types..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -278,6 +437,33 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
+          )}
+          {canImport && (
+            <>
+              <button
+                onClick={downloadImportTemplate}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
+                title="Download import template"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Template
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
+                title="Import medicine types"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+            </>
           )}
           {canAdd && (
             <button
@@ -327,7 +513,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedMedicineTypes.length > 0 ? (
-                sortedMedicineTypes.map((medicineType) => (
+                paginatedMedicineTypes.map((medicineType) => (
                   <tr key={medicineType.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -400,7 +586,26 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredMedicineTypes.length}</span></span>
-          <span>Showing {sortedMedicineTypes.length} of {scopedMedicineTypes.length} types</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedMedicineTypes.length} of {sortedMedicineTypes.length} types</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

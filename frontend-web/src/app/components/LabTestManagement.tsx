@@ -154,6 +154,8 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
   }, [selectedHospitalId, isAllHospitals]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -229,6 +231,18 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
   };
 
   const filteredLabTests = getFilteredLabTests();
+  const totalPages = Math.max(1, Math.ceil(filteredLabTests.length / itemsPerPage));
+  const paginatedLabTests = filteredLabTests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId, sortField, sortDirection]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -492,7 +506,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredLabTests.length === 0 ? (
+              {paginatedLabTests.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
@@ -505,7 +519,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
                   </td>
                 </tr>
               ) : (
-                filteredLabTests.map((test) => (
+                paginatedLabTests.map((test) => (
                   <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 font-mono">{test.testNumber}</span>
@@ -675,7 +689,24 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredLabTests.length}</span></span>
-          <span>Showing {filteredLabTests.length} of {labTests.length} tests</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {filteredLabTests.length} of {labTests.length} tests</span>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

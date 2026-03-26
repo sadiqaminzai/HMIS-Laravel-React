@@ -27,6 +27,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   
   // Sorting state
@@ -83,6 +84,24 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
       return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
     });
   }, [filteredHospitals, sortDirection, sortField]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedHospitals.length / itemsPerPage));
+
+  const paginatedHospitals = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedHospitals.slice(start, start + itemsPerPage);
+  }, [sortedHospitals, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleSort = (field: keyof Hospital) => {
     if (sortField === field) {
@@ -278,7 +297,10 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search hospitals..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -355,7 +377,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedHospitals.length > 0 ? (
-                sortedHospitals.map((hospital) => (
+                paginatedHospitals.map((hospital) => (
                   <tr key={hospital.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
@@ -444,7 +466,26 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredHospitals.length}</span></span>
-          <span>Showing {sortedHospitals.length} of {hospitals.length} hospitals</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedHospitals.length} of {sortedHospitals.length} hospitals</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

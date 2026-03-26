@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Pencil, Search, Factory, Eye, Trash2, X, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Plus, Pencil, Search, Factory, Eye, Trash2, X, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Upload, Download } from 'lucide-react';
 import { Hospital, Manufacturer, UserRole } from '../types';
 import { Toast } from './Toast';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -26,14 +26,17 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
   const canEdit = hasPermission('edit_manufacturers') || hasPermission('manage_manufacturers');
   const canDelete = hasPermission('delete_manufacturers') || hasPermission('manage_manufacturers');
   const canExport = hasPermission('export_manufacturers') || hasPermission('manage_manufacturers');
+  const canImport = hasPermission('import_manufacturers') || hasPermission('manage_manufacturers');
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedManufacturer, setSelectedManufacturer] = useState<Manufacturer | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   // Keep notification state separate so it doesn't shadow the sonner toast import
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   
@@ -88,6 +91,24 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
     }
   });
 
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedManufacturers.length / itemsPerPage));
+
+  const paginatedManufacturers = React.useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedManufacturers.slice(start, start + itemsPerPage);
+  }, [sortedManufacturers, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -118,6 +139,103 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, "Manufacturers");
     XLSX.writeFile(workBook, "Manufacturers_List.xlsx");
+  };
+
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const readField = (row: Record<string, any>, aliases: string[]) => {
+    const map = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
+      acc[normalizeKey(key)] = row[key];
+      return acc;
+    }, {});
+
+    for (const alias of aliases) {
+      const value = map[normalizeKey(alias)];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const resolveImportHospitalId = () => {
+    if (userRole === 'super_admin') {
+      if (!selectedHospitalId || selectedHospitalId === 'all') {
+        toast.error('Please select a specific hospital before importing manufacturers.');
+        return '';
+      }
+      return selectedHospitalId;
+    }
+    return currentHospital.id;
+  };
+
+  const downloadImportTemplate = () => {
+    const templateRows = [
+      { name: 'Acme Pharma', country: 'Afghanistan', license_number: 'LIC-1001', status: 'active' },
+      { name: 'Global Med', country: 'India', license_number: 'LIC-1002', status: 'inactive' },
+    ];
+    const sheet = XLSX.utils.json_to_sheet(templateRows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'ManufacturersTemplate');
+    XLSX.writeFile(book, 'Manufacturers_Import_Template.xlsx');
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const hospitalId = resolveImportHospitalId();
+    if (!hospitalId) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
+
+      if (!rows.length) {
+        toast.error('Import file is empty.');
+        return;
+      }
+
+      let success = 0;
+      let failed = 0;
+
+      for (const row of rows) {
+        const name = readField(row, ['name']);
+        const country = readField(row, ['country']);
+        const licenseNumber = readField(row, ['license_number', 'license', 'licensenumber']);
+        const statusRaw = readField(row, ['status']);
+        const status = statusRaw.toLowerCase() === 'inactive' ? 'inactive' : 'active';
+
+        if (!name || !licenseNumber) {
+          failed++;
+          continue;
+        }
+
+        try {
+          await addManufacturer({
+            hospitalId,
+            name,
+            country,
+            licenseNumber,
+            status,
+          });
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+
+      if (success > 0) {
+        toast.success(`Manufacturers import completed. Success: ${success}${failed ? `, Failed: ${failed}` : ''}`);
+      } else {
+        toast.error('No manufacturers were imported. Please verify template columns and values.');
+      }
+    } catch {
+      toast.error('Failed to read import file. Please upload a valid CSV or XLSX file.');
+    }
   };
 
   const exportToPDF = async () => {
@@ -266,7 +384,10 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search manufacturers..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -292,6 +413,33 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
+          )}
+          {canImport && (
+            <>
+              <button
+                onClick={downloadImportTemplate}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
+                title="Download import template"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Template
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
+                title="Import manufacturers"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+            </>
           )}
           {canAdd && (
             <button
@@ -347,7 +495,7 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedManufacturers.length > 0 ? (
-                sortedManufacturers.map((manufacturer) => (
+                paginatedManufacturers.map((manufacturer) => (
                   <tr key={manufacturer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
@@ -423,7 +571,26 @@ export function ManufacturerManagement({ hospital, userRole = 'admin' }: Manufac
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredManufacturers.length}</span></span>
-          <span>Showing {sortedManufacturers.length} of {scopedManufacturers.length} manufacturers</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedManufacturers.length} of {sortedManufacturers.length} manufacturers</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

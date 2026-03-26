@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, FileSpreadsheet, FileText, Pencil, Pill, Plus, Search, Trash2, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, FileSpreadsheet, FileText, Pencil, Pill, Plus, Search, Trash2, X, Upload, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -30,8 +30,11 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const canEdit = hasPermission('edit_medicines') || hasPermission('manage_medicines');
   const canDelete = hasPermission('delete_medicines') || hasPermission('manage_medicines');
   const canExport = hasPermission('export_medicines') || hasPermission('manage_medicines');
+  const canImport = hasPermission('import_medicines') || hasPermission('manage_medicines');
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -126,6 +129,24 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     });
   }, [filteredMedicines, sortField, sortDirection, scopedMedicineTypes, scopedManufacturers]);
 
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedMedicines.length / itemsPerPage));
+
+  const paginatedMedicines = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedMedicines.slice(start, start + itemsPerPage);
+  }, [sortedMedicines, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -158,6 +179,142 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, 'Medicines');
     XLSX.writeFile(workBook, 'Medicines_List.xlsx');
+  };
+
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const readField = (row: Record<string, any>, aliases: string[]) => {
+    const map = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
+      acc[normalizeKey(key)] = row[key];
+      return acc;
+    }, {});
+
+    for (const alias of aliases) {
+      const value = map[normalizeKey(alias)];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const resolveImportHospitalId = () => {
+    if (userRole === 'super_admin') {
+      if (!selectedHospitalId || selectedHospitalId === 'all') {
+        toast.error('Please select a specific hospital before importing medicines.');
+        return '';
+      }
+      return selectedHospitalId;
+    }
+    return currentHospital.id;
+  };
+
+  const downloadImportTemplate = () => {
+    const templateRows = [
+      {
+        brand_name: 'Paracetamol',
+        generic_name: 'Acetaminophen',
+        strength: '500mg',
+        medicine_type: 'Tablet',
+        manufacturer: 'Acme Pharma',
+        stock: 100,
+        cost_price: 8,
+        sale_price: 12,
+        status: 'active',
+      },
+      {
+        brand_name: 'Ibuprofen',
+        generic_name: 'Ibuprofen',
+        strength: '400mg',
+        medicine_type: 'Tablet',
+        manufacturer: 'Global Med',
+        stock: 50,
+        cost_price: 10,
+        sale_price: 15,
+        status: 'inactive',
+      },
+    ];
+    const sheet = XLSX.utils.json_to_sheet(templateRows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'MedicinesTemplate');
+    XLSX.writeFile(book, 'Medicines_Import_Template.xlsx');
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const hospitalId = resolveImportHospitalId();
+    if (!hospitalId) return;
+
+    const hospitalTypes = scopedMedicineTypes.filter((t) => t.hospitalId === hospitalId);
+    const hospitalManufacturers = scopedManufacturers.filter((m) => m.hospitalId === hospitalId);
+
+    const typeByName = new Map(hospitalTypes.map((t) => [t.name.toLowerCase().trim(), t.id]));
+    const manufacturerByName = new Map(hospitalManufacturers.map((m) => [m.name.toLowerCase().trim(), m.id]));
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
+
+      if (!rows.length) {
+        toast.error('Import file is empty.');
+        return;
+      }
+
+      let success = 0;
+      let failed = 0;
+
+      for (const row of rows) {
+        const brandName = readField(row, ['brand_name', 'brandname', 'brand']);
+        const genericName = readField(row, ['generic_name', 'genericname', 'generic']);
+        const strength = readField(row, ['strength']);
+        const medicineTypeName = readField(row, ['medicine_type', 'medicinetype', 'type']).toLowerCase();
+        const manufacturerName = readField(row, ['manufacturer', 'manufacturer_name']).toLowerCase();
+        const stockValue = Number(readField(row, ['stock']) || 0);
+        const costPriceValue = Number(readField(row, ['cost_price', 'costprice']) || 0);
+        const salePriceValue = Number(readField(row, ['sale_price', 'saleprice']) || 0);
+        const statusRaw = readField(row, ['status']);
+        const status = statusRaw.toLowerCase() === 'inactive' ? 'inactive' : 'active';
+
+        const medicineTypeId = typeByName.get(medicineTypeName);
+        const manufacturerId = manufacturerByName.get(manufacturerName);
+
+        if (!brandName || !medicineTypeId || !manufacturerId) {
+          failed++;
+          continue;
+        }
+
+        try {
+          await addMedicine({
+            hospitalId,
+            brandName,
+            genericName,
+            strength,
+            medicineTypeId,
+            manufacturerId,
+            stock: Number.isFinite(stockValue) ? stockValue : 0,
+            costPrice: Number.isFinite(costPriceValue) ? costPriceValue : 0,
+            salePrice: Number.isFinite(salePriceValue) ? salePriceValue : 0,
+            status,
+          });
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+
+      if (success > 0) {
+        toast.success(`Medicines import completed. Success: ${success}${failed ? `, Failed: ${failed}` : ''}`);
+      } else {
+        toast.error('No medicines were imported. Check template data, type names, and manufacturer names.');
+      }
+    } catch {
+      toast.error('Failed to read import file. Please upload a valid CSV or XLSX file.');
+    }
   };
 
   const exportToPDF = async () => {
@@ -332,7 +489,10 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search medicines..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -348,6 +508,33 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
+          )}
+          {canImport && (
+            <>
+              <button
+                onClick={downloadImportTemplate}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
+                title="Download import template"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Template
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
+                title="Import medicines"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+            </>
           )}
           {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
@@ -387,7 +574,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {sortedMedicines.length > 0 ? (
-                sortedMedicines.map((medicine) => (
+                paginatedMedicines.map((medicine) => (
                   <tr key={medicine.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -443,8 +630,27 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         </div>
         <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span>
-            Showing <strong>{sortedMedicines.length}</strong> of <strong>{scopedMedicines.length}</strong> medicines {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
+            Showing <strong>{paginatedMedicines.length}</strong> of <strong>{sortedMedicines.length}</strong> medicines {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
           </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -520,12 +726,12 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-4 space-y-4 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitAdd}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <form className="p-4 space-y-3 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitAdd}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Brand Name"
                   value={formData.brandName}
                   onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
@@ -535,7 +741,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Generic Name</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Generic Name"
                   value={formData.genericName}
                   onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
@@ -544,7 +750,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Strength</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Strength"
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
@@ -553,7 +759,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Type</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Medicine Type"
                   value={formData.medicineTypeId}
                   onChange={(e) => setFormData({ ...formData, medicineTypeId: e.target.value })}
@@ -568,7 +774,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Manufacturer</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Manufacturer"
                   value={formData.manufacturerId}
                   onChange={(e) => setFormData({ ...formData, manufacturerId: e.target.value })}
@@ -585,7 +791,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   type="number"
                   min={0}
                   step={1}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Stock"
                   value={formData.stock}
                   onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
@@ -597,7 +803,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Cost Price"
                   value={formData.costPrice}
                   onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
@@ -609,7 +815,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Sale Price"
                   value={formData.salePrice}
                   onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
@@ -618,7 +824,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Status</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                   title="Status"
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
@@ -631,7 +837,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
                   <select
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
                     title="Hospital"
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
@@ -646,11 +852,11 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
+              <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Saving...' : 'Save'}
               </button>

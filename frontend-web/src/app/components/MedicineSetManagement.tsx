@@ -72,6 +72,8 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
 
   const [name, setName] = useState('');
@@ -166,6 +168,22 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
         set.status.toLowerCase().includes(term)
     );
   }, [sets, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSets.length / itemsPerPage));
+  const paginatedSets = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredSets.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredSets, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, currentHospital.id]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const startEdit = (set: MedicineSet) => {
     setEditingSetId(set.id);
@@ -353,12 +371,12 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-gray-500">Loading...</td>
                   </tr>
-                ) : filteredSets.length === 0 ? (
+                ) : paginatedSets.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-gray-500">No treatment sets found</td>
                   </tr>
                 ) : (
-                  filteredSets.map((set) => (
+                  paginatedSets.map((set) => (
                     <tr key={set.id} className="border-t border-gray-100 dark:border-gray-700">
                       <td className="px-3 py-2 align-top">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">{set.name}</div>
@@ -392,6 +410,25 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="px-2 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>Page {currentPage} of {totalPages}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
 

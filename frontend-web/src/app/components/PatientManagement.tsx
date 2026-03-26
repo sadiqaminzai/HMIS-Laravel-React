@@ -45,6 +45,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -127,6 +128,24 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       return bValue.localeCompare(aValue);
     }
   });
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sortedPatients.length / itemsPerPage));
+
+  const paginatedPatients = React.useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedPatients.slice(start, start + itemsPerPage);
+  }, [sortedPatients, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const latestAppointmentByPatientId = React.useMemo(() => {
     const byPatientId = new Map<string, { doctorName: string; doctorId: string; when: number }>();
@@ -492,7 +511,10 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               type="text"
               placeholder="Search patients..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -598,7 +620,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   </td>
                 </tr>
               ) : (
-                sortedPatients.map((patient) => (
+                paginatedPatients.map((patient) => (
                   <tr key={patient.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <span className="font-mono text-[10px] font-medium bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">
@@ -683,7 +705,26 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredPatients.length}</span></span>
-          <span>Showing {sortedPatients.length} of {patients.length} patients</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {paginatedPatients.length} of {sortedPatients.length}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

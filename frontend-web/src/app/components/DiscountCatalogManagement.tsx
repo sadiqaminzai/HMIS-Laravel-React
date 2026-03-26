@@ -41,6 +41,7 @@ export function DiscountCatalogManagement({ hospital, userRole }: DiscountCatalo
   const [rows, setRows] = useState<DiscountItem[]>([]);
   const [typeOptions, setTypeOptions] = useState<DiscountTypeOption[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<DiscountItem | null>(null);
@@ -151,6 +152,24 @@ export function DiscountCatalogManagement({ hospital, userRole }: DiscountCatalo
       );
     });
   }, [rows, searchTerm]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredRows.slice(start, start + itemsPerPage);
+  }, [filteredRows, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const typeOptionsForForm = useMemo(() => {
     if (userRole !== 'super_admin' || form.hospitalId === 'all') return typeOptions;
@@ -278,7 +297,10 @@ export function DiscountCatalogManagement({ hospital, userRole }: DiscountCatalo
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search discounts..."
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm pl-9 pr-3 py-2 text-gray-900 dark:text-white"
           />
@@ -306,7 +328,7 @@ export function DiscountCatalogManagement({ hospital, userRole }: DiscountCatalo
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredRows.map((row) => (
+                {paginatedRows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                     <td className="px-4 py-3 text-gray-900 dark:text-white">{row.name}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{row.discountTypeName}</td>
@@ -352,6 +374,35 @@ export function DiscountCatalogManagement({ hospital, userRole }: DiscountCatalo
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!loading && filteredRows.length > 0 && (
+          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>
+              Showing {paginatedRows.length} of {filteredRows.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Search, Trash2, Truck, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Search, Trash2, Truck, X, Upload, Download } from 'lucide-react';
 import { Hospital, Supplier, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -25,8 +25,11 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
   const canDelete = hasPermission('delete_suppliers') || hasPermission('manage_suppliers');
   const canExport = hasPermission('export_suppliers') || hasPermission('manage_suppliers');
   const canPrint = hasPermission('print_suppliers') || hasPermission('manage_suppliers');
+  const canImport = hasPermission('import_suppliers') || hasPermission('manage_suppliers');
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -51,6 +54,24 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
       (s.address || '').toLowerCase().includes(term)
     );
   }, [scopedSuppliers, searchTerm]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / itemsPerPage));
+
+  const paginatedSuppliers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredSuppliers.slice(start, start + itemsPerPage);
+  }, [filteredSuppliers, currentPage]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedHospitalId]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const getHospital = (id: string) => hospitals.find((h) => h.id === id);
   const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
@@ -81,6 +102,95 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
     const workBook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workBook, workSheet, 'Suppliers');
     XLSX.writeFile(workBook, 'Suppliers_List.xlsx');
+  };
+
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const readField = (row: Record<string, any>, aliases: string[]) => {
+    const map = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
+      acc[normalizeKey(key)] = row[key];
+      return acc;
+    }, {});
+
+    for (const alias of aliases) {
+      const value = map[normalizeKey(alias)];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const resolveImportHospitalId = () => {
+    if (userRole === 'super_admin') {
+      if (!selectedHospitalId || selectedHospitalId === 'all') {
+        toast.error('Please select a specific hospital before importing suppliers.');
+        return '';
+      }
+      return selectedHospitalId;
+    }
+    return currentHospital.id;
+  };
+
+  const downloadImportTemplate = () => {
+    const templateRows = [
+      { name: 'City Pharma Supply', contact_info: '+93-700000001', address: 'Kabul' },
+      { name: 'Health Link Traders', contact_info: '+93-700000002', address: 'Herat' },
+    ];
+    const sheet = XLSX.utils.json_to_sheet(templateRows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'SuppliersTemplate');
+    XLSX.writeFile(book, 'Suppliers_Import_Template.xlsx');
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const hospitalId = resolveImportHospitalId();
+    if (!hospitalId) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
+
+      if (!rows.length) {
+        toast.error('Import file is empty.');
+        return;
+      }
+
+      let success = 0;
+      let failed = 0;
+
+      for (const row of rows) {
+        const name = readField(row, ['name']);
+        const contactInfo = readField(row, ['contact_info', 'contactinfo', 'contact']);
+        const address = readField(row, ['address']);
+
+        if (!name) {
+          failed++;
+          continue;
+        }
+
+        try {
+          await addSupplier({ hospitalId, name, contactInfo, address });
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+
+      if (success > 0) {
+        toast.success(`Suppliers import completed. Success: ${success}${failed ? `, Failed: ${failed}` : ''}`);
+      } else {
+        toast.error('No suppliers were imported. Please verify template columns and values.');
+      }
+    } catch {
+      toast.error('Failed to read import file. Please upload a valid CSV or XLSX file.');
+    }
   };
 
   const exportToPDF = async () => {
@@ -213,7 +323,10 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search suppliers..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
@@ -229,6 +342,33 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
+          )}
+          {canImport && (
+            <>
+              <button
+                onClick={downloadImportTemplate}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
+                title="Download import template"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Template
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
+                title="Import suppliers"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+            </>
           )}
           {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
@@ -255,7 +395,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredSuppliers.length > 0 ? (
-                filteredSuppliers.map((supplier) => (
+                paginatedSuppliers.map((supplier) => (
                   <tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -299,8 +439,27 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
         </div>
         <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span>
-            Showing <strong>{filteredSuppliers.length}</strong> of <strong>{scopedSuppliers.length}</strong> suppliers {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
+            Showing <strong>{paginatedSuppliers.length}</strong> of <strong>{filteredSuppliers.length}</strong> suppliers {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
           </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

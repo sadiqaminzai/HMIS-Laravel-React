@@ -16,6 +16,8 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
   const { t } = useLanguage();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [showModal, setShowModal] = useState(false);
   const [editingTest, setEditingTest] = useState<TestMaster | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -53,6 +55,9 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
     }
     return matchesSearch && test.hospitalId === user?.hospitalId;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredTests.length / itemsPerPage));
+  const paginatedTests = filteredTests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const handleOpenModal = (test?: TestMaster) => {
     if (test) {
@@ -166,6 +171,11 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
     }
   };
 
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -182,16 +192,15 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
           {t('addTest')}
         </button>
       </div>
-                  disabled={submitting}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+
       {/* Search */}
-                  {submitting ? 'Saving...' : editingTest ? t('updateTest') : t('addTest')}
+      <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"
           placeholder={t('searchTests')}
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
         />
       </div>
@@ -229,14 +238,14 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredTests.length === 0 ? (
+              {paginatedTests.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     {t('noTestsFound')}
                   </td>
                 </tr>
               ) : (
-                filteredTests.map((test) => (
+                paginatedTests.map((test) => (
                   <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400">
                       {test.testCode}
@@ -290,6 +299,25 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <span>Page {currentPage} of {totalPages}</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -567,9 +595,10 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {editingTest ? t('update') : t('create')}
+                  {submitting ? 'Saving...' : editingTest ? t('update') : t('create')}
                 </button>
               </div>
             </form>
