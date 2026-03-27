@@ -25,6 +25,15 @@ interface RoomItem {
 
 const roomTypes: RoomType[] = ['General', 'Private', 'Semi-Private', 'ICU', 'Emergency'];
 
+const generateRoomBeds = (totalBeds: number) => {
+  const beds: string[] = [];
+  const total = Math.max(0, Number(totalBeds || 0));
+  for (let i = 1; i <= total; i++) {
+    beds.push(`Bed-${i}`);
+  }
+  return beds;
+};
+
 const mapRoom = (r: any): RoomItem => ({
   id: String(r.id),
   hospitalId: String(r.hospital_id),
@@ -226,6 +235,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
                 <th className="px-4 py-2">Room</th>
                 <th className="px-4 py-2">Type</th>
                 <th className="px-4 py-2">Beds</th>
+                <th className="px-4 py-2">Bed Numbers</th>
                 <th className="px-4 py-2">Cost / Bed</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2 text-center">Actions</th>
@@ -233,14 +243,20 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
-                <tr><td className="px-4 py-6" colSpan={6}>Loading...</td></tr>
+                <tr><td className="px-4 py-6" colSpan={7}>Loading...</td></tr>
               ) : filteredRooms.length === 0 ? (
-                <tr><td className="px-4 py-6 text-center" colSpan={6}>No rooms found</td></tr>
+                <tr><td className="px-4 py-6 text-center" colSpan={7}>No rooms found</td></tr>
               ) : paginatedRooms.map((room) => (
                 <tr key={room.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{room.roomNumber}</td>
                   <td className="px-4 py-2">{room.type}</td>
                   <td className="px-4 py-2">{room.availableBeds} / {room.totalBeds}</td>
+                  <td className="px-4 py-2">
+                    <div className="text-[11px] text-gray-600 dark:text-gray-300">
+                      {generateRoomBeds(room.totalBeds).slice(0, 5).join(', ')}
+                      {room.totalBeds > 5 ? ` +${room.totalBeds - 5} more` : ''}
+                    </div>
+                  </td>
                   <td className="px-4 py-2">{room.costPerBed.toFixed(2)}</td>
                   <td className="px-4 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${room.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
@@ -320,6 +336,9 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Cost Per Bed</label>
                 <input type="number" min={0} step="0.01" value={form.costPerBed} onChange={(e) => setForm((p) => ({ ...p, costPerBed: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-12 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 bg-gray-50 dark:bg-gray-700/30 text-xs text-gray-600 dark:text-gray-300">
+                Bed numbers for this room: {generateRoomBeds(Number(form.totalBeds || 0)).join(', ') || 'No beds'}
               </div>
               <div className="col-span-12 flex items-center gap-2 mt-1">
                 <input id="room-active" type="checkbox" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />

@@ -310,6 +310,16 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     }
   };
 
+  useEffect(() => {
+    if (!patientSurgeryForm.surgeryId) return;
+    if (patientSurgeryForm.cost !== '') return;
+
+    const selected = surgeries.find((s) => s.id === patientSurgeryForm.surgeryId);
+    if (!selected) return;
+
+    setPatientSurgeryForm((prev) => ({ ...prev, cost: String(selected.cost ?? 0) }));
+  }, [patientSurgeryForm.surgeryId, patientSurgeryForm.cost, surgeries]);
+
   return (
     <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -402,7 +412,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={async () => { try { await togglePatientSurgeryPaymentStatus(row.id); toast.success('Payment status toggled'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
+                          <button onClick={async () => { try { const updated = await togglePatientSurgeryPaymentStatus(row.id); setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item)); toast.success('Payment status toggled'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
                           <button onClick={() => { setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: row.surgeryDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
                           <button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
                         </div>

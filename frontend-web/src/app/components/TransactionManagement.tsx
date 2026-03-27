@@ -12,10 +12,41 @@ import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import api from '../../api/axios';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { formatOnlyDate } from '../utils/date';
+
+let cachedPdfTools: {
+  jsPDF: any;
+  autoTable: any;
+} | null = null;
+
+let cachedXlsxTools: {
+  XLSX: any;
+} | null = null;
+
+async function loadPdfTools() {
+  if (cachedPdfTools) return cachedPdfTools;
+
+  const [jsPDFModule, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+
+  cachedPdfTools = {
+    jsPDF: jsPDFModule.default,
+    autoTable: autoTableModule.default,
+  };
+
+  return cachedPdfTools;
+}
+
+async function loadXlsxTools() {
+  if (cachedXlsxTools) return cachedXlsxTools;
+
+  const XLSX = await import('xlsx');
+  cachedXlsxTools = { XLSX };
+
+  return cachedXlsxTools;
+}
 
 interface TransactionManagementProps {
   hospital: Hospital;
@@ -276,7 +307,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return type === 'purchase' || type === 'purchase_return' ? (med.costPrice ?? 0) : (med.salePrice ?? 0);
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
+    const { XLSX } = await loadXlsxTools();
+
     const workSheet = XLSX.utils.json_to_sheet(filteredTransactions.map((t) => ({
       ID: t.id,
       Type: t.trxType,
@@ -292,6 +325,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   };
 
   const exportToPDF = async () => {
+    const { jsPDF, autoTable } = await loadPdfTools();
+
     const doc = new jsPDF();
     const headerY = 20;
     const logoUrl = !isAllHospitals ? getHospital(currentHospital.id)?.logo : undefined;
@@ -723,10 +758,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         dueAmount: Math.min(grandTotal, dueAmount),
         details: formData.items,
       });
-      await refreshMedicines();
-      await refreshStocks();
       closeTransactionModal();
       toast.success('Transaction added successfully.');
+      void Promise.all([refreshMedicines(), refreshStocks()]);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to add transaction');
     } finally {
@@ -768,10 +802,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         dueAmount: Math.min(grandTotal, dueAmount),
         details: formData.items,
       });
-      await refreshMedicines();
-      await refreshStocks();
       closeTransactionModal();
       toast.success('Transaction updated successfully.');
+      void Promise.all([refreshMedicines(), refreshStocks()]);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update transaction');
     } finally {
@@ -783,10 +816,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     if (!selectedTransaction) return;
     try {
       await deleteTransaction(selectedTransaction.id);
-      await refreshMedicines();
-      await refreshStocks();
       setShowDeleteModal(false);
       toast.success('Transaction deleted successfully.');
+      void Promise.all([refreshMedicines(), refreshStocks()]);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to delete transaction');
     }

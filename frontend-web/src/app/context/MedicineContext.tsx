@@ -58,7 +58,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true);
     try {
-      const { data } = await api.get('/medicines');
+      const { data } = await api.get('/medicines', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setMedicines(records.map(mapMedicine));
     } catch (err: any) {

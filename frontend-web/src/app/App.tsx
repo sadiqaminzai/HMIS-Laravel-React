@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Toaster } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
@@ -26,35 +26,15 @@ import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { HospitalManagement } from './components/HospitalManagement';
 import { DoctorManagement } from './components/DoctorManagement';
-import { PatientManagement } from './components/PatientManagement';
 import { ManufacturerManagement } from './components/ManufacturerManagement';
 import { MedicineTypeManagement } from './components/MedicineTypeManagement';
-import { MedicineManagement } from './components/MedicineManagement';
 import { SupplierManagement } from './components/SupplierManagement';
-import { TransactionManagement } from './components/TransactionManagement';
-import { StockManagement } from './components/StockManagement';
-import { AppointmentManagement } from './components/AppointmentManagement';
 import { DiscountTypeManagement } from './components/DiscountTypeManagement';
 import { DiscountCatalogManagement } from './components/DiscountCatalogManagement';
 import { RoomManagement } from './components/RoomManagement';
-import { RoomBookingManagement } from './components/RoomBookingManagement';
-import { SurgeryManagement } from './components/SurgeryManagement';
-import { LabTestManagementNew } from './components/LabTestManagementNew';
-import { TestManagement } from './components/TestManagement';
-import { PrescriptionCreate } from './components/PrescriptionCreate';
-import { PrescriptionList } from './components/PrescriptionList';
 import { MedicineSetManagement } from './components/MedicineSetManagement';
-import { UserManagement } from './components/UserManagement';
-import { RoleManagement } from './components/RoleManagement';
-import { PermissionManagement } from './components/PermissionManagement';
 import { Settings } from './components/Settings';
-import { GeneralSettings } from './components/GeneralSettings';
-import { BackupManagement } from './components/BackupManagement';
 import { ContactMessages } from './components/ContactMessages';
-import { Reports } from './components/Reports';
-import { ExpenseCategories } from './components/ExpenseCategories';
-import { ExpenseManagement } from './components/ExpenseManagement';
-import { ExpenseReport } from './components/ExpenseReport';
 import { RequirePermission } from './components/RequirePermission';
 import { LicenseExpiryWarning } from './components/LicenseExpiryWarning';
 import { LicenseExpired } from './components/LicenseExpired';
@@ -72,6 +52,36 @@ console.error = (...args: any[]) => {
   }
   originalError.call(console, ...args);
 };
+
+const PatientManagementLazy = lazy(() => import('./components/PatientManagement').then((m) => ({ default: m.PatientManagement })));
+const MedicineManagementLazy = lazy(() => import('./components/MedicineManagement').then((m) => ({ default: m.MedicineManagement })));
+const TransactionManagementLazy = lazy(() => import('./components/TransactionManagement').then((m) => ({ default: m.TransactionManagement })));
+const LabTestManagementNewLazy = lazy(() => import('./components/LabTestManagementNew').then((m) => ({ default: m.LabTestManagementNew })));
+const PrescriptionCreateLazy = lazy(() => import('./components/PrescriptionCreate').then((m) => ({ default: m.PrescriptionCreate })));
+const PrescriptionListLazy = lazy(() => import('./components/PrescriptionList').then((m) => ({ default: m.PrescriptionList })));
+const ReportsLazy = lazy(() => import('./components/Reports').then((m) => ({ default: m.Reports })));
+const StockManagementLazy = lazy(() => import('./components/StockManagement').then((m) => ({ default: m.StockManagement })));
+const AppointmentManagementLazy = lazy(() => import('./components/AppointmentManagement').then((m) => ({ default: m.AppointmentManagement })));
+const RoomBookingManagementLazy = lazy(() => import('./components/RoomBookingManagement').then((m) => ({ default: m.RoomBookingManagement })));
+const SurgeryManagementLazy = lazy(() => import('./components/SurgeryManagement').then((m) => ({ default: m.SurgeryManagement })));
+const TestManagementLazy = lazy(() => import('./components/TestManagement').then((m) => ({ default: m.TestManagement })));
+const UserManagementLazy = lazy(() => import('./components/UserManagement').then((m) => ({ default: m.UserManagement })));
+const RoleManagementLazy = lazy(() => import('./components/RoleManagement').then((m) => ({ default: m.RoleManagement })));
+const PermissionManagementLazy = lazy(() => import('./components/PermissionManagement').then((m) => ({ default: m.PermissionManagement })));
+const GeneralSettingsLazy = lazy(() => import('./components/GeneralSettings').then((m) => ({ default: m.GeneralSettings })));
+const BackupManagementLazy = lazy(() => import('./components/BackupManagement').then((m) => ({ default: m.BackupManagement })));
+const ExpenseCategoriesLazy = lazy(() => import('./components/ExpenseCategories').then((m) => ({ default: m.ExpenseCategories })));
+const ExpenseManagementLazy = lazy(() => import('./components/ExpenseManagement').then((m) => ({ default: m.ExpenseManagement })));
+const ExpenseReportLazy = lazy(() => import('./components/ExpenseReport').then((m) => ({ default: m.ExpenseReport })));
+const LedgerReportLazy = lazy(() => import('./components/LedgerReport'));
+
+function RouteLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-10">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    </div>
+  );
+}
 
 function AppContent() {
   const { i18n } = useTranslation();
@@ -377,7 +387,9 @@ function AppContent() {
               path="/patients"
               element={
                 <RequirePermission anyOf={["view_patients", "add_patients", "edit_patients", "delete_patients", "export_patients", "print_patients", "manage_patients", "register_patients"]}>
-                  <PatientManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PatientManagementLazy hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -393,7 +405,9 @@ function AppContent() {
               path="/medicines"
               element={
                 <RequirePermission anyOf={["view_medicines", "add_medicines", "edit_medicines", "delete_medicines", "export_medicines", "print_medicines", "manage_medicines", "dispense_medicines"]}>
-                  <MedicineManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <MedicineManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -417,7 +431,9 @@ function AppContent() {
               path="/transactions"
               element={
                 <RequirePermission anyOf={["view_transactions", "add_transactions", "edit_transactions", "delete_transactions", "export_transactions", "print_transactions", "manage_transactions"]}>
-                  <TransactionManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <TransactionManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -425,7 +441,9 @@ function AppContent() {
               path="/stocks"
               element={
                 <RequirePermission anyOf={["view_stocks", "add_stocks", "edit_stocks", "delete_stocks", "export_stocks", "print_stocks", "manage_stocks"]}>
-                  <StockManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <StockManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -433,7 +451,9 @@ function AppContent() {
               path="/appointments"
               element={
                 <RequirePermission anyOf={["view_appointments", "add_appointments", "edit_appointments", "delete_appointments", "export_appointments", "print_appointments", "manage_appointments", "schedule_appointments", "update_appointment_status"]}>
-                  <AppointmentManagement hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <AppointmentManagementLazy hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -465,7 +485,9 @@ function AppContent() {
               path="/room-bookings"
               element={
                 <RequirePermission anyOf={["view_room_bookings", "add_room_bookings", "edit_room_bookings", "delete_room_bookings", "manage_room_bookings"]}>
-                  <RoomBookingManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <RoomBookingManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -473,7 +495,9 @@ function AppContent() {
               path="/surgeries"
               element={
                 <RequirePermission anyOf={["view_surgery_types", "manage_surgery_types", "view_surgeries", "manage_surgeries", "view_patient_surgeries", "manage_patient_surgeries"]}>
-                  <SurgeryManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <SurgeryManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -481,7 +505,9 @@ function AppContent() {
               path="/lab-tests"
               element={
                 <RequirePermission anyOf={["view_lab_orders", "add_lab_orders", "edit_lab_orders", "delete_lab_orders", "export_lab_orders", "print_lab_orders", "manage_lab_orders", "update_lab_order_status", "enter_lab_results", "manage_lab_payments"]}>
-                  <LabTestManagementNew hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.doctorId || currentUser.id} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <LabTestManagementNewLazy hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.doctorId || currentUser.id} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -489,7 +515,9 @@ function AppContent() {
               path="/test-management"
               element={
                 <RequirePermission anyOf={["view_test_templates", "add_test_templates", "edit_test_templates", "delete_test_templates", "export_test_templates", "print_test_templates", "manage_test_templates"]}>
-                  <TestManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <TestManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -497,7 +525,9 @@ function AppContent() {
               path="/prescriptions/create"
               element={
                 <RequirePermission anyOf={["create_prescription", "add_prescriptions", "edit_prescriptions", "manage_prescriptions"]}>
-                  <PrescriptionCreate hospital={currentHospital} currentUser={currentUser} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PrescriptionCreateLazy hospital={currentHospital} currentUser={currentUser} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -505,7 +535,9 @@ function AppContent() {
               path="/prescriptions"
               element={
                 <RequirePermission anyOf={["view_prescriptions", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "export_prescriptions", "print_prescriptions", "manage_prescriptions", "create_prescription"]}>
-                  <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PrescriptionListLazy hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -521,7 +553,9 @@ function AppContent() {
               path="/users"
               element={
                 <RequirePermission anyOf={["view_users", "add_users", "edit_users", "delete_users", "export_users", "print_users", "manage_users"]}>
-                  <UserManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UserManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -529,7 +563,9 @@ function AppContent() {
               path="/settings/users"
               element={
                 <RequirePermission anyOf={["view_users", "add_users", "edit_users", "delete_users", "export_users", "print_users", "manage_users"]}>
-                  <UserManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UserManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -537,7 +573,9 @@ function AppContent() {
               path="/settings/roles"
               element={
                 <RequirePermission anyOf={["view_roles", "add_roles", "edit_roles", "delete_roles", "manage_roles"]}>
-                  <RoleManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <RoleManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -545,7 +583,9 @@ function AppContent() {
               path="/settings/permissions"
               element={
                 <RequirePermission anyOf={["view_permissions", "add_permissions", "edit_permissions", "delete_permissions", "import_permissions", "manage_permissions"]}>
-                  <PermissionManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PermissionManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -594,7 +634,9 @@ function AppContent() {
               path="/settings/general"
               element={
                 <RequirePermission anyOf={["view_hospital_settings", "add_hospital_settings", "edit_hospital_settings", "delete_hospital_settings", "manage_hospital_settings"]}>
-                  <GeneralSettings hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <GeneralSettingsLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -602,7 +644,9 @@ function AppContent() {
               path="/settings/backups"
               element={
                 <RequirePermission anyOf={["view_backups", "add_backups", "edit_backups", "delete_backups", "export_backups", "manage_backups", "view_hospital_settings", "manage_hospital_settings"]}>
-                  <BackupManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <BackupManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -618,7 +662,9 @@ function AppContent() {
               path="/reports"
               element={
                 <RequirePermission anyOf={["view_reports", "add_reports", "edit_reports", "delete_reports", "export_reports", "print_reports", "manage_reports"]}>
-                  <Reports hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <ReportsLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -626,7 +672,9 @@ function AppContent() {
               path="/expenses/categories"
               element={
                 <RequirePermission anyOf={["view_expense_categories", "add_expense_categories", "edit_expense_categories", "delete_expense_categories", "export_expense_categories", "print_expense_categories", "manage_expense_categories"]}>
-                  <ExpenseCategories hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <ExpenseCategoriesLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -634,7 +682,9 @@ function AppContent() {
               path="/expenses/entries"
               element={
                 <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
-                  <ExpenseManagement hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <ExpenseManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />
@@ -642,7 +692,19 @@ function AppContent() {
               path="/expenses/report"
               element={
                 <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
-                  <ExpenseReport hospital={currentHospital} userRole={currentRole} />
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <ExpenseReportLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/ledger"
+              element={
+                <RequirePermission anyOf={["view_ledger", "manage_ledger", "export_ledger"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <LedgerReportLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
                 </RequirePermission>
               }
             />

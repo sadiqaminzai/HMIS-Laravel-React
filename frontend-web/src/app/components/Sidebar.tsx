@@ -237,6 +237,12 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.expenseReport',
         icon: <BarChart className="w-3.5 h-3.5" />,
         anyPermissions: ['view_expenses', 'manage_expenses']
+      },
+      {
+        id: '/ledger',
+        translationKey: 'nav.ledger',
+        icon: <BarChart className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_ledger', 'manage_ledger', 'export_ledger']
       }
     ]
   },

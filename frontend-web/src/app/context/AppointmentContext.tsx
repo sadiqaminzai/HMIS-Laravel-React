@@ -77,7 +77,7 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
     }
     setLoading(true);
     try {
-      const { data } = await api.get('/appointments');
+      const { data } = await api.get('/appointments', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setAppointments(records.map(mapAppointment));
     } catch (err: any) {

@@ -35,6 +35,15 @@ export interface RoomBookingPayload {
   is_active?: boolean;
 }
 
+export interface RoomBookingAvailabilityResponse {
+  all_beds: string[];
+  unavailable_beds: string[];
+  available_beds: string[];
+  occupied_count: number;
+  available_count: number;
+  suggested_beds: string[];
+}
+
 const unwrap = <T>(res: any): PaginatedResponse<T> => {
   const payload = res?.data;
   if (Array.isArray(payload)) {
@@ -87,4 +96,15 @@ export async function updateRoomBooking(id: string, payload: Partial<RoomBooking
 export async function deleteRoomBooking(id: string) {
   const res = await api.delete(`/room-bookings/${id}`);
   return res.data;
+}
+
+export async function getRoomBookingAvailability(params: {
+  room_id: string;
+  check_in_date: string;
+  check_out_date?: string;
+  beds_to_book?: number;
+  ignore_booking_id?: string;
+}) {
+  const res = await api.get('/room-bookings/availability', { params });
+  return res.data as RoomBookingAvailabilityResponse;
 }

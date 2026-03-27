@@ -44,7 +44,7 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     try {
-      const { data } = await api.get('/suppliers');
+      const { data } = await api.get('/suppliers', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setSuppliers(records.map(mapSupplier));
     } catch (err: any) {

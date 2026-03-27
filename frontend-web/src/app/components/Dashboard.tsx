@@ -57,11 +57,16 @@ interface DashboardSummary {
     manufacturers: number;
     medicine_types: number;
     test_templates: number;
+    rooms: number;
+    active_rooms: number;
+    surgeries: number;
     lab_orders_today: number;
     appointments_today: number;
+    room_bookings_today: number;
+    patient_surgeries_today: number;
   };
   charts: {
-    monthly: Array<{ month: string; patients: number; prescriptions: number; appointments: number }>;
+    monthly: Array<{ month: string; patients: number; prescriptions: number; appointments: number; room_bookings: number; patient_surgeries: number }>;
     appointment_status: Array<{ name: string; value: number; color: string }>;
     test_status: Array<{ name: string; value: number; color: string }>;
     medicine_stock: Array<{ name: string; value: number; color: string }>;
@@ -104,8 +109,13 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     manufacturers: 0,
     medicine_types: 0,
     test_templates: 0,
+    rooms: 0,
+    active_rooms: 0,
+    surgeries: 0,
     lab_orders_today: 0,
     appointments_today: 0,
+    room_bookings_today: 0,
+    patient_surgeries_today: 0,
   };
 
   const monthlyData = summary?.charts.monthly ?? [];
@@ -196,6 +206,37 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           icon={<Calendar className="w-4 h-4" />}
           color="bg-teal-500"
           trend={{ value: '15', isPositive: true }}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Total Rooms"
+          value={counts.rooms.toString()}
+          icon={<Building2 className="w-4 h-4" />}
+          color="bg-sky-500"
+          trend={{ value: '4', isPositive: true }}
+        />
+        <StatCard
+          label="Active Rooms"
+          value={counts.active_rooms.toString()}
+          icon={<CheckCircle className="w-4 h-4" />}
+          color="bg-emerald-500"
+          trend={{ value: '3', isPositive: true }}
+        />
+        <StatCard
+          label="Surgeries"
+          value={counts.surgeries.toString()}
+          icon={<Activity className="w-4 h-4" />}
+          color="bg-rose-500"
+          trend={{ value: '5', isPositive: true }}
+        />
+        <StatCard
+          label="Room Bookings (Today)"
+          value={counts.room_bookings_today.toString()}
+          icon={<Package className="w-4 h-4" />}
+          color="bg-indigo-500"
+          trend={{ value: '2', isPositive: true }}
         />
       </div>
 
@@ -292,6 +333,37 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           icon={<Pill className="w-4 h-4" />}
           color="bg-purple-500"
           trend={{ value: '3', isPositive: false }}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Total Rooms"
+          value={counts.rooms.toString()}
+          icon={<Building2 className="w-4 h-4" />}
+          color="bg-sky-500"
+          trend={{ value: '2', isPositive: true }}
+        />
+        <StatCard
+          label="Surgeries"
+          value={counts.surgeries.toString()}
+          icon={<Activity className="w-4 h-4" />}
+          color="bg-rose-500"
+          trend={{ value: '2', isPositive: true }}
+        />
+        <StatCard
+          label="Room Bookings Today"
+          value={counts.room_bookings_today.toString()}
+          icon={<Package className="w-4 h-4" />}
+          color="bg-indigo-500"
+          trend={{ value: '1', isPositive: true }}
+        />
+        <StatCard
+          label="Surgeries Today"
+          value={counts.patient_surgeries_today.toString()}
+          icon={<Calendar className="w-4 h-4" />}
+          color="bg-teal-500"
+          trend={{ value: '1', isPositive: true }}
         />
       </div>
 

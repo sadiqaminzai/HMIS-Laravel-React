@@ -141,7 +141,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       return;
     }
     try {
-      const { data } = await api.get('/prescriptions');
+      const { data } = await api.get('/prescriptions', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setPrescriptions(records.map(mapPrescription));
     } catch (err: any) {

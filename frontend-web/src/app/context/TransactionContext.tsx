@@ -51,6 +51,14 @@ const mapTransaction = (t: any): Transaction => ({
   details: Array.isArray(t.details) ? t.details.map(mapDetail) : [],
 });
 
+const sortByCreatedDesc = (records: Transaction[]) => {
+  return [...records].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+};
+
 export function TransactionProvider({ children }: { children: React.ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,7 +78,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
     setLoading(true);
     try {
-      const { data } = await api.get('/transactions');
+      const { data } = await api.get('/transactions', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setTransactions(records.map(mapTransaction));
     } catch (err: any) {
@@ -121,18 +129,26 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
   };
 
   const addTransaction = async (payload: Partial<Transaction>) => {
-    await api.post('/transactions', serializePayload(payload));
-    await refresh();
+    const { data } = await api.post('/transactions', serializePayload(payload));
+    const created = mapTransaction(data);
+    setTransactions((prev) => sortByCreatedDesc([created, ...prev.filter((t) => t.id !== created.id)]));
   };
 
   const updateTransaction = async (payload: Partial<Transaction> & { id: string }) => {
-    await api.put(`/transactions/${payload.id}`, serializePayload(payload));
-    await refresh();
+    const { data } = await api.put(`/transactions/${payload.id}`, serializePayload(payload));
+    const updated = mapTransaction(data);
+    setTransactions((prev) => {
+      const next = prev.some((t) => t.id === updated.id)
+        ? prev.map((t) => (t.id === updated.id ? updated : t))
+        : [updated, ...prev];
+
+      return sortByCreatedDesc(next);
+    });
   };
 
   const deleteTransaction = async (id: string) => {
     await api.delete(`/transactions/${id}`);
-    await refresh();
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
   };
 
   return (

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Search, X, Printer } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms } from '../../api/rooms';
+import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms, getRoomBookingAvailability } from '../../api/rooms';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
@@ -40,6 +40,17 @@ interface RoomOption {
   hospitalId: string;
   roomNumber: string;
   cost_per_bed?: number;
+  total_beds?: number;
+  available_beds?: number;
+}
+
+interface AvailabilityState {
+  allBeds: string[];
+  unavailableBeds: string[];
+  availableBeds: string[];
+  occupiedCount: number;
+  availableCount: number;
+  suggestedBeds: string[];
 }
 
 type ReceiptSize = 'a4' | '58mm' | '76mm' | '80mm';
@@ -52,6 +63,14 @@ const toDateInputValue = (value?: string): string => {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
   return parsed.toISOString().slice(0, 10);
+};
+
+const parseBedNumbers = (value?: string): string[] => {
+  if (!value) return [];
+  return String(value)
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 };
 
 const mapBooking = (b: any): BookingItem => ({
@@ -88,6 +107,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [loading, setLoading] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availability, setAvailability] = useState<AvailabilityState | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<BookingItem | null>(null);
   const [printBooking, setPrintBooking] = useState<BookingItem | null>(null);
@@ -139,6 +160,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         hospitalId: String(r.hospital_id),
         roomNumber: r.room_number,
         cost_per_bed: Number(r.cost_per_bed ?? 0),
+        total_beds: Number(r.total_beds ?? 0),
+        available_beds: Number(r.available_beds ?? 0),
       })));
     } catch {
       setRoomOptions([]);
@@ -212,6 +235,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       remarks: '',
       isActive: true,
     });
+    setAvailability(null);
   };
 
   const openCreate = () => {
@@ -237,14 +261,103 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       remarks: item.remarks || '',
       isActive: item.isActive,
     });
+    setAvailability(null);
     setIsModalOpen(true);
   };
+
+  const selectedRoomOption = roomOptions.find((r) => r.id === form.roomId && r.hospitalId === form.hospitalId);
+  const selectedBedNumbers = useMemo(() => parseBedNumbers(form.bedNumber), [form.bedNumber]);
+
+  const setSelectedBedNumbers = (beds: string[]) => {
+    setForm((prev) => ({ ...prev, bedNumber: beds.join(', ') }));
+  };
+
+  const toggleBedSelection = (bed: string) => {
+    if (!availability) return;
+    if (availability.unavailableBeds.includes(bed)) return;
+
+    const limit = Math.max(1, Number(form.bedsToBook || 1));
+    const isSelected = selectedBedNumbers.includes(bed);
+
+    if (isSelected) {
+      setSelectedBedNumbers(selectedBedNumbers.filter((b) => b !== bed));
+      return;
+    }
+
+    if (selectedBedNumbers.length >= limit) {
+      toast.error(`You can only select ${limit} bed(s).`);
+      return;
+    }
+
+    setSelectedBedNumbers([...selectedBedNumbers, bed]);
+  };
+
+  useEffect(() => {
+    if (!isModalOpen || !form.roomId || !form.checkInDate) {
+      setAvailability(null);
+      return;
+    }
+
+    const run = async () => {
+      setAvailabilityLoading(true);
+      try {
+        const data = await getRoomBookingAvailability({
+          room_id: form.roomId,
+          check_in_date: form.checkInDate,
+          check_out_date: form.checkOutDate || undefined,
+          beds_to_book: Number(form.bedsToBook || 1),
+          ignore_booking_id: editing?.id,
+        });
+
+        setAvailability({
+          allBeds: data.all_beds ?? [],
+          unavailableBeds: data.unavailable_beds ?? [],
+          availableBeds: data.available_beds ?? [],
+          occupiedCount: Number(data.occupied_count ?? 0),
+          availableCount: Number(data.available_count ?? 0),
+          suggestedBeds: data.suggested_beds ?? [],
+        });
+      } catch {
+        setAvailability(null);
+      } finally {
+        setAvailabilityLoading(false);
+      }
+    };
+
+    run();
+  }, [isModalOpen, form.roomId, form.checkInDate, form.checkOutDate, form.bedsToBook, editing?.id]);
+
+  const applySuggestedBeds = () => {
+    if (!availability?.suggestedBeds?.length) {
+      toast.error('No suggested beds available for this period');
+      return;
+    }
+
+    const count = Math.max(1, Number(form.bedsToBook || 1));
+    const selected = availability.suggestedBeds.slice(0, count);
+    setSelectedBedNumbers(selected);
+  };
+
+  useEffect(() => {
+    const limit = Math.max(1, Number(form.bedsToBook || 1));
+    if (selectedBedNumbers.length <= limit) return;
+
+    setSelectedBedNumbers(selectedBedNumbers.slice(0, limit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.bedsToBook]);
 
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (form.checkOutDate && form.checkOutDate < form.checkInDate) {
       toast.error('Check-out date cannot be before check-in date');
+      return;
+    }
+
+    const selectedBeds = parseBedNumbers(form.bedNumber);
+
+    if (selectedBeds.length !== Number(form.bedsToBook || 1)) {
+      toast.error('Please select bed numbers equal to Beds To Book.');
       return;
     }
 
@@ -556,6 +669,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                 <th className="px-4 py-2">Dates</th>
                 <th className="px-4 py-2">Nights</th>
                 <th className="px-4 py-2">Beds</th>
+                <th className="px-4 py-2">Bed Numbers</th>
                 <th className="px-4 py-2">Cost</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2 text-center">Actions</th>
@@ -563,9 +677,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
-                <tr><td className="px-4 py-6" colSpan={8}>Loading...</td></tr>
+                <tr><td className="px-4 py-6" colSpan={9}>Loading...</td></tr>
               ) : paginatedBookings.length === 0 ? (
-                <tr><td className="px-4 py-6 text-center" colSpan={8}>No bookings found</td></tr>
+                <tr><td className="px-4 py-6 text-center" colSpan={9}>No bookings found</td></tr>
               ) : paginatedBookings.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{item.roomNumber}</td>
@@ -577,6 +691,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                       : 1}
                   </td>
                   <td className="px-4 py-2">{item.bedsToBook}</td>
+                  <td className="px-4 py-2 text-[11px]">{item.bedNumber || '-'}</td>
                   <td className="px-4 py-2">{item.totalCost.toFixed(2)}</td>
                   <td className="px-4 py-2">
                     <div className="flex flex-col gap-1">
@@ -682,8 +797,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                 <input title="Check out date" type="date" value={form.checkOutDate} onChange={(e) => setForm((p) => ({ ...p, checkOutDate: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
               </div>
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Bed Number</label>
-                <input title="Bed number" value={form.bedNumber} onChange={(e) => setForm((p) => ({ ...p, bedNumber: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <label className="text-xs font-medium">Selected Beds</label>
+                <input title="Selected beds" value={selectedBedNumbers.join(', ')} readOnly className="mt-1 w-full rounded border px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700/40" />
               </div>
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Beds To Book</label>
@@ -720,6 +835,81 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                 <div className="font-medium text-gray-700 dark:text-gray-200">Cost summary</div>
                 <div className="text-gray-600 dark:text-gray-300">Estimated nights: {costPreview.nights}</div>
                 <div className="text-gray-600 dark:text-gray-300">Estimated total: {costPreview.estimatedTotal.toFixed(2)} (final total is always calculated by server)</div>
+              </div>
+              <div className="col-span-12 rounded-md border border-blue-200 dark:border-blue-800 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-xs">
+                <div className="font-medium text-blue-800 dark:text-blue-200">Bed availability</div>
+                {!form.roomId || !form.checkInDate ? (
+                  <div className="text-blue-700 dark:text-blue-300">Select room and check-in date to view live bed availability.</div>
+                ) : availabilityLoading ? (
+                  <div className="text-blue-700 dark:text-blue-300">Checking availability...</div>
+                ) : availability ? (
+                  <>
+                    <div className="text-blue-700 dark:text-blue-300">Room capacity: {selectedRoomOption?.total_beds ?? 0} beds</div>
+                    <div className="text-blue-700 dark:text-blue-300">Available in selected period: {availability.availableCount}</div>
+                    <div className="text-blue-700 dark:text-blue-300">Unavailable beds: {availability.unavailableBeds.join(', ') || 'None'}</div>
+                    <div className="text-blue-700 dark:text-blue-300">Suggested beds: {availability.suggestedBeds.join(', ') || 'None'}</div>
+                    <fieldset className="mt-2">
+                      <legend className="sr-only">Select available beds</legend>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Available beds">
+                        {availability.allBeds.map((bed) => {
+                          const isUnavailable = availability.unavailableBeds.includes(bed);
+                          const isSelected = selectedBedNumbers.includes(bed);
+
+                          return (
+                            <label
+                              key={bed}
+                              className={`inline-flex items-center ${
+                                isUnavailable ? 'cursor-not-allowed' : 'cursor-pointer'
+                              }`}
+                              title={isUnavailable ? `${bed} is unavailable for selected period` : `Select ${bed}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleBedSelection(bed)}
+                                disabled={isUnavailable}
+                                aria-label={bed}
+                                className="sr-only"
+                              />
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] border ${
+                                  isUnavailable
+                                    ? 'bg-gray-100 text-gray-400 border-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700'
+                                    : isSelected
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100 dark:bg-gray-800 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/20'
+                                }`}
+                              >
+                                {bed}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={applySuggestedBeds}
+                        className="px-2 py-1 rounded bg-blue-600 text-white text-[11px]"
+                      >
+                        Use Suggested Beds
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBedNumbers([])}
+                        className="px-2 py-1 rounded border border-blue-300 text-blue-700 text-[11px] dark:border-blue-700 dark:text-blue-300"
+                      >
+                        Clear Selection
+                      </button>
+                      <span className="text-[11px] text-blue-700 dark:text-blue-300">
+                        Selected: {selectedBedNumbers.length} / {Math.max(1, Number(form.bedsToBook || 1))}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-rose-700 dark:text-rose-300">Unable to fetch availability right now.</div>
+                )}
               </div>
               <div className="col-span-12 flex items-center gap-2 mt-1">
                 <input id="booking-active" type="checkbox" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />

@@ -27,14 +27,55 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { Hospital, UserRole, Doctor, Patient, LabTest, Prescription, Appointment, Transaction } from '../types';
 import { mockPrescriptions, mockDoctors, mockPatients, mockHospitals } from '../data/mockData';
 import { useTransactions } from '../context/TransactionContext';
 import { useSuppliers } from '../context/SupplierContext';
 import { usePatients } from '../context/PatientContext';
-import * as XLSX from 'xlsx';
+import { useDoctors } from '../context/DoctorContext';
+import { useAppointments } from '../context/AppointmentContext';
+import { listLedger } from '../../api/ledger';
+import { listRoomBookings } from '../../api/rooms';
+import { listPatientSurgeries } from '../../api/surgeries';
+import api from '../../api/axios';
+
+let cachedPdfTools: {
+    jsPDF: any;
+    autoTable: any;
+} | null = null;
+
+let cachedXlsxTools: {
+    XLSX: any;
+} | null = null;
+
+async function loadPdfTools() {
+    if (cachedPdfTools) {
+        return cachedPdfTools;
+    }
+
+    const [{ jsPDF }, autoTableModule] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+    ]);
+
+    cachedPdfTools = {
+        jsPDF,
+        autoTable: autoTableModule.default,
+    };
+
+    return cachedPdfTools;
+}
+
+async function loadXlsxTools() {
+    if (cachedXlsxTools) {
+        return cachedXlsxTools;
+    }
+
+    const XLSX = await import('xlsx');
+    cachedXlsxTools = { XLSX };
+
+    return cachedXlsxTools;
+}
 
 // Re-implementing mock lab tests generator locally since it's not exported
 const generateMockLabTests = (hospitalId: string): LabTest[] => [
@@ -145,7 +186,17 @@ interface ReportsProps {
     userRole: UserRole;
 }
 
-type ReportType = 'date' | 'doctor' | 'patient' | 'lab' | 'hospital' | 'other';
+type ReportType =
+    | 'date'
+    | 'doctor'
+    | 'patient'
+    | 'fees'
+    | 'room_fees'
+    | 'surgeries'
+    | 'medicine'
+    | 'lab'
+    | 'hospital'
+    | 'other';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
@@ -153,7 +204,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     const { transactions } = useTransactions();
     const { suppliers } = useSuppliers();
     const { patients } = usePatients();
-  const [reportType, setReportType] = useState<ReportType>('date');
+        const { doctors } = useDoctors();
+        const { appointments } = useAppointments();
+    const [reportType, setReportType] = useState<ReportType>('doctor');
   const [startDate, setStartDate] = useState<string>(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
@@ -167,6 +220,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     totalPatients: 0,
     totalRevenue: 0 // Mock revenue
   });
+        const [roomBookings, setRoomBookings] = useState<any[]>([]);
+        const [patientSurgeries, setPatientSurgeries] = useState<any[]>([]);
+        const [ledgerEntries, setLedgerEntries] = useState<any[]>([]);
+        const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [hospitalOpsStats, setHospitalOpsStats] = useState({
+        totalRooms: 0,
+        activeRooms: 0,
+        totalSurgeries: 0,
+        roomBookingsInRange: 0,
+        patientSurgeriesInRange: 0,
+    });
 
   // Mock Data Aggregation
   const allLabTests = useMemo(() => generateMockLabTests(hospital.id), [hospital.id]);
@@ -187,6 +251,76 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
     }, [transactions, hospital.id, startDate, endDate, trxTypeFilter]);
 
+    const filteredAppointments = useMemo(() => {
+        const start = startOfDay(parseISO(startDate));
+        const end = endOfDay(parseISO(endDate));
+
+        return appointments.filter((apt) => {
+            if (String(apt.hospitalId) !== String(hospital.id)) return false;
+            const dateCandidate = apt.appointmentDate ? new Date(apt.appointmentDate) : apt.createdAt ? new Date(apt.createdAt) : null;
+            if (!dateCandidate || Number.isNaN(dateCandidate.getTime())) return false;
+            return isWithinInterval(dateCandidate, { start, end });
+        });
+    }, [appointments, endDate, hospital.id, startDate]);
+
+    const moduleTotals = useMemo(() => {
+        const seeded = new Map<string, { name: string; count: number; net: number; paid: number; due: number }>();
+        const labels: Record<string, string> = {
+            appointments: 'Consultation Fees',
+            laboratory: 'Lab Fees',
+            room_booking: 'Room Fees',
+            surgery: 'Surgery Fees',
+            pharmacy: 'Medicine Fees',
+            expenses: 'Expenses',
+        };
+
+        ledgerEntries.forEach((entry) => {
+            const moduleKey = String(entry.module || entry.source_type || 'other').toLowerCase();
+            if (!seeded.has(moduleKey)) {
+                seeded.set(moduleKey, {
+                    name: labels[moduleKey] || moduleKey.replace(/_/g, ' '),
+                    count: 0,
+                    net: 0,
+                    paid: 0,
+                    due: 0,
+                });
+            }
+            const bucket = seeded.get(moduleKey)!;
+            bucket.count += 1;
+            bucket.net += Number(entry.net_amount || 0);
+            bucket.paid += Number(entry.paid_amount || 0);
+            bucket.due += Number(entry.due_amount || 0);
+        });
+
+        return Array.from(seeded.values()).sort((a, b) => b.net - a.net);
+    }, [ledgerEntries]);
+
+    useEffect(() => {
+        const loadAnalyticsSources = async () => {
+            setAnalyticsLoading(true);
+            try {
+                const scope = userRole === 'super_admin' ? { hospital_id: hospital.id } : {};
+                const [bookingRes, surgeryRes, ledgerRes] = await Promise.all([
+                    listRoomBookings({ ...scope, date_from: startDate, date_to: endDate, per_page: 300 }),
+                    listPatientSurgeries({ ...scope, date_from: startDate, date_to: endDate, per_page: 300 }),
+                    listLedger({ ...scope, date_from: startDate, date_to: endDate, per_page: 500 }),
+                ]);
+
+                setRoomBookings(bookingRes.data ?? []);
+                setPatientSurgeries(surgeryRes.data ?? []);
+                setLedgerEntries(ledgerRes.data ?? []);
+            } catch {
+                setRoomBookings([]);
+                setPatientSurgeries([]);
+                setLedgerEntries([]);
+            } finally {
+                setAnalyticsLoading(false);
+            }
+        };
+
+        loadAnalyticsSources();
+    }, [endDate, hospital.id, startDate, userRole]);
+
     const transactionTotals = useMemo(() => {
         return filteredTransactions.reduce(
             (acc, t) => {
@@ -200,7 +334,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         );
     }, [filteredTransactions]);
 
-    const exportTransactionsToExcel = () => {
+    const exportTransactionsToExcel = async () => {
+        const { XLSX } = await loadXlsxTools();
         const rows = filteredTransactions.map((t) => ({
             ID: t.id,
             Type: t.trxType,
@@ -217,7 +352,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         XLSX.writeFile(workBook, 'Transactions_Report.xlsx');
     };
 
-    const exportTransactionsToPDF = () => {
+    const exportTransactionsToPDF = async () => {
+        const { jsPDF, autoTable } = await loadPdfTools();
         const doc = new jsPDF();
         doc.setFontSize(16);
         doc.text('Pharmacy Transactions Report', 14, 20);
@@ -312,6 +448,40 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         printWindow.print();
     };
 
+    useEffect(() => {
+        const loadHospitalOperationalStats = async () => {
+            try {
+                const hospitalScope = userRole === 'super_admin' ? { hospital_id: hospital.id } : {};
+
+                const [roomsRes, activeRoomsRes, surgeriesRes, roomBookingsRes, patientSurgeriesRes] = await Promise.all([
+                    api.get('/rooms', { params: { per_page: 1, ...hospitalScope } }),
+                    api.get('/rooms', { params: { per_page: 1, is_active: 1, ...hospitalScope } }),
+                    api.get('/surgeries', { params: { per_page: 1, ...hospitalScope } }),
+                    api.get('/room-bookings', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...hospitalScope } }),
+                    api.get('/patient-surgeries', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...hospitalScope } }),
+                ]);
+
+                setHospitalOpsStats({
+                    totalRooms: Number(roomsRes.data?.total ?? 0),
+                    activeRooms: Number(activeRoomsRes.data?.total ?? 0),
+                    totalSurgeries: Number(surgeriesRes.data?.total ?? 0),
+                    roomBookingsInRange: Number(roomBookingsRes.data?.total ?? 0),
+                    patientSurgeriesInRange: Number(patientSurgeriesRes.data?.total ?? 0),
+                });
+            } catch {
+                setHospitalOpsStats({
+                    totalRooms: 0,
+                    activeRooms: 0,
+                    totalSurgeries: 0,
+                    roomBookingsInRange: 0,
+                    patientSurgeriesInRange: 0,
+                });
+            }
+        };
+
+        loadHospitalOperationalStats();
+    }, [endDate, hospital.id, startDate, userRole]);
+
   useEffect(() => {
     // Filter logic based on Date Range and Report Type
     const start = startOfDay(parseISO(startDate));
@@ -357,43 +527,214 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         chartData = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
         break;
 
-      case 'doctor':
-        const docMap = new Map();
-        mockDoctors.filter(d => d.hospitalId === hospital.id).forEach(d => {
-           docMap.set(d.id, { name: d.name, prescriptions: 0, labTests: 0, total: 0 });
-        });
-        prescriptions.forEach(p => {
-          if (docMap.has(p.doctorId)) {
-              docMap.get(p.doctorId).prescriptions++;
-              docMap.get(p.doctorId).total++;
-          }
-        });
-        labTests.forEach(lt => {
-          if (docMap.has(lt.doctorId)) {
-              docMap.get(lt.doctorId).labTests++;
-              docMap.get(lt.doctorId).total++;
-          }
-        });
-        chartData = Array.from(docMap.values());
-        break;
+            case 'doctor': {
+                const doctorSource = doctors.length > 0 ? doctors.filter((d) => String(d.hospitalId) === String(hospital.id)) : mockDoctors.filter((d) => String(d.hospitalId) === String(hospital.id));
+                const docMap = new Map<string, { id: string; name: string; appointments: number; surgeries: number; revenue: number; paid: number; due: number }>();
+                doctorSource.forEach((doc) => {
+                    docMap.set(String(doc.id), { id: String(doc.id), name: doc.name, appointments: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
+                });
 
-      case 'patient':
-        // Top 10 Patients
-        const patMap = new Map();
-        prescriptions.forEach(p => {
-          const name = p.patientName;
-          if (!patMap.has(name)) patMap.set(name, { name, activity: 0 });
-          patMap.get(name).activity++;
-        });
-        labTests.forEach(lt => {
-          const name = lt.patientName;
-          if (!patMap.has(name)) patMap.set(name, { name, activity: 0 });
-          patMap.get(name).activity++;
-        });
-        chartData = Array.from(patMap.values())
-          .sort((a: any, b: any) => b.activity - a.activity)
-          .slice(0, 10);
-        break;
+                filteredAppointments.forEach((apt) => {
+                    const docId = String(apt.doctorId || 'unknown');
+                    if (!docMap.has(docId)) {
+                        docMap.set(docId, { id: docId, name: apt.doctorName || 'Unknown Doctor', appointments: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
+                    }
+                    const row = docMap.get(docId)!;
+                    row.appointments += 1;
+                    row.revenue += Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0);
+                    if (apt.paymentStatus === 'paid') {
+                        row.paid += Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0);
+                    } else if (apt.paymentStatus === 'partial') {
+                        row.paid += Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0) / 2;
+                        row.due += Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0) / 2;
+                    } else {
+                        row.due += Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0);
+                    }
+                });
+
+                patientSurgeries.forEach((item: any) => {
+                    const docId = item?.doctor_id ? String(item.doctor_id) : 'unknown';
+                    if (!docMap.has(docId)) {
+                        docMap.set(docId, { id: docId, name: item?.doctor?.name || 'Unknown Doctor', appointments: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
+                    }
+                    docMap.get(docId)!.surgeries += 1;
+                });
+
+                const rows = Array.from(docMap.values())
+                    .filter((row: any) => (selectedEntityId === 'all' ? true : row.id === selectedEntityId))
+                    .sort((a, b) => b.revenue - a.revenue);
+                chartData = rows;
+                break;
+            }
+
+            case 'patient': {
+                const patMap = new Map<string, { name: string; activity: number; surgeries: number; revenue: number; paid: number; due: number }>();
+
+                patients
+                    .filter((p) => String(p.hospitalId) === String(hospital.id))
+                    .forEach((p) => patMap.set(String(p.id), { name: p.name, activity: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 }));
+
+                filteredAppointments.forEach((apt) => {
+                    const key = String(apt.patientId || 'unknown');
+                    if (!patMap.has(key)) {
+                        patMap.set(key, { name: apt.patientName || 'Unknown Patient', activity: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
+                    }
+                    const row = patMap.get(key)!;
+                    row.activity += 1;
+                    const amount = Number(apt.totalAmount ?? apt.originalFeeAmount ?? 0);
+                    row.revenue += amount;
+                    if (apt.paymentStatus === 'paid') row.paid += amount;
+                    else if (apt.paymentStatus === 'partial') {
+                        row.paid += amount / 2;
+                        row.due += amount / 2;
+                    } else row.due += amount;
+                });
+
+                patientSurgeries.forEach((item: any) => {
+                    const key = item?.patient_id ? String(item.patient_id) : 'unknown';
+                    if (!patMap.has(key)) {
+                        patMap.set(key, { name: item?.patient?.name || 'Unknown Patient', activity: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
+                    }
+                    patMap.get(key)!.surgeries += 1;
+                });
+
+                chartData = Array.from(patMap.values())
+                    .sort((a: any, b: any) => b.revenue - a.revenue)
+                    .slice(0, 20);
+                break;
+            }
+
+            case 'fees':
+                chartData = moduleTotals.map((m) => ({
+                    name: m.name,
+                    count: m.count,
+                    netAmount: m.net,
+                    paidAmount: m.paid,
+                    dueAmount: m.due,
+                }));
+                break;
+
+            case 'room_fees': {
+                const roomMap = new Map<string, { name: string; bookings: number; totalCost: number; paidAmount: number; dueAmount: number }>();
+
+                roomBookings.forEach((item: any) => {
+                    const key = String(item.room_id || item?.room?.room_number || 'Unknown Room');
+                    if (!roomMap.has(key)) {
+                        roomMap.set(key, {
+                            name: item?.room?.room_number ? `Room ${item.room.room_number}` : `Room ${key}`,
+                            bookings: 0,
+                            totalCost: 0,
+                            paidAmount: 0,
+                            dueAmount: 0,
+                        });
+                    }
+
+                    const row = roomMap.get(key)!;
+                    row.bookings += 1;
+                    row.totalCost += Number(item.total_cost || 0);
+                });
+
+                ledgerEntries
+                    .filter((entry: any) => String(entry.module || '').toLowerCase() === 'room_booking')
+                    .forEach((entry: any) => {
+                        const key = String(entry.source_id || 'Unknown Room');
+                        if (!roomMap.has(key)) {
+                            roomMap.set(key, { name: `Room #${key}`, bookings: 0, totalCost: 0, paidAmount: 0, dueAmount: 0 });
+                        }
+                        const row = roomMap.get(key)!;
+                        row.paidAmount += Number(entry.paid_amount || 0);
+                        row.dueAmount += Number(entry.due_amount || 0);
+                        if (!row.totalCost) {
+                            row.totalCost += Number(entry.net_amount || 0);
+                        }
+                    });
+
+                chartData = Array.from(roomMap.values()).sort((a, b) => b.totalCost - a.totalCost);
+                break;
+            }
+
+            case 'surgeries': {
+                const surgeryMap = new Map<string, { name: string; doctorName: string; count: number; revenue: number; paidAmount: number; dueAmount: number }>();
+
+                patientSurgeries.forEach((item: any) => {
+                    const key = `${item?.surgery_id || 'unknown'}:${item?.doctor_id || 'unknown'}`;
+                    if (!surgeryMap.has(key)) {
+                        surgeryMap.set(key, {
+                            name: item?.surgery?.name || `Surgery ${item?.surgery_id || 'Unknown'}`,
+                            doctorName: item?.doctor?.name || 'Unknown Doctor',
+                            count: 0,
+                            revenue: 0,
+                            paidAmount: 0,
+                            dueAmount: 0,
+                        });
+                    }
+                    const row = surgeryMap.get(key)!;
+                    row.count += 1;
+                    row.revenue += Number(item.cost || 0);
+                    if (String(item.payment_status || '').toLowerCase() === 'paid') row.paidAmount += Number(item.cost || 0);
+                    else if (String(item.payment_status || '').toLowerCase() === 'partial') {
+                        row.paidAmount += Number(item.cost || 0) / 2;
+                        row.dueAmount += Number(item.cost || 0) / 2;
+                    } else {
+                        row.dueAmount += Number(item.cost || 0);
+                    }
+                });
+
+                ledgerEntries
+                    .filter((entry: any) => String(entry.module || '').toLowerCase() === 'surgery')
+                    .forEach((entry: any) => {
+                        const fallbackKey = `ledger:${entry.source_id || entry.id}`;
+                        if (!surgeryMap.has(fallbackKey)) {
+                            surgeryMap.set(fallbackKey, {
+                                name: entry.title || 'Surgery',
+                                doctorName: 'N/A',
+                                count: 1,
+                                revenue: Number(entry.net_amount || 0),
+                                paidAmount: Number(entry.paid_amount || 0),
+                                dueAmount: Number(entry.due_amount || 0),
+                            });
+                        }
+                    });
+
+                chartData = Array.from(surgeryMap.values()).sort((a, b) => b.revenue - a.revenue);
+                break;
+            }
+
+            case 'medicine': {
+                const medicineMap = new Map<string, { name: string; quantity: number; revenue: number; transactions: number }>();
+
+                filteredTransactions
+                    .filter((trx) => trx.trxType === 'sales')
+                    .forEach((trx) => {
+                        const details = trx.details || [];
+                        if (details.length === 0) {
+                            const fallbackName = trx.patientName ? `Prescription for ${trx.patientName}` : `Transaction #${trx.id}`;
+                            if (!medicineMap.has(fallbackName)) {
+                                medicineMap.set(fallbackName, { name: fallbackName, quantity: 0, revenue: 0, transactions: 0 });
+                            }
+                            const bucket = medicineMap.get(fallbackName)!;
+                            bucket.transactions += 1;
+                            bucket.revenue += Number(trx.grandTotal || 0);
+                            return;
+                        }
+
+                        details.forEach((d) => {
+                            const medName = d.medicineName || `Medicine ${d.medicineId || 'Unknown'}`;
+                            if (!medicineMap.has(medName)) {
+                                medicineMap.set(medName, { name: medName, quantity: 0, revenue: 0, transactions: 0 });
+                            }
+                            const bucket = medicineMap.get(medName)!;
+                            const qty = Number(d.qtty || 0) + Number(d.bonus || 0);
+                            const lineAmount = d.amount !== undefined ? Number(d.amount) : Number(d.price || 0) * Number(d.qtty || 0);
+                            bucket.quantity += qty;
+                            bucket.revenue += lineAmount;
+                            bucket.transactions += 1;
+                        });
+                    });
+
+                chartData = Array.from(medicineMap.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 30);
+                break;
+            }
 
       case 'lab':
         // By Lab Test Type or Status
@@ -407,19 +748,13 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         break;
 
       case 'hospital':
-        // Only if super admin or just show current hospital stats comparison (mocking other hospitals for demo)
-        if (userRole === 'super_admin' || true) { // Allow for demo
-            const hospMap = new Map();
-            mockHospitals.forEach(h => {
-                hospMap.set(h.id, { name: h.name, count: 0 });
-            });
-            // Use global mock data for this one view if allowed, otherwise just current
-            // For now, let's just show current hospital vs "Industry Average" (mock)
-            chartData = [
-                { name: hospital.name, count: prescriptions.length + labTests.length },
-                { name: 'City Average', count: 45 } // Mock
-            ];
-        }
+                chartData = [
+                    { name: 'Clinical Activity (Rx + Lab)', count: prescriptions.length + labTests.length },
+                    { name: 'Room Bookings', count: hospitalOpsStats.roomBookingsInRange },
+                    { name: 'Patient Surgeries', count: hospitalOpsStats.patientSurgeriesInRange },
+                    { name: 'Active Rooms', count: hospitalOpsStats.activeRooms },
+                    { name: 'Surgery Masters', count: hospitalOpsStats.totalSurgeries },
+                ];
         break;
 
       default:
@@ -428,9 +763,27 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
     setFilteredData(chartData);
 
-  }, [reportType, startDate, endDate, hospital.id, allLabTests, userRole]);
+        }, [
+            reportType,
+            startDate,
+            endDate,
+            hospital.id,
+            allLabTests,
+            userRole,
+            hospitalOpsStats,
+            doctors,
+            filteredAppointments,
+            patients,
+            roomBookings,
+            patientSurgeries,
+            ledgerEntries,
+            filteredTransactions,
+            moduleTotals,
+            selectedEntityId,
+        ]);
 
-  const handleExportPDF = () => {
+    const handleExportPDF = async () => {
+        const { jsPDF, autoTable } = await loadPdfTools();
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
@@ -469,12 +822,22 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     const cardWidth = (pageWidth - (margin * 2) - (gap * 3)) / 4;
     const cardHeight = 25;
 
-    const stats = [
-       { label: 'Prescriptions', value: summaryStats.totalPrescriptions.toString() },
-       { label: 'Lab Tests', value: summaryStats.totalLabTests.toString() },
-       { label: 'Patients', value: summaryStats.totalPatients.toString() },
-       { label: 'Revenue', value: summaryStats.totalRevenue.toFixed(2) },
-    ];
+        const stats = [
+             { label: 'Prescriptions', value: summaryStats.totalPrescriptions.toString() },
+             { label: 'Lab Tests', value: summaryStats.totalLabTests.toString() },
+             {
+                 label: reportType === 'hospital' ? 'Room Bookings' : 'Patients',
+                 value: reportType === 'hospital'
+                     ? hospitalOpsStats.roomBookingsInRange.toString()
+                     : summaryStats.totalPatients.toString(),
+             },
+             {
+                 label: reportType === 'hospital' ? 'Patient Surgeries' : 'Revenue',
+                 value: reportType === 'hospital'
+                     ? hospitalOpsStats.patientSurgeriesInRange.toString()
+                     : summaryStats.totalRevenue.toFixed(2),
+             },
+        ];
 
     stats.forEach((stat, index) => {
         const x = margin + (index * (cardWidth + gap));
@@ -505,17 +868,29 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         tableHead = ['Date', 'Prescriptions', 'Lab Tests', 'Total Activity'];
         tableBody = filteredData.map(row => [row.date, row.prescriptions, row.labTests, row.prescriptions + row.labTests]);
     } else if (reportType === 'doctor') {
-        tableHead = ['Doctor Name', 'Prescriptions', 'Lab Tests', 'Total'];
-        tableBody = filteredData.map(row => [row.name, row.prescriptions, row.labTests, row.prescriptions + row.labTests]);
+        tableHead = ['Doctor Name', 'Appointments', 'Surgeries', 'Revenue', 'Paid', 'Due'];
+        tableBody = filteredData.map(row => [row.name, row.appointments, row.surgeries, Number(row.revenue || 0).toFixed(2), Number(row.paid || 0).toFixed(2), Number(row.due || 0).toFixed(2)]);
     } else if (reportType === 'patient') {
          tableHead = ['Patient Name', 'Total Activity'];
          tableBody = filteredData.map(row => [row.name, row.activity]);
-    } else if (reportType === 'lab') {
+        } else if (reportType === 'lab') {
          tableHead = ['Test Type', 'Count'];
          tableBody = filteredData.map(row => [row.name, row.count]);
-    } else if (reportType === 'hospital') {
-         tableHead = ['Hospital Name', 'Count'];
-         tableBody = filteredData.map(row => [row.name, row.count]);
+        } else if (reportType === 'fees') {
+            tableHead = ['Category', 'Entries', 'Net', 'Paid', 'Due'];
+            tableBody = filteredData.map(row => [row.name, row.count, Number(row.netAmount || 0).toFixed(2), Number(row.paidAmount || 0).toFixed(2), Number(row.dueAmount || 0).toFixed(2)]);
+        } else if (reportType === 'room_fees') {
+            tableHead = ['Room', 'Bookings', 'Total Cost', 'Paid', 'Due'];
+            tableBody = filteredData.map(row => [row.name, row.bookings, Number(row.totalCost || 0).toFixed(2), Number(row.paidAmount || 0).toFixed(2), Number(row.dueAmount || 0).toFixed(2)]);
+        } else if (reportType === 'surgeries') {
+            tableHead = ['Surgery', 'Doctor', 'Count', 'Revenue', 'Paid', 'Due'];
+            tableBody = filteredData.map(row => [row.name, row.doctorName || 'N/A', row.count, Number(row.revenue || 0).toFixed(2), Number(row.paidAmount || 0).toFixed(2), Number(row.dueAmount || 0).toFixed(2)]);
+        } else if (reportType === 'medicine') {
+            tableHead = ['Medicine', 'Qty Sold', 'Revenue', 'Transactions'];
+            tableBody = filteredData.map(row => [row.name, row.quantity || 0, Number(row.revenue || 0).toFixed(2), row.transactions || 0]);
+        } else if (reportType === 'hospital') {
+            tableHead = ['Metric', 'Value'];
+            tableBody = filteredData.map(row => [row.name, row.count]);
     }
 
     autoTable(doc, {
@@ -575,6 +950,33 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         </div>
       </div>
 
+            {/* Analytics Tabs */}
+            <div className="bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {[
+                        { key: 'doctor', label: 'Doctor' },
+                        { key: 'patient', label: 'Patient' },
+                        { key: 'fees', label: 'Fee' },
+                        { key: 'room_fees', label: 'Room Fee' },
+                        { key: 'surgeries', label: 'Surgeries' },
+                        { key: 'medicine', label: 'Medicine' },
+                    ].map((tab) => (
+                        <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setReportType(tab.key as ReportType)}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                                reportType === tab.key
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:border-blue-400'
+                            }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
         <div className="flex flex-col md:flex-row gap-4 items-end md:items-center">
@@ -588,9 +990,13 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                     title="Report type"
                     className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 >
+                    <option value="doctor">Doctor Analysis</option>
+                    <option value="patient">Patient Analysis</option>
+                    <option value="fees">Fee Analysis</option>
+                    <option value="room_fees">Room Fee Analysis</option>
+                    <option value="surgeries">Surgery Analysis</option>
+                    <option value="medicine">Medicine Analysis</option>
                     <option value="date">Date Wise</option>
-                    <option value="doctor">Doctor Wise</option>
-                    <option value="patient">Patient Wise</option>
                     <option value="lab">Lab Test Wise</option>
                     {userRole === 'super_admin' && <option value="hospital">Hospital Wise</option>}
                     <option value="other">Other</option>
@@ -632,7 +1038,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                         className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="all">All Doctors</option>
-                        {mockDoctors.filter(d => d.hospitalId === hospital.id).map(d => (
+                        {(doctors.length > 0 ? doctors : mockDoctors).filter(d => String(d.hospitalId) === String(hospital.id)).map(d => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                     </select>
@@ -690,13 +1096,41 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 </div>
             </div>
         </div>
+
+                {reportType === 'hospital' && (
+                    <>
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">Active Rooms</p>
+                                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{hospitalOpsStats.activeRooms}</h3>
+                                </div>
+                                <div className="p-2 bg-cyan-100 dark:bg-cyan-900/20 rounded-lg">
+                                    <Building2 className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">Surgery Masters</p>
+                                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{hospitalOpsStats.totalSurgeries}</h3>
+                                </div>
+                                <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-lg">
+                                    <Activity className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
       </div>
 
             {/* Main Chart Area */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 capitalize">
-                {reportType === 'date' ? 'Activity Over Time' : `${reportType} Analysis`}
+                {reportType === 'date' ? 'Activity Over Time' : `${reportType.replace(/_/g, ' ')} Analysis`}
             </h3>
 
             <div className="h-[350px] w-full">
@@ -714,10 +1148,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                             <Line type="monotone" dataKey="labTests" stroke="#7c3aed" strokeWidth={2} name="Lab Tests" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                         </RechartsLineChart>
                     ) : (
-                        <RechartsBarChart data={filteredData} layout={reportType === 'doctor' || reportType === 'patient' ? "vertical" : "horizontal"}>
+                        <RechartsBarChart data={filteredData} layout={['doctor', 'patient', 'room_fees', 'surgeries', 'medicine'].includes(reportType) ? "vertical" : "horizontal"}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={true} vertical={false} />
-                            <XAxis type={reportType === 'doctor' || reportType === 'patient' ? "number" : "category"} dataKey={reportType === 'doctor' || reportType === 'patient' ? undefined : "name"} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis type={reportType === 'doctor' || reportType === 'patient' ? "category" : "number"} dataKey={reportType === 'doctor' || reportType === 'patient' ? "name" : undefined} width={100} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                            <XAxis type={['doctor', 'patient', 'room_fees', 'surgeries', 'medicine'].includes(reportType) ? "number" : "category"} dataKey={['doctor', 'patient', 'room_fees', 'surgeries', 'medicine'].includes(reportType) ? undefined : "name"} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis type={['doctor', 'patient', 'room_fees', 'surgeries', 'medicine'].includes(reportType) ? "category" : "number"} dataKey={['doctor', 'patient', 'room_fees', 'surgeries', 'medicine'].includes(reportType) ? "name" : undefined} width={130} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
                             <Tooltip
                                 cursor={{ fill: '#f3f4f6' }}
                                 contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
@@ -725,11 +1159,25 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                             <Legend />
                             {reportType === 'doctor' ? (
                                 <>
-                                 <Bar dataKey="prescriptions" fill="#2563eb" name="Prescriptions" radius={[0, 4, 4, 0]} barSize={20} stackId="a" />
-                                 <Bar dataKey="labTests" fill="#7c3aed" name="Lab Tests" radius={[0, 4, 4, 0]} barSize={20} stackId="a" />
+                                 <Bar dataKey="appointments" fill="#2563eb" name="Appointments" radius={[0, 4, 4, 0]} barSize={18} stackId="a" />
+                                 <Bar dataKey="surgeries" fill="#7c3aed" name="Surgeries" radius={[0, 4, 4, 0]} barSize={18} stackId="a" />
+                                 <Bar dataKey="revenue" fill="#f59e0b" name="Revenue" radius={[0, 4, 4, 0]} barSize={18} />
                                 </>
+                            ) : reportType === 'patient' ? (
+                                <>
+                                    <Bar dataKey="activity" fill="#2563eb" radius={[0, 4, 4, 0]} name="Visits" barSize={22} />
+                                    <Bar dataKey="revenue" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Revenue" barSize={22} />
+                                </>
+                            ) : reportType === 'fees' ? (
+                                <Bar dataKey="netAmount" fill="#2563eb" radius={[4, 4, 0, 0]} name="Net Amount" barSize={28} />
+                            ) : reportType === 'room_fees' ? (
+                                <Bar dataKey="totalCost" fill="#0ea5e9" radius={[0, 4, 4, 0]} name="Room Cost" barSize={22} />
+                            ) : reportType === 'surgeries' ? (
+                                <Bar dataKey="revenue" fill="#ef4444" radius={[0, 4, 4, 0]} name="Surgery Revenue" barSize={22} />
+                            ) : reportType === 'medicine' ? (
+                                <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} name="Medicine Revenue" barSize={22} />
                             ) : (
-                                <Bar dataKey={reportType === 'patient' ? "activity" : "count"} fill="#2563eb" radius={[4, 4, 0, 0]} name="Total Activity" barSize={32} />
+                                <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} name="Total Activity" barSize={32} />
                             )}
                         </RechartsBarChart>
                     )}
@@ -746,7 +1194,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                                                                 <Pie
                                                                         data={[
                                                                                 { name: 'Prescriptions', value: summaryStats.totalPrescriptions },
-                                                                                { name: 'Lab Tests', value: summaryStats.totalLabTests }
+                                                                        { name: 'Lab Tests', value: summaryStats.totalLabTests },
+                                                                        { name: 'Room Bookings', value: hospitalOpsStats.roomBookingsInRange },
+                                                                        { name: 'Patient Surgeries', value: hospitalOpsStats.patientSurgeriesInRange },
                                                                         ]}
                                                                         cx="50%"
                                                                         cy="50%"
@@ -758,13 +1208,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                                                                 >
                                                                         <Cell key="cell-0" fill="#2563eb" />
                                                                         <Cell key="cell-1" fill="#7c3aed" />
+                                                                    <Cell key="cell-2" fill="#0ea5e9" />
+                                                                    <Cell key="cell-3" fill="#f43f5e" />
                                                                 </Pie>
                                                                 <Tooltip />
                                                                 <Legend verticalAlign="bottom" height={36} />
                                                         </RechartsPieChart>
                                                 </ResponsiveContainer>
                                                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                                                        <span className="text-2xl font-bold text-gray-900 dark:text-white">{summaryStats.totalPrescriptions + summaryStats.totalLabTests}</span>
+                                                    <span className="text-2xl font-bold text-gray-900 dark:text-white">{summaryStats.totalPrescriptions + summaryStats.totalLabTests + hospitalOpsStats.roomBookingsInRange + hospitalOpsStats.patientSurgeriesInRange}</span>
                                                         <span className="block text-xs text-gray-500">Total Items</span>
                                                 </div>
                                         </div>
@@ -890,6 +1342,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Detailed Data</h3>
+            {analyticsLoading && <p className="text-xs text-gray-500 mt-1">Refreshing analytics data...</p>}
         </div>
         <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-gray-600 dark:text-gray-400">
@@ -906,15 +1359,55 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                         {reportType === 'doctor' && (
                             <>
                                 <th className="px-6 py-3">Doctor Name</th>
-                                <th className="px-6 py-3">Prescriptions</th>
-                                <th className="px-6 py-3">Lab Tests</th>
-                                <th className="px-6 py-3">Total</th>
+                                <th className="px-6 py-3">Appointments</th>
+                                <th className="px-6 py-3">Surgeries</th>
+                                <th className="px-6 py-3">Revenue</th>
                             </>
                         )}
                         {reportType === 'patient' && (
                             <>
                                 <th className="px-6 py-3">Patient Name</th>
-                                <th className="px-6 py-3">Total Activity</th>
+                                <th className="px-6 py-3">Visits</th>
+                                <th className="px-6 py-3">Surgeries</th>
+                                <th className="px-6 py-3">Revenue</th>
+                                <th className="px-6 py-3">Paid</th>
+                                <th className="px-6 py-3">Due</th>
+                            </>
+                        )}
+                        {reportType === 'fees' && (
+                            <>
+                                <th className="px-6 py-3">Category</th>
+                                <th className="px-6 py-3">Entries</th>
+                                <th className="px-6 py-3">Net</th>
+                                <th className="px-6 py-3">Paid</th>
+                                <th className="px-6 py-3">Due</th>
+                            </>
+                        )}
+                        {reportType === 'room_fees' && (
+                            <>
+                                <th className="px-6 py-3">Room</th>
+                                <th className="px-6 py-3">Bookings</th>
+                                <th className="px-6 py-3">Total Cost</th>
+                                <th className="px-6 py-3">Paid</th>
+                                <th className="px-6 py-3">Due</th>
+                            </>
+                        )}
+                        {reportType === 'surgeries' && (
+                            <>
+                                <th className="px-6 py-3">Surgery</th>
+                                <th className="px-6 py-3">Doctor</th>
+                                <th className="px-6 py-3">Count</th>
+                                <th className="px-6 py-3">Revenue</th>
+                                <th className="px-6 py-3">Paid</th>
+                                <th className="px-6 py-3">Due</th>
+                            </>
+                        )}
+                        {reportType === 'medicine' && (
+                            <>
+                                <th className="px-6 py-3">Medicine</th>
+                                <th className="px-6 py-3">Qty Sold</th>
+                                <th className="px-6 py-3">Revenue</th>
+                                <th className="px-6 py-3">Transactions</th>
                             </>
                         )}
                          {reportType === 'lab' && (
@@ -946,15 +1439,55 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                                 {reportType === 'doctor' && (
                                     <>
                                         <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
-                                        <td className="px-6 py-4">{row.prescriptions}</td>
-                                        <td className="px-6 py-4">{row.labTests}</td>
-                                        <td className="px-6 py-4 font-semibold">{row.prescriptions + row.labTests}</td>
+                                        <td className="px-6 py-4">{row.appointments}</td>
+                                        <td className="px-6 py-4">{row.surgeries}</td>
+                                        <td className="px-6 py-4 font-semibold">{Number(row.revenue || 0).toFixed(2)}</td>
                                     </>
                                 )}
                                 {reportType === 'patient' && (
                                     <>
                                         <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
-                                        <td className="px-6 py-4 font-semibold">{row.activity}</td>
+                                        <td className="px-6 py-4">{row.activity}</td>
+                                        <td className="px-6 py-4">{row.surgeries}</td>
+                                        <td className="px-6 py-4">{Number(row.revenue || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4">{Number(row.paid || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 font-semibold">{Number(row.due || 0).toFixed(2)}</td>
+                                    </>
+                                )}
+                                {reportType === 'fees' && (
+                                    <>
+                                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
+                                        <td className="px-6 py-4">{row.count}</td>
+                                        <td className="px-6 py-4">{Number(row.netAmount || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4">{Number(row.paidAmount || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 font-semibold">{Number(row.dueAmount || 0).toFixed(2)}</td>
+                                    </>
+                                )}
+                                {reportType === 'room_fees' && (
+                                    <>
+                                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
+                                        <td className="px-6 py-4">{row.bookings}</td>
+                                        <td className="px-6 py-4">{Number(row.totalCost || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4">{Number(row.paidAmount || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 font-semibold">{Number(row.dueAmount || 0).toFixed(2)}</td>
+                                    </>
+                                )}
+                                {reportType === 'surgeries' && (
+                                    <>
+                                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
+                                        <td className="px-6 py-4">{row.doctorName || 'N/A'}</td>
+                                        <td className="px-6 py-4">{row.count}</td>
+                                        <td className="px-6 py-4">{Number(row.revenue || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4">{Number(row.paidAmount || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 font-semibold">{Number(row.dueAmount || 0).toFixed(2)}</td>
+                                    </>
+                                )}
+                                {reportType === 'medicine' && (
+                                    <>
+                                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{row.name}</td>
+                                        <td className="px-6 py-4">{row.quantity || 0}</td>
+                                        <td className="px-6 py-4">{Number(row.revenue || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 font-semibold">{row.transactions || 0}</td>
                                     </>
                                 )}
                                 {reportType === 'lab' && (

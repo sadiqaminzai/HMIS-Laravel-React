@@ -67,7 +67,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true);
     try {
-      const { data } = await api.get('/doctors');
+      const { data } = await api.get('/doctors', { params: { per_page: 200 } });
       const records: any[] = data.data ?? data;
       setDoctors(records.map(mapDoctor));
     } catch (err: any) {
