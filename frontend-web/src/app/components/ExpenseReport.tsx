@@ -2,13 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Expense, Hospital, UserRole } from '../types';
 import { useExpenses } from '../context/ExpenseContext';
+import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 
 interface ExpenseReportProps {
   hospital: Hospital;
   userRole: UserRole;
 }
 
-export function ExpenseReport({ hospital }: ExpenseReportProps) {
+export function ExpenseReport({ hospital, userRole }: ExpenseReportProps) {
+  const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
   const { expenses } = useExpenses();
   const [statusFilter, setStatusFilter] = useState<'all' | Expense['status']>('all');
   const [startDate, setStartDate] = useState<string>('');
@@ -16,7 +18,7 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
 
   const filteredExpenses = useMemo(() => {
     return expenses
-      .filter((e) => e.hospitalId === hospital.id)
+      .filter((e) => selectedHospitalId === 'all' || String(e.hospitalId) === String(currentHospital.id))
       .filter((e) => (statusFilter === 'all' ? true : e.status === statusFilter))
       .filter((e) => {
         if (!startDate && !endDate) return true;
@@ -26,7 +28,7 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
         return true;
       })
       .sort((a, b) => b.expenseDate.getTime() - a.expenseDate.getTime());
-  }, [expenses, hospital.id, statusFilter, startDate, endDate]);
+  }, [expenses, currentHospital.id, selectedHospitalId, statusFilter, startDate, endDate]);
 
   const totalAmount = filteredExpenses.reduce((sum, item) => sum + (item.amount || 0), 0);
 
@@ -36,6 +38,12 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Expense Report</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">Filter and review expense approvals.</p>
       </div>
+
+      <HospitalSelector
+        userRole={userRole}
+        selectedHospitalId={selectedHospitalId}
+        onHospitalChange={setSelectedHospitalId}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-col md:flex-row gap-4 items-end">
@@ -96,7 +104,7 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredExpenses.map((expense) => (
                 <tr key={expense.id}>
-                  <td className="px-3 py-2">{hospital.code}-{expense.sequenceId}</td>
+                  <td className="px-3 py-2">{currentHospital.code}-{expense.sequenceId}</td>
                   <td className="px-3 py-2">{expense.title}</td>
                   <td className="px-3 py-2">{expense.category?.name || 'Category'}</td>
                   <td className="px-3 py-2">{expense.amount.toFixed(2)}</td>
