@@ -26,10 +26,21 @@ class Appointment extends Model
         'reason',
         'status',
         'notes',
+        'original_fee_amount',
+        'discount_enabled',
+        'discount_type_id',
+        'discount_amount',
+        'total_amount',
+        'currency',
+        'payment_status',
     ];
 
     protected $casts = [
         'appointment_date' => 'date',
+        'original_fee_amount' => 'decimal:2',
+        'discount_enabled' => 'boolean',
+        'discount_amount' => 'decimal:2',
+        'total_amount' => 'decimal:2',
     ];
 
 

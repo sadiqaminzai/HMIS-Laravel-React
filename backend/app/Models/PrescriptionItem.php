@@ -18,11 +18,17 @@ class PrescriptionItem extends Model
         'duration',
         'instruction',
         'quantity',
+        'reserved_quantity',
+        'dispensed_quantity',
+        'dispensed_at',
         'type',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'reserved_quantity' => 'integer',
+        'dispensed_quantity' => 'integer',
+        'dispensed_at' => 'datetime',
     ];
 
     public function prescription()

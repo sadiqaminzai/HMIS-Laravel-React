@@ -5,11 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\User;
+use App\Services\DiscountService;
+use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class AppointmentController extends Controller
 {
+    public function __construct(
+        private readonly DiscountService $discountService,
+        private readonly LedgerPostingService $ledgerPostingService
+    )
+    {
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -59,10 +68,12 @@ class AppointmentController extends Controller
             $query->whereDate('appointment_date', '<=', $request->date('date_to'));
         }
 
+        $perPage = max(1, min($request->integer('per_page', 25), 200));
+
         $appointments = $query
             ->orderBy('appointment_date', 'desc')
             ->orderBy('appointment_time')
-            ->get();
+            ->paginate($perPage);
 
         return response()->json($appointments);
     }
@@ -79,10 +90,12 @@ class AppointmentController extends Controller
 
         $this->syncDoctorHospital($data);
         $this->syncPatientSnapshot($data);
+        $this->applyFeeDiscountRules($data);
 
         $data['appointment_number'] = $data['appointment_number'] ?? null;
 
         $appointment = Appointment::create($data);
+        $this->ledgerPostingService->upsertAppointmentSnapshot($appointment);
 
         return response()->json($appointment->load(['hospital', 'doctor', 'patient']), 201);
     }
@@ -107,12 +120,19 @@ class AppointmentController extends Controller
 
         $this->syncDoctorHospital($data, $appointment);
         $this->syncPatientSnapshot($data);
+        $this->applyFeeDiscountRules($data);
 
         if (empty($data['appointment_number'])) {
             unset($data['appointment_number']);
         }
 
         $appointment->update($data);
+
+        if ((string) $appointment->status === 'cancelled') {
+            $this->ledgerPostingService->voidAppointmentSnapshot($appointment, $request->user()?->name);
+        } else {
+            $this->ledgerPostingService->upsertAppointmentSnapshot($appointment);
+        }
 
         return response()->json($appointment->fresh()->load(['hospital', 'doctor', 'patient']));
     }
@@ -123,6 +143,7 @@ class AppointmentController extends Controller
         $this->authorizeScope($request->user(), $appointment);
 
         $appointment->delete();
+        $this->ledgerPostingService->voidAppointmentSnapshot($appointment, $request->user()?->name);
 
         return response()->json(['message' => 'Appointment deleted']);
     }
@@ -153,7 +174,33 @@ class AppointmentController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
             'status' => ['required', 'in:scheduled,completed,cancelled,no_show'],
             'notes' => ['nullable', 'string'],
+            'original_fee_amount' => ['nullable', 'numeric', 'min:0'],
+            'discount_enabled' => ['nullable', 'boolean'],
+            'discount_type_id' => [
+                'nullable',
+                Rule::exists('discount_types', 'id')->where(fn ($q) => $hospitalId ? $q->where('hospital_id', $hospitalId) : $q),
+            ],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'total_amount' => ['nullable', 'numeric', 'min:0'],
+            'currency' => ['nullable', 'string', 'max:10'],
+            'payment_status' => ['nullable', 'in:pending,paid,partial,cancelled'],
         ]);
+    }
+
+    private function applyFeeDiscountRules(array &$data): void
+    {
+        $computed = $this->discountService->computeFeeTotals([
+            'original_fee_amount' => $data['original_fee_amount'] ?? 0,
+            'discount_enabled' => $data['discount_enabled'] ?? false,
+            'discount_amount' => $data['discount_amount'] ?? 0,
+        ]);
+
+        $data['original_fee_amount'] = $computed['original_fee_amount'];
+        $data['discount_amount'] = $computed['discount_amount'];
+        $data['total_amount'] = $computed['total_amount'];
+        $data['discount_enabled'] = (bool) ($data['discount_enabled'] ?? false);
+        $data['currency'] = $data['currency'] ?? 'AFN';
+        $data['payment_status'] = $data['payment_status'] ?? 'pending';
     }
 
     private function syncDoctorHospital(array &$data, ?Appointment $existing = null): void

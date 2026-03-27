@@ -29,7 +29,11 @@ class DoctorController extends Controller
             });
         }
 
-        $doctors = $query->orderBy('name')->get()->map(fn ($doctor) => $this->toDoctorShape($this->withMediaUrls($doctor)));
+        $perPage = max(1, min($request->integer('per_page', 25), 200));
+        $doctors = $query->orderBy('name')->paginate($perPage);
+        $doctors->setCollection(
+            $doctors->getCollection()->map(fn ($doctor) => $this->toDoctorShape($this->withMediaUrls($doctor)))
+        );
 
         return response()->json($doctors);
     }

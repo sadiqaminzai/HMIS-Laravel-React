@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Expense;
+use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -10,6 +11,10 @@ use Illuminate\Validation\Rule;
 
 class ExpenseController extends Controller
 {
+    public function __construct(private readonly LedgerPostingService $ledgerPostingService)
+    {
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -62,7 +67,11 @@ class ExpenseController extends Controller
                 $data['document_path'] = $request->file('document')->store('expenses', 'public');
             }
 
-            return Expense::create($data);
+            $expense = Expense::create($data);
+            $expense->load('category');
+            $this->ledgerPostingService->upsertExpenseSnapshot($expense);
+
+            return $expense;
         });
 
         return response()->json($expense->load('category'), 201);
@@ -96,6 +105,8 @@ class ExpenseController extends Controller
         }
 
         $expense->update($data);
+        $expense->load('category');
+        $this->ledgerPostingService->upsertExpenseSnapshot($expense);
 
         return response()->json($expense->fresh()->load('category'));
     }
@@ -104,7 +115,9 @@ class ExpenseController extends Controller
     {
         $this->authorizeScope($request->user(), $expense);
 
+        $actor = $request->user()->name ?? null;
         $expense->delete();
+        $this->ledgerPostingService->voidExpenseSnapshot($expense, $actor);
 
         return response()->json(['message' => 'Expense deleted']);
     }

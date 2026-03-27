@@ -9,6 +9,7 @@ use App\Models\TestTemplate;
 use App\Models\Patient;
 use App\Models\User;
 use App\Models\WalkInPatient;
+use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,10 @@ use Illuminate\Support\Facades\Validator;
 
 class LabOrderController extends Controller
 {
+    public function __construct(private readonly LedgerPostingService $ledgerPostingService)
+    {
+    }
+
     /**
      * List lab orders with filters
      */
@@ -213,6 +218,7 @@ class LabOrderController extends Controller
 
             // Update total amount
             $order->update(['total_amount' => $totalAmount]);
+            $this->ledgerPostingService->upsertLabOrderSnapshot($order);
 
             return response()->json([
                 'data' => tap($order->load(['items.results', 'patient', 'doctor']), function (LabOrder $loaded) {
@@ -305,6 +311,12 @@ class LabOrderController extends Controller
         $labOrder->updated_by = $request->user()?->name;
         $labOrder->save();
 
+        if ((string) $labOrder->status === 'cancelled') {
+            $this->ledgerPostingService->voidLabOrderSnapshot($labOrder, $request->user()?->name);
+        } else {
+            $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
+        }
+
         return response()->json([
             'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
             'message' => 'Lab order updated successfully'
@@ -335,6 +347,7 @@ class LabOrderController extends Controller
             'updated_by' => $request->user()?->name,
             'remarks' => $validator->validated()['reason'] ?? $labOrder->remarks,
         ]);
+        $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
 
         return response()->json([
             'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
@@ -374,6 +387,7 @@ class LabOrderController extends Controller
             'receipt_number' => $labOrder->receipt_number ?? ('RCP-' . $labOrder->order_number),
             'updated_by' => $request->user()?->name,
         ]);
+        $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
 
         return response()->json([
             'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
@@ -491,6 +505,7 @@ class LabOrderController extends Controller
             'remarks' => $request->get('reason', 'Cancelled'),
             'updated_by' => $request->user()?->name,
         ]);
+        $this->ledgerPostingService->voidLabOrderSnapshot($labOrder, $request->user()?->name);
 
         return response()->json([
             'data' => $labOrder,
@@ -504,6 +519,7 @@ class LabOrderController extends Controller
     public function destroy(LabOrder $labOrder)
     {
         $labOrder->delete();
+        $this->ledgerPostingService->voidLabOrderSnapshot($labOrder, request()->user()?->name);
         return response()->json(['message' => 'Lab order deleted']);
     }
 

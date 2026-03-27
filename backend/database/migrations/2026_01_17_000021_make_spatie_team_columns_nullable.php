@@ -8,6 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+        if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         if (Schema::hasTable('role_has_permissions')) {
             DB::statement('ALTER TABLE role_has_permissions MODIFY hospital_id BIGINT UNSIGNED NULL');
         }
@@ -23,6 +28,11 @@ return new class extends Migration
 
     public function down(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+        if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         if (Schema::hasTable('role_has_permissions')) {
             DB::statement('ALTER TABLE role_has_permissions MODIFY hospital_id BIGINT UNSIGNED NOT NULL');
         }

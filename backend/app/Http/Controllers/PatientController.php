@@ -54,7 +54,11 @@ class PatientController extends Controller
             });
         }
 
-        $patients = $query->orderBy('name')->get()->map(fn ($patient) => $this->withMediaUrls($patient));
+        $perPage = max(1, min($request->integer('per_page', 25), 200));
+        $patients = $query->orderBy('name')->paginate($perPage);
+        $patients->setCollection(
+            $patients->getCollection()->map(fn ($patient) => $this->withMediaUrls($patient))
+        );
 
         return response()->json($patients);
     }

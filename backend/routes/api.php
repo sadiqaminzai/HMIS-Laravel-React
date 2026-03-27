@@ -6,8 +6,11 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\DiscountTypeController;
 use App\Http\Controllers\HospitalSettingController;
 use App\Http\Controllers\LabOrderController;
+use App\Http\Controllers\LedgerController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\PatientController;
@@ -24,6 +27,11 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\RoomBookingController;
+use App\Http\Controllers\RoomController;
+use App\Http\Controllers\PatientSurgeryController;
+use App\Http\Controllers\SurgeryController;
+use App\Http\Controllers\SurgeryTypeController;
 use App\Http\Controllers\TestTemplateController;
 use App\Http\Controllers\ShifaaScriptController;
 use App\Http\Controllers\UserController;
@@ -68,6 +76,53 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('appointments', [AppointmentController::class, 'store'])->middleware('permission:add_appointments,schedule_appointments,manage_appointments');
 	Route::match(['PUT', 'PATCH'], 'appointments/{appointment}', [AppointmentController::class, 'update'])->middleware('permission:edit_appointments,manage_appointments,update_appointment_status');
 	Route::delete('appointments/{appointment}', [AppointmentController::class, 'destroy'])->middleware('permission:delete_appointments,manage_appointments');
+
+	// Discount catalog
+	Route::get('discount-types', [DiscountTypeController::class, 'index'])->middleware('permission:view_discounts,manage_discounts');
+	Route::get('discount-types/{discountType}', [DiscountTypeController::class, 'show'])->middleware('permission:view_discounts,manage_discounts');
+	Route::post('discount-types', [DiscountTypeController::class, 'store'])->middleware('permission:add_discounts,manage_discounts');
+	Route::match(['PUT', 'PATCH'], 'discount-types/{discountType}', [DiscountTypeController::class, 'update'])->middleware('permission:edit_discounts,manage_discounts');
+	Route::delete('discount-types/{discountType}', [DiscountTypeController::class, 'destroy'])->middleware('permission:delete_discounts,manage_discounts');
+
+	Route::get('discounts', [DiscountController::class, 'index'])->middleware('permission:view_discounts,manage_discounts');
+	Route::get('discounts/{discount}', [DiscountController::class, 'show'])->middleware('permission:view_discounts,manage_discounts');
+	Route::post('discounts', [DiscountController::class, 'store'])->middleware('permission:add_discounts,manage_discounts');
+	Route::match(['PUT', 'PATCH'], 'discounts/{discount}', [DiscountController::class, 'update'])->middleware('permission:edit_discounts,manage_discounts');
+	Route::delete('discounts/{discount}', [DiscountController::class, 'destroy'])->middleware('permission:delete_discounts,manage_discounts');
+
+	// Room management and booking
+	Route::get('rooms', [RoomController::class, 'index'])->middleware('permission:view_rooms,manage_rooms');
+	Route::get('rooms/{room}', [RoomController::class, 'show'])->middleware('permission:view_rooms,manage_rooms');
+	Route::post('rooms', [RoomController::class, 'store'])->middleware('permission:add_rooms,manage_rooms');
+	Route::match(['PUT', 'PATCH'], 'rooms/{room}', [RoomController::class, 'update'])->middleware('permission:edit_rooms,manage_rooms');
+	Route::delete('rooms/{room}', [RoomController::class, 'destroy'])->middleware('permission:delete_rooms,manage_rooms');
+
+	Route::get('room-bookings', [RoomBookingController::class, 'index'])->middleware('permission:view_room_bookings,manage_room_bookings');
+	Route::get('room-bookings/availability', [RoomBookingController::class, 'availability'])->middleware('permission:view_room_bookings,manage_room_bookings,add_room_bookings,edit_room_bookings');
+	Route::get('room-bookings/{roomBooking}', [RoomBookingController::class, 'show'])->middleware('permission:view_room_bookings,manage_room_bookings');
+	Route::post('room-bookings', [RoomBookingController::class, 'store'])->middleware('permission:add_room_bookings,manage_room_bookings');
+	Route::match(['PUT', 'PATCH'], 'room-bookings/{roomBooking}', [RoomBookingController::class, 'update'])->middleware('permission:edit_room_bookings,manage_room_bookings');
+	Route::delete('room-bookings/{roomBooking}', [RoomBookingController::class, 'destroy'])->middleware('permission:delete_room_bookings,manage_room_bookings');
+
+	// Surgery management
+	Route::get('surgery-types', [SurgeryTypeController::class, 'index'])->middleware('permission:view_surgery_types,manage_surgery_types');
+	Route::get('surgery-types/{surgeryType}', [SurgeryTypeController::class, 'show'])->middleware('permission:view_surgery_types,manage_surgery_types');
+	Route::post('surgery-types', [SurgeryTypeController::class, 'store'])->middleware('permission:add_surgery_types,manage_surgery_types');
+	Route::match(['PUT', 'PATCH'], 'surgery-types/{surgeryType}', [SurgeryTypeController::class, 'update'])->middleware('permission:edit_surgery_types,manage_surgery_types');
+	Route::delete('surgery-types/{surgeryType}', [SurgeryTypeController::class, 'destroy'])->middleware('permission:delete_surgery_types,manage_surgery_types');
+
+	Route::get('surgeries', [SurgeryController::class, 'index'])->middleware('permission:view_surgeries,manage_surgeries');
+	Route::get('surgeries/{surgery}', [SurgeryController::class, 'show'])->middleware('permission:view_surgeries,manage_surgeries');
+	Route::post('surgeries', [SurgeryController::class, 'store'])->middleware('permission:add_surgeries,manage_surgeries');
+	Route::match(['PUT', 'PATCH'], 'surgeries/{surgery}', [SurgeryController::class, 'update'])->middleware('permission:edit_surgeries,manage_surgeries');
+	Route::delete('surgeries/{surgery}', [SurgeryController::class, 'destroy'])->middleware('permission:delete_surgeries,manage_surgeries');
+
+	Route::get('patient-surgeries', [PatientSurgeryController::class, 'index'])->middleware('permission:view_patient_surgeries,manage_patient_surgeries');
+	Route::get('patient-surgeries/{patientSurgery}', [PatientSurgeryController::class, 'show'])->middleware('permission:view_patient_surgeries,manage_patient_surgeries');
+	Route::post('patient-surgeries', [PatientSurgeryController::class, 'store'])->middleware('permission:add_patient_surgeries,manage_patient_surgeries');
+	Route::match(['PUT', 'PATCH'], 'patient-surgeries/{patientSurgery}', [PatientSurgeryController::class, 'update'])->middleware('permission:edit_patient_surgeries,manage_patient_surgeries');
+	Route::post('patient-surgeries/{patientSurgery}/toggle-payment-status', [PatientSurgeryController::class, 'togglePaymentStatus'])->middleware('permission:edit_patient_surgeries,manage_patient_surgeries');
+	Route::delete('patient-surgeries/{patientSurgery}', [PatientSurgeryController::class, 'destroy'])->middleware('permission:delete_patient_surgeries,manage_patient_surgeries');
 
 	Route::get('manufacturers', [ManufacturerController::class, 'index'])->middleware('permission:view_manufacturers,manage_manufacturers');
 	Route::get('manufacturers/{manufacturer}', [ManufacturerController::class, 'show'])->middleware('permission:view_manufacturers,manage_manufacturers');
@@ -116,6 +171,11 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::match(['PUT', 'PATCH'], 'transactions/{transaction}', [TransactionController::class, 'update'])->middleware('permission:edit_transactions,manage_transactions');
 	Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])->middleware('permission:delete_transactions,manage_transactions');
 
+	// Ledger & finance summary
+	Route::get('ledger', [LedgerController::class, 'index'])->middleware('permission:view_ledger,manage_ledger');
+	Route::get('ledger/summary', [LedgerController::class, 'summary'])->middleware('permission:view_ledger,manage_ledger');
+	Route::get('ledger/export', [LedgerController::class, 'export'])->middleware('permission:export_ledger,manage_ledger');
+
 	// Stocks (read-only)
 	Route::get('stocks', [StockController::class, 'index'])->middleware('permission:view_stocks,manage_stocks');
 	Route::get('stocks/{stock}', [StockController::class, 'show'])->middleware('permission:view_stocks,manage_stocks');
@@ -128,6 +188,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('prescriptions', [PrescriptionController::class, 'store'])->middleware('permission:add_prescriptions,manage_prescriptions,create_prescription');
 	Route::match(['PUT', 'PATCH'], 'prescriptions/{prescription}', [PrescriptionController::class, 'update'])->middleware('permission:edit_prescriptions,manage_prescriptions');
 	Route::delete('prescriptions/{prescription}', [PrescriptionController::class, 'destroy'])->middleware('permission:delete_prescriptions,manage_prescriptions');
+	Route::post('prescriptions/{prescription}/dispense', [PrescriptionController::class, 'dispense'])->middleware('permission:dispense_medicines,manage_prescriptions,manage_transactions');
 	Route::get('prescriptions/{prescription}/item-groups', [PrescriptionItemGroupController::class, 'show'])->middleware('permission_or_doctor:view_prescriptions,manage_prescriptions,create_prescription');
 	Route::put('prescriptions/{prescription}/item-groups', [PrescriptionItemGroupController::class, 'sync'])->middleware('permission_or_doctor:edit_prescriptions,add_prescriptions,manage_prescriptions,create_prescription');
 

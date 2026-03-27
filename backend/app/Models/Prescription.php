@@ -32,12 +32,17 @@ class Prescription extends Model
         'status',
         'created_by',
         'verification_token',
+        'dispensed_at',
+        'dispensed_by',
+        'dispensing_transaction_id',
     ];
 
     protected $casts = [
         'patient_age' => 'integer',
         'is_walk_in' => 'boolean',
         'next_visit' => 'date',
+        'dispensed_at' => 'datetime',
+        'dispensing_transaction_id' => 'integer',
     ];
 
     protected static function booted()

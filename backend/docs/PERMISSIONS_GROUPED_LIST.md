@@ -15,20 +15,36 @@
 ## Finance
 - add_expense_categories
 - add_expenses
+- add_discounts
 - delete_expense_categories
 - delete_expenses
+- delete_discounts
 - edit_expense_categories
 - edit_expenses
+- edit_discounts
 - export_expense_categories
 - export_expenses
+- export_discounts
 - import_expense_categories
 - import_expenses
+- import_discounts
 - manage_expense_categories
 - manage_expenses
+- manage_discounts
 - print_expense_categories
+- add_ledger
+- delete_ledger
+- edit_ledger
+- export_ledger
+- import_ledger
+- manage_ledger
+- print_ledger
+- view_ledger
 - print_expenses
+- print_discounts
 - view_expense_categories
 - view_expenses
+- view_discounts
 
 ## Hospitals
 - add_hospitals
@@ -184,6 +200,50 @@
 - manage_reports
 - print_reports
 - view_reports
+
+## Room Management
+- add_rooms
+- delete_rooms
+- edit_rooms
+- export_rooms
+- import_rooms
+- manage_rooms
+- print_rooms
+- view_rooms
+- add_room_bookings
+- delete_room_bookings
+- edit_room_bookings
+- export_room_bookings
+- import_room_bookings
+- manage_room_bookings
+- print_room_bookings
+- view_room_bookings
+
+## Surgery Management
+- add_surgery_types
+- delete_surgery_types
+- edit_surgery_types
+- export_surgery_types
+- import_surgery_types
+- manage_surgery_types
+- print_surgery_types
+- view_surgery_types
+- add_surgeries
+- delete_surgeries
+- edit_surgeries
+- export_surgeries
+- import_surgeries
+- manage_surgeries
+- print_surgeries
+- view_surgeries
+- add_patient_surgeries
+- delete_patient_surgeries
+- edit_patient_surgeries
+- export_patient_surgeries
+- import_patient_surgeries
+- manage_patient_surgeries
+- print_patient_surgeries
+- view_patient_surgeries
 
 ## Settings
 - add_backups

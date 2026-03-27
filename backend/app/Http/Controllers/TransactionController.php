@@ -8,6 +8,7 @@ use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Transaction;
+use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -15,6 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
+    public function __construct(private readonly LedgerPostingService $ledgerPostingService)
+    {
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -31,7 +36,9 @@ class TransactionController extends Controller
             $query->where('trx_type', $request->string('trx_type'));
         }
 
-        return response()->json($query->orderByDesc('created_at')->get());
+        $perPage = max(1, min($request->integer('per_page', 25), 200));
+
+        return response()->json($query->orderByDesc('created_at')->paginate($perPage));
     }
 
     public function store(Request $request)
@@ -46,15 +53,17 @@ class TransactionController extends Controller
 
         $this->ensurePartyConsistency($data);
         $this->fillPartyNames($data);
-        $this->ensureStockAvailable(
-            (int) ($data['hospital_id'] ?? $request->user()->hospital_id),
-            (string) ($data['trx_type'] ?? ''),
-            $data['items'] ?? []
-        );
 
         $transaction = DB::transaction(function () use ($data, $request) {
             $items = $data['items'] ?? [];
             unset($data['items']);
+
+            $this->ensureStockAvailable(
+                (int) ($data['hospital_id'] ?? $request->user()->hospital_id),
+                (string) ($data['trx_type'] ?? ''),
+                $items,
+                true
+            );
 
             $data['created_by'] = $data['created_by'] ?? ($request->user()->name ?? null);
             $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
@@ -86,7 +95,10 @@ class TransactionController extends Controller
                 );
             }
 
-            return $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
+
+            return $transaction;
         });
 
         return response()->json($transaction, 201);
@@ -153,7 +165,8 @@ class TransactionController extends Controller
             $this->ensureStockAvailable(
                 (int) $transaction->hospital_id,
                 (string) ($data['trx_type'] ?? $transaction->trx_type),
-                $items
+                $items,
+                true
             );
 
             $transaction->details()->delete();
@@ -176,7 +189,10 @@ class TransactionController extends Controller
                 );
             }
 
-            return $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
+
+            return $transaction;
         });
 
         return response()->json($transaction);
@@ -211,6 +227,7 @@ class TransactionController extends Controller
             }
 
             $transaction->delete();
+            $this->ledgerPostingService->voidTransactionSnapshot($transaction, $actor);
         });
 
         return response()->json(['message' => 'Transaction deleted']);
@@ -253,7 +270,7 @@ class TransactionController extends Controller
         ]);
     }
 
-    private function ensureStockAvailable(int $hospitalId, string $trxType, array $items): void
+    private function ensureStockAvailable(int $hospitalId, string $trxType, array $items, bool $lockRows = false): void
     {
         if (!in_array($trxType, ['sales', 'purchase_return'], true)) {
             return;
@@ -287,7 +304,23 @@ class TransactionController extends Controller
                 $query->where('batch_no', $batchNo);
             }
 
-            $available = (int) $query->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+            if ($trxType === 'sales') {
+                $today = now()->toDateString();
+                $query->where(function ($q) use ($today) {
+                    $q->whereNull('expiry_date')
+                        ->orWhere('expiry_date', '>=', $today);
+                });
+            }
+
+            if ($lockRows) {
+                $stocks = $query->lockForUpdate()->get(['stock_qty', 'bonus_qty']);
+                $available = (int) $stocks->reduce(function (int $sum, Stock $stock) {
+                    return $sum + (int) $stock->stock_qty + (int) ($stock->bonus_qty ?? 0);
+                }, 0);
+            } else {
+                $available = (int) $query->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+            }
+
             if ($available < $required) {
                 $medicine = Medicine::find($medicineId);
                 $name = $medicine?->brand_name ?? 'Medicine';
@@ -406,11 +439,22 @@ class TransactionController extends Controller
         }
 
         $batchNo = $item['batch_no'] ?? null;
-        $stock = Stock::firstOrNew([
-            'hospital_id' => $hospitalId,
-            'medicine_id' => $medicineId,
-            'batch_no' => $batchNo,
-        ]);
+        $stock = Stock::query()
+            ->where('hospital_id', $hospitalId)
+            ->where('medicine_id', $medicineId)
+            ->where('batch_no', $batchNo)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$stock) {
+            $stock = new Stock([
+                'hospital_id' => $hospitalId,
+                'medicine_id' => $medicineId,
+                'batch_no' => $batchNo,
+                'stock_qty' => 0,
+                'bonus_qty' => 0,
+            ]);
+        }
 
         if ($expiryDate && (!$stock->expiry_date || (string) $stock->expiry_date !== (string) $expiryDate)) {
             $stock->expiry_date = $expiryDate;
@@ -422,13 +466,33 @@ class TransactionController extends Controller
             $stock->sale_price = $price;
         }
 
-        $stock->stock_qty = max(0, ((int) $stock->stock_qty) + $qtyDelta);
-        $stock->bonus_qty = max(0, ((int) ($stock->bonus_qty ?? 0)) + $bonusDelta);
+        $nextStockQty = ((int) $stock->stock_qty) + $qtyDelta;
+        $nextBonusQty = ((int) ($stock->bonus_qty ?? 0)) + $bonusDelta;
+
+        if ($nextStockQty < 0 || $nextBonusQty < 0) {
+            $medicine = Medicine::find($medicineId);
+            $name = $medicine?->brand_name ?? 'Medicine';
+            $batchLabel = $batchNo ? " (Batch: {$batchNo})" : '';
+
+            throw ValidationException::withMessages([
+                'items' => "Insufficient stock for {$name}{$batchLabel} during stock update.",
+            ]);
+        }
+
+        $stock->stock_qty = $nextStockQty;
+        $stock->bonus_qty = $nextBonusQty;
         $stock->save();
 
-        $medicine = Medicine::find($medicineId);
+        $medicine = Medicine::query()->whereKey($medicineId)->lockForUpdate()->first();
         if ($medicine) {
-            $medicine->stock = max(0, ((int) $medicine->stock) + ($qtyDelta + $bonusDelta));
+            $nextMedicineStock = ((int) $medicine->stock) + ($qtyDelta + $bonusDelta);
+            if ($nextMedicineStock < 0) {
+                throw ValidationException::withMessages([
+                    'items' => "Insufficient aggregate stock for {$medicine->brand_name} during stock update.",
+                ]);
+            }
+
+            $medicine->stock = $nextMedicineStock;
             $medicine->save();
         }
 

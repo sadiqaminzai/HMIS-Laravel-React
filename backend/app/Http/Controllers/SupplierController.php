@@ -29,7 +29,9 @@ class SupplierController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('name')->get());
+        $perPage = max(1, min($request->integer('per_page', 25), 200));
+
+        return response()->json($query->orderBy('name')->paginate($perPage));
     }
 
     public function store(Request $request)

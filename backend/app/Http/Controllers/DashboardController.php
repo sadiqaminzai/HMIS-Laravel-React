@@ -10,7 +10,11 @@ use App\Models\Manufacturer;
 use App\Models\Medicine;
 use App\Models\MedicineType;
 use App\Models\Patient;
+use App\Models\PatientSurgery;
 use App\Models\Prescription;
+use App\Models\Room;
+use App\Models\RoomBooking;
+use App\Models\Surgery;
 use App\Models\TestTemplate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -56,6 +60,19 @@ class DashboardController extends Controller
             'manufacturers' => Manufacturer::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
             'medicine_types' => MedicineType::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
             'test_templates' => TestTemplate::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
+            'rooms' => Room::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where('is_delete', false)
+                ->count(),
+            'active_rooms' => Room::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where('is_delete', false)
+                ->where('is_active', true)
+                ->count(),
+            'surgeries' => Surgery::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where('is_delete', false)
+                ->count(),
             'lab_orders_today' => LabOrder::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->whereDate('created_at', Carbon::today())
@@ -63,6 +80,16 @@ class DashboardController extends Controller
             'appointments_today' => Appointment::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->whereDate('appointment_date', Carbon::today())
+                ->count(),
+            'room_bookings_today' => RoomBooking::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where('is_delete', false)
+                ->whereDate('check_in_date', Carbon::today())
+                ->count(),
+            'patient_surgeries_today' => PatientSurgery::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where('is_delete', false)
+                ->whereDate('surgery_date', Carbon::today())
                 ->count(),
         ];
 
@@ -85,6 +112,16 @@ class DashboardController extends Controller
                 'appointments' => Appointment::query()
                     ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                     ->whereBetween('appointment_date', [$monthStart, $monthEnd])
+                    ->count(),
+                'room_bookings' => RoomBooking::query()
+                    ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                    ->where('is_delete', false)
+                    ->whereBetween('check_in_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                    ->count(),
+                'patient_surgeries' => PatientSurgery::query()
+                    ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                    ->where('is_delete', false)
+                    ->whereBetween('surgery_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                     ->count(),
             ];
         }
