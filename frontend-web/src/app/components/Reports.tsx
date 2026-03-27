@@ -38,6 +38,7 @@ import { listLedger } from '../../api/ledger';
 import { listRoomBookings } from '../../api/rooms';
 import { listPatientSurgeries } from '../../api/surgeries';
 import api from '../../api/axios';
+import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 
 let cachedPdfTools: {
     jsPDF: any;
@@ -201,6 +202,17 @@ type ReportType =
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 export function Reports({ hospital, userRole }: ReportsProps) {
+    const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
+
+    // Helper to build the API hospital scope parameter
+    const apiHospitalScope = userRole === 'super_admin' && selectedHospitalId !== 'all'
+        ? { hospital_id: selectedHospitalId }
+        : {};
+
+    // Helper predicate: returns true if the item belongs to the currently selected hospital
+    const matchesSelectedHospital = (itemHospitalId: string | number | undefined) =>
+        selectedHospitalId === 'all' || String(itemHospitalId) === String(currentHospital.id);
+
     const { transactions } = useTransactions();
     const { suppliers } = useSuppliers();
     const { patients } = usePatients();
@@ -233,7 +245,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     });
 
   // Mock Data Aggregation
-  const allLabTests = useMemo(() => generateMockLabTests(hospital.id), [hospital.id]);
+  const allLabTests = useMemo(() => generateMockLabTests(currentHospital.id), [currentHospital.id]);
     const getSupplierName = (id?: string) => suppliers.find((s) => s.id === id)?.name || '';
     const getPatientName = (id?: string) => patients.find((p) => p.id === id)?.name || '';
 
@@ -241,7 +253,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         const start = startOfDay(parseISO(startDate));
         const end = endOfDay(parseISO(endDate));
         return transactions
-            .filter((t) => String(t.hospitalId) === String(hospital.id))
+            .filter((t) => matchesSelectedHospital(t.hospitalId))
             .filter((t) => {
                 if (trxTypeFilter !== 'all' && t.trxType !== trxTypeFilter) return false;
                 const created = t.createdAt ? new Date(t.createdAt) : null;
@@ -249,19 +261,19 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 return isWithinInterval(created, { start, end });
             })
             .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
-    }, [transactions, hospital.id, startDate, endDate, trxTypeFilter]);
+    }, [transactions, currentHospital.id, selectedHospitalId, startDate, endDate, trxTypeFilter]);
 
     const filteredAppointments = useMemo(() => {
         const start = startOfDay(parseISO(startDate));
         const end = endOfDay(parseISO(endDate));
 
         return appointments.filter((apt) => {
-            if (String(apt.hospitalId) !== String(hospital.id)) return false;
+            if (!matchesSelectedHospital(apt.hospitalId)) return false;
             const dateCandidate = apt.appointmentDate ? new Date(apt.appointmentDate) : apt.createdAt ? new Date(apt.createdAt) : null;
             if (!dateCandidate || Number.isNaN(dateCandidate.getTime())) return false;
             return isWithinInterval(dateCandidate, { start, end });
         });
-    }, [appointments, endDate, hospital.id, startDate]);
+    }, [appointments, endDate, currentHospital.id, selectedHospitalId, startDate]);
 
     const moduleTotals = useMemo(() => {
         const seeded = new Map<string, { name: string; count: number; net: number; paid: number; due: number }>();
@@ -299,11 +311,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         const loadAnalyticsSources = async () => {
             setAnalyticsLoading(true);
             try {
-                const scope = userRole === 'super_admin' ? { hospital_id: hospital.id } : {};
                 const [bookingRes, surgeryRes, ledgerRes] = await Promise.all([
-                    listRoomBookings({ ...scope, date_from: startDate, date_to: endDate, per_page: 300 }),
-                    listPatientSurgeries({ ...scope, date_from: startDate, date_to: endDate, per_page: 300 }),
-                    listLedger({ ...scope, date_from: startDate, date_to: endDate, per_page: 500 }),
+                    listRoomBookings({ ...apiHospitalScope, date_from: startDate, date_to: endDate, per_page: 300 }),
+                    listPatientSurgeries({ ...apiHospitalScope, date_from: startDate, date_to: endDate, per_page: 300 }),
+                    listLedger({ ...apiHospitalScope, date_from: startDate, date_to: endDate, per_page: 500 }),
                 ]);
 
                 setRoomBookings(bookingRes.data ?? []);
@@ -319,7 +330,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         };
 
         loadAnalyticsSources();
-    }, [endDate, hospital.id, startDate, userRole]);
+    }, [endDate, selectedHospitalId, startDate, userRole]);
 
     const transactionTotals = useMemo(() => {
         return filteredTransactions.reduce(
@@ -451,14 +462,12 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     useEffect(() => {
         const loadHospitalOperationalStats = async () => {
             try {
-                const hospitalScope = userRole === 'super_admin' ? { hospital_id: hospital.id } : {};
-
                 const [roomsRes, activeRoomsRes, surgeriesRes, roomBookingsRes, patientSurgeriesRes] = await Promise.all([
-                    api.get('/rooms', { params: { per_page: 1, ...hospitalScope } }),
-                    api.get('/rooms', { params: { per_page: 1, is_active: 1, ...hospitalScope } }),
-                    api.get('/surgeries', { params: { per_page: 1, ...hospitalScope } }),
-                    api.get('/room-bookings', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...hospitalScope } }),
-                    api.get('/patient-surgeries', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...hospitalScope } }),
+                    api.get('/rooms', { params: { per_page: 1, ...apiHospitalScope } }),
+                    api.get('/rooms', { params: { per_page: 1, is_active: 1, ...apiHospitalScope } }),
+                    api.get('/surgeries', { params: { per_page: 1, ...apiHospitalScope } }),
+                    api.get('/room-bookings', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...apiHospitalScope } }),
+                    api.get('/patient-surgeries', { params: { per_page: 1, date_from: startDate, date_to: endDate, ...apiHospitalScope } }),
                 ]);
 
                 setHospitalOpsStats({
@@ -480,7 +489,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         };
 
         loadHospitalOperationalStats();
-    }, [endDate, hospital.id, startDate, userRole]);
+    }, [endDate, selectedHospitalId, startDate, userRole]);
 
   useEffect(() => {
     // Filter logic based on Date Range and Report Type
@@ -491,12 +500,12 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
     // Filter Prescriptions
     const prescriptions = mockPrescriptions.filter(p =>
-      p.hospitalId === hospital.id && isInRange(new Date(p.createdAt))
+      matchesSelectedHospital(p.hospitalId) && isInRange(new Date(p.createdAt))
     );
 
     // Filter Lab Tests
     const labTests = allLabTests.filter(lt =>
-      lt.hospitalId === hospital.id && isInRange(new Date(lt.createdAt))
+      matchesSelectedHospital(lt.hospitalId) && isInRange(new Date(lt.createdAt))
     );
 
     // Calculate Summary Stats
@@ -528,7 +537,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         break;
 
             case 'doctor': {
-                const doctorSource = doctors.length > 0 ? doctors.filter((d) => String(d.hospitalId) === String(hospital.id)) : mockDoctors.filter((d) => String(d.hospitalId) === String(hospital.id));
+                const doctorSource = doctors.length > 0
+                    ? doctors.filter((d) => matchesSelectedHospital(d.hospitalId))
+                    : mockDoctors.filter((d) => matchesSelectedHospital(d.hospitalId));
                 const docMap = new Map<string, { id: string; name: string; appointments: number; surgeries: number; revenue: number; paid: number; due: number }>();
                 doctorSource.forEach((doc) => {
                     docMap.set(String(doc.id), { id: String(doc.id), name: doc.name, appointments: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 });
@@ -571,7 +582,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                 const patMap = new Map<string, { name: string; activity: number; surgeries: number; revenue: number; paid: number; due: number }>();
 
                 patients
-                    .filter((p) => String(p.hospitalId) === String(hospital.id))
+                    .filter((p) => matchesSelectedHospital(p.hospitalId))
                     .forEach((p) => patMap.set(String(p.id), { name: p.name, activity: 0, surgeries: 0, revenue: 0, paid: 0, due: 0 }));
 
                 filteredAppointments.forEach((apt) => {
@@ -767,7 +778,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             reportType,
             startDate,
             endDate,
-            hospital.id,
+            currentHospital.id,
+            selectedHospitalId,
             allLabTests,
             userRole,
             hospitalOpsStats,
@@ -797,7 +809,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
-    doc.text(hospital.name, 14, 20);
+    doc.text(currentHospital.name, 14, 20);
 
     // Report Title (White, smaller)
     doc.setFontSize(14);
@@ -936,10 +948,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reports & Analytics</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Generate and analyze reports for {hospital.name}
+            Generate and analyze reports for {currentHospital.name}
           </p>
         </div>
         <div className="flex items-center gap-2">
+           <HospitalSelector
+             userRole={userRole}
+             selectedHospitalId={selectedHospitalId}
+             onHospitalChange={setSelectedHospitalId}
+           />
            <button
              onClick={handleExportPDF}
              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1038,7 +1055,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                         className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="all">All Doctors</option>
-                        {(doctors.length > 0 ? doctors : mockDoctors).filter(d => String(d.hospitalId) === String(hospital.id)).map(d => (
+                        {(doctors.length > 0 ? doctors : mockDoctors).filter(d => matchesSelectedHospital(d.hospitalId)).map(d => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                     </select>

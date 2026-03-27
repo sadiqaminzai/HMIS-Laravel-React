@@ -3,6 +3,7 @@ import { BarChart3, CircleDollarSign, Download, HandCoins, Search } from 'lucide
 import { toast } from 'sonner';
 import { exportLedger, getLedgerSummary, LedgerEntryApi, listLedger } from '../../api/ledger';
 import { Hospital, UserRole } from '../types';
+import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 
 interface LedgerReportProps {
   hospital: Hospital;
@@ -17,6 +18,8 @@ const money = (value: number | string) => {
 };
 
 export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
+  const { selectedHospitalId, setSelectedHospitalId } = useHospitalFilter(hospital, userRole);
+
   const [entries, setEntries] = useState<LedgerEntryApi[]>([]);
   const [loading, setLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -44,8 +47,8 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
       per_page: perPage,
     };
 
-    if (userRole === 'super_admin') {
-      params.hospital_id = hospital.id;
+    if (userRole === 'super_admin' && selectedHospitalId !== 'all') {
+      params.hospital_id = selectedHospitalId;
     }
     if (query.trim()) {
       params.search = query.trim();
@@ -67,7 +70,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
     }
 
     return params;
-  }, [directionFilter, endDate, hospital.id, moduleFilter, perPage, query, startDate, statusFilter, userRole]);
+  }, [directionFilter, endDate, moduleFilter, perPage, query, selectedHospitalId, startDate, statusFilter, userRole]);
 
   useEffect(() => {
     const run = async () => {
@@ -136,6 +139,12 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ledger & Financial Reporting</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">Unified income/expense ledger from transactions and expenses.</p>
       </div>
+
+      <HospitalSelector
+        userRole={userRole}
+        selectedHospitalId={selectedHospitalId}
+        onHospitalChange={(id) => { setSelectedHospitalId(id); setPage(1); }}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-900/20 p-4">
