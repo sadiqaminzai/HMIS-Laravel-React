@@ -23,6 +23,7 @@ const mapMedicine = (m: any): Medicine => ({
   brandName: m.brand_name ?? '',
   genericName: m.generic_name ?? '',
   strength: m.strength ?? '',
+  barcode: m.barcode ?? undefined,
   type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
   stock: m.stock !== undefined && m.stock !== null ? Number(m.stock) : undefined,
   costPrice: m.cost_price !== undefined && m.cost_price !== null ? Number(m.cost_price) : undefined,
@@ -88,6 +89,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     if (payload.brandName) body.brand_name = payload.brandName;
     if (payload.genericName !== undefined) body.generic_name = payload.genericName;
     if (payload.strength !== undefined) body.strength = payload.strength;
+    if (payload.barcode !== undefined) body.barcode = payload.barcode || null;
     if (payload.stock !== undefined) body.stock = payload.stock;
     if (payload.costPrice !== undefined) body.cost_price = payload.costPrice;
     if (payload.salePrice !== undefined) body.sale_price = payload.salePrice;

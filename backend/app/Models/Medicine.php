@@ -21,6 +21,7 @@ class Medicine extends Model
         'brand_name',
         'generic_name',
         'strength',
+        'barcode',
         'stock',
         'cost_price',
         'sale_price',

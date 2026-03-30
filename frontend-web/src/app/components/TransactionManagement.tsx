@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, ScanBarcode } from 'lucide-react';
 import { Hospital, Patient, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -118,6 +118,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [medicineQueries, setMedicineQueries] = useState<Record<number, string>>({});
   const [openSupplierDropdown, setOpenSupplierDropdown] = useState(false);
   const [openPatientDropdown, setOpenPatientDropdown] = useState(false);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const scannerInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState(() => buildInitialFormData(currentHospital.id));
 
@@ -307,6 +309,66 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return type === 'purchase' || type === 'purchase_return' ? (med.costPrice ?? 0) : (med.salePrice ?? 0);
   };
 
+  const handleBarcodeScan = (rawValue: string) => {
+    const barcode = rawValue.trim();
+    if (!barcode) return;
+
+    const scoped = medicines.filter((m) => String(m.hospitalId) === String(formData.hospitalId));
+    const matched = scoped.find((m) => m.barcode && m.barcode === barcode);
+
+    if (!matched) {
+      toast.error(`No medicine found for barcode: ${barcode}`);
+      setBarcodeInput('');
+      return;
+    }
+
+    // Check if the medicine is already in the items list — if so, increment qty
+    const existingIndex = formData.items.findIndex(
+      (item) => item.medicineId === matched.id
+    );
+
+    if (existingIndex !== -1) {
+      setFormData((prev) => {
+        const next = [...prev.items];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          qtty: Number(next[existingIndex].qtty || 0) + 1,
+        };
+        return { ...prev, items: next };
+      });
+      toast.success(`Qty updated: ${matched.brandName}`);
+    } else {
+      // Add a new row with this medicine
+      const price = getMedicinePrice(matched.id, formData.trxType);
+      const preferred = getPreferredBatchForMedicine(matched.id);
+      const batchNo = preferred?.batchNo || '';
+      const expiryDate = preferred?.expiryDate || getNearestExpiryForMedicine(matched.id);
+      const display = getMedicineDisplay(matched.id);
+
+      const newItem: TransactionDetail = {
+        ...emptyItem(),
+        medicineId: matched.id,
+        price,
+        batchNo,
+        expiryDate,
+      };
+
+      // If the only item is empty, replace it; otherwise append
+      setFormData((prev) => {
+        const hasOnlyEmpty = prev.items.length === 1 && !prev.items[0].medicineId;
+        const nextItems = hasOnlyEmpty ? [newItem] : [...prev.items, newItem];
+        return { ...prev, items: nextItems };
+      });
+      setMedicineQueries((prev) => {
+        const nextIdx = formData.items.length === 1 && !formData.items[0].medicineId ? 0 : formData.items.length;
+        return { ...prev, [nextIdx]: display };
+      });
+      toast.success(`Added: ${matched.brandName}`);
+    }
+
+    setBarcodeInput('');
+  };
+
   const exportToExcel = async () => {
     const { XLSX } = await loadXlsxTools();
 
@@ -454,6 +516,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           brandName: m.brand_name ?? '',
           genericName: m.generic_name ?? '',
           strength: m.strength ?? '',
+          barcode: m.barcode ?? undefined,
           type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
           stock: m.stock !== undefined && m.stock !== null ? Number(m.stock) : undefined,
           costPrice: m.cost_price !== undefined && m.cost_price !== null ? Number(m.cost_price) : undefined,
@@ -614,6 +677,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setOpenPatientDropdown(false);
     setOpenMedicineDropdownIndex(null);
     setLastEditedTotal('auto');
+    setBarcodeInput('');
   };
 
   const closeTransactionModal = () => {
@@ -1557,6 +1621,28 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <Plus className="w-3.5 h-3.5" />
                     Add Item
                   </button>
+                </div>
+
+                <div className="space-y-1 min-w-[180px]">
+                  <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">
+                    <ScanBarcode className="w-3 h-3" />
+                    Scan Barcode
+                  </label>
+                  <input
+                    ref={scannerInputRef}
+                    type="text"
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleBarcodeScan(barcodeInput);
+                      }
+                    }}
+                    placeholder="Scan or type barcode..."
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8 font-mono"
+                    title="Barcode scanner input — scan a medicine barcode to add it to the invoice"
+                  />
                 </div>
                 
                 {userRole === 'super_admin' && (
