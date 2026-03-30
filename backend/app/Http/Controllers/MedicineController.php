@@ -38,8 +38,13 @@ class MedicineController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('brand_name', 'like', "%{$search}%")
                     ->orWhere('generic_name', 'like', "%{$search}%")
-                    ->orWhere('strength', 'like', "%{$search}%");
+                    ->orWhere('strength', 'like', "%{$search}%")
+                    ->orWhere('barcode', 'like', "%{$search}%");
             });
+        }
+
+        if ($request->filled('barcode')) {
+            $query->where('barcode', $request->string('barcode'));
         }
 
         $perPage = max(1, min($request->integer('per_page', 25), 200));
@@ -112,6 +117,7 @@ class MedicineController extends Controller
             'brand_name' => ['required', 'string', 'max:255'],
             'generic_name' => ['nullable', 'string', 'max:255'],
             'strength' => ['nullable', 'string', 'max:255'],
+            'barcode' => ['nullable', 'string', 'max:255'],
             'stock' => ['nullable', 'integer', 'min:0'],
             'cost_price' => ['nullable', 'numeric', 'min:0'],
             'sale_price' => ['nullable', 'numeric', 'min:0'],

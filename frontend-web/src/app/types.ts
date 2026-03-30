@@ -97,6 +97,7 @@ export interface Medicine {
   brandName: string;
   genericName: string;
   strength: string;
+  barcode?: string;
   manufacturerId: string;
   medicineTypeId: string;
   type?: string; // human readable medicine type name (e.g., Tablet)

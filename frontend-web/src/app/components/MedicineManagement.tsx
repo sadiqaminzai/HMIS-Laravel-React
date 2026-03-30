@@ -49,6 +49,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     brandName: '',
     genericName: '',
     strength: '',
+    barcode: '',
     medicineTypeId: '',
     manufacturerId: '',
     stock: 0,
@@ -364,6 +365,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       brandName: '',
       genericName: '',
       strength: '',
+      barcode: '',
       medicineTypeId: '',
       manufacturerId: '',
       stock: 0,
@@ -386,6 +388,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       brandName: medicine.brandName,
       genericName: medicine.genericName,
       strength: medicine.strength || '',
+      barcode: medicine.barcode || '',
       medicineTypeId: medicine.medicineTypeId,
       manufacturerId: medicine.manufacturerId,
       stock: medicine.stock ?? 0,
@@ -415,6 +418,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         brandName: formData.brandName,
         genericName: formData.genericName,
         strength: formData.strength,
+        barcode: formData.barcode || undefined,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
         stock: formData.stock,
@@ -446,6 +450,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         brandName: formData.brandName,
         genericName: formData.genericName,
         strength: formData.strength,
+        barcode: formData.barcode || undefined,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
         stock: formData.stock,
@@ -679,6 +684,10 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.strength || '—'}</p>
                 </div>
                 <div className="space-y-1">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Barcode</p>
+                  <p className="font-semibold text-gray-900 dark:text-white font-mono">{selectedMedicine.barcode || '—'}</p>
+                </div>
+                <div className="space-y-1">
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Type</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getMedicineTypeName(selectedMedicine.medicineTypeId)}</p>
                 </div>
@@ -754,6 +763,16 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   title="Strength"
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Barcode</label>
+                <input
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9 font-mono"
+                  title="Barcode"
+                  placeholder="Scan or type barcode..."
+                  value={formData.barcode}
+                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -902,6 +921,16 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   title="Strength"
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Barcode</label>
+                <input
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono"
+                  title="Barcode"
+                  placeholder="Scan or type barcode..."
+                  value={formData.barcode}
+                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
