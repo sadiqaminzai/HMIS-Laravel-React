@@ -118,6 +118,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [medicineQueries, setMedicineQueries] = useState<Record<number, string>>({});
   const [openSupplierDropdown, setOpenSupplierDropdown] = useState(false);
   const [openPatientDropdown, setOpenPatientDropdown] = useState(false);
+  const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
+  const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(-1);
+  const [highlightedMedicineIndex, setHighlightedMedicineIndex] = useState<Record<number, number>>({});
 
   const [formData, setFormData] = useState(() => buildInitialFormData(currentHospital.id));
 
@@ -141,6 +144,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const validateSalesStock = () => {
     if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
     if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
+
     const requiredByKey: Record<string, number> = {};
     formData.items.forEach((item) => {
       if (!item.medicineId) return;
@@ -150,13 +154,38 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       requiredByKey[key] = (requiredByKey[key] || 0) + required;
     });
 
-    for (const key of Object.keys(requiredByKey)) {
+    const existingRequiredByKey: Record<string, number> = {};
+    if (
+      showEditModal &&
+      selectedTransaction &&
+      selectedTransaction.hospitalId === formData.hospitalId &&
+      ['sales', 'purchase_return'].includes(selectedTransaction.trxType)
+    ) {
+      (selectedTransaction.details || []).forEach((detail) => {
+        if (!detail.medicineId) return;
+        const required = Number(detail.qtty || 0) + Number(detail.bonus || 0);
+        if (required <= 0) return;
+        const key = `${detail.medicineId}::${detail.batchNo || '__all__'}`;
+        existingRequiredByKey[key] = (existingRequiredByKey[key] || 0) + required;
+      });
+    }
+
+    const mergedKeys = new Set([...Object.keys(requiredByKey), ...Object.keys(existingRequiredByKey)]);
+    for (const key of mergedKeys) {
       const [medicineId, batchNo] = key.split('::');
+      const nextRequired = Number(requiredByKey[key] || 0);
+      const existingRequired = Number(existingRequiredByKey[key] || 0);
+      const deltaRequired = showEditModal ? nextRequired - existingRequired : nextRequired;
+
+      if (deltaRequired <= 0) {
+        continue;
+      }
+
       const available = getAvailableStock(medicineId, batchNo === '__all__' ? undefined : batchNo, formData.hospitalId);
-      if (available < requiredByKey[key]) {
+      if (available < deltaRequired) {
         const label = getMedicineName(medicineId);
         const batchLabel = batchNo !== '__all__' ? ` (Batch: ${batchNo})` : '';
-        toast.error(`Insufficient stock for ${label}${batchLabel}. Available: ${available}, Required: ${requiredByKey[key]}.`);
+        toast.error(`Insufficient stock for ${label}${batchLabel}. Available: ${available}, Required: ${deltaRequired}.`);
         return false;
       }
     }
@@ -429,6 +458,48 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const availableSuppliers = filteredSuppliers.length > 0 ? filteredSuppliers : remoteSuppliers;
   const availablePatients = filteredPatients.length > 0 ? filteredPatients : remotePatients;
 
+  const getPatientOptions = () => {
+    return availablePatients
+      .filter((p) => {
+        const term = patientSearch.toLowerCase();
+        if (!term) return true;
+        return p.name.toLowerCase().includes(term) ||
+          (p.patientId || '').toLowerCase().includes(term) ||
+          (p.phone || '').toLowerCase().includes(term) ||
+          (p.address || '').toLowerCase().includes(term);
+      })
+      .sort((a, b) => (b.createdAt && a.createdAt ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : 0))
+      .slice(0, 30);
+  };
+
+  const getSupplierOptions = () => {
+    return availableSuppliers
+      .filter((s) => {
+        const term = supplierSearch.toLowerCase();
+        if (!term) return true;
+        return s.name.toLowerCase().includes(term) ||
+          (s.contactInfo || '').toLowerCase().includes(term) ||
+          (s.address || '').toLowerCase().includes(term);
+      })
+      .slice(0, 30);
+  };
+
+  const getMedicineOptions = (index: number) => {
+    return availableMedicines
+      .filter((m) => {
+        const term = (medicineQueries[index] || '').toLowerCase();
+        if (!term) return true;
+        const display = `${m.brandName} ${m.genericName || ''} ${m.strength || ''} ${m.type || ''}`.toLowerCase();
+        return display.includes(term);
+      })
+      .filter((m) => {
+        if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
+        if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
+        return getAvailableStock(m.id, undefined, formData.hospitalId) > 0;
+      })
+      .slice(0, 50);
+  };
+
   useEffect(() => {
     const term = medicineSearch.trim();
     if (term.length < 2 || filteredMedicines.length > 0) {
@@ -599,6 +670,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setPatientSearch('');
     setOpenSupplierDropdown(false);
     setOpenPatientDropdown(false);
+    setHighlightedSupplierIndex(-1);
+    setHighlightedPatientIndex(-1);
+    setHighlightedMedicineIndex({});
     setLastEditedTotal('auto');
     setShowAddModal(true);
   };
@@ -613,6 +687,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setOpenSupplierDropdown(false);
     setOpenPatientDropdown(false);
     setOpenMedicineDropdownIndex(null);
+    setHighlightedSupplierIndex(-1);
+    setHighlightedPatientIndex(-1);
+    setHighlightedMedicineIndex({});
     setLastEditedTotal('auto');
   };
 
@@ -652,6 +729,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setPatientSearch(getPatientDisplay(trx.patientId));
     setOpenSupplierDropdown(false);
     setOpenPatientDropdown(false);
+    setHighlightedSupplierIndex(-1);
+    setHighlightedPatientIndex(-1);
+    setHighlightedMedicineIndex({});
     setLastEditedTotal('auto');
     setShowEditModal(true);
   };
@@ -827,7 +907,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const totalPreview = calculateTotals(formData.items);
   const totalsSummary = calculateTotalsSummary(formData.items);
   const isCompactReceipt = receiptSize !== 'a4';
-  const isPharmacyCompact = isCompactReceipt && printTemplate === 'sale';
   const invoiceNo = useMemo(() => {
     if (showEditModal && selectedTransaction?.serialNo) return selectedTransaction.serialNo;
     const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
@@ -840,6 +919,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const printNetTotal = selectedTransaction
     ? calculateTotals(selectedTransaction.details || [])
     : 0;
+  const showFormulaColumns = printTemplate !== 'sale';
   const itemsCount = formData.items.length;
 
   useEffect(() => {
@@ -883,6 +963,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAddModal, showEditModal]);
 
+  const patientOptions = getPatientOptions();
+  const supplierOptions = getSupplierOptions();
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -898,6 +981,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search transactions..."
+              title="Search transactions"
+              aria-label="Search transactions"
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -1189,6 +1274,29 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <p className="font-semibold text-gray-900">{new Date().toLocaleDateString()}</p>
                   </div>
                 </div>
+                {isCompactReceipt && (
+                  <div className="grid grid-cols-2 gap-2 text-[10px] border border-gray-300 rounded-md p-2">
+                    <div>
+                      <p className="text-gray-500">Type</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.trxType}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Invoice</p>
+                      <p className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</p>
+                    </div>
+                    {printTemplate === 'sale' ? (
+                      <div className="col-span-2">
+                        <p className="text-gray-500">Customer</p>
+                        <p className="font-semibold text-gray-900 break-words">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
+                      </div>
+                    ) : (
+                      <div className="col-span-2">
+                        <p className="text-gray-500">Supplier</p>
+                        <p className="font-semibold text-gray-900 break-words">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {!isCompactReceipt && (
                   <div className={`flex flex-wrap items-center gap-6 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
                     <div>
@@ -1231,11 +1339,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       {isCompactReceipt ? (
                         <tr>
                           <th className="px-1 py-1 w-4 text-center">#</th>
-                          <th className="px-1 py-1">Medicine</th>
+                          <th className="px-1 py-1">Item</th>
                           <th className="px-1 py-1 w-6 text-center">Qty</th>
-                          <th className="px-1 py-1 w-8 text-right">Price</th>
-                          {!isPharmacyCompact && <th className="px-1 py-1">Disc</th>}
-                          {!isPharmacyCompact && <th className="px-1 py-1">Tax</th>}
                           <th className="px-1 py-1 w-8 text-right">Amt</th>
                         </tr>
                       ) : (
@@ -1247,8 +1352,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           <th className="px-3 py-2">Qty</th>
                           {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
                           <th className="px-3 py-2">Price</th>
-                          <th className="px-3 py-2">Discount</th>
-                          <th className="px-3 py-2">Tax</th>
+                          {showFormulaColumns && <th className="px-3 py-2">Discount</th>}
+                          {showFormulaColumns && <th className="px-3 py-2">Tax</th>}
                           <th className="px-3 py-2">Amount</th>
                         </tr>
                       )}
@@ -1261,9 +1366,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               <td className="px-1 py-1 align-top text-center w-4">{idx + 1}</td>
                               <td className="px-1 py-1 break-words align-top">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
                               <td className="px-1 py-1 align-top text-center w-6">{d.qtty}</td>
-                              <td className="px-1 py-1 align-top text-right w-8">{d.price}</td>
-                              {!isPharmacyCompact && <td className="px-1 py-1 align-top">{d.discount ?? 0}%</td>}
-                              {!isPharmacyCompact && <td className="px-1 py-1 align-top">{d.tax ?? 0}%</td>}
                               <td className="px-1 py-1 align-top text-right w-8">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
                             </>
                           ) : (
@@ -1277,9 +1379,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               <td className="px-3 py-2">{d.qtty}</td>
                               {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
                               <td className="px-3 py-2">{d.price}</td>
-                              <td className="px-3 py-2">{d.discount ?? 0}%</td>
-                              <td className="px-3 py-2">{d.tax ?? 0}%</td>
-                              <td className="px-3 py-2">{d.amount ?? 0}</td>
+                              {showFormulaColumns && <td className="px-3 py-2">{d.discount ?? 0}%</td>}
+                              {showFormulaColumns && <td className="px-3 py-2">{d.tax ?? 0}%</td>}
+                              <td className="px-3 py-2">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
                             </>
                           )}
                         </tr>
@@ -1287,8 +1389,48 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     </tbody>
                   </table>
                 </div>
+                {!isCompactReceipt && (
+                  <div className="mt-3 ml-auto max-w-sm space-y-1 text-xs">
+                    {showFormulaColumns && (
+                      <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                        <span className="text-gray-600">Total Discount</span>
+                        <span className="font-medium text-gray-900">{printTotalsSummary.totalDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {showFormulaColumns && (
+                      <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                        <span className="text-gray-600">Total Tax</span>
+                        <span className="font-medium text-gray-900">{printTotalsSummary.totalTax.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                      <span className="text-gray-600">Grand Total</span>
+                      <span className="font-semibold text-gray-900">{printNetTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                      <span className="text-gray-600">Paid</span>
+                      <span className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Due</span>
+                      <span className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</span>
+                    </div>
+                  </div>
+                )}
                 {isCompactReceipt && (
                   <div className="border-t border-gray-300 pt-2 text-[10px] space-y-1">
+                    {showFormulaColumns && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Discount</span>
+                        <span className="font-semibold text-gray-900">{printTotalsSummary.totalDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {showFormulaColumns && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="font-semibold text-gray-900">{printTotalsSummary.totalTax.toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">Net Total</span>
                       <span className="font-semibold text-gray-900">{printNetTotal.toFixed(2)}</span>
@@ -1330,6 +1472,21 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <p className="text-gray-500 dark:text-gray-400">Hospital</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedTransaction.hospitalId)}</p>
                   </div>
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">Date</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleString() : '—'}</p>
+                  </div>
+                  {selectedTransaction.trxType === 'sales' || selectedTransaction.trxType === 'sales_return' ? (
+                    <div>
+                      <p className="text-gray-500 dark:text-gray-400">Customer</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-gray-500 dark:text-gray-400">Supplier</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -1342,8 +1499,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         <th className="px-3 py-2">Qty</th>
                         {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
                         <th className="px-3 py-2">Price</th>
-                        <th className="px-3 py-2">Discount</th>
-                        <th className="px-3 py-2">Tax</th>
+                        {showFormulaColumns && <th className="px-3 py-2">Discount</th>}
+                        {showFormulaColumns && <th className="px-3 py-2">Tax</th>}
                         <th className="px-3 py-2">Amount</th>
                       </tr>
                     </thead>
@@ -1358,13 +1515,25 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           <td className="px-3 py-2">{d.qtty}</td>
                           {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
                           <td className="px-3 py-2">{d.price}</td>
-                          <td className="px-3 py-2">{d.discount ?? 0}%</td>
-                          <td className="px-3 py-2">{d.tax ?? 0}%</td>
-                          <td className="px-3 py-2">{d.amount ?? 0}</td>
+                          {showFormulaColumns && <td className="px-3 py-2">{d.discount ?? 0}%</td>}
+                          {showFormulaColumns && <td className="px-3 py-2">{d.tax ?? 0}%</td>}
+                          <td className="px-3 py-2">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-4 text-xs pt-2">
+                  {showFormulaColumns && (
+                    <div className="text-gray-600 dark:text-gray-300">Discount: <span className="font-semibold text-gray-900 dark:text-white">{printTotalsSummary.totalDiscount.toFixed(2)}</span></div>
+                  )}
+                  {showFormulaColumns && (
+                    <div className="text-gray-600 dark:text-gray-300">Tax: <span className="font-semibold text-gray-900 dark:text-white">{printTotalsSummary.totalTax.toFixed(2)}</span></div>
+                  )}
+                  <div className="text-gray-600 dark:text-gray-300">Net: <span className="font-semibold text-gray-900 dark:text-white">{printNetTotal.toFixed(2)}</span></div>
+                  <div className="text-gray-600 dark:text-gray-300">Paid: <span className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.paidAmount}</span></div>
+                  <div className="text-gray-600 dark:text-gray-300">Due: <span className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.dueAmount}</span></div>
                 </div>
               </div>
             )}
@@ -1414,43 +1583,72 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <input
                         type="text"
                         value={patientSearch}
+                          title="Find patient"
                         onChange={(e) => {
                           setPatientSearch(e.target.value);
                           setOpenPatientDropdown(true);
+                          setHighlightedPatientIndex(0);
                         }}
-                        onFocus={() => setOpenPatientDropdown(true)}
-                        onBlur={() => setTimeout(() => setOpenPatientDropdown(false), 200)}
+                        onFocus={() => {
+                          setOpenPatientDropdown(true);
+                          setHighlightedPatientIndex(0);
+                        }}
+                        onBlur={() => setTimeout(() => {
+                          setOpenPatientDropdown(false);
+                          setHighlightedPatientIndex(-1);
+                        }, 200)}
+                        onKeyDown={(e) => {
+                          const options = patientOptions;
+                          if (!options.length) return;
+
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setOpenPatientDropdown(true);
+                            setHighlightedPatientIndex((prev) => {
+                              const next = prev < 0 ? 0 : Math.min(prev + 1, options.length - 1);
+                              return next;
+                            });
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setOpenPatientDropdown(true);
+                            setHighlightedPatientIndex((prev) => Math.max(prev - 1, 0));
+                          } else if (e.key === 'Enter' && openPatientDropdown) {
+                            e.preventDefault();
+                            const selected = options[highlightedPatientIndex] || options[0];
+                            if (selected) {
+                              setFormData({ ...formData, patientId: selected.id });
+                              setPatientSearch(`${selected.name} ${selected.patientId ? `(${selected.patientId})` : ''}`.trim());
+                              setOpenPatientDropdown(false);
+                              setHighlightedPatientIndex(-1);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setOpenPatientDropdown(false);
+                            setHighlightedPatientIndex(-1);
+                          }
+                        }}
                         placeholder="Search patient..."
                         className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                       />
                       {openPatientDropdown && (
                         <div className="absolute z-20 mt-1 w-[250px] max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
-                          {availablePatients
-                            .filter((p) => {
-                              const term = patientSearch.toLowerCase();
-                              if (!term) return true;
-                              return p.name.toLowerCase().includes(term) ||
-                                (p.patientId || '').toLowerCase().includes(term) ||
-                                (p.phone || '').toLowerCase().includes(term) ||
-                                (p.address || '').toLowerCase().includes(term);
-                            })
-                            .sort((a, b) => (b.createdAt && a.createdAt ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : 0))
-                            .slice(0, 30)
-                            .map((p) => (
+                          {patientOptions
+                            .map((p, optionIndex) => (
                               <button
                                 key={p.id}
                                 type="button"
-                                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
+                                className={`w-full text-left px-2 py-1.5 text-xs ${highlightedPatientIndex === optionIndex ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                onMouseEnter={() => setHighlightedPatientIndex(optionIndex)}
                                 onMouseDown={() => {
                                   setFormData({ ...formData, patientId: p.id });
                                   setPatientSearch(`${p.name} ${p.patientId ? `(${p.patientId})` : ''}`.trim());
                                   setOpenPatientDropdown(false);
+                                  setHighlightedPatientIndex(-1);
                                 }}
                               >
                                 {p.name} {p.patientId ? `(${p.patientId})` : ''}
                               </button>
                             ))}
-                          {availablePatients.length === 0 && (
+                          {patientOptions.length === 0 && (
                             <div className="px-2 py-2 text-xs text-gray-500">No patients found</div>
                           )}
                         </div>
@@ -1466,41 +1664,72 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <input
                         type="text"
                         value={supplierSearch}
+                          title="Find supplier"
                         onChange={(e) => {
                           setSupplierSearch(e.target.value);
                           setOpenSupplierDropdown(true);
+                          setHighlightedSupplierIndex(0);
                         }}
-                        onFocus={() => setOpenSupplierDropdown(true)}
-                        onBlur={() => setTimeout(() => setOpenSupplierDropdown(false), 200)}
+                        onFocus={() => {
+                          setOpenSupplierDropdown(true);
+                          setHighlightedSupplierIndex(0);
+                        }}
+                        onBlur={() => setTimeout(() => {
+                          setOpenSupplierDropdown(false);
+                          setHighlightedSupplierIndex(-1);
+                        }, 200)}
+                        onKeyDown={(e) => {
+                          const options = supplierOptions;
+                          if (!options.length) return;
+
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setOpenSupplierDropdown(true);
+                            setHighlightedSupplierIndex((prev) => {
+                              const next = prev < 0 ? 0 : Math.min(prev + 1, options.length - 1);
+                              return next;
+                            });
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setOpenSupplierDropdown(true);
+                            setHighlightedSupplierIndex((prev) => Math.max(prev - 1, 0));
+                          } else if (e.key === 'Enter' && openSupplierDropdown) {
+                            e.preventDefault();
+                            const selected = options[highlightedSupplierIndex] || options[0];
+                            if (selected) {
+                              setFormData({ ...formData, supplierId: selected.id });
+                              setSupplierSearch(selected.name);
+                              setOpenSupplierDropdown(false);
+                              setHighlightedSupplierIndex(-1);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setOpenSupplierDropdown(false);
+                            setHighlightedSupplierIndex(-1);
+                          }
+                        }}
                         placeholder="Search supplier..."
                         className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                       />
                       {openSupplierDropdown && (
                         <div className="absolute z-20 mt-1 w-[250px] max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
-                          {availableSuppliers
-                            .filter((s) => {
-                              const term = supplierSearch.toLowerCase();
-                              if (!term) return true;
-                              return s.name.toLowerCase().includes(term) ||
-                                (s.contactInfo || '').toLowerCase().includes(term) ||
-                                (s.address || '').toLowerCase().includes(term);
-                            })
-                            .slice(0, 30)
-                            .map((s) => (
+                          {supplierOptions
+                            .map((s, optionIndex) => (
                               <button
                                 key={s.id}
                                 type="button"
-                                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
+                                className={`w-full text-left px-2 py-1.5 text-xs ${highlightedSupplierIndex === optionIndex ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                onMouseEnter={() => setHighlightedSupplierIndex(optionIndex)}
                                 onMouseDown={() => {
                                   setFormData({ ...formData, supplierId: s.id });
                                   setSupplierSearch(s.name);
                                   setOpenSupplierDropdown(false);
+                                  setHighlightedSupplierIndex(-1);
                                 }}
                               >
                                 {s.name}
                               </button>
                             ))}
-                          {availableSuppliers.length === 0 && (
+                          {supplierOptions.length === 0 && (
                             <div className="px-2 py-2 text-xs text-gray-500">No suppliers found</div>
                           )}
                         </div>
@@ -1523,6 +1752,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           type="radio"
                           name="trxType"
                           value={opt.value}
+                          title={`Transaction type ${opt.label}`}
                           checked={formData.trxType === opt.value}
                           className="h-2.5 w-2.5"
                           onChange={() => {
@@ -1538,6 +1768,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                             }));
                             setSupplierSearch('');
                             setPatientSearch('');
+                            setOpenSupplierDropdown(false);
+                            setOpenPatientDropdown(false);
+                            setHighlightedSupplierIndex(-1);
+                            setHighlightedPatientIndex(-1);
                             setLastEditedTotal('auto');
                           }}
                         />
@@ -1569,6 +1803,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <input
                     type="text"
                     readOnly
+                    title="Invoice number"
                     className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-[11px] h-8 text-gray-700 dark:text-gray-200"
                     value={invoiceNo}
                   />
@@ -1590,7 +1825,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               <div
                 className={`space-y-2 pr-1 ${openMedicineDropdownIndex !== null ? 'overflow-visible' : 'max-h-64 overflow-y-auto'}`}
               >
-                {formData.items.map((item, index) => (
+                {formData.items.map((item, index) => {
+                  const medicineOptions = getMedicineOptions(index);
+
+                  return (
                   <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-2">
                     <div className="lg:col-span-3 space-y-1">
                       <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Medicine</label>
@@ -1601,32 +1839,59 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           title="Medicine"
                           placeholder="Type medicine name..."
                           value={medicineQueries[index] ?? (item.medicineId ? getMedicineDisplay(item.medicineId) : '')}
-                          onFocus={() => setOpenMedicineDropdownIndex(index)}
-                          onBlur={() => setTimeout(() => setOpenMedicineDropdownIndex((prev) => (prev === index ? null : prev)), 200)}
+                          onFocus={() => {
+                            setOpenMedicineDropdownIndex(index);
+                            setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: 0 }));
+                          }}
+                          onBlur={() => setTimeout(() => {
+                            setOpenMedicineDropdownIndex((prev) => (prev === index ? null : prev));
+                            setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: -1 }));
+                          }, 200)}
                           onChange={(e) => {
                             const value = e.target.value;
                             setMedicineQueries((prev) => ({ ...prev, [index]: value }));
                             setMedicineSearch(value);
                             setOpenMedicineDropdownIndex(index);
+                            setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: 0 }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (!medicineOptions.length) return;
+
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              setOpenMedicineDropdownIndex(index);
+                              setHighlightedMedicineIndex((prev) => {
+                                const current = prev[index] ?? -1;
+                                const next = current < 0 ? 0 : Math.min(current + 1, medicineOptions.length - 1);
+                                return { ...prev, [index]: next };
+                              });
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setOpenMedicineDropdownIndex(index);
+                              setHighlightedMedicineIndex((prev) => {
+                                const current = prev[index] ?? 0;
+                                return { ...prev, [index]: Math.max(current - 1, 0) };
+                              });
+                            } else if (e.key === 'Enter' && openMedicineDropdownIndex === index) {
+                              e.preventDefault();
+                              const selected = medicineOptions[highlightedMedicineIndex[index] ?? 0] || medicineOptions[0];
+                              if (!selected) return;
+                              const display = `${selected.brandName} ${selected.genericName ? `(${selected.genericName})` : ''} ${selected.strength || ''} ${selected.type || ''}`.replace(/\s+/g, ' ').trim();
+                              handleMedicineChange(index, selected.id);
+                              setMedicineQueries((prev) => ({ ...prev, [index]: display }));
+                              setOpenMedicineDropdownIndex(null);
+                              setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: -1 }));
+                            } else if (e.key === 'Escape') {
+                              setOpenMedicineDropdownIndex(null);
+                              setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: -1 }));
+                            }
                           }}
                           required
                         />
                         {openMedicineDropdownIndex === index && (
                           <div className="absolute z-30 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
-                            {availableMedicines
-                              .filter((m) => {
-                                const term = (medicineQueries[index] || '').toLowerCase();
-                                if (!term) return true;
-                                const display = `${m.brandName} ${m.genericName || ''} ${m.strength || ''} ${m.type || ''}`.toLowerCase();
-                                return display.includes(term);
-                              })
-                              .filter((m) => {
-                                if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
-                                if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
-                                return getAvailableStock(m.id, undefined, formData.hospitalId) > 0;
-                              })
-                              .slice(0, 50)
-                              .map((m) => {
+                            {medicineOptions
+                              .map((m, optionIndex) => {
                                 const display = `${m.brandName} ${m.genericName ? `(${m.genericName})` : ''} ${m.strength || ''} ${m.type || ''}`.replace(/\s+/g, ' ').trim();
                                 const available = ['sales', 'purchase_return'].includes(formData.trxType)
                                   ? getAvailableStock(m.id, undefined, formData.hospitalId)
@@ -1635,11 +1900,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                   <button
                                     key={m.id}
                                     type="button"
-                                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    className={`w-full text-left px-2 py-1.5 text-xs ${highlightedMedicineIndex[index] === optionIndex ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                    onMouseEnter={() => setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: optionIndex }))}
                                     onMouseDown={() => {
                                       handleMedicineChange(index, m.id);
                                       setMedicineQueries((prev) => ({ ...prev, [index]: display }));
                                       setOpenMedicineDropdownIndex(null);
+                                      setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: -1 }));
                                     }}
                                   >
                                     <div className="flex items-center justify-between gap-2">
@@ -1653,7 +1920,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                   </button>
                                 );
                               })}
-                            {availableMedicines.length === 0 && (
+                            {medicineOptions.length === 0 && (
                               <div className="px-2 py-2 text-xs text-gray-500">No medicines found</div>
                             )}
                           </div>
@@ -1700,6 +1967,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full max-w-[64px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Quantity"
                         value={item.qtty}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { qtty: Number(e.target.value) })}
                       />
                       {['sales', 'purchase_return'].includes(formData.trxType) && item.medicineId && (
@@ -1716,6 +1984,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Bonus"
                         value={item.bonus ?? 0}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { bonus: Number(e.target.value) })}
                       />
                     </div>
@@ -1728,6 +1997,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full max-w-[100px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Price"
                         value={item.price}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { price: Number(e.target.value) })}
                       />
                     </div>
@@ -1741,6 +2011,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Discount"
                         value={item.discount ?? 0}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { discount: Number(e.target.value) })}
                       />
                     </div>
@@ -1754,6 +2025,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Tax"
                         value={item.tax ?? 0}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { tax: Number(e.target.value) })}
                       />
                     </div>
@@ -1777,7 +2049,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       </div>
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-[10px]">

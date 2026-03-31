@@ -20,7 +20,31 @@ export function ExpenseInvoicePrint({
 }: ExpenseInvoicePrintProps) {
   
   const handlePrint = () => {
-    window.print();
+    const element = document.getElementById('expense-voucher-content');
+    if (!element) return;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=1200');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Expense Voucher</title>
+          <style>
+            html, body { margin: 0; padding: 0; background: #ffffff; font-family: Arial, sans-serif; }
+            #expense-voucher-content { width: 100%; box-sizing: border-box; padding: 24px; color: #111827; }
+            @page { margin: 10mm; }
+          </style>
+        </head>
+        <body>${element.outerHTML}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   const handleDownloadPDF = async () => {
@@ -111,7 +135,7 @@ export function ExpenseInvoicePrint({
             {/* Header */}
             <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2" style={{ color: hospital.brandColor }}>{hospital.name}</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{hospital.name}</h1>
                 <div className="text-sm text-gray-600 space-y-1">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-gray-400" />

@@ -417,7 +417,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         strength: formData.strength,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
-        stock: formData.stock,
+        stock: 0,
         costPrice: formData.costPrice,
         salePrice: formData.salePrice,
         status: formData.status,
@@ -448,7 +448,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         strength: formData.strength,
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
-        stock: formData.stock,
+        stock: selectedMedicine.stock ?? 0,
         costPrice: formData.costPrice,
         salePrice: formData.salePrice,
         status: formData.status,
@@ -531,6 +531,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 ref={importInputRef}
                 type="file"
                 accept=".csv,.xlsx,.xls"
+                title="Import medicines file"
                 onChange={handleImportFile}
                 className="hidden"
               />
@@ -791,11 +792,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   type="number"
                   min={0}
                   step={1}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Stock"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 px-3 py-1.5 text-xs h-9"
+                  title="Stock is managed by purchase/sales transactions"
                   value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                  readOnly
+                  disabled
                 />
+                <p className="text-[10px] text-gray-500">Stock updates automatically from transactions.</p>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>
@@ -939,11 +942,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   type="number"
                   min={0}
                   step={1}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Stock"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 px-3 py-2 text-sm"
+                  title="Stock is managed by purchase/sales transactions"
                   value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                  readOnly
+                  disabled
                 />
+                <p className="text-[10px] text-gray-500">Stock updates automatically from transactions.</p>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>

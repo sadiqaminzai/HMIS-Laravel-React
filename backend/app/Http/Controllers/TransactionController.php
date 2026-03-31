@@ -143,34 +143,41 @@ class TransactionController extends Controller
             $data['due_amount'] = $data['due_amount'] ?? max(0, (float) $data['grand_total'] - (float) $data['paid_amount']);
 
             $transaction->load('details');
+            $previousDetails = $transaction->details->map(function ($detail) {
+                return [
+                    'medicine_id' => $detail->medicine_id,
+                    'batch_no' => $detail->batch_no,
+                    'qtty' => $detail->qtty,
+                    'bonus' => $detail->bonus,
+                    'price' => $detail->price,
+                    'expiry_date' => $detail->expiry_date,
+                ];
+            })->values()->all();
 
-            foreach ($transaction->details as $detail) {
-                $this->applyStockChange(
+            $nextTrxType = (string) ($data['trx_type'] ?? $transaction->trx_type);
+            $isPurchaseToPurchaseEdit = $transaction->trx_type === 'purchase' && $nextTrxType === 'purchase';
+
+            if (!$isPurchaseToPurchaseEdit) {
+                foreach ($previousDetails as $previous) {
+                    $this->applyStockChange(
+                        (int) $transaction->hospital_id,
+                        $previous,
+                        $transaction->trx_type,
+                        true,
+                        (int) $transaction->id,
+                        $actor
+                    );
+                }
+
+                $this->ensureStockAvailable(
                     (int) $transaction->hospital_id,
-                    [
-                        'medicine_id' => $detail->medicine_id,
-                        'batch_no' => $detail->batch_no,
-                        'qtty' => $detail->qtty,
-                        'bonus' => $detail->bonus,
-                        'price' => $detail->price,
-                        'expiry_date' => $detail->expiry_date,
-                    ],
-                    $transaction->trx_type,
-                    true,
-                    (int) $transaction->id,
-                    $actor
+                    $nextTrxType,
+                    $items,
+                    true
                 );
             }
 
-            $this->ensureStockAvailable(
-                (int) $transaction->hospital_id,
-                (string) ($data['trx_type'] ?? $transaction->trx_type),
-                $items,
-                true
-            );
-
             $transaction->details()->delete();
-
             $transaction->update($data);
 
             foreach ($items as $item) {
@@ -187,6 +194,19 @@ class TransactionController extends Controller
                     (int) $transaction->id,
                     $actor
                 );
+            }
+
+            if ($isPurchaseToPurchaseEdit) {
+                foreach ($previousDetails as $previous) {
+                    $this->applyStockChange(
+                        (int) $transaction->hospital_id,
+                        $previous,
+                        'purchase',
+                        true,
+                        (int) $transaction->id,
+                        $actor
+                    );
+                }
             }
 
             $transaction->load(['details.medicine', 'supplier', 'patient']);

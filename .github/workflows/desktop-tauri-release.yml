@@ -1,0 +1,85 @@
+name: Desktop Tauri Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    env:
+      WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop-tauri
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-tauri/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installer and portable artifacts
+        run: npm run build:all
+
+      - name: Import code signing certificate
+        if: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String("${{ secrets.WINDOWS_CERT_PFX_BASE64 }}"))
+          $securePassword = ConvertTo-SecureString "${{ secrets.WINDOWS_CERT_PASSWORD }}" -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfxPath -Password $securePassword -CertStoreLocation Cert:\CurrentUser\My -Exportable
+          if (-not $cert) {
+            throw "Failed to import code-signing certificate."
+          }
+          "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Sign release artifacts
+        if: ${{ env.WINDOWS_CERT_THUMBPRINT != '' }}
+        env:
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: npm run release:signed
+
+      - name: Generate update manifest
+        env:
+          DESKTOP_RELEASE_BASE_URL: ${{ secrets.DESKTOP_RELEASE_BASE_URL }}
+          DESKTOP_RELEASE_CHANNEL: ${{ secrets.DESKTOP_RELEASE_CHANNEL }}
+        run: npm run release:manifest
+
+      - name: Validate release artifacts
+        run: npm run qa:package
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-tauri-release
+          path: |
+            desktop-tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop-tauri/release/portable/ShifaaScriptDesktopPortable.zip
+            desktop-tauri/release/updates/latest.json
+
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop-tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop-tauri/release/portable/ShifaaScriptDesktopPortable.zip
+            desktop-tauri/release/updates/latest.json
