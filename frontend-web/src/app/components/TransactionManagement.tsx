@@ -108,7 +108,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [printTemplate, setPrintTemplate] = useState<'sale' | 'purchase' | 'supplier'>('sale');
   const [receiptSize, setReceiptSize] = useState<'a4' | '58mm' | '76mm' | '80mm'>('a4');
-  const [isPrintQueued, setIsPrintQueued] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [remoteMedicines, setRemoteMedicines] = useState<typeof medicines>([]);
   const [remoteSuppliers, setRemoteSuppliers] = useState<typeof suppliers>([]);
@@ -208,6 +207,617 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       return undefined;
     }
   };
+
+  const escapeHtml = (value: string) =>
+    String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const handlePrintInvoice = async (transaction: Transaction | null = selectedTransaction, forceA4 = false) => {
+    if (!transaction) return;
+    const trx = transaction;
+
+    const resolvedTemplate: 'sale' | 'purchase' | 'supplier' =
+      trx.trxType === 'purchase' || trx.trxType === 'purchase_return'
+        ? (trx.supplierId ? 'supplier' : 'purchase')
+        : 'sale';
+
+    setPrintTemplate(resolvedTemplate);
+
+    const targetSize: 'a4' | '58mm' | '76mm' | '80mm' = forceA4 ? 'a4' : receiptSize;
+    const printWindow = window.open('', '_blank', 'width=1200,height=920');
+    if (!printWindow) {
+      toast.error('Unable to open print preview. Please allow popups for this site.');
+      return;
+    }
+
+    const hospitalInfo = getHospital(trx.hospitalId);
+    const transactionDetails = trx.details || [];
+    const totalsSummary = calculateTotalsSummary(transactionDetails);
+    const netTotal = calculateTotals(transactionDetails);
+    const grossTotal = transactionDetails.reduce((sum, detail) => sum + Number(detail.price || 0) * Number(detail.qtty || 0), 0);
+    const totalQuantity = transactionDetails.reduce((sum, detail) => sum + Number(detail.qtty || 0), 0);
+    const logoDataUrl = await loadImageAsDataUrl(hospitalInfo?.logo);
+
+    const patient = patients.find((p) => p.id === trx.patientId);
+    const supplier = suppliers.find((s) => s.id === trx.supplierId);
+    const billedToName =
+      resolvedTemplate === 'sale'
+        ? (patient?.name || trx.patientName || getPatientDisplay(trx.patientId) || 'Walk-in Customer')
+        : (supplier?.name || trx.supplierName || getSupplierDisplay(trx.supplierId) || 'Supplier');
+    const billedToAddress = resolvedTemplate === 'sale' ? (patient?.address || '') : (supplier?.address || '');
+    const billedToPhone = resolvedTemplate === 'sale' ? (patient?.phone || '') : (supplier?.contactInfo || '');
+
+    const invoiceHeading = resolvedTemplate === 'sale' ? 'SALES INVOICE' : resolvedTemplate === 'purchase' ? 'PURCHASE INVOICE' : 'SUPPLIER INVOICE';
+    const hospitalName = hospitalInfo?.name || getHospitalName(trx.hospitalId);
+    const hospitalAddress = hospitalInfo?.address || '';
+    const hospitalContact = [hospitalInfo?.phone || '', hospitalInfo?.email || ''].filter(Boolean).join(' | ');
+
+    const invoiceDate = trx.createdAt
+      ? formatOnlyDate(trx.createdAt, hospitalInfo?.timezone || 'Asia/Kabul', (hospitalInfo?.calendarType as 'gregorian' | 'shamsi') || 'gregorian')
+      : formatOnlyDate(new Date(), hospitalInfo?.timezone || 'Asia/Kabul', (hospitalInfo?.calendarType as 'gregorian' | 'shamsi') || 'gregorian');
+    const createdAt = trx.createdAt ? new Date(trx.createdAt).toLocaleString() : '-';
+    const updatedAt = trx.updatedAt ? new Date(trx.updatedAt).toLocaleString() : '-';
+
+    const logoMarkup = logoDataUrl || hospitalInfo?.logo
+      ? `<img src="${logoDataUrl || hospitalInfo?.logo}" alt="Hospital logo" class="hospital-logo" />`
+      : ``;
+
+    const showBatchColumn = activePrintColumns.showBatchColumn;
+    const showExpiryDateColumn = activePrintColumns.showExpiryDateColumn;
+    const showBonusColumn = activePrintColumns.showBonusColumn;
+    const a4ColumnCount = 7 + (showBatchColumn ? 1 : 0) + (showExpiryDateColumn ? 1 : 0) + (showBonusColumn ? 1 : 0);
+
+    const rowsMarkupA4 = transactionDetails.length
+      ? transactionDetails
+          .map((detail) => {
+            const amount = Number(detail.amount ?? calculateLineAmount(detail));
+            const qty = Number(detail.qtty || 0);
+            const discount = Number(detail.discount || 0);
+            const tax = Number(detail.tax || 0);
+            const netPrice = qty > 0 ? amount / qty : Number(detail.price || 0);
+            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+
+            return `
+              <tr>
+                <td>
+                  <div class="product-details">
+                    <span class="product-name">${escapeHtml(itemName)}</span>
+                  </div>
+                </td>
+                ${showBatchColumn ? `<td class="text-center" style="color: #2563eb;">${escapeHtml(detail.batchNo || 'N/A')}</td>` : ''}
+                ${showExpiryDateColumn ? `<td class="text-center">${escapeHtml(detail.expiryDate ? getExpiryDisplay(detail.expiryDate, trx.hospitalId) : '-')}</td>` : ''}
+                <td class="text-center"><strong>${qty}</strong></td>
+                ${showBonusColumn ? `<td class="text-center">${Number(detail.bonus || 0)}</td>` : ''}
+                <td class="text-center">${Number(detail.price || 0).toFixed(2)}</td>
+                <td class="text-center ${discount > 0 ? 'accent-red' : ''}">${discount > 0 ? `${discount}%` : '-'}</td>
+                <td class="text-center ${tax > 0 ? 'accent-blue' : ''}">${tax > 0 ? `${tax}%` : '-'}</td>
+                <td class="text-center">${netPrice.toFixed(2)}</td>
+                <td class="text-right amount">${amount.toFixed(2)}</td>
+              </tr>
+            `;
+          })
+          .join('')
+      : `<tr><td colspan="${a4ColumnCount}" class="empty-row">No items found for this transaction.</td></tr>`;
+
+    const rowsMarkupCompact = transactionDetails.length
+      ? transactionDetails
+          .map((detail, index) => {
+            const amount = Number(detail.amount ?? calculateLineAmount(detail));
+            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+            return `
+              <tr>
+                <td>${index + 1}</td>
+                <td class="item">${escapeHtml(itemName)}</td>
+                <td class="num">${Number(detail.qtty || 0)}</td>
+                <td class="num">${Number(detail.price || 0).toFixed(2)}</td>
+                <td class="num strong">${amount.toFixed(2)}</td>
+              </tr>
+            `;
+          })
+          .join('')
+      : '<tr><td colspan="5" class="empty">No items</td></tr>';
+
+    let html = '';
+
+    if (targetSize === 'a4') {
+      html = `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${escapeHtml(invoiceHeading)}</title>
+            <style>
+              @page { size: A4; margin: 15mm; }
+              * { box-sizing: border-box; }
+              body {
+                margin: 0;
+                background: #ffffff;
+                color: #0f172a;
+                font-family: Arial, Helvetica, sans-serif;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .screen-note {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                color: #64748b;
+                font-size: 14px;
+              }
+              @media screen {
+                .invoice { display: none; }
+                .screen-note { display: flex; }
+              }
+              @media print {
+                .screen-note { display: none !important; }
+                .invoice { display: block; }
+              }
+              .invoice {
+                width: 100%;
+                max-width: 900px;
+                min-height: calc(297mm - 30mm);
+                margin: 0 auto;
+                padding: 10px 20px;
+              }
+              /* Header */
+              .header {
+                display: flex;
+                align-items: center;
+                gap: 20px;
+                padding-bottom: 12px;
+                padding-top: 10px;
+              }
+              .hospital-logo {
+                width: auto;
+                max-width: 120px;
+                height: 60px;
+                object-fit: contain;
+                margin-left: 10px;
+              }
+              .hospital-name {
+                margin: 0;
+                font-size: 24px;
+                line-height: 1.1;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #0d3b66;
+              }
+              .hospital-meta {
+                margin-top: 4px;
+                font-size: 12px;
+                color: #475569;
+                line-height: 1.4;
+              }
+              /* Brand Divider */
+              .brand-divider {
+                border-top: 3px solid #0d3b66;
+                margin-bottom: 2px;
+              }
+              .brand-divider-thin {
+                border-top: 1px solid #0d3b66;
+                margin-bottom: 24px;
+              }
+              /* Top Section */
+              .top-section {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 24px;
+                padding: 0 10px;
+              }
+              .bill-to-panel {
+                width: 45%;
+                background: #f8fafc;
+                border-radius: 6px;
+                padding: 16px 20px;
+              }
+              .bill-to-title {
+                font-size: 11px;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 700;
+                margin-bottom: 12px;
+                letter-spacing: 0.5px;
+              }
+              .party-name {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 800;
+                color: #0f172a;
+              }
+              .party-meta {
+                margin-top: 8px;
+                font-size: 12px;
+                color: #475569;
+                line-height: 1.6;
+              }
+              .invoice-info {
+                text-align: right;
+                width: 45%;
+                padding-top: 16px;
+              }
+              .invoice-title {
+                margin: 0 0 20px;
+                font-size: 24px;
+                font-weight: 900;
+                color: #0d3b66;
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+              }
+              .invoice-row {
+                display: flex;
+                justify-content: flex-end;
+                gap: 24px;
+                margin-bottom: 10px;
+                font-size: 12px;
+                color: #475569;
+              }
+              .invoice-row strong { 
+                color: #0f172a; 
+                min-width: 90px; 
+                text-align: right;
+                font-weight: 800;
+              }
+              /* Table */
+              table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                margin-bottom: 30px;
+              }
+              thead th {
+                border-top: 1px solid #cbd5e1;
+                border-bottom: 1px solid #cbd5e1;
+                color: #0f172a;
+                font-size: 10px;
+                font-weight: 900;
+                text-transform: uppercase;
+                text-align: left;
+                padding: 12px 6px;
+              }
+              tbody td {
+                border-bottom: 1px solid #e2e8f0;
+                padding: 12px 6px;
+                font-size: 11px;
+                color: #334155;
+                vertical-align: middle;
+              }
+              .product-details {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                padding-left: 4px;
+              }
+              .product-name {
+                font-size: 11px;
+                font-weight: 700;
+                color: #0f172a;
+                text-transform: uppercase;
+              }
+              .text-center { text-align: center; }
+              .text-right { text-align: right; }
+              .amount { font-weight: 900; font-size: 12px; color: #0f172a; }
+              .accent-red { color: #dc2626; font-weight: 700; }
+              .accent-blue { color: #2563eb; font-weight: 700; }
+              .empty-row { text-align: center; padding: 20px 8px; color: #64748b; }
+              
+              /* Summary / Totals */
+              .summary-box {
+                display: flex;
+                justify-content: space-between;
+                border-top: 2px solid #0d3b66;
+                padding: 20px 10px;
+                border-bottom: 1px solid #e2e8f0;
+              }
+              .summary-left {
+                display: flex;
+                gap: 40px;
+              }
+              .stat-col {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+              }
+              .stat-label {
+                font-size: 10px;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                font-weight: 700;
+              }
+              .stat-value {
+                font-size: 16px;
+                font-weight: 900;
+                color: #0f172a;
+              }
+              .stat-value.red { color: #dc2626; }
+              .stat-value.blue { color: #2563eb; }
+              .summary-right {
+                width: 250px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+              }
+              .total-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 11px;
+                color: #475569;
+                text-transform: uppercase;
+                font-weight: 700;
+              }
+              .total-row strong {
+                font-size: 16px;
+                font-weight: 900;
+                color: #0f172a;
+              }
+              .total-row.net strong { font-size: 18px; color: #0f172a; }
+              .total-row.paid {
+                padding-bottom: 16px;
+                border-bottom: 1px solid #e2e8f0;
+              }
+              .total-row.paid strong { color: #059669; }
+              .total-row.balance strong { color: #dc2626; font-size: 16px; }
+              
+              /* Footer */
+              .footer {
+                margin-top: 60px;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                padding: 0 10px;
+              }
+              .audit {
+                font-size: 10px;
+                color: #64748b;
+                line-height: 1.6;
+                font-style: italic;
+              }
+              .signature {
+                width: 220px;
+                border-top: 1px solid #0f172a;
+                padding-top: 10px;
+                text-align: center;
+                font-size: 12px;
+                font-weight: 700;
+                color: #475569;
+                text-transform: uppercase;
+              }
+              .brand-foot {
+                margin-top: 40px;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 10px;
+                font-style: italic;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="screen-note">Preparing print preview...</div>
+            <div class="invoice">
+              <div class="header">
+                ${logoMarkup}
+                <div>
+                  <h1 class="hospital-name">${escapeHtml(hospitalName)}</h1>
+                  <div class="hospital-meta">
+                    <div>${escapeHtml(hospitalAddress || 'Address not available')}</div>
+                    <div>${escapeHtml(hospitalContact || 'Contact not available')}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="brand-divider"></div>
+              <div class="brand-divider-thin"></div>
+
+              <div class="top-section">
+                <div class="bill-to-panel">
+                  <div class="bill-to-title">Bill To</div>
+                  <p class="party-name">${escapeHtml(billedToName)}</p>
+                  <div class="party-meta">
+                    <div>${escapeHtml(billedToAddress || '')}</div>
+                    <div>${escapeHtml(billedToPhone ? 'Phone: ' + billedToPhone : '')}</div>
+                  </div>
+                </div>
+                <div class="invoice-info">
+                  <h2 class="invoice-title">${escapeHtml(invoiceHeading)}</h2>
+                  <div class="invoice-row"><span>Invoice No:</span> <strong>${escapeHtml(String(trx.serialNo ?? '-'))}</strong></div>
+                  <div class="invoice-row"><span>Date:</span> <strong>${escapeHtml(invoiceDate)}</strong></div>
+                </div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:30%">Product</th>
+                    ${showBatchColumn ? '<th style="width:8%" class="text-center">Batch</th>' : ''}
+                    ${showExpiryDateColumn ? '<th style="width:9%" class="text-center">Exp</th>' : ''}
+                    <th style="width:6%" class="text-center">Qty</th>
+                    ${showBonusColumn ? '<th style="width:6%" class="text-center">Bon</th>' : ''}
+                    <th style="width:9%" class="text-center">Price</th>
+                    <th style="width:7%" class="text-center">Disc</th>
+                    <th style="width:7%" class="text-center">Tax</th>
+                    <th style="width:9%" class="text-center">Net Price</th>
+                    <th style="width:9%" class="text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsMarkupA4}</tbody>
+              </table>
+
+              <div class="summary-box">
+                <div class="summary-left">
+                  <div class="stat-col"><span class="stat-label">Items</span><span class="stat-value">${transactionDetails.length}</span></div>
+                  <div class="stat-col"><span class="stat-label">Quantity</span><span class="stat-value">${totalQuantity}</span></div>
+                  <div class="stat-col"><span class="stat-label">Total</span><span class="stat-value">${grossTotal.toFixed(2)}</span></div>
+                  <div class="stat-col"><span class="stat-label">Discount</span><span class="stat-value red">-${totalsSummary.totalDiscount.toFixed(2)}</span></div>
+                  <div class="stat-col"><span class="stat-label">Tax</span><span class="stat-value blue">+${totalsSummary.totalTax.toFixed(2)}</span></div>
+                </div>
+                <div class="summary-right">
+                  <div class="total-row net"><span>NET:</span><strong>${netTotal.toFixed(2)}</strong></div>
+                  <div class="total-row paid"><span>PAID:</span><strong>${Number(trx.paidAmount || 0).toFixed(2)}</strong></div>
+                  <div class="total-row balance"><span>BALANCE:</span><strong>${Number(trx.dueAmount || 0).toFixed(2)}</strong></div>
+                </div>
+              </div>
+
+              <div class="footer">
+                <div class="audit">
+                  <div>Created: ${escapeHtml(String(trx.createdBy || '-'))} &bull; ${escapeHtml(createdAt)}</div>
+                  <div>Updated: ${escapeHtml(String(trx.updatedBy || '-'))} &bull; ${escapeHtml(updatedAt)}</div>
+                </div>
+                <div class="signature">AUTHORIZED SIGNATURE</div>
+              </div>
+
+              <div class="brand-foot">Powered by: Soft Core IT Solutions - Kabul Afghanistan</div>
+            </div>
+            <script>
+              window.onload = function () {
+                setTimeout(function () {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 250);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+    } else {
+      const paperWidth = targetSize;
+      const baseFont = targetSize === '58mm' ? 9 : targetSize === '76mm' ? 10 : 11;
+
+      html = `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${escapeHtml(invoiceHeading)}</title>
+            <style>
+              @page { size: ${paperWidth} auto; margin: 2mm; }
+              * { box-sizing: border-box; }
+              html, body {
+                margin: 0;
+                padding: 0;
+                width: ${paperWidth};
+                background: #ffffff;
+                color: #111827;
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: ${baseFont}px;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .screen-note {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                color: #64748b;
+                font-size: 12px;
+              }
+              @media screen {
+                .receipt { display: none; }
+                .screen-note { display: flex; }
+              }
+              @media print {
+                .screen-note { display: none !important; }
+                .receipt { display: block; }
+              }
+              .receipt { width: ${paperWidth}; padding: 2mm; }
+              .center { text-align: center; }
+              .title {
+                font-size: ${baseFont + 2}px;
+                font-weight: 800;
+                text-transform: uppercase;
+                margin: 0;
+                line-height: 1.25;
+              }
+              .meta { margin-top: 2px; color: #374151; line-height: 1.35; }
+              .divider { border-top: 1px dashed #4b5563; margin: 6px 0; }
+              .row { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; }
+              .muted { color: #6b7280; }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 6px;
+              }
+              th, td {
+                border-bottom: 1px solid #e5e7eb;
+                padding: 3px 2px;
+                vertical-align: top;
+              }
+              th {
+                text-transform: uppercase;
+                font-size: ${baseFont - 1}px;
+                color: #374151;
+                text-align: left;
+              }
+              td.num, th.num { text-align: right; }
+              td.item { width: 44%; word-break: break-word; }
+              td.strong { font-weight: 700; }
+              .totals { margin-top: 6px; }
+              .totals .row strong { font-size: ${baseFont + 1}px; }
+              .empty { text-align: center; color: #6b7280; padding: 6px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="screen-note">Preparing print preview...</div>
+            <div class="receipt">
+              <div class="center">
+                <p class="title">${escapeHtml(hospitalName)}</p>
+                <div class="meta">${escapeHtml(hospitalContact || hospitalAddress || 'Contact not available')}</div>
+                <div class="meta">${escapeHtml(invoiceHeading)}</div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="row"><span class="muted">Invoice No</span><strong>${escapeHtml(String(trx.serialNo ?? '-'))}</strong></div>
+              <div class="row"><span class="muted">Date</span><strong>${escapeHtml(invoiceDate)}</strong></div>
+              <div class="row"><span class="muted">Bill To</span><strong>${escapeHtml(billedToName)}</strong></div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Price</th>
+                    <th class="num">Amt</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsMarkupCompact}</tbody>
+              </table>
+
+              <div class="totals">
+                <div class="row"><span class="muted">Discount</span><strong>-${totalsSummary.totalDiscount.toFixed(2)}</strong></div>
+                <div class="row"><span class="muted">Tax</span><strong>+${totalsSummary.totalTax.toFixed(2)}</strong></div>
+                <div class="row"><span class="muted">Net</span><strong>${netTotal.toFixed(2)}</strong></div>
+                <div class="row"><span class="muted">Paid</span><strong>${Number(trx.paidAmount || 0).toFixed(2)}</strong></div>
+                <div class="row"><span class="muted">Due</span><strong>${Number(trx.dueAmount || 0).toFixed(2)}</strong></div>
+              </div>
+            </div>
+
+            <script>
+              window.onload = function () {
+                setTimeout(function () {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 250);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
   const getMedicineName = (id: string) => medicines.find((m) => m.id === id)?.brandName || 'Unknown';
   const getMedicineDisplay = (id: string) => {
     const med = medicines.find((m) => m.id === id);
@@ -245,31 +855,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       loadHospitalSetting(selectedHospitalId);
     }
   }, [selectedTransaction?.hospitalId, selectedHospitalId, loadHospitalSetting]);
-
-  useEffect(() => {
-    if (!isPrintQueued || !showViewModal || !selectedTransaction) return;
-
-    let rafOne = 0;
-    let rafTwo = 0;
-
-    rafOne = requestAnimationFrame(() => {
-      rafTwo = requestAnimationFrame(() => {
-        window.print();
-        setIsPrintQueued(false);
-      });
-    });
-
-    return () => {
-      if (rafOne) cancelAnimationFrame(rafOne);
-      if (rafTwo) cancelAnimationFrame(rafTwo);
-    };
-  }, [isPrintQueued, selectedTransaction, showViewModal]);
-
-  useEffect(() => {
-    if (!showViewModal && isPrintQueued) {
-      setIsPrintQueued(false);
-    }
-  }, [isPrintQueued, showViewModal]);
 
   const getNearestExpiryForMedicine = (medicineId: string) => {
     if (!medicineId) return undefined;
@@ -1060,14 +1645,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         {canPrint && (
                           <button
                             onClick={() => {
-                              setSelectedTransaction(trx);
-                              if (trx.trxType === 'purchase' || trx.trxType === 'purchase_return') {
-                                setPrintTemplate('purchase');
-                              } else {
-                                setPrintTemplate('sale');
-                              }
-                              setShowViewModal(true);
-                              setIsPrintQueued(true);
+                              void handlePrintInvoice(trx);
                             }}
                             className="p-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-200"
                             title="Print"
@@ -1146,13 +1724,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               {canPrint && (
                 <button
                   onClick={() => {
-                    if (!selectedTransaction) return;
-                    if (selectedTransaction.trxType === 'purchase' || selectedTransaction.trxType === 'purchase_return') {
-                      setPrintTemplate(selectedTransaction.supplierId ? 'supplier' : 'purchase');
-                    } else {
-                      setPrintTemplate('sale');
-                    }
-                    setIsPrintQueued(true);
+                    void handlePrintInvoice(selectedTransaction);
                   }}
                   className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
                 >
@@ -1249,36 +1821,73 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             className={`hidden print:block ${receiptSize === '58mm' ? 'receipt-58mm' : receiptSize === '76mm' ? 'receipt-76mm' : receiptSize === '80mm' ? 'receipt-80mm' : ''}`}
           >
             {selectedTransaction && (
-              <div className="space-y-6">
+              <div className="space-y-6 bg-white p-6">
+                {/* Header Section */}
                 <div className={`flex items-start justify-between border-b-2 border-gray-800 pb-4 ${receiptSize !== 'a4' ? 'gap-3' : ''}`}>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 w-1/2">
                     {getHospital(selectedTransaction.hospitalId)?.logo && (
                       <img
                         src={getHospital(selectedTransaction.hospitalId)?.logo}
                         alt="Hospital Logo"
-                        className={`${receiptSize === 'a4' ? 'w-16 h-16' : 'w-10 h-10'} object-contain`}
+                        className={`${receiptSize === 'a4' ? 'w-24 h-24' : 'w-10 h-10'} object-contain`}
                       />
                     )}
                     <div>
-                      <h1 className={`${receiptSize === 'a4' ? 'text-2xl' : 'text-base'} font-bold text-gray-900`}>
-                        {printTemplate === 'sale' ? 'Sale Invoice' : printTemplate === 'purchase' ? 'Purchase Invoice' : 'Supplier Invoice'}
+                      <h1 className={`${receiptSize === 'a4' ? 'text-2xl' : 'text-base'} font-bold text-gray-900 uppercase tracking-wider`}>
+                        {getHospitalName(selectedTransaction.hospitalId)}
                       </h1>
-                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Hospital: {getHospitalName(selectedTransaction.hospitalId)}</p>
+                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Healthcare Services & Solutions</p>
                       <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Code: {getHospital(selectedTransaction.hospitalId)?.code || '—'}</p>
-                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Invoice No: {selectedTransaction.serialNo ?? '—'}</p>
-                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Transaction ID: #{selectedTransaction.id}</p>
                     </div>
                   </div>
-                  <div className={`text-right text-gray-600 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
-                    <p>Printed on</p>
-                    <p className="font-semibold text-gray-900">{new Date().toLocaleDateString()}</p>
+                  <div className={`text-right w-1/2 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
+                    <h2 className="text-2xl font-bold text-gray-800 uppercase mb-2">
+                       {printTemplate === 'sale' ? 'Sale Invoice' : printTemplate === 'purchase' ? 'Purchase Invoice' : 'Supplier Invoice'}
+                    </h2>
+                    <p className="text-gray-600">Invoice No: <span className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</span></p>
+                    <p className="text-gray-600">Transaction ID: <span className="font-semibold text-gray-900">#{selectedTransaction.id}</span></p>
+                    <p className="text-gray-600">Printed on: <span className="font-semibold text-gray-900">{new Date().toLocaleDateString()}</span></p>
                   </div>
                 </div>
+
+                {/* Billing Details Block */}
+                {!isCompactReceipt && (
+                  <div className="grid grid-cols-2 gap-8 mb-6">
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-2">Billed To</h3>
+                      {printTemplate === 'sale' ? (
+                         <div>
+                            <p className="font-bold text-gray-900 text-lg">{getPatientDisplay(selectedTransaction.patientId) || 'Walk-in Customer'}</p>
+                            <p className="text-sm text-gray-600 mt-1">Patient Customer</p>
+                         </div>
+                      ) : (
+                         <div>
+                            <p className="font-bold text-gray-900 text-lg">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
+                            <p className="text-sm text-gray-600 mt-1">Supplier</p>
+                         </div>
+                      )}
+                    </div>
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-2">Transaction Details</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-gray-600">Type:</div>
+                        <div className="font-medium text-gray-900 capitalize">{selectedTransaction.trxType.replace('_', ' ')}</div>
+                        
+                        <div className="text-gray-600">Date:</div>
+                        <div className="font-medium text-gray-900">
+                          {selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Compact Details handling */}
                 {isCompactReceipt && (
                   <div className="grid grid-cols-2 gap-2 text-[10px] border border-gray-300 rounded-md p-2">
                     <div>
                       <p className="text-gray-500">Type</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.trxType}</p>
+                      <p className="font-semibold text-gray-900 capitalize">{selectedTransaction.trxType.replace('_', ' ')}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">Invoice</p>
@@ -1287,7 +1896,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     {printTemplate === 'sale' ? (
                       <div className="col-span-2">
                         <p className="text-gray-500">Customer</p>
-                        <p className="font-semibold text-gray-900 break-words">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
+                        <p className="font-semibold text-gray-900 break-words">{getPatientDisplay(selectedTransaction.patientId) || 'Walk-in'}</p>
                       </div>
                     ) : (
                       <div className="col-span-2">
@@ -1297,45 +1906,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     )}
                   </div>
                 )}
-                {!isCompactReceipt && (
-                  <div className={`flex flex-wrap items-center gap-6 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
-                    <div>
-                      <p className="text-gray-500">Type</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.trxType}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Invoice No</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</p>
-                    </div>
-                    {printTemplate === 'sale' && (
-                      <div>
-                        <p className="text-gray-500">Patient</p>
-                        <p className="font-semibold text-gray-900">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
-                      </div>
-                    )}
-                    {(printTemplate === 'purchase' || printTemplate === 'supplier') && (
-                      <div>
-                        <p className="text-gray-500">Supplier</p>
-                        <p className="font-semibold text-gray-900">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-gray-500">Grand Total</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.grandTotal}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Paid</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Due</p>
-                      <p className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</p>
-                    </div>
-                  </div>
-                )}
+
+                {/* Main Items Table */}
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <table className={`w-full text-left text-xs ${isCompactReceipt ? 'table-fixed' : ''}`}>
-                    <thead className="bg-gray-100 text-gray-700">
+                    <thead className="bg-gray-800 text-white">
                       {isCompactReceipt ? (
                         <tr>
                           <th className="px-1 py-1 w-4 text-center">#</th>
@@ -1345,78 +1920,95 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         </tr>
                       ) : (
                         <tr>
-                          <th className="px-3 py-2">SN</th>
-                          <th className="px-3 py-2">Medicine</th>
-                          {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
-                          {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
-                          <th className="px-3 py-2">Qty</th>
-                          {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
-                          <th className="px-3 py-2">Price</th>
-                          {showFormulaColumns && <th className="px-3 py-2">Discount</th>}
-                          {showFormulaColumns && <th className="px-3 py-2">Tax</th>}
-                          <th className="px-3 py-2">Amount</th>
+                          <th className="px-3 py-2 font-medium">SN</th>
+                          <th className="px-3 py-2 font-medium">Item Description</th>
+                          <th className="px-3 py-2 font-medium text-center">Batch</th>
+                          <th className="px-3 py-2 font-medium text-center">Expiry</th>
+                          <th className="px-3 py-2 font-medium text-center">Qty</th>
+                          <th className="px-3 py-2 font-medium text-center">Bonus</th>
+                          <th className="px-3 py-2 font-medium text-right">Price</th>
+                          {showFormulaColumns && <th className="px-3 py-2 font-medium text-right">Disc %</th>}
+                          {showFormulaColumns && <th className="px-3 py-2 font-medium text-right">Tax %</th>}
+                          <th className="px-3 py-2 font-medium text-right">Net Price</th>
+                          <th className="px-3 py-2 font-medium text-right">Amount</th>
                         </tr>
                       )}
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {(selectedTransaction.details || []).map((d, idx) => (
-                        <tr key={`${d.medicineId}-${idx}`}>
-                          {isCompactReceipt ? (
-                            <>
-                              <td className="px-1 py-1 align-top text-center w-4">{idx + 1}</td>
-                              <td className="px-1 py-1 break-words align-top">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
-                              <td className="px-1 py-1 align-top text-center w-6">{d.qtty}</td>
-                              <td className="px-1 py-1 align-top text-right w-8">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="px-3 py-2">{idx + 1}</td>
-                              <td className="px-3 py-2">{d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}</td>
-                              {activePrintColumns.showBatchColumn && <td className="px-3 py-2">{d.batchNo || '—'}</td>}
-                              {activePrintColumns.showExpiryDateColumn && (
-                                <td className="px-3 py-2">{d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}</td>
-                              )}
-                              <td className="px-3 py-2">{d.qtty}</td>
-                              {activePrintColumns.showBonusColumn && <td className="px-3 py-2">{d.bonus ?? 0}</td>}
-                              <td className="px-3 py-2">{d.price}</td>
-                              {showFormulaColumns && <td className="px-3 py-2">{d.discount ?? 0}%</td>}
-                              {showFormulaColumns && <td className="px-3 py-2">{d.tax ?? 0}%</td>}
-                              <td className="px-3 py-2">{Number(d.amount ?? calculateLineAmount(d)).toFixed(2)}</td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {(selectedTransaction.details || []).map((d, idx) => {
+                        const amount = Number(d.amount ?? calculateLineAmount(d));
+                        const netPrice = d.qtty ? (amount / d.qtty) : 0;
+                        return (
+                          <tr key={`${d.medicineId}-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            {isCompactReceipt ? (
+                              <>
+                                <td className="px-1 py-1 align-top text-center w-4">{idx + 1}</td>
+                                <td className="px-1 py-1 break-words align-top font-medium text-gray-900">
+                                   {d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}
+                                </td>
+                                <td className="px-1 py-1 align-top text-center w-6">{d.qtty}</td>
+                                <td className="px-1 py-1 align-top text-right w-8 font-medium text-gray-900">{amount.toFixed(2)}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-3 py-2 text-center text-gray-500">{idx + 1}</td>
+                                <td className="px-3 py-2 font-medium text-gray-900">
+                                  {d.medicineId ? getMedicineDisplay(d.medicineId) : (d.medicineName || 'Unknown')}
+                                </td>
+                                <td className="px-3 py-2 text-center text-gray-600">{d.batchNo || '—'}</td>
+                                <td className="px-3 py-2 text-center text-gray-600">
+                                  {d.expiryDate ? getExpiryDisplay(d.expiryDate, selectedTransaction.hospitalId) : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-center font-medium">{d.qtty}</td>
+                                <td className="px-3 py-2 text-center text-gray-600">{d.bonus ?? 0}</td>
+                                <td className="px-3 py-2 text-right text-gray-600">{Number(d.price).toFixed(2)}</td>
+                                {showFormulaColumns && <td className="px-3 py-2 text-right text-gray-600">{d.discount ?? 0}%</td>}
+                                {showFormulaColumns && <td className="px-3 py-2 text-right text-gray-600">{d.tax ?? 0}%</td>}
+                                <td className="px-3 py-2 text-right text-gray-600">{netPrice.toFixed(2)}</td>
+                                <td className="px-3 py-2 text-right font-medium text-gray-900">{amount.toFixed(2)}</td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Summary Section */}
                 {!isCompactReceipt && (
-                  <div className="mt-3 ml-auto max-w-sm space-y-1 text-xs">
-                    {showFormulaColumns && (
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-1">
-                        <span className="text-gray-600">Total Discount</span>
-                        <span className="font-medium text-gray-900">{printTotalsSummary.totalDiscount.toFixed(2)}</span>
+                  <div className="flex justify-end mt-4">
+                    <div className="w-80 bg-gray-50 rounded-lg border border-gray-200 p-4">
+                      <div className="space-y-2 text-sm">
+                        {showFormulaColumns && (
+                          <div className="flex justify-between items-center text-gray-600">
+                            <span>Total Discount:</span>
+                            <span className="font-medium">{printTotalsSummary.totalDiscount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {showFormulaColumns && (
+                          <div className="flex justify-between items-center text-gray-600 border-b border-gray-200 pb-2">
+                            <span>Total Tax:</span>
+                            <span className="font-medium">{printTotalsSummary.totalTax.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center text-base font-bold text-gray-900 pt-2">
+                          <span>Grand Total:</span>
+                          <span>{printNetTotal.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-600 pt-2 border-t border-gray-200 mt-2">
+                          <span>Amount Paid:</span>
+                          <span className="font-medium">{Number(selectedTransaction.paidAmount).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-red-600 font-bold">
+                          <span>Balance Due:</span>
+                          <span>{Number(selectedTransaction.dueAmount).toFixed(2)}</span>
+                        </div>
                       </div>
-                    )}
-                    {showFormulaColumns && (
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-1">
-                        <span className="text-gray-600">Total Tax</span>
-                        <span className="font-medium text-gray-900">{printTotalsSummary.totalTax.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between border-b border-gray-200 pb-1">
-                      <span className="text-gray-600">Grand Total</span>
-                      <span className="font-semibold text-gray-900">{printNetTotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-gray-200 pb-1">
-                      <span className="text-gray-600">Paid</span>
-                      <span className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Due</span>
-                      <span className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</span>
                     </div>
                   </div>
                 )}
+
                 {isCompactReceipt && (
                   <div className="border-t border-gray-300 pt-2 text-[10px] space-y-1">
                     {showFormulaColumns && (
@@ -1431,18 +2023,32 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         <span className="font-semibold text-gray-900">{printTotalsSummary.totalTax.toFixed(2)}</span>
                       </div>
                     )}
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between pb-1 border-b border-gray-200">
                       <span className="text-gray-600">Net Total</span>
-                      <span className="font-semibold text-gray-900">{printNetTotal.toFixed(2)}</span>
+                      <span className="font-bold text-gray-900">{printNetTotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between pb-1">
                       <span className="text-gray-600">Paid</span>
-                      <span className="font-semibold text-gray-900">{selectedTransaction.paidAmount}</span>
+                      <span className="font-semibold text-gray-900">{Number(selectedTransaction.paidAmount).toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Due</span>
-                      <span className="font-semibold text-gray-900">{selectedTransaction.dueAmount}</span>
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-gray-600 text-red-600">Due</span>
+                      <span className="text-red-600">{Number(selectedTransaction.dueAmount).toFixed(2)}</span>
                     </div>
+                  </div>
+                )}
+                
+                {/* Signatures */}
+                {!isCompactReceipt && (
+                  <div className="flex justify-between mt-16 pt-8 border-t border-gray-200">
+                     <div className="text-center">
+                        <div className="border-t border-gray-800 w-48 mb-2"></div>
+                        <p className="text-sm text-gray-600 font-medium">Customer / Receiver Signature</p>
+                     </div>
+                     <div className="text-center">
+                        <div className="border-t border-gray-800 w-48 mb-2"></div>
+                        <p className="text-sm text-gray-600 font-medium">Authorized Signature</p>
+                     </div>
                   </div>
                 )}
               </div>
