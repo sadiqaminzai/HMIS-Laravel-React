@@ -56,6 +56,18 @@ const toMaxLength = (value: string | undefined | null, max = 255) => {
   return String(value).slice(0, max);
 };
 
+const stripTrailingStrengthTokens = (value: string | undefined | null, strength: string | undefined | null) => {
+  const text = String(value ?? '').trim();
+  const strengthText = String(strength ?? '').trim();
+
+  if (!text || !strengthText) return text;
+
+  const escapedStrength = strengthText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?:\\s+${escapedStrength})+$`, 'i');
+
+  return text.replace(pattern, '').trim();
+};
+
 const toDateInputValue = (value?: Date | string | null) => {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -136,6 +148,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     const doctorName = selectedDoctor?.name ? ` ${selectedDoctor.name}` : '';
     const template = [
       '<strong>H/O</strong>',
+      '<strong>Vital Signs</strong>',
       '<strong>C/C</strong>',
       '<strong>BP</strong>',
       '<strong>Weight</strong>',
@@ -345,7 +358,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         const brand = originalMed?.brandName || med.medicineName;
         const generic = originalMed?.genericName;
         const strength = originalMed?.strength || med.strength || '';
-        const displayName = formatMedicineDisplay(brand, generic, medType, strength, true);
+        const normalizedBrand = stripTrailingStrengthTokens(brand, strength);
+        const displayName = formatMedicineDisplay(normalizedBrand, generic, medType, strength, true);
 
         return {
           rowId: Date.now().toString() + Math.random().toString(),
@@ -819,7 +833,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     const payloadMedicines = medicines.map((m) => ({
       // Keep medicineId nullable so validation doesn't fail when a free-text brand is used
       medicineId: m.medicineId || '',
-      medicineName: toMaxLength(m.brandName, 255),
+      medicineName: toMaxLength(stripTrailingStrengthTokens(m.brandName, m.strength), 255),
       strength: toMaxLength(m.strength, 255),
       dose: toMaxLength(m.dose, 255),
       duration: toMaxLength(m.duration, 255),
@@ -838,8 +852,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       patientName: isWalkInMode ? walkInPatient.name : patient?.name || '',
       patientAge: Number(isWalkInMode ? walkInPatient.age || 0 : patient?.age ?? 0),
       patientGender: (isWalkInMode ? walkInPatient.gender : patient?.gender || 'other').toString().toLowerCase(),
-      doctorId: doctor?.id || '',
-      doctorName: doctor?.name || '',
+      doctorId: doctor?.id || editPrescriptionData?.doctorId || '',
+      doctorName: doctor?.name || editPrescriptionData?.doctorName || '',
       diagnosis,
       nextVisit: hasNextVisit ? nextVisitDate : null,
       medicines: payloadMedicines,
@@ -869,6 +883,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       setSelectedMedicineSetId('');
       setMedicineSetSearch('');
       setShowPrint(false);
+    } catch (error: any) {
+      const validation = error?.response?.data?.errors;
+      const validationMessage = validation ? Object.values(validation).flat().join(' ') : null;
+      const fallbackMessage = error?.response?.data?.message || 'Failed to save prescription';
+      toast.error(validationMessage || fallbackMessage);
     } finally {
       setIsSaving(false);
     }
@@ -1117,6 +1136,13 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               H/O
+            </button>
+            <button
+              type="button"
+              onClick={() => insertDiagnosisLabel('Vital Signs')}
+              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Vital Signs
             </button>
             <button
               type="button"

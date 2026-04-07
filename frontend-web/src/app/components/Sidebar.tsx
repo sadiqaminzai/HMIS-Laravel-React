@@ -185,6 +185,12 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.stocks',
         icon: <Box className="w-3.5 h-3.5" />,
         anyPermissions: ['view_stocks', 'manage_stocks']
+      },
+      {
+        id: '/stock-adjustments',
+        translationKey: 'nav.stockAdjustments',
+        icon: <Sliders className="w-3.5 h-3.5" />,
+        anyPermissions: ['edit_stocks', 'manage_stocks']
       }
     ]
   },
@@ -237,6 +243,20 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.expenseReport',
         icon: <BarChart className="w-3.5 h-3.5" />,
         anyPermissions: ['view_expenses', 'manage_expenses']
+      }
+    ]
+  },
+  {
+    id: 'reports-menu',
+    translationKey: 'nav.reports',
+    icon: <BarChart className="w-3.5 h-3.5" />,
+    anyPermissions: ['view_reports', 'manage_reports', 'view_ledger', 'manage_ledger', 'export_ledger'],
+    subItems: [
+      {
+        id: '/reports',
+        translationKey: 'nav.reports',
+        icon: <BarChart className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports', 'manage_reports']
       },
       {
         id: '/ledger',
@@ -245,12 +265,6 @@ const menuItems: MenuItem[] = [
         anyPermissions: ['view_ledger', 'manage_ledger', 'export_ledger']
       }
     ]
-  },
-  {
-    id: '/reports',
-    translationKey: 'nav.reports',
-    icon: <BarChart className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_reports', 'manage_reports']
   }
 ];
 
@@ -344,7 +358,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     
     // Auto-collapse logic based on path groups
     // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
-    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stocks'].includes(path);
+    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stocks', '/stock-adjustments'].includes(path);
     if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
     }

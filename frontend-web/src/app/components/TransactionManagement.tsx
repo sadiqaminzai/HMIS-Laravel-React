@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import api from '../../api/axios';
 import { formatOnlyDate } from '../utils/date';
+import { buildVerificationUrl } from '../utils/verification';
 
 let cachedPdfTools: {
   jsPDF: any;
@@ -261,6 +262,28 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       : formatOnlyDate(new Date(), hospitalInfo?.timezone || 'Asia/Kabul', (hospitalInfo?.calendarType as 'gregorian' | 'shamsi') || 'gregorian');
     const createdAt = trx.createdAt ? new Date(trx.createdAt).toLocaleString() : '-';
     const updatedAt = trx.updatedAt ? new Date(trx.updatedAt).toLocaleString() : '-';
+    const verificationUrl = buildVerificationUrl('transaction', trx.verificationToken || null);
+
+    const qrPayload = JSON.stringify({
+      kind: 'transaction',
+      verificationUrl,
+      invoiceNo: trx.serialNo ?? trx.id,
+      transactionType: trx.trxType,
+      transactionDate: invoiceDate,
+      hospital: hospitalName,
+      billedTo: billedToName,
+      grandTotal: Number(netTotal.toFixed(2)),
+      paidAmount: Number((trx.paidAmount || 0).toFixed(2)),
+      dueAmount: Number((trx.dueAmount || 0).toFixed(2)),
+      medicines: transactionDetails.map((detail) => ({
+        medicine: detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown'),
+        batchNo: detail.batchNo || null,
+        quantity: Number(detail.qtty || 0),
+        bonus: Number(detail.bonus || 0),
+        price: Number(detail.price || 0),
+        amount: Number((detail.amount ?? calculateLineAmount(detail)) || 0),
+      })),
+    });
 
     const logoMarkup = logoDataUrl || hospitalInfo?.logo
       ? `<img src="${logoDataUrl || hospitalInfo?.logo}" alt="Hospital logo" class="hospital-logo" />`
@@ -686,6 +709,149 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           </body>
         </html>
       `;
+    } else if (targetSize === '80mm') {
+      const paperWidth = '80mm';
+      
+      const rowsMarkup80mm = transactionDetails.length
+        ? transactionDetails.map((detail, index) => {
+            const amount = Number(detail.amount ?? calculateLineAmount(detail));
+            const qty = Number(detail.qtty || 0);
+            const netPrice = qty > 0 ? amount / qty : Number(detail.price || 0);
+            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+            const rowClass = index % 2 !== 0 ? 'alt' : '';
+            return `
+              <tr class="${rowClass}">
+                <td style="text-align:left;">#${String(index + 1).padStart(2, '0')} ${escapeHtml(itemName).substring(0, 25)}</td>
+                <td>${qty}</td>
+                <td>${netPrice.toFixed(2)}</td>
+                <td style="text-align:right;">${amount.toFixed(2)}</td>
+              </tr>
+            `;
+          }).join('')
+        : '<tr><td colspan="4" style="text-align: center;">No items</td></tr>';
+
+      html = `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${escapeHtml(invoiceHeading)}</title>
+            <style>
+              @page { size: 80mm auto; margin: 0; }
+              * { box-sizing: border-box; }
+              html, body {
+                margin: 0; padding: 0; width: 80mm; background: #fff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+              }
+              .screen-note { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #64748b; font-size: 14px; }
+              @media screen { .receipt { display: none; } .screen-note { display: flex; } }
+              @media print { .screen-note { display: none !important; } .receipt { display: block; } }
+
+              .receipt { background-color: #fff; width: 80mm; padding: 0; margin: 0 auto; position: relative; }
+              .content-wrapper { padding: 6mm 4mm; display: flex; flex-direction: column; gap: 8px; }
+              
+              .header { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+              .header-logo { width: 20%; display: flex; justify-content: flex-start; align-items: center; }
+              .logo { max-width: 50px; max-height: 50px; object-fit: contain; }
+              .header-text { width: 80%; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding-left: 2mm; text-align: left; }
+              .h-name { font-size: 11px; font-weight: 800; color: #000; line-height: 1.2; text-transform: uppercase; margin:0;}
+              .h-contact { font-size: 8px; color: #000; margin-top: 2px; }
+              
+              .blue-bar { background-color: #000; color: #fff; padding: 4px 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 8px; margin-bottom: 8px; }
+              .blue-bar h1 { font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
+              .blue-bar .meta { font-size: 8px; text-align: right; line-height: 1.2; font-weight: bold; }
+              
+              table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+              th { color: #000; font-size: 8px; text-transform: uppercase; text-align: center; padding: 3px; border-bottom: 1.5px solid #000; }
+              th:first-child { text-align: left; }
+              th:last-child { text-align: right; }
+              td { font-size: 8px; text-align: center; padding: 4px 2px; border-bottom: 1px dashed #ccc; }
+              td:first-child { font-weight: bold; color: #000; }
+              td:last-child { font-weight: bold; color: #000; }
+              tr.alt td { background-color: #fff; }
+              tr td { background-color: #fff; }
+
+              .totals-container { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px; margin-top: 4px;}
+              .totals { width: 65%; }
+              .total-row { display: flex; justify-content: space-between; font-size: 9px; padding: 3px 0; font-weight: bold; color: #000; }
+              .total-row span:first-child { color: #000; text-transform: uppercase; font-size: 8px;}
+              .total-row.border-top { border-top: 1px solid #000; margin-top: 3px; padding-top: 3px; }
+              .total-row.border-bottom { border-bottom: 1px solid #000; margin-bottom: 3px; padding-bottom: 3px; }
+              
+              .footer { display: flex; flex-direction: column; justify-content: center; align-items: center; margin-top: 8px; text-align: center; }
+              .footer-cols { width: 100%; font-size: 9px; color: #000; line-height: 1.4; text-align: center;}
+              .footer-cols p { margin:0 0 2px 0; }
+              .qr-box { flex-shrink: 0; padding-right: 10px; padding-bottom: 4px; }
+              .qr-code { width: 60px; height: 60px; border: 1px solid #000; padding: 2px; background: #fff;}
+            </style>
+          </head>
+          <body>
+            <div class="screen-note">Preparing print preview...</div>
+            <div class="receipt">
+              <div class="content-wrapper">
+                <div class="header">
+                  <div class="header-logo">
+                    ${logoMarkup ? '<div>'+logoMarkup.replace('class="hospital-logo"', 'class="logo"')+'</div>' : '<div style="width:32px;height:32px;background:#000;border-radius:50%;margin-bottom:4px;"></div>'}
+                  </div>
+                  <div class="header-text">
+                    <div class="h-name">${escapeHtml(hospitalName)}</div>
+                    <div class="h-contact">${escapeHtml(hospitalContact)}</div>
+                  </div>
+                </div>
+
+                <div class="blue-bar">
+                  <h1>Invoice</h1>
+                  <div class="meta">
+                    <div>#${escapeHtml(String(trx.serialNo ?? '-'))}</div>
+                    <div>Date: ${escapeHtml(invoiceDate)}</div>
+                  </div>
+                </div>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th>DESCRIPTION</th>
+                      <th>QTY</th>
+                      <th>PRICE</th>
+                      <th>TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rowsMarkup80mm}
+                  </tbody>
+                </table>
+
+                <div class="totals-container">
+                  <div class="qr-box">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationUrl || qrPayload)}" class="qr-code" />
+                  </div>
+                  <div class="totals">
+                    <div class="total-row border-top"><span>Subtotal</span> <span>${netTotal.toFixed(2)}</span></div>
+                    <div class="total-row"><span>Tax</span> <span>${totalsSummary.totalTax.toFixed(2)}</span></div>
+                    <div class="total-row border-bottom"><span>Discount</span> <span>${totalsSummary.totalDiscount.toFixed(2)}</span></div>
+                    <div class="total-row" style="font-size: 11px;"><span>Total</span> <span>${netTotal.toFixed(2)}</span></div>
+                  </div>
+                </div>
+
+                <div class="footer">
+                   <div class="footer-cols">
+                     <p><strong>Address:</strong> ${escapeHtml(hospitalAddress || hospitalContact).substring(0, 50)}</p>
+                   </div>
+                </div>
+              </div>
+            </div>
+            <script>
+              window.onload = function () {
+                setTimeout(function () {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 250);
+              };
+            </script>
+          </body>
+        </html>
+      `;
     } else {
       const paperWidth = targetSize;
       const baseFont = targetSize === '58mm' ? 9 : targetSize === '76mm' ? 10 : 11;
@@ -822,7 +988,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const getMedicineDisplay = (id: string) => {
     const med = medicines.find((m) => m.id === id);
     if (!med) return '';
-    const parts = [med.brandName, med.genericName ? `(${med.genericName})` : '', med.strength || '', med.type || ''];
+    const parts = [med.type || '', med.brandName, med.strength || ''];
     return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   };
   const getSupplierDisplay = (id?: string) => suppliers.find((s) => s.id === id)?.name || '';

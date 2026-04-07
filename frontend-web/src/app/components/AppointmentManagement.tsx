@@ -87,7 +87,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     patientId: '',
     doctorId: '',
     appointmentDate: today(),
-    appointmentTime: nowTime(),
+    appointmentTime: '',
     reason: '',
     notes: '',
     hospitalId: currentHospital.id,
@@ -250,7 +250,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       Patient: apt.patientName,
       Doctor: apt.doctorName,
       Date: formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
-      Time: apt.appointmentTime,
+      Time: apt.appointmentTime || '-',
       Reason: apt.reason,
       OriginalFee: apt.originalFeeAmount ?? 0,
       Discount: apt.discountAmount ?? 0,
@@ -285,7 +285,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
         apt.patientName,
         apt.doctorName,
         formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
-        apt.appointmentTime,
+        apt.appointmentTime || '-',
         String((apt.originalFeeAmount ?? 0).toFixed(2)),
         String((apt.discountAmount ?? 0).toFixed(2)),
         String((apt.totalAmount ?? Math.max(0, (apt.originalFeeAmount ?? 0) - (apt.discountAmount ?? 0))).toFixed(2)),
@@ -302,6 +302,126 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const handlePrint = (apt: Appointment) => {
     setSelectedAppointment(apt);
     setShowPrintModal(true);
+  };
+
+  const handlePrintFeesCard = () => {
+    if (!selectedAppointment) {
+      setToast({ message: 'Fees card is not ready for printing.', type: 'danger' });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=300,height=600');
+    if (!printWindow) {
+      setToast({ message: 'Unable to open print window. Please allow pop-ups.', type: 'warning' });
+      return;
+    }
+
+    const doctorSpecialization = hospitalDoctors.find(d => d.id === selectedAppointment.doctorId)?.specialization || 'General Physician';
+    const totalAmount = selectedAppointment.totalAmount ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0));
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>OPD Appointment Card</title>
+          <style>
+              @page { margin: 0; }
+              body { 
+                  margin: 0; 
+                  padding: 10px; 
+                  font-family: 'Courier New', Courier, monospace; 
+                  width: 80mm; 
+                  color: #000; 
+                  font-size: 13px; 
+                  line-height: 1.4; 
+                  background: #fff; 
+              }
+              .text-center { text-align: center; }
+              .font-bold { font-weight: bold; }
+              .text-lg { font-size: 16px; }
+              .text-xl { font-size: 20px; }
+              .mt-2 { margin-top: 5px; }
+              .mt-4 { margin-top: 15px; }
+              .mb-2 { margin-bottom: 5px; }
+              .mb-4 { margin-bottom: 15px; }
+              .uppercase { text-transform: uppercase; }
+              .dashed-line { border-top: 1px dashed #000; margin: 10px 0; }
+              .flex-between { display: flex; justify-content: space-between; }
+              .label { font-weight: bold; width: 45%; }
+              .val { width: 55%; text-align: right; }
+          </style>
+      </head>
+      <body>
+          <div class="text-center mb-4">
+              <div class="font-bold text-xl uppercase">${currentHospital.name}</div>
+              ${currentHospital.address ? `<div>${currentHospital.address}</div>` : ''}
+              ${currentHospital.phone ? `<div>${currentHospital.phone}</div>` : ''}
+              <div class="font-bold mt-2 uppercase">OPD Appointment Card</div>
+          </div>
+
+          <div class="flex-between mb-2">
+              <span class="label">Appointment:</span>
+              <span class="val font-bold">${formatAppointmentNumber(selectedAppointment.appointmentNumber)}</span>
+          </div>
+          <div class="flex-between mb-2">
+              <span class="label">Date & Time:</span>
+              <span class="val">${formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | ${selectedAppointment.appointmentTime || 'No time'}</span>
+          </div>
+
+          <div class="dashed-line"></div>
+
+          <div class="font-bold uppercase mt-4 mb-2">Patient Details</div>
+          <div class="flex-between">
+              <span class="label">Name:</span>
+              <span class="val font-bold">${selectedAppointment.patientName}</span>
+          </div>
+          <div class="flex-between">
+              <span class="label">Age/Gender:</span>
+              <span class="val">${selectedAppointment.patientAge} Y / ${selectedAppointment.patientGender}</span>
+          </div>
+          <div class="flex-between mb-2">
+              <span class="label">ID:</span>
+              <span class="val">${formatPatientId(selectedAppointment.patientId)}</span>
+          </div>
+
+          <div class="font-bold uppercase mt-4 mb-2">Assigned Doctor</div>
+          <div class="flex-between">
+              <span class="label">Name:</span>
+              <span class="val font-bold">${selectedAppointment.doctorName}</span>
+          </div>
+          <div class="flex-between mb-2">
+              <span class="label">Spec:</span>
+              <span class="val">${doctorSpecialization}</span>
+          </div>
+
+          <div class="dashed-line"></div>
+
+          <div class="flex-between mt-2">
+              <span class="label">Original Fee:</span>
+              <span class="val">${(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} ${selectedAppointment.currency ?? 'AFN'}</span>
+          </div>
+          <div class="flex-between mt-2">
+              <span class="label">Discount:</span>
+              <span class="val">${(selectedAppointment.discountAmount ?? 0).toFixed(2)}</span>
+          </div>
+          <div class="flex-between mt-2 font-bold text-lg">
+              <span class="label">Payable Total:</span>
+              <span class="val">${totalAmount.toFixed(2)}</span>
+          </div>
+
+          <div class="dashed-line"></div>
+
+          <div class="text-center mt-4" style="font-size: 11px;">
+              <div>Printed on: ${formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</div>
+              <div class="mt-2">Please bring this card for follow-up visits.</div>
+          </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   };
 
   const formatAppointmentNumber = (aptNumber: string) => {
@@ -384,7 +504,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     }
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
-    const appointmentTime = formData.appointmentTime || nowTime();
+    const appointmentTime = formData.appointmentTime?.trim() || '';
     setSubmitting(true);
     addAppointment({
       hospitalId: formData.hospitalId,
@@ -433,7 +553,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
-    const appointmentTime = formData.appointmentTime || nowTime();
+    const appointmentTime = formData.appointmentTime?.trim() || '';
     setSubmitting(true);
     updateAppointment({
       id: selectedAppointment.id,
@@ -552,7 +672,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       patientId: '',
       doctorId: '',
       appointmentDate: today(),
-      appointmentTime: nowTime(),
+    appointmentTime: '',
       reason: '',
       notes: '',
       hospitalId: currentHospital.id,
@@ -571,7 +691,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       patientId: apt.patientId,
       doctorId: apt.doctorId,
       appointmentDate: apt.appointmentDate.toISOString().split('T')[0],
-      appointmentTime: apt.appointmentTime,
+      appointmentTime: apt.appointmentTime || '',
       reason: apt.reason,
       notes: apt.notes || '',
       hospitalId: apt.hospitalId,
@@ -678,7 +798,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   patientId: '',
                   doctorId: defaultDoctorId,
                   appointmentDate: today(),
-                  appointmentTime: nowTime(),
+                  appointmentTime: '',
                   reason: '',
                   notes: '',
                   hospitalId: currentHospital.id,
@@ -781,7 +901,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         <Calendar className="w-3 h-3" />
                         <span>{formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType)}</span>
                         <Clock className="w-3 h-3 ml-1" />
-                        <span>{apt.appointmentTime}</span>
+                        <span>{apt.appointmentTime || 'No time'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-2">
@@ -1260,34 +1380,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       {showPrintModal && selectedAppointment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
            {/* Robust Print Styles */}
-          <style>
-            {`
-              @media print {
-                body * {
-                  visibility: hidden;
-                }
-                #fees-card-print, #fees-card-print * {
-                  visibility: visible;
-                }
-                #fees-card-print {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
-                  width: 100%;
-                  height: auto !important;
-                  margin: 0;
-                  padding: 20px;
-                  background: white;
-                  display: block !important;
-                }
-                @page {
-                  size: auto;
-                  margin: 0;
-                }
-              }
-            `}
-          </style>
-
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
               <h3 className="font-bold text-gray-900 dark:text-white">Print Fees Card</h3>
@@ -1323,7 +1415,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                        </div>
                        <div className="text-right">
                           <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Date & Time</label>
-                          <span className="font-medium text-gray-900">{formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | {selectedAppointment.appointmentTime}</span>
+                          <span className="font-medium text-gray-900">{formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | {selectedAppointment.appointmentTime || 'No time'}</span>
                        </div>
                     </div>
 
@@ -1378,7 +1470,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 Close
               </button>
               <button 
-                onClick={() => window.print()}
+                onClick={handlePrintFeesCard}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2"
               >
                 <Printer className="w-4 h-4" />

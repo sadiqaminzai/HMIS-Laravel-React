@@ -1,4 +1,4 @@
-export type VerificationType = 'prescription' | 'patient' | 'lab-report';
+export type VerificationType = 'prescription' | 'patient' | 'lab-report' | 'transaction';
 
 export const getPublicBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;

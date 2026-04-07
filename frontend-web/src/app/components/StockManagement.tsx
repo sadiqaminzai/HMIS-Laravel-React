@@ -236,11 +236,7 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
               PDF
             </button>
           )}
-          {canReconcile && (
-            <button onClick={loadReconciliation} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-xs font-medium shadow-sm" title="Reconciliation">
-              Reconcile
-            </button>
-          )}
+
           {canPrint && (
             <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">
               Print

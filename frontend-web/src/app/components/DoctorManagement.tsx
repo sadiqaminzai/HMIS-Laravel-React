@@ -885,85 +885,85 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
           {/* Print View Container - Hidden on screen via CSS class, visible on print via ID style */}
           <div id="doctor-print-view" className="hidden">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between mb-8 border-b-2 border-gray-800 pb-6">
               <div className="flex items-center gap-6">
                 {selectedDoctor.image ? (
-                  <img src={selectedDoctor.image} alt={selectedDoctor.name} className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
+                  <img src={selectedDoctor.image} alt={selectedDoctor.name} className="w-24 h-24 object-cover rounded-xl border border-gray-200 shadow-sm" />
                 ) : (
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200">
+                  <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200 shadow-sm">
                     <Stethoscope className="w-12 h-12 text-gray-400" />
                   </div>
                 )}
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 mb-2">{selectedDoctor.name}</h1>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-lg font-semibold text-gray-700 bg-gray-100 px-3 py-1 rounded">
+                    <span className="font-mono text-base font-semibold text-gray-700 bg-gray-100 px-3 py-1 rounded-md border border-gray-200">
                       {selectedDoctor.registrationNumber}
                     </span>
-                    <span className="text-lg text-blue-600 font-medium">
+                    <span className="text-base text-gray-700 font-semibold">
                       {selectedDoctor.specialization}
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="text-right text-gray-500">
+              <div className="text-right text-gray-500 min-w-[140px]">
                 <p className="text-sm">Report Generated</p>
                 <p className="font-bold text-gray-900 text-lg">{new Date().toLocaleDateString()}</p>
               </div>
             </div>
 
             {/* Print Content Grid */}
-            <div className="grid grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-8">
               {/* Contact Info */}
-              <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-                <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
+              <div className="border border-gray-300 rounded-xl p-5 md:p-6 bg-gray-50/40 shadow-sm">
+                <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4">
                   Contact Information
                 </h3>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                      <p className="text-gray-900 font-medium text-base font-mono">{selectedDoctor.phone}</p>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Phone</label>
+                        <p className="text-gray-900 font-semibold text-base">{selectedDoctor.phone}</p>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Email</label>
+                        <p className="text-gray-900 font-semibold text-sm break-all">{selectedDoctor.email}</p>
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email</label>
-                      <p className="text-gray-900 font-medium text-base">{selectedDoctor.email}</p>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Status</label>
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider border inline-flex items-center gap-1.5 ${
+                        selectedDoctor.status === 'active' ? 'text-green-700 border-green-200 bg-green-50' : 'text-red-700 border-red-200 bg-red-50'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${selectedDoctor.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                        {selectedDoctor.status}
+                      </span>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Status</label>
-                    <span className={`px-2 py-1 rounded text-sm font-bold uppercase tracking-wide border ${
-                      selectedDoctor.status === 'active'
-                        ? 'text-green-700 border-green-700 bg-green-50'
-                        : 'text-red-700 border-red-700 bg-red-50'
-                    }`}>
-                      {selectedDoctor.status}
-                    </span>
-                  </div>
                 </div>
               </div>
 
               {/* Professional Info */}
-              <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-                <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
+              <div className="border border-gray-300 rounded-xl p-5 md:p-6 bg-gray-50/40 shadow-sm">
+                <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4">
                   Professional Details
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Registration</label>
-                    <p className="text-gray-900 font-bold text-xl font-mono">{selectedDoctor.registrationNumber}</p>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Registration</label>
+                    <p className="text-gray-900 font-bold text-lg">{selectedDoctor.registrationNumber}</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Consultation Fee</label>
-                    <p className="text-gray-900 font-bold text-xl font-mono">{selectedDoctor.consultationFee || 0}</p>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Consultation Fee</label>
+                    <p className="text-gray-900 font-bold text-lg">{selectedDoctor.consultationFee || 0}</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Signature On File</label>
-                    <div className="p-3 bg-white border border-gray-200 rounded text-center">
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Signature On File</label>
+                    <div className="p-3 bg-white border border-gray-200 rounded-lg text-center shadow-sm">
                         {selectedDoctor.signature ? (
-                           <img src={selectedDoctor.signature} alt="Signature" className="h-12 object-contain mx-auto" />
+                           <img src={selectedDoctor.signature} alt="Signature" className="h-10 object-contain mx-auto" />
                         ) : (
-                            <span className="text-gray-400 italic">No signature available</span>
+                            <span className="text-gray-400 text-sm italic">No signature available</span>
                         )}
                     </div>
                   </div>
@@ -973,21 +973,23 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
             {/* Availability Schedule (Print) */}
             {selectedDoctor.availability && (
-              <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50 mb-8">
-                <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4 flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
+              <div className="border border-gray-300 rounded-xl p-5 md:p-6 bg-gray-50/40 mb-20 shadow-sm">
+                <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-500" />
                   Availability Schedule
                 </h3>
-                <div className="grid grid-cols-7 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
                   {selectedDoctor.availability.map((slot: DoctorAvailability) => (
-                    <div key={slot.day} className={`p-2 rounded border text-center ${slot.isAvailable ? 'bg-white border-green-200' : 'bg-gray-100 border-gray-200'}`}>
-                      <div className="text-xs font-bold uppercase tracking-wider mb-1 text-gray-500">{slot.day.substring(0, 3)}</div>
+                    <div key={slot.day} className={`p-3 rounded-lg border text-center ${slot.isAvailable ? 'bg-white border-green-200 shadow-sm' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="text-[10px] font-bold uppercase tracking-widest mb-1.5 text-gray-500">{slot.day.substring(0, 3)}</div>
                       {slot.isAvailable ? (
-                        <div className="text-sm font-bold text-gray-900">
-                          {slot.startTime}<br/><span className="text-gray-400 text-xs font-normal">to</span><br/>{slot.endTime}
+                        <div className="text-sm font-bold text-gray-900 space-y-0.5">
+                          <div>{slot.startTime}</div>
+                          <div className="text-gray-400 text-[10px] font-medium uppercase">to</div>
+                          <div>{slot.endTime}</div>
                         </div>
                       ) : (
-                        <div className="text-sm font-medium text-red-500 italic py-2">Off</div>
+                        <div className="text-sm font-medium text-red-500/70 italic py-2">Off</div>
                       )}
                     </div>
                   ))}
@@ -996,9 +998,10 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             )}
 
             {/* Print Footer */}
-            <div className="fixed bottom-0 left-0 right-0 border-t border-gray-300 pt-4 pb-10 flex justify-between items-center text-sm text-gray-500 px-10 bg-white">
-              <p>Doctor Management System Record</p>
-              <p>Page 1 of 1</p>
+            <div className="fixed bottom-0 left-0 right-0 border-t border-gray-300 pt-4 pb-8 flex justify-between items-center text-sm text-gray-500 px-10 bg-white">
+              <p className="font-medium tracking-wide">Doctor Management System Record</p>
+              <p className="font-medium">Page 1 of 1</p>
+            </div>
             </div>
           </div>
 
@@ -1133,22 +1136,22 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created By</label>
-                    <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.createdBy || '-'}</p>
+                    <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.createdBy || 'System'}</p>
                   </div>
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
-                      {selectedDoctor.createdAt ? new Date(selectedDoctor.createdAt).toLocaleString() : '-'}
+                      {selectedDoctor.createdAt ? new Date(selectedDoctor.createdAt).toLocaleString() : 'N/A'}
                     </p>
                   </div>
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
-                    <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.updatedBy || '-'}</p>
+                    <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.updatedBy || selectedDoctor.createdBy || 'System'}</p>
                   </div>
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
-                      {selectedDoctor.updatedAt ? new Date(selectedDoctor.updatedAt).toLocaleString() : '-'}
+                      {selectedDoctor.updatedAt ? new Date(selectedDoctor.updatedAt).toLocaleString() : 'N/A'}
                     </p>
                   </div>
                 </div>

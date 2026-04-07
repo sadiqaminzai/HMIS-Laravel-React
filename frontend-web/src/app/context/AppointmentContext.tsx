@@ -123,7 +123,7 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
     if (payload.patientAge !== undefined && payload.patientAge !== null) body.patient_age = payload.patientAge;
     if (payload.patientGender) body.patient_gender = payload.patientGender;
     if (payload.appointmentDate) body.appointment_date = formatDateOnly(payload.appointmentDate);
-    if (payload.appointmentTime) body.appointment_time = payload.appointmentTime;
+    if (payload.appointmentTime !== undefined) body.appointment_time = payload.appointmentTime || null;
     if (payload.reason !== undefined) body.reason = payload.reason;
     if (payload.status) body.status = payload.status;
     if (payload.notes !== undefined) body.notes = payload.notes;

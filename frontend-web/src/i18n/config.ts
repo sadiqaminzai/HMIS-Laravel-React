@@ -50,6 +50,7 @@ const resources = {
         suppliers: 'Suppliers',
         transactions: 'Transactions',
         stocks: 'Stocks',
+        stockAdjustments: 'Stock Adjustments',
         prescriptions: 'Prescriptions',
         treatmentSets: 'Treatment Sets',
         createPrescription: 'Create Prescription',
@@ -501,10 +502,19 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
+    supportedLngs: ['en', 'ps', 'fa', 'ar'],
+    nonExplicitSupportedLngs: true,
+    load: 'languageOnly',
     fallbackLng: 'en',
+    detection: {
+      order: ['localStorage', 'cookie'],
+      caches: ['localStorage', 'cookie'],
+    },
     interpolation: {
       escapeValue: false,
     },
   });
 
 export default i18n;
+
+

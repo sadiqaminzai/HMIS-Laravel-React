@@ -36,8 +36,11 @@ export function LabInvoicePrint({
   });
 
   const subtotal = invoiceItems.reduce((sum, item) => sum + item.price, 0);
+  const discountAmount = Math.min(Math.max(Number(labTest.discountAmount || 0), 0), subtotal);
   const tax = 0; // Assuming 0 for now or hospital configured
-  const total = subtotal + tax;
+  const total = Number.isFinite(labTest.totalAmount)
+    ? Number(labTest.totalAmount)
+    : Math.max(0, subtotal - discountAmount + tax);
 
   const handlePrint = () => {
     if (onPrint) {
@@ -169,7 +172,7 @@ export function LabInvoicePrint({
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">Bill To (Patient)</h3>
                 <div className="space-y-1 text-sm">
                   <p className="font-bold text-lg text-gray-900">{labTest.patientName}</p>
-                  <p className="text-gray-600">ID: {labTest.patientId}</p>
+                  <p className="text-gray-600">ID: {labTest.patientDisplayId || labTest.patientId}</p>
                   <p className="text-gray-600">{labTest.patientAge} Years / {labTest.patientGender}</p>
                   {patient?.phone && <p className="text-gray-600">Phone: {patient.phone}</p>}
                   {patient?.address && <p className="text-gray-600">{patient.address}</p>}
@@ -214,6 +217,12 @@ export function LabInvoicePrint({
                     <td colSpan={2} className="py-3 px-4 text-right font-bold text-gray-600">Subtotal</td>
                     <td className="py-3 px-4 text-right font-bold text-gray-900">{subtotal.toFixed(2)}</td>
                   </tr>
+                  {discountAmount > 0 && (
+                    <tr>
+                      <td colSpan={2} className="py-2 px-4 text-right text-gray-600">Discount</td>
+                      <td className="py-2 px-4 text-right text-green-700">- {discountAmount.toFixed(2)}</td>
+                    </tr>
+                  )}
                   {tax > 0 && (
                     <tr>
                       <td colSpan={2} className="py-2 px-4 text-right text-gray-600">Tax</td>

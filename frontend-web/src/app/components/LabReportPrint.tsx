@@ -114,6 +114,14 @@ export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
               {test.reportedAt?.toLocaleDateString()} {test.reportedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
+          <div>
+            <div className="text-[8px] font-semibold text-gray-500 uppercase">Created By</div>
+            <div className="text-[10px] text-gray-900 font-medium">{test.createdBy || '-'}</div>
+          </div>
+          <div>
+            <div className="text-[8px] font-semibold text-gray-500 uppercase">Completed By</div>
+            <div className="text-[10px] text-gray-900 font-medium">{test.completedBy || '-'}</div>
+          </div>
         </div>
       </div>
 
@@ -180,7 +188,7 @@ export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
         <div className="signature-box text-center">
           <div className="signature-line w-40 border-t-2 border-gray-900 mb-1"></div>
           <div className="signature-label text-[9px] font-semibold text-gray-700">Lab Technician</div>
-          <div className="signature-name text-[10px] text-gray-600">{test.assignedToName || 'Lab Department'}</div>
+          <div className="signature-name text-[10px] text-gray-600">{test.completedBy || test.assignedToName || 'Lab Department'}</div>
         </div>
         <div className="signature-box text-center">
           <div className="signature-line w-40 border-t-2 border-gray-900 mb-1"></div>

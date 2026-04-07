@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Search, Shield, Eye, Trash2, X } from 'lucide-react';
+import { Plus, Pencil, Search, Shield, Eye, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
@@ -48,6 +48,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const [submitting, setSubmitting] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<PermissionOption[]>([]);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [formData, setFormData] = useState({
     name: '',
     displayName: '',
@@ -289,6 +290,120 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
     return acc;
   }, {});
 
+  const permissionCategories = useMemo(
+    () =>
+      Object.entries(groupedPermissions)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([category, perms]) => [
+          category,
+          [...perms].sort((a, b) => (a.displayName || a.name).localeCompare(b.displayName || b.name)),
+        ] as [string, PermissionOption[]]),
+    [groupedPermissions]
+  );
+
+  useEffect(() => {
+    if (!(showAddModal || showEditModal)) {
+      return;
+    }
+
+    setCollapsedCategories((prev) => {
+      const next = { ...prev };
+      for (const [category] of permissionCategories) {
+        if (next[category] === undefined) {
+          next[category] = false;
+        }
+      }
+      return next;
+    });
+  }, [permissionCategories, showAddModal, showEditModal]);
+
+  const toggleCategoryCollapsed = (category: string) => {
+    setCollapsedCategories((prev) => ({
+      ...prev,
+      [category]: !(prev[category] ?? false),
+    }));
+  };
+
+  const getCategorySelectedCount = (perms: PermissionOption[]) => {
+    return perms.reduce((count, perm) => count + (formData.permissions.includes(perm.id) ? 1 : 0), 0);
+  };
+
+  const toggleCategoryAll = (perms: PermissionOption[]) => {
+    setFormData((prev) => {
+      const ids = perms.map((perm) => perm.id);
+      const allSelected = ids.every((id) => prev.permissions.includes(id));
+
+      if (allSelected) {
+        return {
+          ...prev,
+          permissions: prev.permissions.filter((id) => !ids.includes(id)),
+        };
+      }
+
+      return {
+        ...prev,
+        permissions: Array.from(new Set([...prev.permissions, ...ids])),
+      };
+    });
+  };
+
+  const renderPermissionSelector = () => (
+    <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 max-h-64 overflow-y-auto">
+      {permissionCategories.map(([category, perms]) => {
+        const selectedCount = getCategorySelectedCount(perms);
+        const isCollapsed = collapsedCategories[category] ?? false;
+        const allSelected = selectedCount > 0 && selectedCount === perms.length;
+
+        return (
+          <div key={category} className="mb-3 last:mb-0 rounded border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-gray-50 dark:bg-gray-700/40">
+              <button
+                type="button"
+                onClick={() => toggleCategoryCollapsed(category)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200"
+                title={`Toggle ${category}`}
+              >
+                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                <span>{category}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                  {selectedCount}/{perms.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleCategoryAll(perms)}
+                className="text-[10px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-700"
+                title={`Select all ${category}`}
+              >
+                {allSelected ? 'Clear All' : 'Select All'}
+              </button>
+            </div>
+
+            {!isCollapsed && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 p-2">
+                {perms.map((perm) => (
+                  <label
+                    key={perm.id}
+                    className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.permissions.includes(perm.id)}
+                      onChange={() => togglePermission(perm.id)}
+                      className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-[11px] leading-4 text-gray-700 dark:text-gray-300">{perm.displayName || perm.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       {!canViewRoles ? (
@@ -505,26 +620,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
               </div>
               <div className="mb-3">
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</label>
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 max-h-64 overflow-y-auto">
-                  {Object.entries(groupedPermissions).map(([category, perms]) => (
-                    <div key={category} className="mb-3 last:mb-0">
-                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{category}</h4>
-                      <div className="space-y-1">
-                        {perms.map((perm) => (
-                          <label key={perm.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded">
-                            <input
-                              type="checkbox"
-                              checked={formData.permissions.includes(perm.id)}
-                              onChange={() => togglePermission(perm.id)}
-                              className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                            />
-                            <span className="text-xs text-gray-700 dark:text-gray-300">{perm.displayName || perm.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {renderPermissionSelector()}
               </div>
               <div className="flex gap-2 pt-2">
                 <button
@@ -658,26 +754,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
               </div>
               <div className="mb-3">
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</label>
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 max-h-64 overflow-y-auto">
-                  {Object.entries(groupedPermissions).map(([category, perms]) => (
-                    <div key={category} className="mb-3 last:mb-0">
-                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{category}</h4>
-                      <div className="space-y-1">
-                        {perms.map((perm) => (
-                          <label key={perm.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded">
-                            <input
-                              type="checkbox"
-                              checked={formData.permissions.includes(perm.id)}
-                              onChange={() => togglePermission(perm.id)}
-                              className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                            />
-                            <span className="text-xs text-gray-700 dark:text-gray-300">{perm.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {renderPermissionSelector()}
               </div>
               <div className="flex gap-2 pt-2">
                 <button

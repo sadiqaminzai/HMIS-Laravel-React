@@ -44,6 +44,7 @@ const mapTransaction = (t: any): Transaction => ({
   totalTax: Number(t.total_tax ?? 0),
   paidAmount: Number(t.paid_amount ?? 0),
   dueAmount: Number(t.due_amount ?? 0),
+  verificationToken: t.verification_token ?? undefined,
   createdBy: t.created_by ?? undefined,
   updatedBy: t.updated_by ?? undefined,
   createdAt: t.created_at ? new Date(t.created_at) : undefined,

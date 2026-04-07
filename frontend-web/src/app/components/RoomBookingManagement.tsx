@@ -6,6 +6,7 @@ import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooki
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 
 interface RoomBookingManagementProps {
@@ -100,6 +101,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const { hospitals } = useHospitals();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
+  const { hasPermission } = useAuth();
 
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [roomOptions, setRoomOptions] = useState<RoomOption[]>([]);
@@ -127,7 +129,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
     checkOutDate: '',
     bedNumber: '',
     bedsToBook: '1',
-    discountAmount: '0',
+    discountPercent: '0',
     status: 'Pending' as BookingItem['status'],
     paymentStatus: 'pending' as BookingItem['paymentStatus'],
     remarks: '',
@@ -142,9 +144,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       : 1;
     const room = roomOptions.find((r) => r.id === form.roomId && r.hospitalId === form.hospitalId);
     const estimatedBase = Number(room?.cost_per_bed ?? 0) * Number(form.bedsToBook || 1) * nights;
-    const discount = Math.max(0, Number(form.discountAmount || 0));
-    const estimatedTotal = Math.max(0, estimatedBase - discount);
-    return { nights, estimatedBase, estimatedTotal };
+    const discountAmount = (estimatedBase * Math.max(0, Number(form.discountPercent || 0))) / 100;
+    const estimatedTotal = Math.max(0, estimatedBase - discountAmount);
+    return { nights, estimatedBase, estimatedTotal, discountAmount };
   };
 
   const costPreview = calculateNightsAndTotal();
@@ -229,7 +231,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       checkOutDate: '',
       bedNumber: '',
       bedsToBook: '1',
-      discountAmount: '0',
+      discountPercent: '0',
       status: 'Pending',
       paymentStatus: 'pending',
       remarks: '',
@@ -255,7 +257,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       checkOutDate: toDateInputValue(item.checkOutDate),
       bedNumber: item.bedNumber || '',
       bedsToBook: String(item.bedsToBook),
-      discountAmount: String(item.discountAmount),
+      discountPercent: '0',
       status: item.status,
       paymentStatus: item.paymentStatus,
       remarks: item.remarks || '',
@@ -371,7 +373,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       check_out_date: form.checkOutDate || undefined,
       bed_number: form.bedNumber || undefined,
       beds_to_book: Number(form.bedsToBook || 1),
-      discount_amount: Number(form.discountAmount || 0),
+      discount_amount: calculateNightsAndTotal().discountAmount,
       status: form.status,
       payment_status: form.paymentStatus,
       remarks: form.remarks || undefined,
@@ -556,11 +558,13 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               body {
                 background: #ffffff;
                 padding: 0;
+                margin: 0;
               }
               .ticket {
                 box-shadow: none;
                 border: ${isCompactReceipt ? '0' : '1px solid #e5e7eb'};
                 width: ${ticketWidth};
+                margin: 0;
               }
               ${pageRule}
             }
@@ -743,7 +747,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900 dark:text-white">{editing ? 'Edit Booking' : 'Add Booking'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
@@ -804,10 +808,12 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                 <label className="text-xs font-medium">Beds To Book</label>
                 <input title="Beds to book" type="number" min={1} value={form.bedsToBook} onChange={(e) => setForm((p) => ({ ...p, bedsToBook: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
               </div>
-              <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Discount Amount</label>
-                <input title="Discount amount" type="number" min={0} step="0.01" value={form.discountAmount} onChange={(e) => setForm((p) => ({ ...p, discountAmount: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
-              </div>
+              {(hasPermission('add_discounts') || hasPermission('manage_discounts')) && (
+                <div className="col-span-12 md:col-span-4">
+                  <label className="text-xs font-medium">Discount (%)</label>
+                  <input title="Discount percent" type="number" min={0} max={100} step="1" value={form.discountPercent} onChange={(e) => setForm((p) => ({ ...p, discountPercent: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                </div>
+              )}
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Status</label>
                 <select title="Booking status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as BookingItem['status'] }))} className="mt-1 w-full rounded border px-3 py-2 text-sm">

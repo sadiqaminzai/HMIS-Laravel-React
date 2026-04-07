@@ -242,7 +242,24 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       }));
     }
 
-    const { data } = await api.put(`/prescriptions/${input.id}`, payload);
+    let data: any;
+    try {
+      const response = await api.put(`/prescriptions/${input.id}`, payload);
+      data = response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const validation = error?.response?.data?.errors;
+      const validationMessage = validation
+        ? Object.values(validation).flat().join(' ')
+        : null;
+      const msg = validationMessage || error?.response?.data?.message || 'Failed to update prescription';
+
+      if (status !== 401 && status !== 403) {
+        toast.error(msg);
+      }
+
+      throw error;
+    }
 
     if (input.medicines) {
       const updated = data?.data ?? data;

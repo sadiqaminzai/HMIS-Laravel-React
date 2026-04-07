@@ -14,6 +14,7 @@ export interface LabOrderResponse {
   patient_gender: 'male' | 'female' | 'other';
   doctor_id: number;
   doctor_name: string;
+  discount_amount: string;
   total_amount: string;
   paid_amount: string;
   payment_status: 'unpaid' | 'partial' | 'paid';
@@ -97,6 +98,7 @@ export interface LabOrder {
   patientGender: 'male' | 'female' | 'other';
   doctorId: string;
   doctorName: string;
+  discountAmount: number;
   totalAmount: number;
   paidAmount: number;
   paymentStatus: 'unpaid' | 'partial' | 'paid';
@@ -207,6 +209,7 @@ function transformToFrontend(order: LabOrderResponse): LabOrder {
     patientGender: order.patient_gender,
     doctorId: String(order.doctor_id),
     doctorName: order.doctor_name,
+    discountAmount: parseFloat(order.discount_amount ?? '0') || 0,
     totalAmount: parseFloat(order.total_amount) || 0,
     paidAmount: parseFloat(order.paid_amount) || 0,
     paymentStatus: order.payment_status,
@@ -287,6 +290,8 @@ export interface CreateLabOrderPayload {
   doctorId: string;
   doctorName: string;
   testIds: string[];
+  discountAmount?: number;
+  discountPercentage?: number;
   priority?: 'normal' | 'urgent' | 'stat';
   clinicalNotes?: string;
 }
@@ -300,6 +305,8 @@ export async function createLabOrder(payload: CreateLabOrderPayload): Promise<La
     doctor_id: Number(payload.doctorId),
     doctor_name: payload.doctorName,
     test_ids: payload.testIds.map(Number),
+    discount_amount: Number(payload.discountAmount ?? 0),
+    discount_percentage: Number(payload.discountPercentage ?? 0),
     priority: payload.priority || 'normal',
     clinical_notes: payload.clinicalNotes || null,
   });

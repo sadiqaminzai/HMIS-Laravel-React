@@ -181,6 +181,7 @@ export interface Transaction {
   totalTax: number;
   paidAmount: number;
   dueAmount: number;
+  verificationToken?: string;
   createdBy?: string;
   updatedBy?: string;
   createdAt?: Date;
@@ -402,6 +403,7 @@ export interface LabTest {
   hospitalId: string;
   testNumber: string;
   patientId: string;
+  patientDisplayId?: string;
   patientName: string;
   patientAge: number;
   patientGender: string;
@@ -420,6 +422,8 @@ export interface LabTest {
   remarks?: string;
   assignedTo?: string; // Lab Technician ID
   assignedToName?: string;
+  completedBy?: string;
+  discountAmount?: number;
   totalAmount?: number;
   paidAmount?: number;
   orderItems?: Array<{

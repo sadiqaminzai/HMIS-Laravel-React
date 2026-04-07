@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import {
@@ -123,6 +123,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
 
   const [isPatientSurgeryModalOpen, setIsPatientSurgeryModalOpen] = useState(false);
   const [editingPatientSurgery, setEditingPatientSurgery] = useState<PatientSurgeryItem | null>(null);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [patientSurgeryForm, setPatientSurgeryForm] = useState({
     patientId: '',
     doctorId: '',
@@ -412,6 +413,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title="Print Invoice"><Printer className="w-4 h-4" /></button>
                           <button onClick={async () => { try { const updated = await togglePatientSurgeryPaymentStatus(row.id); setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item)); toast.success('Payment status toggled'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
                           <button onClick={() => { setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: row.surgeryDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
                           <button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
@@ -507,6 +509,142 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsPatientSurgeryModalOpen(false)} className="px-3 py-2 text-sm rounded border">Cancel</button><button type="submit" className="px-3 py-2 text-sm rounded bg-blue-600 text-white">{editingPatientSurgery ? 'Update' : 'Create'}</button></div>
             </form>
           </div>
+        </div>
+      )}
+
+      {showInvoiceModal && editingPatientSurgery && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                Surgery Invoice
+              </h2>
+              <button onClick={() => setShowInvoiceModal(false)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-8 max-h-[70vh] overflow-y-auto">
+              <div id="surgery-invoice-print" className="bg-white text-black p-8 border border-gray-100 shadow-sm">
+                <div className="flex justify-between items-start mb-8">
+                  <div>
+                    <h1 className="text-2xl font-bold text-blue-900">{hospital.name}</h1>
+                    <p className="text-sm text-gray-600">Surgery Department</p>
+                  </div>
+                  <div className="text-right">
+                    <h2 className="text-xl font-bold text-gray-400 uppercase">Invoice</h2>
+                    <p className="text-sm text-gray-600">No: SURG-{editingPatientSurgery.id}</p>
+                    <p className="text-sm text-gray-600">Date: {editingPatientSurgery.surgeryDate}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8 mb-8">
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Patient Details</h3>
+                    <p className="font-bold">{editingPatientSurgery.patientName}</p>
+                  </div>
+                  <div className="text-right">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Surgeon</h3>
+                    <p className="font-bold">Dr. {editingPatientSurgery.doctorName || 'N/A'}</p>
+                  </div>
+                </div>
+
+                <table className="w-full mb-8">
+                  <thead>
+                    <tr className="border-b-2 border-gray-100">
+                      <th className="text-left py-2 font-bold">Description</th>
+                      <th className="text-right py-2 font-bold">Status</th>
+                      <th className="text-right py-2 font-bold">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-gray-50">
+                      <td className="py-4">
+                        <p className="font-bold">{editingPatientSurgery.surgeryName}</p>
+                        <p className="text-xs text-gray-500 italic">{editingPatientSurgery.notes || 'No notes'}</p>
+                      </td>
+                      <td className="py-4 text-right capitalize">{editingPatientSurgery.status}</td>
+                      <td className="py-4 text-right">{editingPatientSurgery.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="flex justify-end">
+                  <div className="w-1/2 space-y-2 font-bold">
+                    <div className="flex justify-between text-lg text-blue-900 pt-2 border-t-2 border-blue-900">
+                      <span>Total Amount</span>
+                      <span>{editingPatientSurgery.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-green-600 capitalize italic">
+                      <span>Payment Status</span>
+                      <span>{editingPatientSurgery.paymentStatus}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-16 text-center text-xs text-gray-400">
+                  <p>Computer generated invoice - no signature required.</p>
+                  <p>Thank you for choosing {hospital.name}.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-700/50 px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+              <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 text-sm font-medium border rounded-md">Close</button>
+              <button
+                onClick={() => setTimeout(() => window.print(), 100)}
+                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" /> Print
+              </button>
+            </div>
+          </div>
+
+          <style>
+            {`
+              @media print {
+                html, body {
+                  height: auto !important;
+                  overflow: visible !important;
+                  background: white !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body * {
+                  visibility: hidden;
+                }
+                #surgery-invoice-print, #surgery-invoice-print * {
+                  visibility: visible !important;
+                }
+                /* Break out of the fixed modal container for printing */
+                .fixed.inset-0 {
+                  position: absolute !important;
+                  display: block !important;
+                  height: auto !important;
+                  min-height: 100vh !important;
+                  width: 100% !important;
+                  overflow: visible !important;
+                  background: transparent !important;
+                }
+                .max-h-\\[70vh\\] {
+                  max-height: none !important;
+                  overflow: visible !important;
+                }
+                #surgery-invoice-print {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  padding: 20mm !important;
+                  margin: 0 !important;
+                  box-sizing: border-box !important;
+                }
+                @page { margin: 0; size: auto; }
+              }
+            `}
+          </style>
         </div>
       )}
     </div>

@@ -32,6 +32,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
   const canExport = hasPermission('export_test_templates') || hasPermission('manage_test_templates');
   
   const { t, i18n } = useTranslation();
+  const currentLanguage = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
   const [tests, setTests] = useState<TestTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,11 +56,11 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       setTests(result.data);
     } catch (error) {
       console.error('Failed to load tests:', error);
-      toast.error(i18n.language === 'en' ? 'Failed to load tests' : 'خطا در بارگذاری آزمایشات');
+      toast.error(currentLanguage === 'en' ? 'Failed to load tests' : 'خطا در بارگذاری آزمایشات');
     } finally {
       setIsLoading(false);
     }
-  }, [selectedHospitalId, isAllHospitals, searchTerm, i18n.language]);
+  }, [selectedHospitalId, isAllHospitals, searchTerm, currentLanguage]);
 
   // Fetch tests when hospital or search changes
   useEffect(() => {
@@ -126,10 +127,10 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       try {
         await deleteTestTemplate(id);
         setTests(tests.filter(t => t.id !== id));
-        toast.success(i18n.language === 'en' ? 'Test deleted' : 'تست حذف شد');
+        toast.success(currentLanguage === 'en' ? 'Test deleted' : 'تست حذف شد');
       } catch (error) {
         console.error('Failed to delete test:', error);
-        toast.error(i18n.language === 'en' ? 'Failed to delete test' : 'خطا در حذف آزمایش');
+        toast.error(currentLanguage === 'en' ? 'Failed to delete test' : 'خطا در حذف آزمایش');
       }
     }
   };
@@ -157,17 +158,17 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       if (modalMode === 'add') {
         const created = await createTestTemplate(payload);
         setTests(prev => [created, ...prev]);
-        toast.success(i18n.language === 'en' ? 'Test added' : 'تست اضافه شد');
+        toast.success(currentLanguage === 'en' ? 'Test added' : 'تست اضافه شد');
       } else {
         const updated = await updateTestTemplate(selectedTest!.id, payload);
         setTests(prev => prev.map(t => t.id === selectedTest!.id ? updated : t));
-        toast.success(i18n.language === 'en' ? 'Test updated' : 'تست بروز شد');
+        toast.success(currentLanguage === 'en' ? 'Test updated' : 'تست بروز شد');
       }
       setIsModalOpen(false);
       resetForm();
     } catch (error: any) {
       console.error('Failed to save test:', error);
-      const message = error?.response?.data?.message || (i18n.language === 'en' ? 'Failed to save test' : 'خطا در ذخیره آزمایش');
+      const message = error?.response?.data?.message || (currentLanguage === 'en' ? 'Failed to save test' : 'خطا در ذخیره آزمایش');
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -291,7 +292,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     doc.save('Test_Definitions_Report.pdf');
   };
 
-  const isRTL = i18n.language === 'ar' || i18n.language === 'fa' || i18n.language === 'ps';
+  const isRTL = currentLanguage === 'ar' || currentLanguage === 'fa' || currentLanguage === 'ps';
 
   return (
     <div className={`space-y-3 ${isRTL ? 'rtl' : 'ltr'}`}>
@@ -299,10 +300,10 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-            {i18n.language === 'en' ? 'Test Management' : i18n.language === 'ps' ? 'د ازمویښتونو مدیریت' : i18n.language === 'fa' ? 'مدیریت آزمایشات' : 'إدارة الاختبارات'}
+            {currentLanguage === 'en' ? 'Test Management' : currentLanguage === 'ps' ? 'د ازمویښتونو مدیریت' : currentLanguage === 'fa' ? 'مدیریت آزمایشات' : 'إدارة الاختبارات'}
           </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            {i18n.language === 'en' 
+            {currentLanguage === 'en' 
               ? `Manage laboratory test definitions for ${isAllHospitals ? 'All Hospitals' : currentHospital.name}`
               : `مدیریت تعاریف آزمایشات برای ${isAllHospitals ? 'همه بیمارستان‌ها' : currentHospital.name}`
             }
@@ -315,7 +316,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
             <Search className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? 'right-2.5' : 'left-2.5'} w-3.5 h-3.5 text-gray-400`} />
             <input
               type="text"
-              placeholder={i18n.language === 'en' ? 'Search tests...' : i18n.language === 'ps' ? 'لټون...' : i18n.language === 'fa' ? 'جستجو...' : 'بحث...'}
+              placeholder={currentLanguage === 'en' ? 'Search tests...' : currentLanguage === 'ps' ? 'لټون...' : currentLanguage === 'fa' ? 'جستجو...' : 'بحث...'}
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -352,7 +353,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              {i18n.language === 'en' ? 'Add' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة'}
+              {currentLanguage === 'en' ? 'Add' : currentLanguage === 'ps' ? 'اضافه' : currentLanguage === 'fa' ? 'افزودن' : 'إضافة'}
             </button>
           )}
         </div>
@@ -373,45 +374,45 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               <tr>
                 <th onClick={() => handleSort('testCode')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Code' : i18n.language === 'ps' ? 'کوډ' : i18n.language === 'fa' ? 'کد' : 'رمز'}
+                    {currentLanguage === 'en' ? 'Code' : currentLanguage === 'ps' ? 'کوډ' : currentLanguage === 'fa' ? 'کد' : 'رمز'}
                     {renderSortIcon('testCode')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('testName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Test Name' : i18n.language === 'ps' ? 'نوم' : i18n.language === 'fa' ? 'نام آزمایش' : 'الاسم'}
+                    {currentLanguage === 'en' ? 'Test Name' : currentLanguage === 'ps' ? 'نوم' : currentLanguage === 'fa' ? 'نام آزمایش' : 'الاسم'}
                     {renderSortIcon('testName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('testType')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Type' : i18n.language === 'ps' ? 'ډول' : i18n.language === 'fa' ? 'نوع' : 'النوع'}
+                    {currentLanguage === 'en' ? 'Type' : currentLanguage === 'ps' ? 'ډول' : currentLanguage === 'fa' ? 'نوع' : 'النوع'}
                     {renderSortIcon('testType')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('sampleType')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Sample' : i18n.language === 'ps' ? 'نمونه' : i18n.language === 'fa' ? 'نمونه' : 'عينة'}
+                    {currentLanguage === 'en' ? 'Sample' : currentLanguage === 'ps' ? 'نمونه' : currentLanguage === 'fa' ? 'نمونه' : 'عينة'}
                     {renderSortIcon('sampleType')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('price')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Price' : i18n.language === 'ps' ? 'قیمت' : i18n.language === 'fa' ? 'قیمت' : 'السعر'}
+                    {currentLanguage === 'en' ? 'Price' : currentLanguage === 'ps' ? 'قیمت' : currentLanguage === 'fa' ? 'قیمت' : 'السعر'}
                     {renderSortIcon('price')}
                   </div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">
-                  {i18n.language === 'en' ? 'Params' : i18n.language === 'ps' ? 'پارام' : i18n.language === 'fa' ? 'پارام' : 'معامل'}
+                  {currentLanguage === 'en' ? 'Params' : currentLanguage === 'ps' ? 'پارام' : currentLanguage === 'fa' ? 'پارام' : 'معامل'}
                 </th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    {i18n.language === 'en' ? 'Status' : i18n.language === 'ps' ? 'حالت' : i18n.language === 'fa' ? 'وضعیت' : 'الحالة'}
+                    {currentLanguage === 'en' ? 'Status' : currentLanguage === 'ps' ? 'حالت' : currentLanguage === 'fa' ? 'وضعیت' : 'الحالة'}
                     {renderSortIcon('status')}
                   </div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">
-                  {i18n.language === 'en' ? 'Actions' : i18n.language === 'ps' ? 'کړنې' : i18n.language === 'fa' ? 'عملیات' : 'إجراءات'}
+                  {currentLanguage === 'en' ? 'Actions' : currentLanguage === 'ps' ? 'کړنې' : currentLanguage === 'fa' ? 'عملیات' : 'إجراءات'}
                 </th>
               </tr>
             </thead>
@@ -445,7 +446,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
                           : 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-800'
                       }`}>
-                        {test.status === 'active' ? (i18n.language === 'en' ? 'Active' : 'فعال') : (i18n.language === 'en' ? 'Inactive' : 'غیرفعال')}
+                        {test.status === 'active' ? (currentLanguage === 'en' ? 'Active' : 'فعال') : (currentLanguage === 'en' ? 'Inactive' : 'غیرفعال')}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-center">
@@ -485,7 +486,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
                       <p className="text-sm font-medium">
-                        {i18n.language === 'en' ? 'Loading tests...' : 'در حال بارگذاری...'}
+                        {currentLanguage === 'en' ? 'Loading tests...' : 'در حال بارگذاری...'}
                       </p>
                     </div>
                   </td>
@@ -498,7 +499,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                         <Search className="w-6 h-6 text-gray-400" />
                       </div>
                       <p className="text-sm font-medium">
-                        {i18n.language === 'en' ? 'No tests found' : i18n.language === 'ps' ? 'تست ونه موندل شو' : i18n.language === 'fa' ? 'آزمایشی یافت نشد' : 'لم يتم العثور'}
+                        {currentLanguage === 'en' ? 'No tests found' : currentLanguage === 'ps' ? 'تست ونه موندل شو' : currentLanguage === 'fa' ? 'آزمایشی یافت نشد' : 'لم يتم العثور'}
                       </p>
                       <p className="text-xs mt-1">Try adjusting your search terms</p>
                     </div>
@@ -543,8 +544,8 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg sticky top-0 z-10">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                 {modalMode === 'add' 
-                  ? (i18n.language === 'en' ? 'Add New Test' : i18n.language === 'ps' ? 'نوی تست' : i18n.language === 'fa' ? 'آزمایش جدید' : 'اختبار جديد')
-                  : (i18n.language === 'en' ? 'Edit Test' : i18n.language === 'ps' ? 'تست تدوین' : i18n.language === 'fa' ? 'ویرایش' : 'تعديل')
+                  ? (currentLanguage === 'en' ? 'Add New Test' : currentLanguage === 'ps' ? 'نوی تست' : currentLanguage === 'fa' ? 'آزمایش جدید' : 'اختبار جديد')
+                  : (currentLanguage === 'en' ? 'Edit Test' : currentLanguage === 'ps' ? 'تست تدوین' : currentLanguage === 'fa' ? 'ویرایش' : 'تعديل')
                 }
               </h2>
               <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
@@ -557,7 +558,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               {userRole === 'super_admin' && (
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    {i18n.language === 'en' ? 'Hospital' : i18n.language === 'ps' ? 'روغتون' : i18n.language === 'fa' ? 'بیمارستان' : 'مستشفى'} <span className="text-red-500">*</span>
+                    {currentLanguage === 'en' ? 'Hospital' : currentLanguage === 'ps' ? 'روغتون' : currentLanguage === 'fa' ? 'بیمارستان' : 'مستشفى'} <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.hospitalId}
@@ -575,12 +576,12 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               {/* Basic Info */}
               <div>
                 <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-2 bg-gray-50 dark:bg-gray-700/30 p-1.5 rounded border border-gray-100 dark:border-gray-700">
-                  {i18n.language === 'en' ? 'Basic Information' : i18n.language === 'ps' ? 'معلومات' : i18n.language === 'fa' ? 'اطلاعات' : 'المعلومات'}
+                  {currentLanguage === 'en' ? 'Basic Information' : currentLanguage === 'ps' ? 'معلومات' : currentLanguage === 'fa' ? 'اطلاعات' : 'المعلومات'}
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Test Code' : i18n.language === 'ps' ? 'کوډ' : i18n.language === 'fa' ? 'کد' : 'رمز'} *
+                      {currentLanguage === 'en' ? 'Test Code' : currentLanguage === 'ps' ? 'کوډ' : currentLanguage === 'fa' ? 'کد' : 'رمز'} *
                     </label>
                     <input
                       type="text"
@@ -592,7 +593,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Test Name' : i18n.language === 'ps' ? 'نوم' : i18n.language === 'fa' ? 'نام' : 'الاسم'} *
+                      {currentLanguage === 'en' ? 'Test Name' : currentLanguage === 'ps' ? 'نوم' : currentLanguage === 'fa' ? 'نام' : 'الاسم'} *
                     </label>
                     <input
                       type="text"
@@ -604,7 +605,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Test Type' : i18n.language === 'ps' ? 'ډول' : i18n.language === 'fa' ? 'نوع' : 'النوع'} *
+                      {currentLanguage === 'en' ? 'Test Type' : currentLanguage === 'ps' ? 'ډول' : currentLanguage === 'fa' ? 'نوع' : 'النوع'} *
                     </label>
                     <input
                       type="text"
@@ -626,7 +627,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Sample Type' : i18n.language === 'ps' ? 'نمونه' : i18n.language === 'fa' ? 'نمونه' : 'عينة'} *
+                      {currentLanguage === 'en' ? 'Sample Type' : currentLanguage === 'ps' ? 'نمونه' : currentLanguage === 'fa' ? 'نمونه' : 'عينة'} *
                     </label>
                     <input
                       type="text"
@@ -649,7 +650,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Price' : i18n.language === 'ps' ? 'قیمت' : i18n.language === 'fa' ? 'قیمت' : 'السعر'} *
+                      {currentLanguage === 'en' ? 'Price' : currentLanguage === 'ps' ? 'قیمت' : currentLanguage === 'fa' ? 'قیمت' : 'السعر'} *
                     </label>
                     <input
                       type="number"
@@ -663,15 +664,15 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      {i18n.language === 'en' ? 'Status' : i18n.language === 'ps' ? 'حالت' : i18n.language === 'fa' ? 'وضعیت' : 'الحالة'}
+                      {currentLanguage === 'en' ? 'Status' : currentLanguage === 'ps' ? 'حالت' : currentLanguage === 'fa' ? 'وضعیت' : 'الحالة'}
                     </label>
                     <select
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500"
                     >
-                      <option value="active">{i18n.language === 'en' ? 'Active' : 'فعال'}</option>
-                      <option value="inactive">{i18n.language === 'en' ? 'Inactive' : 'غیرفعال'}</option>
+                      <option value="active">{currentLanguage === 'en' ? 'Active' : 'فعال'}</option>
+                      <option value="inactive">{currentLanguage === 'en' ? 'Inactive' : 'غیرفعال'}</option>
                     </select>
                   </div>
                 </div>
@@ -681,7 +682,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-semibold text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700/30 p-1.5 rounded border border-gray-100 dark:border-gray-700 flex-1 mr-2">
-                    {i18n.language === 'en' ? 'Test Parameters' : i18n.language === 'ps' ? 'پارامترونه' : i18n.language === 'fa' ? 'پارامترها' : 'المعاملات'}
+                    {currentLanguage === 'en' ? 'Test Parameters' : currentLanguage === 'ps' ? 'پارامترونه' : currentLanguage === 'fa' ? 'پارامترها' : 'المعاملات'}
                   </h3>
                   <button
                     type="button"
@@ -689,7 +690,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    {i18n.language === 'en' ? 'Add' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة'}
+                    {currentLanguage === 'en' ? 'Add' : currentLanguage === 'ps' ? 'اضافه' : currentLanguage === 'fa' ? 'افزودن' : 'إضافة'}
                   </button>
                 </div>
 
@@ -698,7 +699,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                     <div key={index} className="p-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50">
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                          {i18n.language === 'en' ? 'Parameter' : 'پارامتر'} #{index + 1}
+                          {currentLanguage === 'en' ? 'Parameter' : 'پارامتر'} #{index + 1}
                         </span>
                         {parameters.length > 1 && (
                           <button
@@ -715,7 +716,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           <input
                             type="text"
                             required
-                            placeholder={i18n.language === 'en' ? 'Name *' : 'نوم *'}
+                            placeholder={currentLanguage === 'en' ? 'Name *' : 'نوم *'}
                             value={param.parameterName}
                             onChange={(e) => updateParameter(index, 'parameterName', e.target.value)}
                             className="w-full px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500"
@@ -725,7 +726,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           <input
                             type="text"
                             required
-                            placeholder={i18n.language === 'en' ? 'Unit *' : 'واحد *'}
+                            placeholder={currentLanguage === 'en' ? 'Unit *' : 'واحد *'}
                             value={param.unit}
                             onChange={(e) => updateParameter(index, 'unit', e.target.value)}
                             className="w-full px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500"
@@ -735,7 +736,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           <input
                             type="text"
                             required
-                            placeholder={i18n.language === 'en' ? 'Normal Range *' : 'نورمال حد *'}
+                            placeholder={currentLanguage === 'en' ? 'Normal Range *' : 'نورمال حد *'}
                             value={param.normalRange}
                             onChange={(e) => updateParameter(index, 'normalRange', e.target.value)}
                             className="w-full px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500"
@@ -757,7 +758,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
                 >
-                  {i18n.language === 'en' ? 'Cancel' : i18n.language === 'ps' ? 'لغوه' : i18n.language === 'fa' ? 'لغو' : 'إلغاء'}
+                  {currentLanguage === 'en' ? 'Cancel' : currentLanguage === 'ps' ? 'لغوه' : currentLanguage === 'fa' ? 'لغو' : 'إلغاء'}
                 </button>
                 <button
                   type="submit"
@@ -766,8 +767,8 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {modalMode === 'add' 
-                    ? (i18n.language === 'en' ? 'Add Test' : i18n.language === 'ps' ? 'اضافه' : i18n.language === 'fa' ? 'افزودن' : 'إضافة')
-                    : (i18n.language === 'en' ? 'Update Test' : i18n.language === 'ps' ? 'تازه' : i18n.language === 'fa' ? 'بروز' : 'تحديث')
+                    ? (currentLanguage === 'en' ? 'Add Test' : currentLanguage === 'ps' ? 'اضافه' : currentLanguage === 'fa' ? 'افزودن' : 'إضافة')
+                    : (currentLanguage === 'en' ? 'Update Test' : currentLanguage === 'ps' ? 'تازه' : currentLanguage === 'fa' ? 'بروز' : 'تحديث')
                   }
                 </button>
               </div>
@@ -785,7 +786,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               <div>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
                   <Eye className="w-4 h-4" />
-                  {i18n.language === 'en' ? 'Test Details' : 'جزئیات آزمایش'}
+                  {currentLanguage === 'en' ? 'Test Details' : 'جزئیات آزمایش'}
                 </h2>
                 <p className="text-xs text-blue-100 mt-0.5">{selectedTest.testCode}</p>
               </div>
@@ -804,44 +805,44 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Test Name' : 'نام آزمایش'}
+                    {currentLanguage === 'en' ? 'Test Name' : 'نام آزمایش'}
                   </p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.testName}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Test Type' : 'نوع آزمایش'}
+                    {currentLanguage === 'en' ? 'Test Type' : 'نوع آزمایش'}
                   </p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.testType}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Sample Type' : 'نوع نمونه'}
+                    {currentLanguage === 'en' ? 'Sample Type' : 'نوع نمونه'}
                   </p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.sampleType}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Price' : 'قیمت'}
+                    {currentLanguage === 'en' ? 'Price' : 'قیمت'}
                   </p>
                   <p className="text-sm font-semibold text-green-600 dark:text-green-400 mt-0.5">{selectedTest.price}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Category' : 'دسته‌بندی'}
+                    {currentLanguage === 'en' ? 'Category' : 'دسته‌بندی'}
                   </p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{selectedTest.category || 'Routine'}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
-                    {i18n.language === 'en' ? 'Status' : 'وضعیت'}
+                    {currentLanguage === 'en' ? 'Status' : 'وضعیت'}
                   </p>
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium mt-0.5 ${
                     selectedTest.status === 'active'
                       ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                       : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
                   }`}>
-                    {selectedTest.status === 'active' ? (i18n.language === 'en' ? 'Active' : 'فعال') : (i18n.language === 'en' ? 'Inactive' : 'غیرفعال')}
+                    {selectedTest.status === 'active' ? (currentLanguage === 'en' ? 'Active' : 'فعال') : (currentLanguage === 'en' ? 'Inactive' : 'غیرفعال')}
                   </span>
                 </div>
               </div>
@@ -851,7 +852,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 <div>
                   <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
                     <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-                    {i18n.language === 'en' ? 'Test Parameters' : 'پارامترهای آزمایش'} ({selectedTest.parameters.length})
+                    {currentLanguage === 'en' ? 'Test Parameters' : 'پارامترهای آزمایش'} ({selectedTest.parameters.length})
                   </h3>
                   <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                     <table className="w-full text-xs">
@@ -859,13 +860,13 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                         <tr>
                           <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">#</th>
                           <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                            {i18n.language === 'en' ? 'Parameter' : 'پارامتر'}
+                            {currentLanguage === 'en' ? 'Parameter' : 'پارامتر'}
                           </th>
                           <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                            {i18n.language === 'en' ? 'Unit' : 'واحد'}
+                            {currentLanguage === 'en' ? 'Unit' : 'واحد'}
                           </th>
                           <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                            {i18n.language === 'en' ? 'Normal Range' : 'محدوده طبیعی'}
+                            {currentLanguage === 'en' ? 'Normal Range' : 'محدوده طبیعی'}
                           </th>
                         </tr>
                       </thead>
@@ -890,7 +891,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   {selectedTest.duration && (
                     <div className="bg-amber-50 dark:bg-amber-900/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
                       <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wide font-medium">
-                        {i18n.language === 'en' ? 'Expected Duration' : 'زمان انتظار'}
+                        {currentLanguage === 'en' ? 'Expected Duration' : 'زمان انتظار'}
                       </p>
                       <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mt-0.5">{selectedTest.duration}</p>
                     </div>
@@ -898,7 +899,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                   {selectedTest.instructions && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-2.5 rounded-lg border border-blue-200 dark:border-blue-800">
                       <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-wide font-medium">
-                        {i18n.language === 'en' ? 'Instructions' : 'دستورالعمل'}
+                        {currentLanguage === 'en' ? 'Instructions' : 'دستورالعمل'}
                       </p>
                       <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">{selectedTest.instructions}</p>
                     </div>
@@ -917,13 +918,13 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
               >
                 <Pencil className="w-3.5 h-3.5" />
-                {i18n.language === 'en' ? 'Edit' : 'ویرایش'}
+                {currentLanguage === 'en' ? 'Edit' : 'ویرایش'}
               </button>
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
               >
-                {i18n.language === 'en' ? 'Close' : 'بستن'}
+                {currentLanguage === 'en' ? 'Close' : 'بستن'}
               </button>
             </div>
           </div>

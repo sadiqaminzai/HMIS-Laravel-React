@@ -61,6 +61,7 @@ const PrescriptionCreateLazy = lazy(() => import('./components/PrescriptionCreat
 const PrescriptionListLazy = lazy(() => import('./components/PrescriptionList').then((m) => ({ default: m.PrescriptionList })));
 const ReportsLazy = lazy(() => import('./components/Reports').then((m) => ({ default: m.Reports })));
 const StockManagementLazy = lazy(() => import('./components/StockManagement').then((m) => ({ default: m.StockManagement })));
+const StockAdjustmentLazy = lazy(() => import('./components/StockAdjustment').then((m) => ({ default: m.StockAdjustment })));
 const AppointmentManagementLazy = lazy(() => import('./components/AppointmentManagement').then((m) => ({ default: m.AppointmentManagement })));
 const RoomBookingManagementLazy = lazy(() => import('./components/RoomBookingManagement').then((m) => ({ default: m.RoomBookingManagement })));
 const SurgeryManagementLazy = lazy(() => import('./components/SurgeryManagement').then((m) => ({ default: m.SurgeryManagement })));
@@ -443,6 +444,16 @@ function AppContent() {
                 <RequirePermission anyOf={["view_stocks", "add_stocks", "edit_stocks", "delete_stocks", "export_stocks", "print_stocks", "manage_stocks"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <StockManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/stock-adjustments"
+              element={
+                <RequirePermission anyOf={["edit_stocks", "manage_stocks"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <StockAdjustmentLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }

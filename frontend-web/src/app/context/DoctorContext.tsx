@@ -45,6 +45,10 @@ const mapDoctor = (d: any): Doctor => ({
   image: d.image_url ?? d.image_path ?? '',
   signature: d.signature_url ?? d.signature_path ?? '',
   availability: normalizeAvailability(d.availability_schedule),
+  createdBy: d.created_by ?? d.createdBy ?? 'System',
+  updatedBy: d.updated_by ?? d.updatedBy ?? undefined,
+  createdAt: d.created_at ? new Date(d.created_at) : undefined,
+  updatedAt: d.updated_at ? new Date(d.updated_at) : undefined,
 });
 
 export function DoctorProvider({ children }: { children: React.ReactNode }) {

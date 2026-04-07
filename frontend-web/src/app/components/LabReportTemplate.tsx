@@ -31,29 +31,31 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
   };
 
   return (
-    <div 
+    <div
       id={`report-${test.id}`}
-      style={{ 
+      style={{
         backgroundColor: colors.white,
         color: colors.gray900,
-        padding: '32px',
+        padding: '16px',
+        width: '100%',
         maxWidth: '56rem', // max-w-4xl
         margin: '0 auto',
         fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
       }}
     >
-      {/* Header */}
-      <div 
-        style={{ 
+      <div
+        style={{
           paddingBottom: '16px',
           marginBottom: '16px',
           borderBottom: `2px solid ${colors.gray800}`,
           display: 'flex',
+          flexWrap: 'wrap',
           justifyContent: 'space-between',
-          alignItems: 'flex-start'
+          alignItems: 'center',
+          gap: '16px'
         }}
       >
-        <div style={{ flex: '1 1 0%' }}>
+        <div style={{ flex: '1 1 0%', minWidth: '200px' }}>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: '32px', color: brandColor, margin: 0 }}>
             {hospital.name}
           </h1>
@@ -67,8 +69,9 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
             Email: {hospital.email}
           </p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <QRCodeCanvas value={qrValue} size={80} />
+        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+          <QRCodeCanvas value={qrValue} size={100} />
+          <p style={{ fontSize: '10px', marginTop: '6px', color: colors.gray500, fontWeight: 'bold', letterSpacing: '0.05em' }}>SCAN TO VERIFY</p>
         </div>
       </div>
 
@@ -83,7 +86,7 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
       </div>
 
       {/* Patient & Test Info */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '24px', fontSize: '14px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', fontSize: '14px' }}>
         <div>
           <h3 
             style={{ 
@@ -101,7 +104,7 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Name:</span> <span>{test.patientName}</span></div>
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Age:</span> <span>{test.patientAge} Years</span></div>
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Gender:</span> <span style={{ textTransform: 'capitalize' }}>{test.patientGender}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Patient ID:</span> <span>{test.patientId}</span></div>
+            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Patient ID:</span> <span>{test.patientDisplayId || test.patientId}</span></div>
           </div>
         </div>
         <div>
@@ -157,35 +160,38 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
             </div>
 
             {/* Parameters Table */}
-            <table 
-              style={{ 
-                width: '100%', 
-                fontSize: '12px', 
-                border: `1px solid ${colors.gray300}`,
-                borderCollapse: 'collapse'
-              }}
-            >
-              <thead>
-                <tr style={{ backgroundColor: colors.gray50 }}>
-                  <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Parameter</th>
-                  <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Result</th>
-                  <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Unit</th>
-                  <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Normal Range</th>
-                  <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results?.map((result, idx) => (
-                  <tr key={idx}>
-                    <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '500' }}>{result.parameterName}</td>
-                    <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '600' }}>{result.result || '-'}</td>
-                    <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.unit}</td>
-                    <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.normalRange}</td>
-                    <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.remarks || '-'}</td>
+            <div style={{ overflowX: 'auto' }}>
+              <table 
+                style={{ 
+                  width: '100%', 
+                  fontSize: '12px', 
+                  border: `1px solid ${colors.gray300}`,
+                  borderCollapse: 'collapse',
+                  minWidth: '500px'
+                }}
+              >
+                <thead>
+                  <tr style={{ backgroundColor: colors.gray50 }}>
+                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Parameter</th>
+                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Result</th>
+                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Unit</th>
+                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Normal Range</th>
+                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {results?.map((result, idx) => (
+                    <tr key={idx}>
+                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '500' }}>{result.parameterName}</td>
+                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '600' }}>{result.result || '-'}</td>
+                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.unit}</td>
+                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.normalRange}</td>
+                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.remarks || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ))}
       </div>
@@ -227,10 +233,10 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
           borderTop: `2px solid ${colors.gray800}` 
         }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '32px', fontSize: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '32px', fontSize: '14px' }}>
           <div>
-            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Lab Technician</p>
-            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>{test.assignedToName || 'Lab Technician'}</p>
+            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Completed By:</p>
+            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>{test.completedBy || test.assignedToName || 'Lab Technician'}</p>
             <div 
               style={{ 
                 marginTop: '32px', 
@@ -242,8 +248,8 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
             </div>
           </div>
           <div>
-            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Verified By</p>
-            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>Pathologist</p>
+            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Completed At:</p>
+            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>{test.reportedAt ? formatDate(test.reportedAt, hospital?.timezone || 'Asia/Kabul', hospital?.calendarType as any) : '-'}</p>
             <div 
               style={{ 
                 marginTop: '32px', 

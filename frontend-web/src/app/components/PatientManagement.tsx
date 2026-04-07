@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 import { toPng } from 'html-to-image';
 import { useAuth } from '../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
+import Barcode from 'react-barcode';
 import { buildVerificationUrl } from '../utils/verification';
 
 // Helper to convert hex to RGB array for jsPDF
@@ -52,8 +53,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showIdCardModal, setShowIdCardModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientImageError, setPatientImageError] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    setPatientImageError(false);
+  }, [selectedPatient?.id, selectedPatient?.image, showIdCardModal, showViewModal]);
 
   // Apply hospital filter first from API data
   const hospitalFiltered = React.useMemo(() => filterByHospital(patients), [patients, filterByHospital]);
@@ -108,6 +114,16 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const canDelete = hasPermission('delete_patients') || hasPermission('manage_patients');
   const canExport = hasPermission('export_patients') || hasPermission('manage_patients');
   const canPrint = hasPermission('print_patients') || hasPermission('manage_patients');
+
+  const getPatientVerificationUrl = (patient: Patient) => {
+    if (!patient.verificationToken) return '';
+    return buildVerificationUrl('patient', patient.verificationToken);
+  };
+
+  const getPatientQrValue = (patient: Patient) => {
+    const verificationUrl = getPatientVerificationUrl(patient);
+    return verificationUrl || `PATIENT:${patient.hospitalId}:${patient.id}:${patient.patientId}`;
+  };
 
   const filteredPatients = doctorFiltered.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -394,13 +410,12 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     
     try {
       const dataUrl = await toPng(element, { backgroundColor: '#ffffff' });
-      
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
-        format: [85.6, 53.98] // CR80 size
+        format: [85.6, 53.98]
       });
-      
+
       pdf.addImage(dataUrl, 'PNG', 0, 0, 85.6, 53.98);
       pdf.save(`${selectedPatient.name.replace(/\s+/g, '_')}_ID_Card.pdf`);
       toast.success('ID Card PDF downloaded successfully.');
@@ -895,16 +910,17 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   position: absolute;
                   left: 0;
                   top: 0;
-                  width: 100%;
-                  height: auto;
-                  min-height: 100%;
-                  z-index: 9999;
+                  width: 86mm;
+                  height: 54mm;
+                  display: flex !important;
+                  margin: 0;
+                  padding: 0;
+                  color: black;
                   background: white;
-                  display: block !important;
-                  padding: 40px;
+                  overflow: hidden;
                 }
                 @page {
-                  size: auto;
+                  size: 86mm 54mm landscape;
                   margin: 0;
                 }
               }
@@ -912,91 +928,72 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
           </style>
 
           {/* Print View Container */}
-          <div id="patient-print-view" className="hidden">
-            <div className="flex items-start justify-between mb-8 border-b-2 border-gray-800 pb-6">
-              <div className="flex items-center gap-6">
-                {selectedPatient.image ? (
-                  <img src={selectedPatient.image} alt={selectedPatient.name} className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
+          <div id="patient-print-view" className="hidden print:flex w-[86mm] h-[54mm] bg-white relative overflow-hidden flex-row font-sans mx-auto border border-gray-200">
+            <div className="w-[32%] bg-blue-800 text-white flex flex-col items-center justify-start py-1.5 px-1.5 gap-1">
+              <h1 className="text-[7px] font-bold uppercase tracking-[0.08em] leading-tight text-center">
+                {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.name || currentHospital.name}
+              </h1>
+
+              <div className="w-8 h-8 bg-white rounded-full p-0.5 flex items-center justify-center overflow-hidden shadow-sm">
+                {currentHospital.logo ? (
+                  <img src={currentHospital.logo} alt={currentHospital.name} className="w-full h-full rounded-full object-cover" />
                 ) : (
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200">
-                    <Users className="w-12 h-12 text-gray-400" />
+                  <div className="text-blue-800 font-bold text-[14px]">{(contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.name || currentHospital.name || 'H').charAt(0)}</div>
+                )}
+              </div>
+
+              <div className="w-[21mm] h-[26mm] bg-white border border-white/70 rounded-md overflow-hidden shadow-sm">
+                {selectedPatient.image && !patientImageError ? (
+                  <img src={selectedPatient.image} alt={selectedPatient.name} onError={() => setPatientImageError(true)} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100">
+                    <Users className="w-5 h-5" />
                   </div>
                 )}
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">{selectedPatient.name}</h1>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-lg font-semibold text-gray-700 bg-gray-100 px-3 py-1 rounded">
-                      ID: {selectedPatient.patientId}
-                    </span>
-                    <span className={`px-3 py-1 rounded text-sm font-bold uppercase tracking-wide border ${
-                      selectedPatient.gender === 'male'
-                        ? 'text-blue-700 border-blue-700 bg-blue-50'
-                        : selectedPatient.gender === 'female'
-                          ? 'text-pink-700 border-pink-700 bg-pink-50'
-                          : 'text-gray-700 border-gray-700 bg-gray-50'
-                    }`}>
-                      {selectedPatient.gender ? selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1) : ''}
-                    </span>
-                  </div>
-                </div>
               </div>
-              <div className="text-right text-gray-500">
-                <p className="text-sm">Report Generated</p>
-                <p className="font-bold text-gray-900 text-lg">{formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</p>
+
+              <div className="text-center leading-tight">
+                <p className="text-[6px] uppercase tracking-[0.12em] text-blue-100">Issued By</p>
+                <p className="text-[7px] font-semibold">ShifaaScript HMIS</p>
               </div>
             </div>
 
-            {/* Print Content Grid */}
-            <div className="grid grid-cols-2 gap-8">
-              {/* Personal Info */}
-              <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-                <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
-                  Personal Information
-                </h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Age</label>
-                      <p className="text-gray-900 font-medium text-base">{selectedPatient.age} Years</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                      <p className="text-gray-900 font-medium text-base font-mono">{selectedPatient.phone}</p>
-                    </div>
+            <div className="w-[68%] flex flex-col bg-white">
+              <div className="px-2 py-1 border-b border-gray-200">
+                <p className="text-[7px] text-gray-500 uppercase tracking-[0.12em] font-semibold">Patient Identification Card</p>
+              </div>
+
+              <div className="px-2 py-1 flex-1">
+                <h2 className="text-[12px] font-black text-gray-900 uppercase leading-tight truncate">{selectedPatient.name}</h2>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-0.5">
+                  <div>
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Patient ID</p>
+                    <p className="text-[9px] font-mono font-bold text-gray-900">{selectedPatient.patientId}</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Address</label>
-                    <p className="text-gray-900 font-medium text-base">{selectedPatient.address}</p>
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Age / Sex</p>
+                    <p className="text-[8px] font-bold text-gray-900">{selectedPatient.age}Y / {selectedPatient.gender?.charAt(0).toUpperCase()}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Phone</p>
+                    <p className="text-[8px] font-semibold text-gray-900 truncate">{selectedPatient.phone || '-'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Address</p>
+                    <p className="text-[7px] text-gray-700 leading-tight line-clamp-2">{selectedPatient.address || '-'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Medical Info */}
-              <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-                <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
-                  Medical Details
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Last Appointment Doctor</label>
-                    <p className="text-gray-900 font-medium text-base">{getLastAppointmentDoctorName(selectedPatient)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Last Appointment Date</label>
-                    <p className="text-gray-900 font-medium text-base">{getLastAppointmentDateLabel(selectedPatient)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Registration Date</label>
-                    <p className="text-gray-900 font-medium text-base">{formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</p>
-                  </div>
+              <div className="px-2 py-1 border-t border-gray-200 flex items-end justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <Barcode value={selectedPatient.patientId} height={13} width={1.1} displayValue={false} margin={0} background="transparent" />
+                  <p className="text-[6px] text-gray-500 mt-0.5">ID: {selectedPatient.patientId}</p>
+                </div>
+                <div className="p-0.5 bg-white border border-gray-200 rounded shrink-0">
+                  <QRCodeSVG value={getPatientQrValue(selectedPatient)} size={24} />
                 </div>
               </div>
-            </div>
-
-            {/* Print Footer */}
-            <div className="fixed bottom-0 left-0 right-0 border-t border-gray-300 pt-4 pb-10 flex justify-between items-center text-sm text-gray-500 px-10 bg-white">
-              <p>Patient Management System Record</p>
-              <p>Page 1 of 1</p>
             </div>
           </div>
 
@@ -1147,26 +1144,59 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
            <style>
             {`
               @media print {
+                html, body {
+                  width: 80mm !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background-color: white !important;
+                  overflow: visible !important;
+                }
                 body * {
                   visibility: hidden;
                 }
                 #patient-id-card-print, #patient-id-card-print * {
                   visibility: visible;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                /* Break out of the fixed modal container for printing */
+                .fixed.inset-0 {
+                  position: absolute !important;
+                  display: block !important;
+                  height: auto !important;
+                  min-height: 100vh !important;
+                  width: 100% !important;
+                  overflow: visible !important;
+                  background: transparent !important;
                 }
                 #patient-id-card-print {
-                  position: absolute;
-                  left: 50%;
-                  top: 50%;
-                  transform: translate(-50%, -50%);
-                  margin: 0;
-                  padding: 0;
-                  background: white;
-                  box-shadow: none;
-                  display: block !important;
-                  border: 1px solid #ddd;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 76mm !important;
+                  height: 54mm !important;
+                  background: white !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  border-radius: 0 !important;
+                  transform: none !important;
+                  z-index: 9999 !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  overflow: hidden !important;
+                }
+                /* Ensure all elements inside remove rounded corners if they bleed */
+                #patient-id-card-print div {
+                  box-shadow: none !important;
+                }
+                #patient-id-card-print .qr-code {
+                  width: 14mm !important;
+                  height: 14mm !important;
                 }
                 @page {
-                  size: auto;
+                  size: 80mm 60mm;
                   margin: 0;
                 }
               }
@@ -1198,20 +1228,16 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             </div>
 
             <div className="p-6 flex justify-center bg-gray-100 dark:bg-gray-900">
-               {/* ID Card Container - Visible in Print & Screen */}
-               <div id="patient-id-card-print" className="w-[85.6mm] h-[53.98mm] bg-white rounded-xl shadow-lg overflow-hidden relative border border-gray-200 flex flex-col print:shadow-none print:border-0">
-                  {/* Card Header */}
-                  <div className="h-10 flex items-center justify-between px-3" style={{ backgroundColor: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>
+               <div id="patient-id-card-print" className="w-[85.6mm] h-[54mm] bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col print:shadow-none print:border-none print:rounded-none relative overflow-hidden">
+                  <div className="h-10 flex items-center justify-between px-3 shrink-0" style={{ backgroundColor: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>
                      <div className="text-white font-bold text-xs tracking-wide">
                         {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.name || 'Medical Center'}
                      </div>
                      <div className="text-[8px] text-white/80 uppercase tracking-widest">Patient Card</div>
                   </div>
                   
-                  {/* Card Body */}
-                  <div className="flex-1 p-3 flex gap-3 relative z-10">
-                     {/* Photo Area */}
-                     <div className="w-20 h-24 bg-gray-100 rounded-md border border-gray-200 overflow-hidden flex-shrink-0 self-center">
+                  <div className="flex-1 p-3 flex gap-3 z-10 box-border">
+                     <div className="w-20 h-24 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden shrink-0 self-center">
                         {selectedPatient.image ? (
                            <img src={selectedPatient.image} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -1221,7 +1247,6 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         )}
                      </div>
                      
-                     {/* Details */}
                      <div className="flex-1 space-y-1 pt-1">
                         <div>
                            <div className="text-[8px] text-gray-400 uppercase tracking-wider font-semibold">Name</div>
@@ -1244,22 +1269,24 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                      </div>
                   </div>
                   
-                  {/* Card Footer / Background Elements */}
-                  <div className="absolute bottom-0 left-0 right-0 h-12 bg-gray-50 border-t border-gray-100 flex items-center justify-between px-3">
+                  <div className="h-12 bg-gray-50 border-t border-gray-100 flex items-center justify-between px-3 shrink-0">
                      <div className="text-[6px] text-gray-400 leading-tight max-w-[60%]">
                         {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.address || '123 Medical Center Drive'}
                      </div>
-                     {/* QR Code Placeholder */}
-                     <div className="opacity-80">
+                     <div className="opacity-80 shrink-0">
                        <QRCodeSVG
-                        value={buildVerificationUrl('patient', selectedPatient.verificationToken) || selectedPatient.patientId}
-                        size={32}
+                        value={getPatientQrValue(selectedPatient)}
+                      size={40}
+                      level="H"
+                      includeMargin={true}
+                      fgColor="#111827"
+                      bgColor="#ffffff"
+                      className="qr-code"
                        />
                      </div>
                   </div>
                </div>
             </div>
-
             <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-t border-gray-200 dark:border-gray-700 rounded-b-lg flex flex-col gap-3">
                <div className="flex justify-between items-center text-xs text-gray-500">
                  <p>Standard CR80 Size (85.6mm x 54mm)</p>
