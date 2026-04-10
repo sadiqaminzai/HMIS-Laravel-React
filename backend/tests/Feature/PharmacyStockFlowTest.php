@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\PrescriptionController;
+use App\Http\Controllers\StockReconciliationController;
 use App\Http\Controllers\TransactionController;
 use App\Models\Hospital;
 use App\Models\Manufacturer;
@@ -505,4 +506,42 @@ test('parallel sales race path rejects second sale and keeps stock non-negative'
     $stock = Stock::query()->where('medicine_id', $setup['medicine']->id)->firstOrFail();
     expect((int) $stock->stock_qty)->toBe(4)
         ->and((int) $stock->stock_qty)->toBeGreaterThanOrEqual(0);
+});
+
+test('stock reconciliation updates medicine total from touched batches', function () {
+    $setup = pharmacySetupCoreData();
+    $controller = app(StockReconciliationController::class);
+
+    Stock::create([
+        'hospital_id' => $setup['hospital']->id,
+        'medicine_id' => $setup['medicine']->id,
+        'batch_no' => 'BATCH-002',
+        'stock_qty' => 5,
+        'bonus_qty' => 1,
+        'sale_price' => 20,
+    ]);
+
+    $request = pharmacyRequest('POST', [
+        'items' => [
+            [
+                'medicine_id' => $setup['medicine']->id,
+                'batch_no' => 'BATCH-001',
+                'physical_qty' => 8,
+                'physical_bonus' => 0,
+            ],
+            [
+                'medicine_id' => $setup['medicine']->id,
+                'batch_no' => 'BATCH-002',
+                'physical_qty' => 4,
+                'physical_bonus' => 2,
+            ],
+        ],
+    ], $setup['admin']);
+
+    $response = $controller->store($request);
+    expect($response->getStatusCode())->toBe(200);
+
+    $setup['medicine']->refresh();
+
+    expect((int) $setup['medicine']->stock)->toBe(14);
 });
