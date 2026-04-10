@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Patient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class PatientController extends Controller
@@ -169,6 +170,11 @@ class PatientController extends Controller
 
     private function withMediaUrls(Patient $patient): Patient
     {
+        if (empty($patient->verification_token)) {
+            $patient->verification_token = (string) Str::uuid();
+            $patient->saveQuietly();
+            $patient->refresh();
+        }
         $patient->image_url = $patient->image_path ? url(Storage::url($patient->image_path)) : null;
         return $patient;
     }

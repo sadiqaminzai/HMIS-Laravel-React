@@ -33,6 +33,7 @@ import { DiscountTypeManagement } from './components/DiscountTypeManagement';
 import { DiscountCatalogManagement } from './components/DiscountCatalogManagement';
 import { RoomManagement } from './components/RoomManagement';
 import { MedicineSetManagement } from './components/MedicineSetManagement';
+import { PrescriptionDiagnosisManagement } from './components/PrescriptionDiagnosisManagement';
 import { Settings } from './components/Settings';
 import { ContactMessages } from './components/ContactMessages';
 import { RequirePermission } from './components/RequirePermission';
@@ -505,7 +506,7 @@ function AppContent() {
             <Route
               path="/surgeries"
               element={
-                <RequirePermission anyOf={["view_surgery_types", "manage_surgery_types", "view_surgeries", "manage_surgeries", "view_patient_surgeries", "manage_patient_surgeries"]}>
+                <RequirePermission anyOf={["view_surgery_types", "manage_surgery_types", "view_surgeries", "manage_surgeries", "view_patient_surgeries", "manage_patient_surgeries", "view_discharge_summaries", "manage_discharge_summaries"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <SurgeryManagementLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
@@ -557,6 +558,14 @@ function AppContent() {
               element={
                 <RequirePermission anyOf={["view_treatment_sets", "add_treatment_sets", "edit_treatment_sets", "delete_treatment_sets", "manage_treatment_sets", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "manage_prescriptions"]}>
                   <MedicineSetManagement hospital={currentHospital} userRole={currentRole} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/prescription-diagnoses"
+              element={
+                <RequirePermission anyOf={["view_prescription_diagnoses", "add_prescription_diagnoses", "edit_prescription_diagnoses", "delete_prescription_diagnoses", "manage_prescription_diagnoses", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "manage_prescriptions", "create_prescription"]}>
+                  <PrescriptionDiagnosisManagement hospital={currentHospital} userRole={currentRole} />
                 </RequirePermission>
               }
             />

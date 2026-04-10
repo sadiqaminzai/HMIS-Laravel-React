@@ -92,6 +92,7 @@ class MultiRoleDemoSeeder extends Seeder
                 'view_stock_reconciliation', 'manage_stock_reconciliation',
                 'view_test_templates', 'manage_test_templates',
                 'view_lab_orders', 'manage_lab_orders',
+                'lab_test_order_discount',
                 'update_lab_order_status',
                 'enter_lab_results', 'manage_lab_payments',
                 'view_hospital_settings', 'manage_hospital_settings',
@@ -137,6 +138,7 @@ class MultiRoleDemoSeeder extends Seeder
             'lab_technician' => [
                 'view_test_templates',
                 'view_lab_orders', 'manage_lab_orders',
+                'lab_test_order_discount',
                 'view_dashboard',
                 'view_laboratory_menu',
                 'update_lab_order_status',

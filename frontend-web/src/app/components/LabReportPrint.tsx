@@ -11,10 +11,11 @@ interface LabReportPrintProps {
 export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
   // Brand color or default blue
   const brandColor = hospital.brandColor || '#1e40af';
+  const patientIdentifier = test.patientDisplayId || '-';
 
   // Generate QR Code data
   const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
-  const qrData = verificationUrl || `LAB TEST REPORT\nTest#: ${test.testNumber}\nPatient: ${test.patientName}\nTest: ${test.testName}\nDate: ${test.createdAt.toLocaleDateString()}\nHospital: ${hospital.name}`;
+  const qrData = verificationUrl || `LAB TEST REPORT\nTest#: ${test.testNumber}\nPatient: ${test.patientName}\nPatient ID: ${patientIdentifier}\nTest: ${test.testName}\nDate: ${test.createdAt.toLocaleDateString()}\nHospital: ${hospital.name}`;
 
   // Parse test results into table format
   const parseResults = (resultString: string) => {
@@ -69,7 +70,7 @@ export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
           </div>
           <div>
             <div className="text-[8px] font-semibold text-gray-500 uppercase">Patient ID</div>
-            <div className="text-[10px] text-gray-900 font-medium">{test.patientId}</div>
+            <div className="text-[10px] text-gray-900 font-medium">{patientIdentifier}</div>
           </div>
           <div>
             <div className="text-[8px] font-semibold text-gray-500 uppercase">Age</div>

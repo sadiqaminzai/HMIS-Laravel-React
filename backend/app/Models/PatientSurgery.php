@@ -15,6 +15,10 @@ class PatientSurgery extends Model
         'doctor_id',
         'surgery_id',
         'surgery_date',
+        'discharge_date',
+        'discharge_summary',
+        'discharge_created_by',
+        'discharge_completed_by',
         'status',
         'payment_status',
         'cost',
@@ -28,6 +32,7 @@ class PatientSurgery extends Model
 
     protected $casts = [
         'surgery_date' => 'date',
+        'discharge_date' => 'date',
         'cost' => 'decimal:2',
         'is_active' => 'boolean',
         'is_delete' => 'boolean',

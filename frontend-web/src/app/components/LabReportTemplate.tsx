@@ -12,8 +12,9 @@ interface LabReportTemplateProps {
 
 export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
   const brandColor = hospital?.brandColor || '#2563eb';
+  const patientIdentifier = test.patientDisplayId || '-';
   const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
-  const qrValue = verificationUrl || `LAB-${test.testNumber}-${test.patientId}`;
+  const qrValue = verificationUrl || `LAB-${test.testNumber}-${patientIdentifier}`;
 
   // Explicit hex colors
   const colors = {
@@ -104,7 +105,7 @@ export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Name:</span> <span>{test.patientName}</span></div>
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Age:</span> <span>{test.patientAge} Years</span></div>
             <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Gender:</span> <span style={{ textTransform: 'capitalize' }}>{test.patientGender}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Patient ID:</span> <span>{test.patientDisplayId || test.patientId}</span></div>
+            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Patient ID:</span> <span>{patientIdentifier}</span></div>
           </div>
         </div>
         <div>

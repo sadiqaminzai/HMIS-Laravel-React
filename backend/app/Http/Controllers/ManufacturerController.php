@@ -123,7 +123,7 @@ class ManufacturerController extends Controller
     {
         $hospitalId = $request->integer('hospital_id') ?: $defaultHospitalId ?: $request->user()->hospital_id;
 
-        return $request->validate([
+        $validated = $request->validate([
             'hospital_id' => [$request->user()->role === 'super_admin' ? 'required' : 'sometimes', 'exists:hospitals,id'],
             'name' => ['required', 'string', 'max:255'],
             'license_number' => [

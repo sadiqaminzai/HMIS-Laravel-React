@@ -120,7 +120,7 @@ const menuItems: MenuItem[] = [
         id: '/surgeries',
         translationKey: 'nav.surgeries',
         icon: <Scissors className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_surgery_types', 'manage_surgery_types', 'view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries']
+        anyPermissions: ['view_surgery_types', 'manage_surgery_types', 'view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries', 'view_discharge_summaries', 'manage_discharge_summaries']
       }
     ]
   },
@@ -217,6 +217,12 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.treatmentSets',
         icon: <Pill className="w-3.5 h-3.5" />,
         anyPermissions: ['view_treatment_sets', 'add_treatment_sets', 'edit_treatment_sets', 'delete_treatment_sets', 'manage_treatment_sets', 'add_prescriptions', 'edit_prescriptions', 'delete_prescriptions', 'manage_prescriptions']
+      },
+      {
+        id: '/settings/prescription-diagnoses',
+        translationKey: 'nav.prescriptionDiagnoses',
+        icon: <FileText className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_prescription_diagnoses', 'add_prescription_diagnoses', 'edit_prescription_diagnoses', 'delete_prescription_diagnoses', 'manage_prescription_diagnoses', 'add_prescriptions', 'edit_prescriptions', 'delete_prescriptions', 'manage_prescriptions', 'create_prescription']
       }
     ]
   },
@@ -345,8 +351,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const toggleMenu = (menuId: string) => {
     setExpandedMenus(prev => 
       prev.includes(menuId) 
-        ? prev.filter(id => id !== menuId)
-        : [...prev, menuId]
+        ? []
+        : [menuId]
     );
   };
 

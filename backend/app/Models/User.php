@@ -51,6 +51,8 @@ class User extends Authenticatable
         'avatar_path',
         'is_active',
         'last_login_at',
+        'created_by',
+        'updated_by',
     ];
 
     /**

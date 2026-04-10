@@ -72,6 +72,7 @@ export interface LabOrderResultResponse {
 
 export interface PatientResponse {
   id: number;
+  patient_id?: string;
   name: string;
   age: number;
   gender: string;
@@ -91,6 +92,7 @@ export interface LabOrder {
   orderNumber: string;
   verificationToken?: string;
   patientId: string | null;
+  patientDisplayId?: string;
   walkInPatientId: string | null;
   isWalkIn: boolean;
   patientName: string;
@@ -196,12 +198,16 @@ function transformItemToFrontend(item: LabOrderItemResponse): LabOrderItem {
 }
 
 function transformToFrontend(order: LabOrderResponse): LabOrder {
+  const patientDisplayFromPayload = (order as any).patient_display_id ?? (order as any).patientDisplayId;
   return {
     id: String(order.id),
     hospitalId: String(order.hospital_id),
     orderNumber: order.order_number,
     verificationToken: order.verification_token ?? undefined,
     patientId: order.patient_id ? String(order.patient_id) : null,
+    patientDisplayId: order.patient?.patient_id
+      ? String(order.patient.patient_id)
+      : (patientDisplayFromPayload ? String(patientDisplayFromPayload) : undefined),
     walkInPatientId: order.walk_in_patient_id ? String(order.walk_in_patient_id) : null,
     isWalkIn: order.is_walk_in,
     patientName: order.patient_name,

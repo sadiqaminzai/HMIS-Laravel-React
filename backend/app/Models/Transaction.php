@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Traits\Sequenceable;
+use Illuminate\Support\Str;
 
 class Transaction extends Model
 {
@@ -25,6 +26,7 @@ class Transaction extends Model
         'total_tax',
         'paid_amount',
         'due_amount',
+        'verification_token',
         'created_by',
         'updated_by',
     ];
@@ -36,6 +38,15 @@ class Transaction extends Model
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
     ];
+
+    protected static function booted()
+    {
+        static::creating(function (Transaction $transaction) {
+            if (empty($transaction->verification_token)) {
+                $transaction->verification_token = (string) Str::uuid();
+            }
+        });
+    }
 
     public function hospital()
     {

@@ -6,6 +6,7 @@ import { useExpenseCategories } from '../context/ExpenseCategoryContext';
 import { useHospitals } from '../context/HospitalContext';
 import { Plus, Pencil, Trash2, Search, X, Check, XCircle, Printer, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ExpenseInvoicePrint } from './ExpenseInvoicePrint';
+import { toast } from 'sonner';
 
 
 const getDocumentUrl = (path: string | undefined | null) => {
@@ -29,7 +30,9 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
   const [editing, setEditing] = useState<Expense | null>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [printExpense, setPrintExpense] = useState<Expense | null>(null);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -80,6 +83,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
 
   const resetForm = () => {
     setEditing(null);
+    setIsSubmitting(false);
     setDocumentFile(null);
     setForm({
       hospitalId: hospital.id,
@@ -118,13 +122,45 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
     resetForm();
   };
 
+  const confirmDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+
+    try {
+      await deleteExpense(expenseToDelete.id);
+      setExpenseToDelete(null);
+      toast.success('Expense deleted successfully');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to delete expense');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmitting) {
+      return;
+    }
+
+    const parsedAmount = parseFloat(form.amount || '0');
+    if (!form.expenseCategoryId) {
+      toast.error('Please select an expense category.');
+      return;
+    }
+    const selectedCategory = categories.find((c) => c.id === form.expenseCategoryId);
+    if (!selectedCategory || selectedCategory.hospitalId !== form.hospitalId) {
+      toast.error('Please choose a category from the selected hospital.');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error('Please enter a valid expense amount.');
+      return;
+    }
+
     const payload = {
       hospitalId: form.hospitalId,
       expenseCategoryId: form.expenseCategoryId,
       title: form.title,
-      amount: parseFloat(form.amount || '0'),
+      amount: parsedAmount,
       expenseDate: new Date(form.expenseDate),
       paymentMethod: form.paymentMethod || undefined,
       reference: form.reference || undefined,
@@ -133,13 +169,24 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
       documentFile,
     };
 
-    if (editing) {
-      await updateExpense({ id: editing.id, ...payload });
-    } else {
-      await addExpense(payload);
-    }
+    setIsSubmitting(true);
 
-    handleCloseModal();
+    try {
+      if (editing) {
+        await updateExpense({ id: editing.id, ...payload });
+      } else {
+        const created = await addExpense(payload);
+        if (!created) {
+          return;
+        }
+      }
+
+      handleCloseModal();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to save expense');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const updateStatus = async (expense: Expense, status: Expense['status']) => {
@@ -208,7 +255,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                 <tr key={expense.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <td className="px-4 py-2">
                     <div className="flex flex-col">
-                        <span className="font-mono text-[10px] text-gray-400">{selectedHospital.code}-{expense.sequenceId}</span>
+                        <span className="font-mono text-[10px] text-gray-400">{expense.hospitalId}-{expense.sequenceId}</span>
                         <span className="text-gray-900 dark:text-white font-medium">{format(expense.expenseDate, 'MMM dd, yyyy')}</span>
                     </div>
                   </td>
@@ -262,7 +309,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                             <Pencil className="w-4 h-4" />
                         </button>
                         <button 
-                            onClick={() => deleteExpense(expense.id)}
+                            onClick={() => setExpenseToDelete(expense)}
                             className="p-1.5 text-rose-600 hover:bg-rose-50 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400 rounded-md transition-colors"
                             title="Delete"
                         >
@@ -365,7 +412,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
                   <select
                     value={form.hospitalId}
-                    onChange={(e) => setForm((prev) => ({ ...prev, hospitalId: e.target.value }))}
+                    onChange={(e) => setForm((prev) => ({ ...prev, hospitalId: e.target.value, expenseCategoryId: '' }))}
                     title="Select Hospital"
                     aria-label="Select Hospital"
                     className="w-full px-2.5 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all"
@@ -511,9 +558,10 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
+                  disabled={isSubmitting}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
-                  {editing ? 'Update Expense' : 'Save Expense'}
+                  {isSubmitting ? (editing ? 'Updating...' : 'Saving...') : (editing ? 'Update Expense' : 'Save Expense')}
                 </button>
               </div>
             </form>
@@ -529,6 +577,46 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
             categoryName={printExpense.category?.name || categories.find(c => c.id === printExpense.expenseCategoryId)?.name || 'Unknown Category'}
             onClose={() => setPrintExpense(null)}
         />
+      )}
+
+      {expenseToDelete && (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Delete Expense</h3>
+              <button
+                onClick={() => setExpenseToDelete(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                title="Close"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Are you sure you want to delete this expense?
+              </p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {expenseToDelete.title} ({expenseToDelete.amount.toFixed(2)})
+              </p>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setExpenseToDelete(null)}
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteExpense}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-rose-600 text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

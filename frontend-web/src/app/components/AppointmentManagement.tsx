@@ -9,7 +9,6 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useAppointments } from '../context/AppointmentContext';
 import { useHospitals } from '../context/HospitalContext';
-import api from '../../api/axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -19,19 +18,6 @@ interface AppointmentManagementProps {
   hospital: Hospital;
   userRole: UserRole;
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
-}
-
-interface DiscountTypeOption {
-  id: string;
-  name: string;
-}
-
-interface DiscountCatalogOption {
-  id: string;
-  name: string;
-  discountTypeId: string;
-  amount: number;
-  currency: string;
 }
 
 const truncateText = (value: string, maxLength: number): string => {
@@ -72,8 +58,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [discountTypes, setDiscountTypes] = useState<DiscountTypeOption[]>([]);
-  const [discountCatalogs, setDiscountCatalogs] = useState<DiscountCatalogOption[]>([]);
   const { getDefaultDoctorId } = useSettings();
   
   // Sorting state
@@ -93,15 +77,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     hospitalId: currentHospital.id,
     originalFeeAmount: '',
     discountEnabled: false,
-    discountTypeId: '',
-    selectedDiscountId: '',
     discountAmount: '',
-    paymentStatus: 'pending' as NonNullable<Appointment['paymentStatus']>,
-  });
-
-  const filteredDiscountCatalogs = discountCatalogs.filter((item) => {
-    if (!formData.discountTypeId) return true;
-    return item.discountTypeId === formData.discountTypeId;
+    paymentStatus: 'paid' as NonNullable<Appointment['paymentStatus']>,
   });
 
   const calculateTotals = () => {
@@ -117,41 +94,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  React.useEffect(() => {
-    const loadDiscountData = async () => {
-      try {
-        const params: Record<string, any> = { per_page: 100, is_active: 1 };
-        if (userRole === 'super_admin' && selectedHospitalId !== 'all') {
-          params.hospital_id = selectedHospitalId;
-        } else {
-          params.hospital_id = currentHospital.id;
-        }
-
-        const [typesRes, discountsRes] = await Promise.all([
-          api.get('/discount-types', { params }),
-          api.get('/discounts', { params }),
-        ]);
-
-        const typeRows = (typesRes.data?.data ?? typesRes.data ?? []) as any[];
-        setDiscountTypes(typeRows.map((row) => ({ id: String(row.id), name: String(row.name) })));
-
-        const discountRows = (discountsRes.data?.data ?? discountsRes.data ?? []) as any[];
-        setDiscountCatalogs(discountRows.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          discountTypeId: String(row.discount_type_id),
-          amount: Number(row.amount ?? 0),
-          currency: String(row.currency ?? 'AFN'),
-        })));
-      } catch {
-        setDiscountTypes([]);
-        setDiscountCatalogs([]);
-      }
-    };
-
-    loadDiscountData();
-  }, [userRole, selectedHospitalId, currentHospital.id]);
 
   // Get hospital-specific patients and doctors (or all if viewing all hospitals)
   const hospitalPatients = filterByHospital(patients);
@@ -318,6 +260,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
     const doctorSpecialization = hospitalDoctors.find(d => d.id === selectedAppointment.doctorId)?.specialization || 'General Physician';
     const totalAmount = selectedAppointment.totalAmount ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0));
+    const patientDisplayId = selectedAppointment.patientDisplayId || formatPatientId(selectedAppointment.patientId);
     
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -325,33 +268,35 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       <head>
           <title>OPD Appointment Card</title>
           <style>
-              @page { margin: 0; }
+              @page { size: 80mm auto; margin: 0; }
               body { 
                   margin: 0; 
-                  padding: 10px; 
-                  font-family: 'Courier New', Courier, monospace; 
-                  width: 80mm; 
+                  padding: 2mm; 
+                  font-family: Arial, sans-serif; 
+                  width: 76mm; 
                   color: #000; 
-                  font-size: 13px; 
-                  line-height: 1.4; 
+                  font-size: 11px; 
+                  line-height: 1.3; 
                   background: #fff; 
               }
+              .card-wrapper { padding-bottom: 2mm; page-break-inside: avoid; break-inside: avoid; }
               .text-center { text-align: center; }
               .font-bold { font-weight: bold; }
-              .text-lg { font-size: 16px; }
-              .text-xl { font-size: 20px; }
-              .mt-2 { margin-top: 5px; }
-              .mt-4 { margin-top: 15px; }
-              .mb-2 { margin-bottom: 5px; }
-              .mb-4 { margin-bottom: 15px; }
+              .text-lg { font-size: 14px; }
+              .text-xl { font-size: 16px; }
+              .mt-2 { margin-top: 4px; }
+              .mt-4 { margin-top: 8px; }
+              .mb-2 { margin-bottom: 4px; }
+              .mb-4 { margin-bottom: 8px; }
               .uppercase { text-transform: uppercase; }
-              .dashed-line { border-top: 1px dashed #000; margin: 10px 0; }
+              .dashed-line { border-top: 1px dashed #000; margin: 6px 0; }
               .flex-between { display: flex; justify-content: space-between; }
               .label { font-weight: bold; width: 45%; }
               .val { width: 55%; text-align: right; }
           </style>
       </head>
       <body>
+            <div class="card-wrapper">
           <div class="text-center mb-4">
               <div class="font-bold text-xl uppercase">${currentHospital.name}</div>
               ${currentHospital.address ? `<div>${currentHospital.address}</div>` : ''}
@@ -381,7 +326,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           </div>
           <div class="flex-between mb-2">
               <span class="label">ID:</span>
-              <span class="val">${formatPatientId(selectedAppointment.patientId)}</span>
+              <span class="val">${patientDisplayId}</span>
           </div>
 
           <div class="font-bold uppercase mt-4 mb-2">Assigned Doctor</div>
@@ -411,17 +356,23 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
           <div class="dashed-line"></div>
 
-          <div class="text-center mt-4" style="font-size: 11px;">
+          <div class="text-center mt-2 mb-2" style="font-size: 11px; page-break-inside: avoid; break-inside: avoid;">
               <div>Printed on: ${formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</div>
-              <div class="mt-2">Please bring this card for follow-up visits.</div>
+              <div class="mt-1">Please bring this card for follow-up visits.</div>
           </div>
+        </div>
+        <script>
+            window.onload = function() {
+                setTimeout(function() {
+                    window.print();
+                    window.close();
+                }, 250);
+            }
+        </script>
       </body>
       </html>
     `);
     printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
   };
 
   const formatAppointmentNumber = (aptNumber: string) => {
@@ -442,6 +393,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   };
 
   const formatPatientId = (patientId: string) => {
+    if (!patientId) return '-';
+    if (/[^0-9]/.test(patientId) && !/^P\d+$/i.test(patientId)) return patientId;
     const normalized = patientId.startsWith('P') ? patientId.substring(1) : patientId;
     return normalized.padStart(5, '0');
   };
@@ -517,7 +470,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       notes: formData.notes,
       originalFeeAmount: feePreview.original,
       discountEnabled: formData.discountEnabled,
-      discountTypeId: formData.discountTypeId || undefined,
       discountAmount: feePreview.discount,
       totalAmount: feePreview.total,
       currency: 'AFN',
@@ -566,7 +518,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       notes: formData.notes,
       originalFeeAmount: feePreview.original,
       discountEnabled: formData.discountEnabled,
-      discountTypeId: formData.discountTypeId || undefined,
       discountAmount: feePreview.discount,
       totalAmount: feePreview.total,
       currency: 'AFN',
@@ -678,10 +629,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       hospitalId: currentHospital.id,
       originalFeeAmount: '',
       discountEnabled: false,
-      discountTypeId: '',
-      selectedDiscountId: '',
       discountAmount: '',
-      paymentStatus: 'pending',
+      paymentStatus: 'paid',
     });
   };
 
@@ -697,10 +646,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       hospitalId: apt.hospitalId,
       originalFeeAmount: String(apt.originalFeeAmount ?? ''),
       discountEnabled: Boolean(apt.discountEnabled ?? false),
-      discountTypeId: apt.discountTypeId ?? '',
-      selectedDiscountId: '',
       discountAmount: String(apt.discountAmount ?? ''),
-      paymentStatus: apt.paymentStatus ?? 'pending',
+      paymentStatus: apt.paymentStatus ?? 'paid',
     });
     setShowEditModal(true);
   };
@@ -804,10 +751,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   hospitalId: currentHospital.id,
                   originalFeeAmount: defaultDoctor ? String(defaultDoctor.consultationFee ?? 0) : '',
                   discountEnabled: false,
-                  discountTypeId: '',
-                  selectedDiscountId: '',
                   discountAmount: '',
-                  paymentStatus: 'pending',
+                  paymentStatus: 'paid',
                 });
                 setShowAddModal(true);
               }}
@@ -1208,16 +1153,18 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   )}
                 </div>
               </div>
-              <div>
-                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Reason for Visit <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g. Regular Checkup"
-                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Reason for Visit <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.reason}
+                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    placeholder="e.g. Regular Checkup"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    required
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
@@ -1232,47 +1179,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Type</label>
-                  <select
-                    value={formData.discountTypeId}
-                    onChange={(e) => setFormData({ ...formData, discountTypeId: e.target.value, selectedDiscountId: '' })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                    title="Discount type"
-                  >
-                    <option value="">No discount type</option>
-                    {discountTypes.map((type) => (
-                      <option key={type.id} value={type.id}>{type.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Catalog</label>
-                  <select
-                    value={formData.selectedDiscountId}
-                    onChange={(e) => {
-                      const selectedDiscountId = e.target.value;
-                      const selected = discountCatalogs.find((d) => d.id === selectedDiscountId);
-                      setFormData({
-                        ...formData,
-                        selectedDiscountId,
-                        discountTypeId: selected ? selected.discountTypeId : formData.discountTypeId,
-                        discountAmount: selected ? String(selected.amount) : formData.discountAmount,
-                      });
-                    }}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                    title="Discount catalog"
-                  >
-                    <option value="">Manual discount</option>
-                    {filteredDiscountCatalogs.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} ({item.amount.toFixed(2)} {item.currency})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Amount</label>
                   <input
@@ -1395,69 +1301,71 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             
             <div className="p-6 overflow-y-auto flex-1 flex justify-center bg-gray-100 dark:bg-gray-900">
               {/* Actual Card to Print */}
-              <div id="fees-card-print" className="bg-white p-8 w-full max-w-[148mm] shadow-sm border border-gray-200 text-gray-900">
-                 {/* Header */}
-                 <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
-                    <h1 className="text-2xl font-bold text-gray-900 uppercase">{currentHospital.name}</h1>
-                    <p className="text-sm text-gray-600">{currentHospital.address}</p>
-                    <p className="text-sm text-gray-600">{currentHospital.phone}</p>
-                    <div className="mt-2 inline-block px-4 py-1 bg-blue-600 text-white text-sm font-bold uppercase tracking-wider rounded-full">
-                      OPD Appointment Card
-                    </div>
-                 </div>
+              <div id="fees-card-print" className="bg-gray-100 p-2 w-full max-w-[148mm] shadow-sm border border-gray-200 text-gray-900 print:max-w-none print:w-[148mm] print:break-inside-avoid print:page-break-inside-avoid print:m-0 mx-auto">
+                 <div className="bg-white p-4 border border-gray-300 rounded print:border-black">
+                     {/* Header */}
+                     <div className="text-center border-b border-gray-800 pb-2 mb-2">
+                        <h1 className="text-xl font-bold text-gray-900 uppercase leading-tight">{currentHospital.name}</h1>
+                        <p className="text-xs text-gray-600 leading-tight mt-1">{currentHospital.address}</p>
+                        <p className="text-xs text-gray-600 leading-tight">{currentHospital.phone}</p>
+                        <div className="mt-1 inline-block px-3 py-0.5 bg-blue-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-full print:bg-white print:text-black print:border print:border-black">
+                          OPD Appointment Card
+                        </div>
+                     </div>
 
-                 {/* Content Grid */}
-                 <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm mb-6">
-                    <div className="col-span-2 flex justify-between items-end border-b border-gray-200 pb-2">
-                       <div>
-                         <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Appointment No</label>
-                         <span className="text-base font-mono font-bold text-gray-900">{formatAppointmentNumber(selectedAppointment.appointmentNumber)}</span>
-                       </div>
-                       <div className="text-right">
-                          <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Date & Time</label>
-                          <span className="font-medium text-gray-900">{formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | {selectedAppointment.appointmentTime || 'No time'}</span>
-                       </div>
-                    </div>
+                     {/* Content Grid */}
+                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-3">
+                        <div className="col-span-2 flex justify-between items-end border-b border-gray-200 pb-1 mb-1">
+                           <div>
+                             <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">Appointment No</label>
+                             <span className="text-sm font-mono font-bold text-gray-900">{formatAppointmentNumber(selectedAppointment.appointmentNumber)}</span>
+                           </div>
+                           <div className="text-right">
+                              <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">Date & Time</label>
+                              <span className="font-bold text-gray-900">{formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | {selectedAppointment.appointmentTime || 'No time'}</span>
+                           </div>
+                        </div>
 
-                    <div className="col-span-2">
-                       <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Patient Details</label>
-                       <div className="font-bold text-lg text-gray-900">{selectedAppointment.patientName}</div>
-                       <div className="text-gray-600">{selectedAppointment.patientAge} Years / {selectedAppointment.patientGender}</div>
-                       <div className="text-xs text-gray-400 mt-1">ID: {formatPatientId(selectedAppointment.patientId)}</div>
-                    </div>
+                        <div className="col-span-1">
+                           <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">Patient Details</label>
+                           <div className="font-bold text-sm text-gray-900">{selectedAppointment.patientName}</div>
+                           <div className="text-[10px] text-gray-600">{selectedAppointment.patientAge} Yrs / {selectedAppointment.patientGender}</div>
+                          <div className="text-[9px] text-gray-400 mt-0.5">ID: {selectedAppointment.patientDisplayId || formatPatientId(selectedAppointment.patientId)}</div>
+                        </div>
 
-                    <div className="col-span-2 mt-2">
-                       <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Assigned Doctor</label>
-                       <div className="font-bold text-lg text-gray-900">{selectedAppointment.doctorName}</div>
-                       <div className="text-gray-600">
-                         {hospitalDoctors.find(d => d.id === selectedAppointment.doctorId)?.specialization || 'General Physician'}
-                       </div>
-                    </div>
+                        <div className="col-span-1 text-right">
+                           <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">Assigned Doctor</label>
+                           <div className="font-bold text-sm text-gray-900">{selectedAppointment.doctorName}</div>
+                           <div className="text-[10px] text-gray-600">
+                             {hospitalDoctors.find(d => d.id === selectedAppointment.doctorId)?.specialization || 'General Physician'}
+                           </div>
+                        </div>
 
-                    <div className="col-span-2 border-t-2 border-dashed border-gray-300 pt-4 mt-2">
-                       <div className="space-y-1">
-                         <div className="flex justify-between items-center text-gray-700">
-                           <span className="font-bold text-sm uppercase">Original Fee</span>
-                           <span className="font-semibold">{(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} {selectedAppointment.currency ?? 'AFN'}</span>
-                         </div>
-                         <div className="flex justify-between items-center text-gray-700">
-                           <span className="font-bold text-sm uppercase">Discount</span>
-                           <span className="font-semibold">{(selectedAppointment.discountAmount ?? 0).toFixed(2)}</span>
-                         </div>
-                         <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">
-                           <span className="font-bold text-lg uppercase text-gray-900">Payable Total</span>
-                           <span className="font-bold text-2xl text-gray-900">
-                             {(selectedAppointment.totalAmount ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0))).toFixed(2)}
-                           </span>
-                         </div>
-                       </div>
-                    </div>
-                 </div>
+                        <div className="col-span-2 border border-gray-200 bg-white rounded p-2 mt-1 print:border-black print:bg-white print:break-inside-avoid print:page-break-inside-avoid shadow-sm print:shadow-none">
+                           <div className="space-y-1">
+                             <div className="flex justify-between items-center text-gray-700">
+                               <span className="font-bold text-[10px] uppercase">Original Fee</span>
+                               <span className="font-semibold text-xs">{(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} {selectedAppointment.currency ?? 'AFN'}</span>
+                             </div>
+                             <div className="flex justify-between items-center text-gray-700">
+                               <span className="font-bold text-[10px] uppercase">Discount</span>
+                               <span className="font-semibold text-xs">{(selectedAppointment.discountAmount ?? 0).toFixed(2)}</span>
+                             </div>
+                             <div className="flex justify-between items-center border-t border-gray-200 pt-1 mt-1">
+                               <span className="font-bold text-xs uppercase text-gray-900 leading-none">Payable Total</span>
+                               <span className="font-bold text-sm text-gray-900 leading-none">
+                                 {(selectedAppointment.totalAmount ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0))).toFixed(2)}
+                               </span>
+                             </div>
+                           </div>
+                        </div>
+                     </div>
 
-                 {/* Footer */}
-                 <div className="text-center text-[10px] text-gray-400 mt-8 pt-4 border-t border-gray-100">
-                    <p>Printed on: {formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</p>
-                    <p>Please bring this card for follow-up visits.</p>
+                     {/* Footer */}
+                     <div className="text-center text-[8px] text-gray-500 mt-2 pt-2 border-t border-gray-200 print:text-black">
+                        <p>Printed on: {formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</p>
+                        <p>Please bring this card for follow-up visits.</p>
+                     </div>
                  </div>
               </div>
             </div>

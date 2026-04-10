@@ -85,7 +85,6 @@ class PrescriptionController extends Controller
             try {
                 $prescription = DB::transaction(function () use ($data) {
                     $items = $this->normalizePrescriptionItems($data['items'] ?? []);
-                    $this->ensurePrescriptionStockAvailability((int) $data['hospital_id'], $items, null, true);
 
                     $prescription = Prescription::create(array_merge($data, [
                         'prescription_number' => $data['prescription_number'] ?? null,
@@ -177,13 +176,15 @@ class PrescriptionController extends Controller
             }
 
             $items = $this->normalizePrescriptionItems($data['items'] ?? []);
-            $this->ensurePrescriptionStockAvailability((int) $prescription->hospital_id, $items, (int) $prescription->id, true);
+            $itemsChanged = $this->hasPrescriptionItemsChanged($prescription, $items);
 
             $prescription->update($data);
 
-            $prescription->items()->delete();
-            foreach ($items as $item) {
-                $prescription->items()->create($item);
+            if ($itemsChanged) {
+                $prescription->items()->delete();
+                foreach ($items as $item) {
+                    $prescription->items()->create($item);
+                }
             }
 
             return $prescription->load('items.groupLink');
@@ -348,8 +349,8 @@ class PrescriptionController extends Controller
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_age' => ['required', 'integer', 'min:0'],
             'patient_gender' => ['nullable', 'string', 'max:20'],
-            'doctor_id' => ['required', 'integer'],
-            'doctor_name' => ['required', 'string', 'max:255'],
+            'doctor_id' => [$isUpdate ? 'sometimes' : 'required', 'integer'],
+            'doctor_name' => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
             'advice' => ['nullable', 'string'],
             'next_visit' => ['nullable', 'date'],
@@ -376,10 +377,8 @@ class PrescriptionController extends Controller
     private function normalizePrescriptionItems(array $items): array
     {
         return array_map(function (array $item) {
-            $quantity = (int) ($item['quantity'] ?? 0);
-            $hasMedicine = !empty($item['medicine_id']);
-
-            $item['reserved_quantity'] = $hasMedicine ? max(0, $quantity) : 0;
+            // Prescription creation should not reserve or consume stock.
+            $item['reserved_quantity'] = 0;
             $item['dispensed_quantity'] = 0;
             $item['dispensed_at'] = null;
 
@@ -387,11 +386,70 @@ class PrescriptionController extends Controller
         }, $items);
     }
 
+    private function hasPrescriptionItemsChanged(Prescription $prescription, array $incomingItems): bool
+    {
+        $existingItems = $prescription->items->values();
+
+        if ($existingItems->count() !== count($incomingItems)) {
+            return true;
+        }
+
+        $normalizeString = static function ($value): string {
+            return trim((string) ($value ?? ''));
+        };
+
+        foreach ($incomingItems as $index => $incoming) {
+            /** @var PrescriptionItem|null $existing */
+            $existing = $existingItems->get($index);
+            if (!$existing) {
+                return true;
+            }
+
+            $medicineIdExisting = (int) ($existing->medicine_id ?? 0);
+            $medicineIdIncoming = (int) ($incoming['medicine_id'] ?? 0);
+
+            if ($medicineIdExisting !== $medicineIdIncoming) {
+                return true;
+            }
+
+            if ((int) ($existing->quantity ?? 0) !== (int) ($incoming['quantity'] ?? 0)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->medicine_name) !== $normalizeString($incoming['medicine_name'] ?? null)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->strength) !== $normalizeString($incoming['strength'] ?? null)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->dose) !== $normalizeString($incoming['dose'] ?? null)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->duration) !== $normalizeString($incoming['duration'] ?? null)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->instruction) !== $normalizeString($incoming['instruction'] ?? null)) {
+                return true;
+            }
+
+            if ($normalizeString($existing->type) !== $normalizeString($incoming['type'] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function ensurePrescriptionStockAvailability(
         int $hospitalId,
         array $items,
         ?int $excludePrescriptionId = null,
-        bool $lockRows = false
+        bool $lockRows = false,
+        bool $includeExistingReservations = false
     ): void {
         $requiredByMedicine = [];
 
@@ -430,37 +488,39 @@ class PrescriptionController extends Controller
                 $available = (int) $stockQuery->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
             }
 
-            $reservedRowsQuery = PrescriptionItem::query()
-                ->join('prescriptions', 'prescriptions.id', '=', 'prescription_items.prescription_id')
-                ->whereNull('prescriptions.deleted_at')
-                ->where('prescriptions.hospital_id', $hospitalId)
-                ->where('prescriptions.status', 'active')
-                ->where('prescription_items.medicine_id', (int) $medicineId);
+            $availableForReservation = $available;
+            if ($includeExistingReservations) {
+                $reservedQuery = PrescriptionItem::query()
+                    ->where('medicine_id', (int) $medicineId)
+                    ->whereHas('prescription', function ($query) use ($hospitalId, $excludePrescriptionId) {
+                        $query->where('hospital_id', $hospitalId)
+                            ->where('status', 'active');
 
-            if ($excludePrescriptionId) {
-                $reservedRowsQuery->where('prescriptions.id', '!=', $excludePrescriptionId);
+                        if ($excludePrescriptionId) {
+                            $query->whereKeyNot($excludePrescriptionId);
+                        }
+                    });
+
+                if ($lockRows) {
+                    $reservedQuery->lockForUpdate();
+                }
+
+                $reservedOutstanding = (int) $reservedQuery
+                    ->get(['reserved_quantity', 'dispensed_quantity'])
+                    ->reduce(function (int $sum, PrescriptionItem $item) {
+                        $reserved = (int) ($item->reserved_quantity ?? 0);
+                        $dispensed = (int) ($item->dispensed_quantity ?? 0);
+                        return $sum + max(0, $reserved - $dispensed);
+                    }, 0);
+
+                $availableForReservation = max(0, $available - $reservedOutstanding);
             }
 
-            if ($lockRows) {
-                $reservedRowsQuery->lockForUpdate();
-            }
-
-            $reservedRows = $reservedRowsQuery->get([
-                'prescription_items.reserved_quantity',
-                'prescription_items.dispensed_quantity',
-            ]);
-
-            $reservedByOthers = (int) $reservedRows->reduce(function (int $sum, PrescriptionItem $row) {
-                $remaining = (int) ($row->reserved_quantity ?? 0) - (int) ($row->dispensed_quantity ?? 0);
-                return $sum + max(0, $remaining);
-            }, 0);
-
-            $availableForReservation = $available - $reservedByOthers;
             if ($availableForReservation < $required) {
                 $medicine = Medicine::find($medicineId);
                 $name = $medicine?->brand_name ?? 'Medicine';
                 throw ValidationException::withMessages([
-                    'items' => "Insufficient available stock for {$name}. Available: {$availableForReservation}, Required: {$required}.",
+                    'items' => "Insufficient stock for {$name}. Available: {$availableForReservation}, Required: {$required}.",
                 ]);
             }
         }
@@ -628,26 +688,51 @@ class PrescriptionController extends Controller
     {
         $hospitalId = $data['hospital_id'] ?? $existing?->hospital_id;
 
-        if (!empty($data['is_walk_in'])) {
-            if (!empty($data['walk_in_patient_id'])) {
-                $walkIn = WalkInPatient::findOrFail($data['walk_in_patient_id']);
+        $isWalkIn = array_key_exists('is_walk_in', $data)
+            ? (bool) $data['is_walk_in']
+            : (bool) ($existing?->is_walk_in ?? false);
+
+        if ($isWalkIn) {
+            $walkInPatientId = $data['walk_in_patient_id'] ?? $existing?->walk_in_patient_id;
+
+            if (!empty($walkInPatientId)) {
+                $walkIn = WalkInPatient::findOrFail($walkInPatientId);
                 if ((int) $walkIn->hospital_id !== (int) $hospitalId) {
                     abort(422, 'Walk-in patient does not belong to the selected hospital');
                 }
+
+                $data['walk_in_patient_id'] = $walkIn->id;
             }
+
+            $data['patient_id'] = null;
         } else {
-            $patient = Patient::findOrFail($data['patient_id']);
+            $patientId = $data['patient_id'] ?? $existing?->patient_id;
+
+            if (empty($patientId)) {
+                abort(422, 'Patient is required for non walk-in prescriptions');
+            }
+
+            $patient = Patient::findOrFail($patientId);
             if ((int) $patient->hospital_id !== (int) $hospitalId) {
                 abort(422, 'Patient does not belong to the selected hospital');
             }
+
+            $data['patient_id'] = $patient->id;
+            $data['walk_in_patient_id'] = null;
         }
 
-        $doctor = $this->resolveDoctorUser((int) $data['doctor_id']);
+        $doctorId = $data['doctor_id'] ?? $existing?->doctor_id;
+        if (empty($doctorId)) {
+            abort(422, 'Doctor is required');
+        }
+
+        $doctor = $this->resolveDoctorUser((int) $doctorId);
         if ((int) $doctor->hospital_id !== (int) $hospitalId) {
             abort(422, 'Doctor does not belong to the selected hospital');
         }
 
         $data['doctor_id'] = $doctor->id;
+        $data['is_walk_in'] = $isWalkIn;
 
         $data['hospital_id'] = $hospitalId;
     }

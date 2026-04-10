@@ -107,12 +107,20 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
   });
 
   const patient = patients.find(p => String(p.id) === String(order.patientId));
+  const orderAny = order as any;
+  const patientDisplayId =
+    order.patientDisplayId ||
+    orderAny.patient_display_id ||
+    orderAny.patient?.patient_id ||
+    orderAny.patientSnapshot?.patient_id ||
+    patient?.patientId ||
+    '';
   return {
     id: String(order.id),
     hospitalId: String(order.hospitalId),
     testNumber: order.orderNumber,
     patientId: order.patientId || '',
-    patientDisplayId: patient?.patientId || '',
+    patientDisplayId,
     patientName: order.patientName,
     patientAge: order.patientAge,
     patientGender: order.patientGender,
@@ -887,6 +895,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                       <td className="px-4 py-2">
                         <div>
                           <div className="text-xs font-semibold text-gray-900 dark:text-white">{test.patientName}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">ID: {test.patientDisplayId || '-'}</div>
                           <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientAge}Y • {test.patientGender}</div>
                         </div>
                       </td>
@@ -1422,7 +1431,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     placeholder="0"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                   />
-                  {formData.discountPercentage && Number(formData.discountPercentage) > 0 && !hasActionPermission('lab_test_order_discount') && (
+                  {formData.discountPercentage && Number(formData.discountPercentage) > 0 && !canEditLabOrderDiscount && (
                     <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">You need lab_test_order_discount permission to edit discount.</p>
                   )}
                 </div>

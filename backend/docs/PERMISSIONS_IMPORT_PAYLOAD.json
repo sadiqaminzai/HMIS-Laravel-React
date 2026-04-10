@@ -925,6 +925,13 @@
                             "is_system":  true
                         },
                         {
+                            "name":  "lab_test_order_discount",
+                            "display_name":  "Lab Test Order Discount",
+                            "category":  "Laboratory",
+                            "status":  "active",
+                            "is_system":  true
+                        },
+                        {
                             "name":  "manage_lab_payments",
                             "display_name":  "Manage Lab Payments",
                             "category":  "Laboratory",

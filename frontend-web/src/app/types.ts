@@ -295,6 +295,7 @@ export interface Appointment {
   hospitalId: string;
   appointmentNumber: string;
   patientId: string;
+  patientDisplayId?: string;
   patientName: string;
   patientAge: number;
   patientGender: string;

@@ -170,7 +170,7 @@ class AppointmentController extends Controller
             'patient_age' => ['nullable', 'integer', 'min:0', 'max:150'],
             'patient_gender' => ['nullable', 'in:male,female,other'],
             'appointment_date' => ['required', 'date'],
-            'appointment_time' => ['required', 'string', 'max:20'],
+            'appointment_time' => ['nullable', 'string', 'max:20'],
             'reason' => ['nullable', 'string', 'max:500'],
             'status' => ['required', 'in:scheduled,completed,cancelled,no_show'],
             'notes' => ['nullable', 'string'],
@@ -200,7 +200,7 @@ class AppointmentController extends Controller
         $data['total_amount'] = $computed['total_amount'];
         $data['discount_enabled'] = (bool) ($data['discount_enabled'] ?? false);
         $data['currency'] = $data['currency'] ?? 'AFN';
-        $data['payment_status'] = $data['payment_status'] ?? 'pending';
+        $data['payment_status'] = $data['payment_status'] ?? 'paid';
     }
 
     private function syncDoctorHospital(array &$data, ?Appointment $existing = null): void

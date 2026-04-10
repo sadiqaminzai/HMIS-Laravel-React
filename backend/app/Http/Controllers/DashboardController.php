@@ -6,6 +6,7 @@ use App\Models\Appointment;
 use App\Models\Doctor;
 use App\Models\Hospital;
 use App\Models\LabOrder;
+use App\Models\LedgerEntry;
 use App\Models\Manufacturer;
 use App\Models\Medicine;
 use App\Models\MedicineType;
@@ -24,6 +25,39 @@ class DashboardController extends Controller
     public function summary(Request $request)
     {
         $user = $request->user();
+
+        $dateFilter = $request->input('date_filter');
+        $startDate = null;
+        $endDate = null;
+
+        if ($dateFilter) {
+            switch ($dateFilter) {
+                case 'today':
+                    $startDate = Carbon::today();
+                    $endDate = Carbon::today()->endOfDay();
+                    break;
+                case 'yesterday':
+                    $startDate = Carbon::yesterday();
+                    $endDate = Carbon::yesterday()->endOfDay();
+                    break;
+                case 'this_month':
+                    $startDate = Carbon::now()->startOfMonth();
+                    $endDate = Carbon::now()->endOfMonth();
+                    break;
+                case 'last_month':
+                    $startDate = Carbon::now()->subMonth()->startOfMonth();
+                    $endDate = Carbon::now()->subMonth()->endOfMonth();
+                    break;
+                case 'this_year':
+                    $startDate = Carbon::now()->startOfYear();
+                    $endDate = Carbon::now()->endOfYear();
+                    break;
+                case 'last_7_days':
+                    $startDate = Carbon::today()->subDays(6);
+                    $endDate = Carbon::today()->endOfDay();
+                    break;
+            }
+        }
 
         $hospitalId = null;
         if ($user && $user->role === 'super_admin') {
@@ -54,8 +88,14 @@ class DashboardController extends Controller
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->where('status', 'active')
                 ->count(),
-            'patients' => Patient::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
-            'prescriptions' => Prescription::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
+            'patients' => Patient::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->when($startDate, fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
+                ->count(),
+            'prescriptions' => Prescription::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->when($startDate, fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
+                ->count(),
             'medicines' => Medicine::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
             'manufacturers' => Manufacturer::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
             'medicine_types' => MedicineType::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
@@ -75,21 +115,33 @@ class DashboardController extends Controller
                 ->count(),
             'lab_orders_today' => LabOrder::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
-                ->whereDate('created_at', Carbon::today())
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('created_at', Carbon::today())
+                )
                 ->count(),
             'appointments_today' => Appointment::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
-                ->whereDate('appointment_date', Carbon::today())
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('appointment_date', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('appointment_date', Carbon::today())
+                )
                 ->count(),
             'room_bookings_today' => RoomBooking::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->where('is_delete', false)
-                ->whereDate('check_in_date', Carbon::today())
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('check_in_date', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('check_in_date', Carbon::today())
+                )
                 ->count(),
             'patient_surgeries_today' => PatientSurgery::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->where('is_delete', false)
-                ->whereDate('surgery_date', Carbon::today())
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('surgery_date', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('surgery_date', Carbon::today())
+                )
                 ->count(),
         ];
 
@@ -206,6 +258,58 @@ class DashboardController extends Controller
             ->limit(5)
             ->get(['id', 'patient_name', 'order_number', 'status']);
 
+        $financialStart = $startDate ? $startDate->copy()->startOfDay() : Carbon::today()->startOfDay();
+        $financialEnd = $endDate ? $endDate->copy()->endOfDay() : Carbon::today()->endOfDay();
+
+        $dailyLedgerQuery = LedgerEntry::query()
+            ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+            ->whereNull('voided_at')
+            ->whereBetween('posted_at', [$financialStart, $financialEnd]);
+
+        $totalStockCostAmount = round((float) Medicine::query()
+            ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+            ->selectRaw('COALESCE(SUM(COALESCE(stock, 0) * COALESCE(cost_price, 0)), 0) as total_stock_cost_amount')
+            ->value('total_stock_cost_amount'), 2);
+
+        $totalIncome = round((float) (clone $dailyLedgerQuery)
+            ->where('entry_direction', 'income')
+            ->sum('net_amount'), 2);
+
+        $totalExpenses = round((float) (clone $dailyLedgerQuery)
+            ->where('entry_direction', 'expense')
+            ->sum('net_amount'), 2);
+
+        $dailyFinancials = [
+            'report_date' => $financialStart->toDateString(),
+            'report_period_start' => $financialStart->toDateString(),
+            'report_period_end' => $financialEnd->toDateString(),
+            'currency' => 'AFN',
+            'total_stock_cost_amount' => $totalStockCostAmount,
+            'total_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'appointments')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            'total_lab_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'laboratory')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            'total_surgery_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'surgery')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            'total_room_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'room_booking')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            'total_sales_invoice_amount' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'pharmacy')
+                ->where('category', 'sales')
+                ->sum('net_amount'), 2),
+            'total_income' => $totalIncome,
+            'total_expenses' => $totalExpenses,
+            'total_revenue' => round($totalIncome - $totalExpenses, 2),
+        ];
+
         return response()->json([
             'hospital_id' => $hospitalId,
             'hospitals' => $hospitals,
@@ -216,6 +320,7 @@ class DashboardController extends Controller
                 'test_status' => $testStatusData,
                 'medicine_stock' => $medicineStockData,
             ],
+            'financials' => $dailyFinancials,
             'recent' => [
                 'patients' => $recentPatients,
                 'prescriptions' => $recentPrescriptions,

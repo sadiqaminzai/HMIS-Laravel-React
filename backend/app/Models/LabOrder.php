@@ -27,6 +27,7 @@ class LabOrder extends Model
         'patient_gender',
         'doctor_id',
         'doctor_name',
+        'discount_amount',
         'total_amount',
         'paid_amount',
         'payment_status',
@@ -49,6 +50,7 @@ class LabOrder extends Model
 
     protected $casts = [
         'is_walk_in' => 'boolean',
+        'discount_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'paid_at' => 'datetime',

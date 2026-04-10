@@ -74,6 +74,8 @@ class DoctorController extends Controller
             'image_path' => $data['image_path'] ?? null,
             'signature_path' => $data['signature_path'] ?? null,
             'is_active' => ($data['status'] ?? 'active') === 'active',
+            'created_by' => $request->user()->name ?? 'System',
+            'updated_by' => $request->user()->name ?? 'System',
         ]);
 
         $payload = $this->toDoctorShape($this->withMediaUrls($user));
@@ -123,6 +125,7 @@ class DoctorController extends Controller
             'image_path' => $data['image_path'] ?? $doctor->image_path,
             'signature_path' => $data['signature_path'] ?? $doctor->signature_path,
             'is_active' => ($data['status'] ?? 'active') === 'active',
+            'updated_by' => $request->user()->name ?? 'System',
         ]);
 
         return response()->json($this->toDoctorShape($this->withMediaUrls($doctor->fresh())));
@@ -215,6 +218,8 @@ class DoctorController extends Controller
             'signature_path' => $user->signature_path,
             'image_url' => $user->image_url ?? null,
             'signature_url' => $user->signature_url ?? null,
+            'created_by' => $user->created_by,
+            'updated_by' => $user->updated_by,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
         ];

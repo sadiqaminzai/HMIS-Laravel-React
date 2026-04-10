@@ -68,6 +68,7 @@
 - export_test_templates
 - import_lab_orders
 - import_test_templates
+- lab_test_order_discount
 - manage_lab_orders
 - manage_lab_payments
 - manage_test_templates
@@ -79,6 +80,12 @@
 
 ## Navigation
 - view_dashboard
+- view_dashboard_available_stock
+- view_dashboard_medicine_sale
+- view_dashboard_appointment_fees
+- view_dashboard_lab_orders_amount
+- view_dashboard_expenses
+- view_dashboard_revenue_total
 - view_laboratory_menu
 - view_pharmacy_menu
 - view_prescriptions_menu
@@ -156,6 +163,30 @@
 
 ## Prescription
 - add_prescriptions
+- add_prescription_diagnoses
+- delete_prescription_diagnoses
+- edit_prescription_diagnoses
+- export_prescription_diagnoses
+- import_prescription_diagnoses
+- manage_prescription_diagnoses
+- print_prescription_diagnoses
+- view_prescription_diagnoses
+- add_prescription_diagnoses
+- delete_prescription_diagnoses
+- edit_prescription_diagnoses
+- export_prescription_diagnoses
+- import_prescription_diagnoses
+- manage_prescription_diagnoses
+- print_prescription_diagnoses
+- view_prescription_diagnoses
+- add_prescription_diagnoses
+- delete_prescription_diagnoses
+- edit_prescription_diagnoses
+- export_prescription_diagnoses
+- import_prescription_diagnoses
+- manage_prescription_diagnoses
+- print_prescription_diagnoses
+- view_prescription_diagnoses
 - add_treatment_sets
 - create_prescription
 - delete_prescriptions
@@ -244,6 +275,14 @@
 - manage_patient_surgeries
 - print_patient_surgeries
 - view_patient_surgeries
+- add_discharge_summaries
+- delete_discharge_summaries
+- edit_discharge_summaries
+- export_discharge_summaries
+- import_discharge_summaries
+- manage_discharge_summaries
+- print_discharge_summaries
+- view_discharge_summaries
 
 ## Settings
 - add_backups

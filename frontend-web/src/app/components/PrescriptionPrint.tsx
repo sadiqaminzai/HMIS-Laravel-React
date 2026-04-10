@@ -547,12 +547,12 @@ export function PrescriptionPrint({
           </div>
 
           {/* Main Body Layout */}
-          <div className="flex flex-col md:flex-row print:flex-row gap-2 lg:gap-3 mb-4 flex-grow print-content-grow">
+          <div className="grid grid-cols-1 md:grid-cols-12 print:grid-cols-12 gap-4 lg:gap-6 mb-4 flex-grow print-content-grow">
             {/* Left Column: Diagnosis & Advice (30%) */}
-            <div className="w-full md:w-[30%] print:w-[30%] flex flex-col gap-4 lg:gap-6 border-b md:border-b-0 print:border-b-0 md:border-r print:border-r border-gray-200 pb-4 md:pb-0 print:pb-0 lg:pr-6 print:pr-6">
+            <div className="md:col-span-4 print:col-span-4 flex flex-col gap-4 lg:gap-6 border-b md:border-b-0 print:border-b-0 md:border-r print:border-r border-gray-200 pb-4 md:pb-0 print:pb-0 lg:pr-6 print:pr-6 overflow-hidden">
 
               {/* Top Left: Diagnosis */}
-                <div className="flex-1">
+                <div className="flex-1 overflow-hidden break-words">
                   <div className="flex items-center gap-2 mb-2 border-b border-gray-200 pb-1">
                     <span className="text-lg text-blue-600 font-serif leading-none">CR</span>
                     <h3 className="text-xs font-bold text-gray-700 uppercase">Clinical Record</h3>
@@ -566,7 +566,7 @@ export function PrescriptionPrint({
 
                 {/* Bottom Left: Note */}
                 {advice && advice.replace(/<[^>]*>/g, '').trim() ? (
-                 <div className="flex-1">
+                 <div className="flex-1 overflow-hidden break-words">
                    <div className="flex items-center gap-2 mb-2 border-b border-gray-200 pb-1">
                      <span className="text-amber-600 font-bold">⚠</span>
                      <h3 className="text-xs font-bold text-gray-700 uppercase">Note:</h3>
@@ -578,7 +578,7 @@ export function PrescriptionPrint({
             </div>
 
             {/* Right Column: Medicines Table (70%) */}
-            <div className="w-full md:w-[70%] print:w-[70%]">
+            <div className="md:col-span-8 print:col-span-8 overflow-hidden">
               <div
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-t-lg flex justify-between items-center mb-0"
                 style={{ backgroundColor: hospital.brandColor }}

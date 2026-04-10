@@ -42,6 +42,14 @@ interface MedicineRow {
   isTemporary?: boolean;
 }
 
+interface DiagnosisTemplate {
+  id: string;
+  hospitalId: string;
+  name: string;
+  description: string;
+  status: 'active' | 'inactive';
+}
+
 const formatMedicineDisplay = (brand: string, generic?: string, type?: string, strength?: string, includeStrength: boolean = true) => {
   const parts = [];
   if (type) parts.push(type);
@@ -84,6 +92,14 @@ const normalizeWalkInGender = (value?: string | null): 'male' | 'female' => {
   return 'male';
 };
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreateProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -123,6 +139,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [showMedicineSetDropdown, setShowMedicineSetDropdown] = useState(false);
   const [highlightedMedicineSetIndex, setHighlightedMedicineSetIndex] = useState(0);
   const [isLoadingMedicineSets, setIsLoadingMedicineSets] = useState(false);
+  const [diagnosisTemplates, setDiagnosisTemplates] = useState<DiagnosisTemplate[]>([]);
+  const [isLoadingDiagnosisTemplates, setIsLoadingDiagnosisTemplates] = useState(false);
+  const [selectedDiagnosisTemplateId, setSelectedDiagnosisTemplateId] = useState('');
+  const [diagnosisTemplateSearch, setDiagnosisTemplateSearch] = useState('');
+  const [showDiagnosisTemplateDropdown, setShowDiagnosisTemplateDropdown] = useState(false);
+  const [highlightedDiagnosisTemplateIndex, setHighlightedDiagnosisTemplateIndex] = useState(0);
   const [walkInPatient, setWalkInPatient] = useState({
     name: '',
     age: '',
@@ -170,6 +192,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const patientInputRef = useRef<HTMLInputElement>(null);
   const treatmentSetContainerRef = useRef<HTMLDivElement>(null);
+  const diagnosisTemplateContainerRef = useRef<HTMLDivElement>(null);
   const medicinesScrollRef = useRef<HTMLDivElement>(null);
   const shouldScrollMedicinesToBottomRef = useRef(false);
 
@@ -282,6 +305,49 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     };
 
     loadMedicineSets();
+
+    return () => {
+      active = false;
+    };
+  }, [currentHospital.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDiagnosisTemplates = async () => {
+      setIsLoadingDiagnosisTemplates(true);
+      try {
+        const { data } = await api.get('/prescription-diagnoses', {
+          params: {
+            hospital_id: currentHospital.id,
+            status: 'active',
+          },
+        });
+
+        if (!active) return;
+
+        const records: any[] = data.data ?? data;
+        const mapped: DiagnosisTemplate[] = records.map((template) => ({
+          id: String(template.id),
+          hospitalId: String(template.hospital_id),
+          name: String(template.name ?? ''),
+          description: String(template.description ?? ''),
+          status: (template.status ?? 'active') as DiagnosisTemplate['status'],
+        }));
+
+        setDiagnosisTemplates(mapped);
+      } catch {
+        if (active) {
+          setDiagnosisTemplates([]);
+        }
+      } finally {
+        if (active) {
+          setIsLoadingDiagnosisTemplates(false);
+        }
+      }
+    };
+
+    loadDiagnosisTemplates();
 
     return () => {
       active = false;
@@ -606,10 +672,52 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     return medicineSets.filter((set) => set.name.toLowerCase().includes(term));
   }, [medicineSetSearch, medicineSets]);
 
+  const filteredDiagnosisTemplates = useMemo(() => {
+    const term = diagnosisTemplateSearch.trim().toLowerCase();
+    if (!term) return diagnosisTemplates;
+
+    return diagnosisTemplates.filter((template) => {
+      const descriptionText = template.description
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+      return template.name.toLowerCase().includes(term) || descriptionText.includes(term);
+    });
+  }, [diagnosisTemplateSearch, diagnosisTemplates]);
+
   const handleSelectMedicineSet = (set: MedicineSet) => {
     setSelectedMedicineSetId(set.id);
     setMedicineSetSearch(set.name);
     setShowMedicineSetDropdown(false);
+  };
+
+  const buildDiagnosisContentFromTemplate = (template: DiagnosisTemplate) => {
+    const nameHtml = `<p><strong>${escapeHtml(template.name)}</strong></p>`;
+    const descriptionHtml = (template.description || '').trim();
+
+    return descriptionHtml ? `${nameHtml}${descriptionHtml}` : nameHtml;
+  };
+
+  const handleSelectDiagnosisTemplate = (template: DiagnosisTemplate) => {
+    const selectedTemplateHtml = buildDiagnosisContentFromTemplate(template);
+    setSelectedDiagnosisTemplateId(template.id);
+    setDiagnosisTemplateSearch(template.name);
+    setDiagnosis((previousDiagnosis) => {
+      const previousText = previousDiagnosis
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!previousText) {
+        return selectedTemplateHtml;
+      }
+
+      return `${previousDiagnosis}<p><br></p>${selectedTemplateHtml}`;
+    });
+    setShowDiagnosisTemplateDropdown(false);
   };
 
   const handleMedicineSetSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -649,6 +757,43 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
   };
 
+  const handleDiagnosisTemplateSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDiagnosisTemplateDropdown) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setShowDiagnosisTemplateDropdown(true);
+        setHighlightedDiagnosisTemplateIndex(0);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedDiagnosisTemplateIndex((prev) =>
+        prev < filteredDiagnosisTemplates.length - 1 ? prev + 1 : prev
+      );
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedDiagnosisTemplateIndex((prev) => (prev > 0 ? prev - 1 : 0));
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredDiagnosisTemplates[highlightedDiagnosisTemplateIndex]) {
+        handleSelectDiagnosisTemplate(filteredDiagnosisTemplates[highlightedDiagnosisTemplateIndex]);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowDiagnosisTemplateDropdown(false);
+    }
+  };
+
   useEffect(() => {
     const selectedSet = medicineSets.find((set) => set.id === selectedMedicineSetId);
     if (selectedSet) {
@@ -657,9 +802,20 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   }, [selectedMedicineSetId, medicineSets]);
 
   useEffect(() => {
+    const selectedTemplate = diagnosisTemplates.find((template) => template.id === selectedDiagnosisTemplateId);
+    if (selectedTemplate) {
+      setDiagnosisTemplateSearch(selectedTemplate.name);
+    }
+  }, [selectedDiagnosisTemplateId, diagnosisTemplates]);
+
+  useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
       if (!treatmentSetContainerRef.current?.contains(event.target as Node)) {
         setShowMedicineSetDropdown(false);
+      }
+
+      if (!diagnosisTemplateContainerRef.current?.contains(event.target as Node)) {
+        setShowDiagnosisTemplateDropdown(false);
       }
     };
 
@@ -882,6 +1038,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       setNextVisitQuickKey(null);
       setSelectedMedicineSetId('');
       setMedicineSetSearch('');
+      setSelectedDiagnosisTemplateId('');
+      setDiagnosisTemplateSearch('');
       setShowPrint(false);
     } catch (error: any) {
       const validation = error?.response?.data?.errors;
@@ -981,6 +1139,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
             setNextVisitQuickKey(null);
             setSelectedMedicineSetId('');
             setMedicineSetSearch('');
+            setSelectedDiagnosisTemplateId('');
+            setDiagnosisTemplateSearch('');
           }}
         />
       )}
@@ -1122,6 +1282,53 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         {/* RIGHT COLUMN - Diagnosis */}
         <div className="bg-white border border-gray-200 rounded-lg p-1.5">
           <label className="block text-xs font-medium text-gray-700 mb-0.5">Diagnosis / Chief Complaint</label>
+          <div ref={diagnosisTemplateContainerRef} className="relative mb-1">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={diagnosisTemplateSearch}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setDiagnosisTemplateSearch(value);
+                  setSelectedDiagnosisTemplateId('');
+                  setShowDiagnosisTemplateDropdown(true);
+                  setHighlightedDiagnosisTemplateIndex(0);
+                }}
+                onFocus={() => {
+                  setShowDiagnosisTemplateDropdown(true);
+                  setHighlightedDiagnosisTemplateIndex(0);
+                }}
+                onKeyDown={handleDiagnosisTemplateSearchKeyDown}
+                className="w-full pl-8 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search diagnosis template..."
+                title="Search diagnosis template"
+              />
+            </div>
+            {showDiagnosisTemplateDropdown && (
+              <div className="absolute z-40 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+                {isLoadingDiagnosisTemplates ? (
+                  <div className="px-2.5 py-1.5 text-xs text-gray-500">Loading templates...</div>
+                ) : filteredDiagnosisTemplates.length > 0 ? (
+                  filteredDiagnosisTemplates.map((template, index) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => handleSelectDiagnosisTemplate(template)}
+                      className={`w-full px-2.5 py-1.5 text-left text-xs transition-colors ${
+                        index === highlightedDiagnosisTemplateIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium">{template.name}</div>
+                      <div className="text-[11px] text-gray-500 truncate">{template.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || 'No description'}</div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-2.5 py-1.5 text-xs text-gray-500">No diagnosis templates found</div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1 mb-1">
             <button
               type="button"
@@ -1443,20 +1650,15 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [remoteMedicines, setRemoteMedicines] = useState<Medicine[]>([]);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const medicineInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const updateDropdownPosition = React.useCallback(() => {
-    if (showMedicineDropdown && medicineInputRef.current) {
+    if (showMedicineDropdown && medicineInputRef.current && dropdownRef.current) {
       const rect = medicineInputRef.current.getBoundingClientRect();
-      setDropdownStyle({
-        position: 'fixed',
-        top: `${rect.bottom + 4}px`,
-        left: `${rect.left}px`,
-        width: `${rect.width}px`,
-        zIndex: 99999,
-      });
+      dropdownRef.current.style.top = `${rect.bottom + 4}px`;
+      dropdownRef.current.style.left = `${rect.left}px`;
+      dropdownRef.current.style.width = `${rect.width}px`;
     }
   }, [showMedicineDropdown]);
 
@@ -1666,8 +1868,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
           {showMedicineDropdown && searchTerm.length > 0 && createPortal(
             <div
               ref={dropdownRef}
-              style={dropdownStyle}
-              className="bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px]"
+              className="fixed z-[99999] bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px]"
             >
               {filteredMedicines.length > 0 ? (
                 <div className="overflow-y-auto max-h-[280px]">

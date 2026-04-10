@@ -718,6 +718,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
   const normalizedLedger = useMemo(() => {
     return source.ledger
       .map(normalizeLedger)
+      .filter((item) => item.status.toLowerCase() !== 'voided')
       .filter((item) => inDateRange(item.date, rangeStart, rangeEnd));
   }, [source.ledger, rangeEnd, rangeStart]);
 

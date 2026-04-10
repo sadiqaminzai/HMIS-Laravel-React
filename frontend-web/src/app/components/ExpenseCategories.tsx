@@ -3,6 +3,7 @@ import { Hospital, UserRole, ExpenseCategory } from '../types';
 import { useExpenseCategories } from '../context/ExpenseCategoryContext';
 import { useHospitals } from '../context/HospitalContext';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface ExpenseCategoriesProps {
   hospital: Hospital;
@@ -14,6 +15,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
   const { hospitals } = useHospitals();
   const [editing, setEditing] = useState<ExpenseCategory | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [form, setForm] = useState({
@@ -46,6 +48,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
 
   const resetForm = () => {
     setEditing(null);
+    setIsSubmitting(false);
     setForm({
       hospitalId: hospital.id,
       name: '',
@@ -76,23 +79,41 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await updateCategory({
-        id: editing.id,
-        hospitalId: form.hospitalId,
-        name: form.name,
-        description: form.description,
-        status: form.status,
-      });
-    } else {
-      await addCategory({
-        hospitalId: form.hospitalId,
-        name: form.name,
-        description: form.description,
-        status: form.status,
-      });
+
+    if (isSubmitting) {
+      return;
     }
-    handleCloseModal();
+
+    setIsSubmitting(true);
+
+    try {
+      if (editing) {
+        await updateCategory({
+          id: editing.id,
+          hospitalId: form.hospitalId,
+          name: form.name,
+          description: form.description,
+          status: form.status,
+        });
+      } else {
+        const created = await addCategory({
+          hospitalId: form.hospitalId,
+          name: form.name,
+          description: form.description,
+          status: form.status,
+        });
+
+        if (!created) {
+          return;
+        }
+      }
+
+      handleCloseModal();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to save expense category');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -275,9 +296,10 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
+                  disabled={isSubmitting}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
-                  {editing ? 'Update Category' : 'Save Category'}
+                  {isSubmitting ? (editing ? 'Updating...' : 'Saving...') : (editing ? 'Update Category' : 'Save Category')}
                 </button>
               </div>
             </form>

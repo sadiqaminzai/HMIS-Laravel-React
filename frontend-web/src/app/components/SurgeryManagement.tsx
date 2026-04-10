@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText } from 'lucide-react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+import '../../styles/quill-custom.css';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { DischargeSummaryPrint } from './DischargeSummaryPrint';
 import {
   listSurgeryTypes,
   createSurgeryType,
@@ -19,9 +23,10 @@ import {
 } from '../../api/surgeries';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 
-type TabKey = 'types' | 'surgeries' | 'patientSurgeries';
+type TabKey = 'types' | 'surgeries' | 'patientSurgeries' | 'dischargeSummary';
 
 interface SurgeryManagementProps {
   hospital: Hospital;
@@ -61,6 +66,10 @@ interface PatientSurgeryItem {
   paymentStatus: 'pending' | 'paid' | 'partial' | 'cancelled';
   cost: number;
   notes?: string;
+  dischargeDate?: string;
+  dischargeSummary?: string;
+  dischargeCreatedBy?: string;
+  dischargeCompletedBy?: string;
 }
 
 const mapType = (item: any): SurgeryTypeItem => ({
@@ -84,24 +93,29 @@ const mapSurgery = (item: any): SurgeryItem => ({
 
 const mapPatientSurgery = (item: any): PatientSurgeryItem => ({
   id: String(item.id),
-  hospitalId: String(item.hospital_id),
-  patientId: String(item.patient_id),
-  patientName: item.patient?.name || String(item.patient_id),
-  doctorId: item.doctor_id ? String(item.doctor_id) : undefined,
+  hospitalId: String(item.hospital_id ?? item.hospitalId ?? ''),
+  patientId: String(item.patient_id ?? item.patientId ?? ''),
+  patientName: item.patient?.name || item.patient_name || item.patientName || String(item.patient_id ?? item.patientId ?? ''),
+  doctorId: (item.doctor_id ?? item.doctorId) ? String(item.doctor_id ?? item.doctorId) : undefined,
   doctorName: item.doctor?.name,
-  surgeryId: String(item.surgery_id),
-  surgeryName: item.surgery?.name || String(item.surgery_id),
-  surgeryDate: item.surgery_date,
+  surgeryId: String(item.surgery_id ?? item.surgeryId ?? ''),
+  surgeryName: item.surgery?.name || item.surgery_name || item.surgeryName || String(item.surgery_id ?? item.surgeryId ?? ''),
+  surgeryDate: String(item.surgery_date ?? item.surgeryDate ?? '').slice(0, 10),
   status: item.status,
-  paymentStatus: item.payment_status,
+  paymentStatus: item.payment_status ?? item.paymentStatus,
   cost: Number(item.cost || 0),
   notes: item.notes || undefined,
+  dischargeDate: item.discharge_date ? String(item.discharge_date).slice(0, 10) : undefined,
+  dischargeSummary: item.discharge_summary || undefined,
+  dischargeCreatedBy: item.discharge_created_by || undefined,
+  dischargeCompletedBy: item.discharge_completed_by || undefined,
 });
 
 export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps) {
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
   const { patients } = usePatients();
   const { doctors } = useDoctors();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabKey>('types');
   const [search, setSearch] = useState('');
@@ -124,6 +138,15 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const [isPatientSurgeryModalOpen, setIsPatientSurgeryModalOpen] = useState(false);
   const [editingPatientSurgery, setEditingPatientSurgery] = useState<PatientSurgeryItem | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
+  const [editingDischargeSurgery, setEditingDischargeSurgery] = useState<PatientSurgeryItem | null>(null);
+  const [dischargeForm, setDischargeForm] = useState({
+    patientSurgeryId: '',
+    dischargeDate: new Date().toISOString().slice(0, 10),
+    dischargeSummary: '',
+    dischargeCreatedBy: '',
+    dischargeCompletedBy: '',
+  });
   const [patientSurgeryForm, setPatientSurgeryForm] = useState({
     patientId: '',
     doctorId: '',
@@ -135,8 +158,229 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     notes: '',
     isActive: true,
   });
+    const [receiptSize, setReceiptSize] = useState<'a4' | '58mm' | '76mm' | '80mm'>(() => {
+      const saved = localStorage.getItem('surgery_receipt_size');
+      if (saved === '58mm' || saved === '76mm' || saved === '80mm' || saved === 'a4') return saved;
+      return '80mm';
+    });
 
-  const hospitalParam = userRole === 'super_admin' && selectedHospitalId !== 'all' ? selectedHospitalId : undefined;
+  const [printingDischargeItem, setPrintingDischargeItem] = useState<PatientSurgeryItem | null>(null);
+
+  const getAssignedDoctorName = (row?: PatientSurgeryItem | null) => {
+    if (!row) return '';
+    const byId = doctors.find((d) => String(d.id) === String(row.doctorId));
+    return row.doctorName || byId?.name || '';
+  };
+
+  const buildDischargeTemplate = (row?: PatientSurgeryItem | null) => {
+    const assignedDoctorName = getAssignedDoctorName(row) || 'Assigned doctor';
+
+    return `
+      <h3>Hospital Course</h3>
+      <ul>
+        <li>Patient remained clinically stable during admission.</li>
+        <li>Pain and symptoms improved with treatment.</li>
+        <li>No immediate post-operative complications were observed.</li>
+      </ul>
+      <h3>Discharge Instructions</h3>
+      <ul>
+        <li>Continue discharge medications as prescribed.</li>
+        <li>Maintain wound care and hydration as advised.</li>
+        <li>Return urgently for fever, bleeding, severe pain, or breathing difficulty.</li>
+      </ul>
+      <h3>Follow-up Plan</h3>
+      <p>Follow up with ${assignedDoctorName} in 5-7 days or earlier if symptoms worsen.</p>
+    `;
+  };
+
+  const getCurrentDischargeCase = () => {
+    return (
+      patientSurgeries.find((item) => item.id === dischargeForm.patientSurgeryId) ||
+      editingDischargeSurgery ||
+      null
+    );
+  };
+
+  const resetDischargeTemplate = () => {
+    const currentCase = getCurrentDischargeCase();
+    setEditingDischargeSurgery(currentCase);
+    setDischargeForm((prev) => ({
+      ...prev,
+      dischargeSummary: '',
+    }));
+  };
+
+    useEffect(() => {
+      localStorage.setItem('surgery_receipt_size', receiptSize);
+    }, [receiptSize]);
+
+    const printSurgeryReceipt = (item: PatientSurgeryItem, size: 'a4' | '58mm' | '76mm' | '80mm' = receiptSize) => {
+      const isCompactReceipt = size !== 'a4';
+      const ticketWidth = isCompactReceipt ? size : '190mm';
+      const pageRule = isCompactReceipt
+        ? `@page { size: ${size} auto; margin: 0; }`
+        : '@page { size: A4; margin: 10mm; }';
+      
+      const receiptHtml = `
+        <html>
+          <head>
+            <title>Surgery Invoice</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                color: #111827;
+                margin: 0;
+                background: ${isCompactReceipt ? '#ffffff' : '#f3f4f6'};
+                padding: ${isCompactReceipt ? '0' : '20px'};
+                font-size: ${isCompactReceipt ? '10px' : '14px'};
+              }
+              .ticket {
+                width: ${ticketWidth};
+                margin: 0 auto;
+                background: #ffffff;
+                border: ${isCompactReceipt ? 'none' : '1px solid #e5e7eb'};
+                border-radius: ${isCompactReceipt ? '0' : '10px'};
+                padding: ${isCompactReceipt ? '10px' : '30px'};
+                box-shadow: ${isCompactReceipt ? 'none' : '0 4px 14px rgba(0, 0, 0, 0.08)'};
+              }
+              .header {
+                text-align: center;
+                border-bottom: 2px solid #1e3a8a;
+                padding-bottom: 10px;
+                margin-bottom: 15px;
+              }
+              .hospital-name {
+                font-size: ${isCompactReceipt ? '14px' : '24px'};
+                font-weight: bold;
+                color: #1e3a8a;
+                margin: 0 0 4px 0;
+              }
+              .dept {
+                color: #000000;
+                margin: 0;
+              }
+              .meta-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 15px;
+                ${isCompactReceipt ? 'flex-direction: column; gap: 8px;' : ''}
+              }
+              .meta-block {
+                ${isCompactReceipt ? 'width: 100%;' : 'width: 48%;'}
+              }
+              .label {
+                font-size: 10px;
+                text-transform: uppercase;
+                color: #000000;
+                font-weight: bold;
+                margin-bottom: 2px;
+              }
+              .value { font-weight: bold; margin: 0; color: #000000; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th { text-align: left; border-bottom: 2px solid #e5e7eb; padding: 6px 0; color: #000000; }
+              th.text-right, td.text-right { text-align: right; }
+              td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; color: #000000; }
+              .notes { font-size: ${isCompactReceipt ? '9px' : '12px'}; color: #000000; font-style: italic; margin-top: 2px; }
+              .totals {
+                border-top: 2px solid #1e3a8a;
+                padding-top: 10px;
+                text-align: right;
+              }
+              .totals div {
+                display: flex;
+                justify-content: ${isCompactReceipt ? 'space-between' : 'flex-end'};
+                margin-bottom: 5px;
+                font-weight: bold;
+              }
+              .totals span:first-child { width: 120px; color: #1e3a8a; }
+              .footer { text-align: center; color: #000000; font-size: 10px; margin-top: 30px; }
+              @media print {
+                * {
+                  color: #000000 !important;
+                }
+                body { background: #ffffff; padding: 0; }
+                .ticket { border: none; box-shadow: none; margin: 0; padding: ${isCompactReceipt ? '6px' : '0'}; width: ${ticketWidth}; }
+                ${pageRule}
+              }
+            </style>
+          </head>
+          <body>
+            <div class="ticket">
+              <div class="header">
+                <h1 class="hospital-name">${hospital.name}</h1>
+                <p class="dept">Surgery Department</p>
+                <div style="margin-top: 6px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Invoice</div>
+              </div>
+              
+              <div class="meta-row">
+                <div class="meta-block">
+                  <div class="label">Patient Name</div>
+                  <div class="value">${item.patientName}</div>
+                </div>
+                <div class="meta-block" style="${isCompactReceipt ? '' : 'text-align: right;'}">
+                  <div class="label">Invoice No / Date</div>
+                  <div class="value">SURG-${item.id}</div>
+                  <div style="font-size: ${isCompactReceipt ? '10px' : '14px'}">${item.surgeryDate}</div>
+                </div>
+              </div>
+              
+              <div class="meta-row">
+                <div class="meta-block">
+                  <div class="label">Surgeon</div>
+                  <div class="value">${item.doctorName || 'N/A'}</div>
+                </div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th class="text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="value">${item.surgeryName}</div>
+                      <div class="notes">${item.notes || 'No notes'}</div>
+                    </td>
+                    <td class="text-right value">${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="totals">
+                <div>
+                  <span>Total Amount:</span>
+                  <span>${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div style="color: #16a34a; font-size: ${isCompactReceipt ? '10px' : '14px'}">
+                  <span style="color: inherit">Payment Status:</span>
+                  <span style="text-transform: uppercase; font-style: italic;">${item.paymentStatus}</span>
+                </div>
+              </div>
+
+              <div class="footer">
+                <p style="margin:0 0 2px 0">${hospital.address || ''}</p>
+                <p style="margin:0">softcareitsolutions.com</p>
+              </div>
+            </div>
+            <script>window.onload = function() { window.print(); window.close(); }</script>
+          </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(receiptHtml);
+        printWindow.document.close();
+      }
+    };
+
+  const hospitalParam = userRole === 'super_admin'
+    ? (selectedHospitalId !== 'all' ? selectedHospitalId : undefined)
+    : currentHospital.id;
 
   const loadAll = async () => {
     setLoading(true);
@@ -192,11 +436,30 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     );
   }, [patientSurgeries, search]);
 
+  const filteredDischargeSummaries = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    const rows = patientSurgeries.filter((row) =>
+      Boolean((row.dischargeSummary || '').replace(/<[^>]*>/g, '').trim()) || Boolean(row.dischargeDate)
+    );
+
+    if (!term) return rows;
+
+    return rows.filter((row) =>
+      row.patientName.toLowerCase().includes(term) ||
+      row.surgeryName.toLowerCase().includes(term) ||
+      (row.doctorName || '').toLowerCase().includes(term) ||
+      (row.dischargeCreatedBy || '').toLowerCase().includes(term) ||
+      (row.dischargeCompletedBy || '').toLowerCase().includes(term) ||
+      (row.dischargeSummary || '').toLowerCase().includes(term)
+    );
+  }, [patientSurgeries, search]);
+
   const selectedRows = useMemo(() => {
     if (activeTab === 'types') return filteredTypes;
     if (activeTab === 'surgeries') return filteredSurgeries;
+    if (activeTab === 'dischargeSummary') return filteredDischargeSummaries;
     return filteredPatientSurgeries;
-  }, [activeTab, filteredTypes, filteredSurgeries, filteredPatientSurgeries]);
+  }, [activeTab, filteredTypes, filteredSurgeries, filteredPatientSurgeries, filteredDischargeSummaries]);
 
   const itemsPerPage = 10;
   const totalPages = Math.max(1, Math.ceil(selectedRows.length / itemsPerPage));
@@ -311,6 +574,78 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     }
   };
 
+  const openDischargeModal = (row: PatientSurgeryItem) => {
+    const assignedDoctorName = getAssignedDoctorName(row);
+    setEditingDischargeSurgery(row);
+    setDischargeForm({
+      patientSurgeryId: row.id,
+      dischargeDate: row.dischargeDate || new Date().toISOString().slice(0, 10),
+      dischargeSummary: row.dischargeSummary || buildDischargeTemplate(row),
+      dischargeCreatedBy: row.dischargeCreatedBy || user?.name || '',
+      dischargeCompletedBy: row.dischargeCompletedBy || assignedDoctorName,
+    });
+    setIsDischargeModalOpen(true);
+  };
+
+  const openNewDischargeModal = () => {
+    const firstCase = patientSurgeries[0];
+    const assignedDoctorName = getAssignedDoctorName(firstCase);
+    setEditingDischargeSurgery(firstCase || null);
+    setDischargeForm({
+      patientSurgeryId: firstCase?.id || '',
+      dischargeDate: new Date().toISOString().slice(0, 10),
+      dischargeSummary: buildDischargeTemplate(firstCase),
+      dischargeCreatedBy: user?.name || '',
+      dischargeCompletedBy: assignedDoctorName,
+    });
+    setIsDischargeModalOpen(true);
+  };
+
+  const saveDischargeSummary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetSurgery = editingDischargeSurgery || patientSurgeries.find((item) => item.id === dischargeForm.patientSurgeryId);
+    if (!targetSurgery) {
+      toast.error('Please select a patient surgery case');
+      return;
+    }
+
+    const summaryText = dischargeForm.dischargeSummary.replace(/<[^>]*>/g, '').trim();
+    if (!summaryText) {
+      toast.error('Discharge summary is required');
+      return;
+    }
+
+    const payload = {
+      hospital_id: targetSurgery.hospitalId,
+      patient_id: targetSurgery.patientId,
+      doctor_id: targetSurgery.doctorId || undefined,
+      surgery_id: targetSurgery.surgeryId,
+      surgery_date: targetSurgery.surgeryDate,
+      status: targetSurgery.status,
+      payment_status: targetSurgery.paymentStatus,
+      cost: targetSurgery.cost,
+      notes: targetSurgery.notes || undefined,
+      is_active: true,
+      discharge_date: dischargeForm.dischargeDate || undefined,
+      discharge_summary: dischargeForm.dischargeSummary,
+      discharge_created_by: dischargeForm.dischargeCreatedBy || undefined,
+      discharge_completed_by: dischargeForm.dischargeCompletedBy || undefined,
+    };
+
+    try {
+      const updated = await updatePatientSurgery(targetSurgery.id, payload);
+      const normalized = mapPatientSurgery(updated);
+      setPatientSurgeries((prev) => prev.map((item) => (item.id === normalized.id ? normalized : item)));
+      setIsDischargeModalOpen(false);
+      setEditingDischargeSurgery(null);
+      toast.success('Discharge summary saved');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to save discharge summary');
+    }
+  };
+
+  const printDischargeSummary = (item: PatientSurgeryItem) => { setPrintingDischargeItem(item); };
+
   useEffect(() => {
     if (!patientSurgeryForm.surgeryId) return;
     if (patientSurgeryForm.cost !== '') return;
@@ -333,6 +668,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           {activeTab === 'types' && <button onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Type</button>}
           {activeTab === 'surgeries' && <button onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Surgery</button>}
           {activeTab === 'patientSurgeries' && <button onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'pending', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Patient Surgery</button>}
+          {activeTab === 'dischargeSummary' && <button onClick={openNewDischargeModal} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Discharge Summary</button>}
         </div>
       </div>
 
@@ -356,6 +692,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         <button onClick={() => setActiveTab('types')} className={`px-3 py-2 text-sm rounded ${activeTab === 'types' ? 'bg-blue-600 text-white' : 'border'}`}>Surgery Types</button>
         <button onClick={() => setActiveTab('surgeries')} className={`px-3 py-2 text-sm rounded ${activeTab === 'surgeries' ? 'bg-blue-600 text-white' : 'border'}`}>Surgeries</button>
         <button onClick={() => setActiveTab('patientSurgeries')} className={`px-3 py-2 text-sm rounded ${activeTab === 'patientSurgeries' ? 'bg-blue-600 text-white' : 'border'}`}>Patient Surgeries</button>
+        <button onClick={() => setActiveTab('dischargeSummary')} className={`px-3 py-2 text-sm rounded ${activeTab === 'dischargeSummary' ? 'bg-blue-600 text-white' : 'border'}`}>Discharge Summary</button>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
@@ -366,6 +703,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 {activeTab === 'types' && <><th className="px-4 py-2">Name</th><th className="px-4 py-2">Description</th><th className="px-4 py-2">Status</th></>}
                 {activeTab === 'surgeries' && <><th className="px-4 py-2">Name</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">Cost</th><th className="px-4 py-2">Status</th></>}
                 {activeTab === 'patientSurgeries' && <><th className="px-4 py-2">Patient</th><th className="px-4 py-2">Surgery</th><th className="px-4 py-2">Date</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Payment</th><th className="px-4 py-2">Cost</th></>}
+                {activeTab === 'dischargeSummary' && <><th className="px-4 py-2">Patient</th><th className="px-4 py-2">Surgery</th><th className="px-4 py-2">Discharge Date</th><th className="px-4 py-2">Created By</th><th className="px-4 py-2">Completed By</th><th className="px-4 py-2">Summary</th></>}
                 <th className="px-4 py-2 text-center">Actions</th>
               </tr>
             </thead>
@@ -415,12 +753,31 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                         <div className="flex items-center justify-center gap-2">
                           <button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title="Print Invoice"><Printer className="w-4 h-4" /></button>
                           <button onClick={async () => { try { const updated = await togglePatientSurgeryPaymentStatus(row.id); setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item)); toast.success('Payment status toggled'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
-                          <button onClick={() => { setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: row.surgeryDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
+                          <button onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
                           <button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </tr>
                   ))}
+                  {activeTab === 'dischargeSummary' && (paginatedRows as PatientSurgeryItem[]).map((row) => {
+                    const summaryPlain = (row.dischargeSummary || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                    return (
+                      <tr key={row.id}>
+                        <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.patientName}</td>
+                        <td className="px-4 py-2">{row.surgeryName}</td>
+                        <td className="px-4 py-2">{row.dischargeDate || '-'}</td>
+                        <td className="px-4 py-2">{row.dischargeCreatedBy || '-'}</td>
+                        <td className="px-4 py-2">{row.dischargeCompletedBy || '-'}</td>
+                        <td className="px-4 py-2 max-w-[320px] truncate" title={summaryPlain}>{summaryPlain || '-'}</td>
+                        <td className="px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => openDischargeModal(row)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title="Edit discharge summary"><Pencil className="w-4 h-4" /></button>
+                            <button onClick={() => printDischargeSummary(row)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Print discharge summary"><Printer className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </>
               )}
             </tbody>
@@ -512,6 +869,159 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         </div>
       )}
 
+      {isDischargeModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[55] p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[72vh] border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-t-xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">{editingDischargeSurgery ? 'Edit Discharge Summary' : 'Add Discharge Summary'}</h2>
+              </div>
+              <button onClick={() => setIsDischargeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+            </div>
+            <style>
+              {`
+                .discharge-editor .ql-toolbar.ql-snow {
+                  border: 0;
+                  border-bottom: 1px solid #e5e7eb;
+                  background: #f8fafc;
+                }
+                .discharge-editor .ql-container.ql-snow {
+                  border: 0;
+                }
+                .discharge-editor .ql-editor {
+                  min-height: 120px;
+                  max-height: 170px;
+                  overflow-y: auto;
+                  font-size: 14px;
+                  line-height: 1.55;
+                }
+              `}
+            </style>
+            <form onSubmit={saveDischargeSummary} className="p-4 sm:p-5 grid grid-cols-12 gap-3 overflow-y-auto max-h-[calc(72vh-86px)]">
+              <div className="col-span-12">
+                <label className="text-xs font-medium">Patient Surgery Case</label>
+                <select
+                  value={dischargeForm.patientSurgeryId}
+                  onChange={(e) => {
+                    const selected = patientSurgeries.find((item) => item.id === e.target.value);
+                    const assignedDoctorName = getAssignedDoctorName(selected);
+                    setEditingDischargeSurgery(selected || null);
+                    setDischargeForm((prev) => ({
+                      ...prev,
+                      patientSurgeryId: e.target.value,
+                      dischargeDate: selected?.dischargeDate || prev.dischargeDate,
+                      dischargeSummary: selected?.dischargeSummary || buildDischargeTemplate(selected),
+                      dischargeCreatedBy: selected?.dischargeCreatedBy || user?.name || prev.dischargeCreatedBy,
+                      dischargeCompletedBy: selected?.dischargeCompletedBy || assignedDoctorName,
+                    }));
+                  }}
+                  required
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select surgery case</option>
+                  {patientSurgeries.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      SURG-{row.id} | {row.patientName} | {row.surgeryName} | {row.surgeryDate}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-12 sm:col-span-6">
+                <label className="text-xs font-medium">Discharge Date</label>
+                <input
+                  type="date"
+                  value={dischargeForm.dischargeDate}
+                  onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeDate: e.target.value }))}
+                  required
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-6">
+                <label className="text-xs font-medium">Discharge Status</label>
+                <div className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-700 capitalize">
+                  {editingDischargeSurgery?.status || 'scheduled'}
+                </div>
+              </div>
+
+              <div className="col-span-12 sm:col-span-6">
+                <label className="text-xs font-medium">Created By</label>
+                <input
+                  value={dischargeForm.dischargeCreatedBy}
+                  onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeCreatedBy: e.target.value }))}
+                  placeholder="Doctor or staff name"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="col-span-12 sm:col-span-6">
+                <label className="text-xs font-medium">Completed By</label>
+                <input
+                  value={dischargeForm.dischargeCompletedBy}
+                  onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeCompletedBy: e.target.value }))}
+                  placeholder="Assigned doctor"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="col-span-12">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium">Discharge Summary</label>
+                  <button
+                    type="button"
+                    onClick={resetDischargeTemplate}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    Reset Template
+                  </button>
+                </div>
+                <div className="mt-1 bg-white rounded-lg border border-gray-300">
+                  <ReactQuill
+                    theme="snow"
+                    value={dischargeForm.dischargeSummary}
+                    placeholder="Edit the generated discharge summary here..."
+                    onChange={(value) => setDischargeForm((prev) => ({ ...prev, dischargeSummary: value }))}
+                    modules={{
+                      toolbar: [
+                        [{ header: [1, 2, 3, false] }],
+                        [{ size: ['small', false, 'large', 'huge'] }],
+                        ['bold', 'italic', 'underline', 'strike'],
+                        [{ color: [] }, { background: [] }],
+                        [{ list: 'ordered' }, { list: 'bullet' }],
+                        [{ align: [] }],
+                        ['link', 'blockquote', 'code-block'],
+                        ['clean'],
+                      ],
+                    }}
+                    formats={[
+                      'header',
+                      'size',
+                      'bold',
+                      'italic',
+                      'underline',
+                      'strike',
+                      'color',
+                      'background',
+                      'list',
+                      'bullet',
+                      'align',
+                      'link',
+                      'blockquote',
+                      'code-block',
+                    ]}
+                    className="discharge-editor"
+                  />
+                </div>
+              </div>
+
+              <div className="col-span-12 flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                <button type="button" onClick={() => setIsDischargeModalOpen(false)} className="px-4 py-2 text-sm rounded border">Cancel</button>
+                <button type="submit" className="px-5 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save Summary</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showInvoiceModal && editingPatientSurgery && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -546,7 +1056,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                   </div>
                   <div className="text-right">
                     <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Surgeon</h3>
-                    <p className="font-bold">Dr. {editingPatientSurgery.doctorName || 'N/A'}</p>
+                      <p className="font-bold">{editingPatientSurgery.doctorName || 'N/A'}</p>
                   </div>
                 </div>
 
@@ -583,70 +1093,53 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                   </div>
                 </div>
 
-                <div className="mt-16 text-center text-xs text-gray-400">
-                  <p>Computer generated invoice - no signature required.</p>
-                  <p>Thank you for choosing {hospital.name}.</p>
+                <div className="mt-16 text-center text-xs text-gray-800">
+                  <p>{hospital.address || ''}</p>
+                  <p>softcareitsolutions.com</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-gray-50 dark:bg-gray-700/50 px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 text-sm font-medium border rounded-md">Close</button>
-              <button
-                onClick={() => setTimeout(() => window.print(), 100)}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md flex items-center gap-2"
-              >
-                <Printer className="w-4 h-4" /> Print
-              </button>
+<div className="bg-gray-50 dark:bg-gray-700/50 px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-between gap-2">
+                <div>
+                  <select
+                    title="Receipt Size"
+                    value={receiptSize}
+                    onChange={(e) => setReceiptSize(e.target.value as 'a4' | '80mm' | '76mm' | '58mm')}
+                    className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
+                  >
+                    <option value="a4">A4 Invoice</option>
+                    <option value="80mm">80mm Receipt</option>
+                    <option value="76mm">76mm Receipt</option>
+                    <option value="58mm">58mm Receipt</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 text-sm font-medium border rounded-md">Close</button>
+                  <button
+                    onClick={() => printSurgeryReceipt(editingPatientSurgery)}
+                    className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md flex items-center gap-2"
+                  >
+                    <Printer className="w-4 h-4" /> Print
+                  </button>
+                </div>
             </div>
           </div>
 
-          <style>
-            {`
-              @media print {
-                html, body {
-                  height: auto !important;
-                  overflow: visible !important;
-                  background: white !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                }
-                body * {
-                  visibility: hidden;
-                }
-                #surgery-invoice-print, #surgery-invoice-print * {
-                  visibility: visible !important;
-                }
-                /* Break out of the fixed modal container for printing */
-                .fixed.inset-0 {
-                  position: absolute !important;
-                  display: block !important;
-                  height: auto !important;
-                  min-height: 100vh !important;
-                  width: 100% !important;
-                  overflow: visible !important;
-                  background: transparent !important;
-                }
-                .max-h-\\[70vh\\] {
-                  max-height: none !important;
-                  overflow: visible !important;
-                }
-                #surgery-invoice-print {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                  width: 100% !important;
-                  height: auto !important;
-                  padding: 20mm !important;
-                  margin: 0 !important;
-                  box-sizing: border-box !important;
-                }
-                @page { margin: 0; size: auto; }
-              }
-            `}
-          </style>
+          
         </div>
+      )}
+      {printingDischargeItem && (
+        <DischargeSummaryPrint
+          hospital={hospital}
+          patient={patients.find((p) => String(p.id) === String(printingDischargeItem.patientId))}
+          doctor={doctors.find((d) => String(d.id) === String(printingDischargeItem.doctorId))}
+          surgeryItem={printingDischargeItem}
+          printedBy={user?.name || 'System'}
+          onClose={() => setPrintingDischargeItem(null)}
+        />
       )}
     </div>
   );
 }
+

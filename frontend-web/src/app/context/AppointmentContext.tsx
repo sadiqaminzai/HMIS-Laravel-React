@@ -30,6 +30,7 @@ const mapAppointment = (a: any): Appointment => ({
   hospitalId: String(a.hospital_id),
   appointmentNumber: a.appointment_number ?? '',
   patientId: a.patient_id ? String(a.patient_id) : '',
+  patientDisplayId: a.patient?.patient_id ? String(a.patient.patient_id) : (a.patient_display_id ? String(a.patient_display_id) : undefined),
   patientName: a.patient_name ?? a.patient?.name ?? '',
   patientAge: Number(a.patient_age ?? a.patient?.age ?? 0),
   patientGender: a.patient_gender ?? a.patient?.gender ?? 'other',

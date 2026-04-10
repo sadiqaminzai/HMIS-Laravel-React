@@ -69,12 +69,19 @@ const mapLabOrderToLabTest = (order: any, snapshot: any): LabTest => {
   });
 
   const fallbackPatientId = snapshot?.patient_id || snapshot?.walk_in_patient_id || '';
+  const patientDisplayId =
+    order?.patient_display_id ||
+    order?.patient?.patient_id ||
+    snapshot?.patient_id ||
+    snapshot?.walk_in_patient_id ||
+    '';
 
   return {
     id: String(order.id),
     hospitalId: String(order.hospital_id),
     testNumber: order.order_number,
     patientId: order.patient_id ? String(order.patient_id) : String(fallbackPatientId || ''),
+    patientDisplayId: String(patientDisplayId || ''),
     patientName: order.patient_name ?? snapshot?.name ?? 'Patient',
     patientAge: Number(order.patient_age ?? snapshot?.age ?? 0),
     patientGender: order.patient_gender ?? snapshot?.gender ?? 'other',

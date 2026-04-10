@@ -81,6 +81,7 @@ class PatientSurgeryController extends Controller
             $search = $request->string('search');
             $query->where(function ($q) use ($search) {
                 $q->where('notes', 'like', "%{$search}%")
+                    ->orWhere('discharge_summary', 'like', "%{$search}%")
                     ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', "%{$search}%"))
                     ->orWhereHas('doctor', fn ($d) => $d->where('name', 'like', "%{$search}%"))
                     ->orWhereHas('surgery', fn ($s) => $s->where('name', 'like', "%{$search}%"));
@@ -94,6 +95,7 @@ class PatientSurgeryController extends Controller
     {
         $data = $this->validatePayload($request);
         $data['created_by'] = $request->user()?->name;
+        $this->decorateDischargeAuditFields($data, $request->user()?->name);
 
         $patientSurgery = DB::transaction(function () use ($data) {
             $surgery = Surgery::query()->findOrFail($data['surgery_id']);
@@ -122,6 +124,7 @@ class PatientSurgeryController extends Controller
 
         $data = $this->validatePayload($request, $patientSurgery->hospital_id);
         $data['updated_by'] = $request->user()?->name;
+        $this->decorateDischargeAuditFields($data, $request->user()?->name, $patientSurgery);
 
         DB::transaction(function () use ($data, $patientSurgery) {
             $surgery = Surgery::query()->findOrFail($data['surgery_id']);
@@ -183,6 +186,10 @@ class PatientSurgeryController extends Controller
             'doctor_id' => ['nullable', 'exists:users,id'],
             'surgery_id' => ['required', 'exists:surgeries,id'],
             'surgery_date' => ['required', 'date'],
+            'discharge_date' => ['nullable', 'date'],
+            'discharge_summary' => ['nullable', 'string'],
+            'discharge_created_by' => ['nullable', 'string', 'max:191'],
+            'discharge_completed_by' => ['nullable', 'string', 'max:191'],
             'status' => ['required', 'in:scheduled,in_progress,completed,cancelled'],
             'payment_status' => ['required', 'in:pending,paid,partial,cancelled'],
             'cost' => ['nullable', 'numeric', 'min:0'],
@@ -210,6 +217,44 @@ class PatientSurgeryController extends Controller
     {
         if ($user->role !== 'super_admin' && (int) $user->hospital_id !== (int) $hospitalId) {
             abort(403, 'Unauthorized access');
+        }
+    }
+
+    private function decorateDischargeAuditFields(array &$data, ?string $actorName, ?PatientSurgery $existing = null): void
+    {
+        $hasIncomingDischargeFields = array_key_exists('discharge_summary', $data)
+            || array_key_exists('discharge_date', $data)
+            || array_key_exists('discharge_created_by', $data)
+            || array_key_exists('discharge_completed_by', $data);
+
+        if (!$hasIncomingDischargeFields && $existing) {
+            return;
+        }
+
+        $summary = trim((string) ($data['discharge_summary'] ?? $existing?->discharge_summary ?? ''));
+        $hasSummary = $summary !== '';
+
+        if (!$hasSummary) {
+            $data['discharge_summary'] = null;
+            $data['discharge_date'] = $data['discharge_date'] ?? null;
+            $data['discharge_created_by'] = null;
+            $data['discharge_completed_by'] = null;
+            return;
+        }
+
+        $data['discharge_summary'] = $summary;
+        $data['discharge_created_by'] = $data['discharge_created_by']
+            ?? $existing?->discharge_created_by
+            ?? $actorName;
+
+        $isCompleted = (string) ($data['status'] ?? $existing?->status ?? '') === 'completed';
+        if ($isCompleted) {
+            $data['discharge_completed_by'] = $data['discharge_completed_by']
+                ?? $existing?->discharge_completed_by
+                ?? $actorName;
+        } else {
+            $data['discharge_completed_by'] = $data['discharge_completed_by']
+                ?? $existing?->discharge_completed_by;
         }
     }
 }

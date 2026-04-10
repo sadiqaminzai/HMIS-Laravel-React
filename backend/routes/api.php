@@ -20,6 +20,7 @@ use App\Http\Controllers\MedicineController;
 use App\Http\Controllers\MedicineSetController;
 use App\Http\Controllers\MedicineTypeController;
 use App\Http\Controllers\PrescriptionController;
+use App\Http\Controllers\PrescriptionDiagnosisController;
 use App\Http\Controllers\PrescriptionItemGroupController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockReconciliationController;
@@ -43,6 +44,7 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store']);
 Route::get('/verify/prescriptions/{token}', [VerificationController::class, 'prescription']);
 Route::get('/verify/patients/{token}', [VerificationController::class, 'patient']);
 Route::get('/verify/lab-reports/{token}', [VerificationController::class, 'labReport']);
+Route::get('/verify/transactions/{token}', [VerificationController::class, 'transaction']);
 
 Route::middleware('auth:sanctum')->group(function () {
 	Route::get('/me', [AuthController::class, 'me']);
@@ -198,6 +200,13 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('medicine-sets', [MedicineSetController::class, 'store'])->middleware('permission:add_treatment_sets,manage_treatment_sets,add_prescriptions,manage_prescriptions');
 	Route::match(['PUT', 'PATCH'], 'medicine-sets/{medicineSet}', [MedicineSetController::class, 'update'])->middleware('permission:edit_treatment_sets,manage_treatment_sets,edit_prescriptions,manage_prescriptions');
 	Route::delete('medicine-sets/{medicineSet}', [MedicineSetController::class, 'destroy'])->middleware('permission:delete_treatment_sets,manage_treatment_sets,delete_prescriptions,manage_prescriptions');
+
+	// Prescription Diagnosis Templates
+	Route::get('prescription-diagnoses', [PrescriptionDiagnosisController::class, 'index'])->middleware('permission_or_doctor:view_prescription_diagnoses,manage_prescription_diagnoses,view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	Route::get('prescription-diagnoses/{prescriptionDiagnosis}', [PrescriptionDiagnosisController::class, 'show'])->middleware('permission_or_doctor:view_prescription_diagnoses,manage_prescription_diagnoses,view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	Route::post('prescription-diagnoses', [PrescriptionDiagnosisController::class, 'store'])->middleware('permission:add_prescription_diagnoses,manage_prescription_diagnoses,add_prescriptions,manage_prescriptions');
+	Route::match(['PUT', 'PATCH'], 'prescription-diagnoses/{prescriptionDiagnosis}', [PrescriptionDiagnosisController::class, 'update'])->middleware('permission:edit_prescription_diagnoses,manage_prescription_diagnoses,edit_prescriptions,manage_prescriptions');
+	Route::delete('prescription-diagnoses/{prescriptionDiagnosis}', [PrescriptionDiagnosisController::class, 'destroy'])->middleware('permission:delete_prescription_diagnoses,manage_prescription_diagnoses,delete_prescriptions,manage_prescriptions');
 
 	Route::get('test-templates', [TestTemplateController::class, 'index'])->middleware('permission_or_doctor:view_test_templates,manage_test_templates');
 	Route::get('test-templates/{testTemplate}', [TestTemplateController::class, 'show'])->middleware('permission_or_doctor:view_test_templates,manage_test_templates');

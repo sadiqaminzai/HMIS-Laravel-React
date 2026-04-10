@@ -709,10 +709,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           </body>
         </html>
       `;
-    } else if (targetSize === '80mm') {
-      const paperWidth = '80mm';
+    } else {
+      const paperWidth = targetSize;
+      const baseFont = targetSize === '58mm' ? 8 : targetSize === '76mm' ? 9 : 10;
       
-      const rowsMarkup80mm = transactionDetails.length
+      const rowsMarkupThermal = transactionDetails.length
         ? transactionDetails.map((detail, index) => {
             const amount = Number(detail.amount ?? calculateLineAmount(detail));
             const qty = Number(detail.qtty || 0);
@@ -737,66 +738,58 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <meta charset="utf-8" />
             <title>${escapeHtml(invoiceHeading)}</title>
             <style>
-              @page { size: 80mm auto; margin: 0; }
+              @page { size: ${paperWidth} auto; margin: 0; }
               * { box-sizing: border-box; }
               html, body {
-                margin: 0; padding: 0; width: 80mm; background: #fff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                margin: 0; padding: 0; width: ${paperWidth}; background: #fff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
                 -webkit-print-color-adjust: exact; print-color-adjust: exact;
               }
               .screen-note { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #64748b; font-size: 14px; }
               @media screen { .receipt { display: none; } .screen-note { display: flex; } }
               @media print { .screen-note { display: none !important; } .receipt { display: block; } }
 
-              .receipt { background-color: #fff; width: 80mm; padding: 0; margin: 0 auto; position: relative; }
-              .content-wrapper { padding: 6mm 4mm; display: flex; flex-direction: column; gap: 8px; }
+              .receipt { background-color: #fff; width: ${paperWidth}; padding: 0; margin: 0 auto; position: relative; }
+              .content-wrapper { padding: 4mm 2mm; display: flex; flex-direction: column; gap: 4px; }
               
-              .header { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
-              .header-logo { width: 20%; display: flex; justify-content: flex-start; align-items: center; }
-              .logo { max-width: 50px; max-height: 50px; object-fit: contain; }
-              .header-text { width: 80%; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding-left: 2mm; text-align: left; }
-              .h-name { font-size: 11px; font-weight: 800; color: #000; line-height: 1.2; text-transform: uppercase; margin:0;}
-              .h-contact { font-size: 8px; color: #000; margin-top: 2px; }
+              .header-text { width: 100%; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; }
+              .h-name { font-size: ${baseFont + 2}px; font-weight: 800; color: #000; line-height: 1.2; text-transform: uppercase; margin:0;}
+              .h-contact { font-size: ${baseFont}px; color: #000; margin-top: 2px; }
               
-              .blue-bar { background-color: #000; color: #fff; padding: 4px 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 8px; margin-bottom: 8px; }
-              .blue-bar h1 { font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
-              .blue-bar .meta { font-size: 8px; text-align: right; line-height: 1.2; font-weight: bold; }
+              .blue-bar { background-color: #000; color: #fff; padding: 4px 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 4px; margin-bottom: 4px; }
+              .blue-bar h1 { font-size: ${baseFont + 2}px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
+              .blue-bar .meta { font-size: ${baseFont - 1}px; text-align: right; line-height: 1.2; font-weight: bold; }
               
-              table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-              th { color: #000; font-size: 8px; text-transform: uppercase; text-align: center; padding: 3px; border-bottom: 1.5px solid #000; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+              th { color: #000; font-size: ${baseFont - 1}px; text-transform: uppercase; text-align: center; padding: 2px; border-bottom: 1.5px solid #000; }
               th:first-child { text-align: left; }
               th:last-child { text-align: right; }
-              td { font-size: 8px; text-align: center; padding: 4px 2px; border-bottom: 1px dashed #ccc; }
+              td { font-size: ${baseFont - 1}px; text-align: center; padding: 3px 2px; border-bottom: 1px dashed #ccc; }
               td:first-child { font-weight: bold; color: #000; }
               td:last-child { font-weight: bold; color: #000; }
               tr.alt td { background-color: #fff; }
               tr td { background-color: #fff; }
 
-              .totals-container { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px; margin-top: 4px;}
-              .totals { width: 65%; }
-              .total-row { display: flex; justify-content: space-between; font-size: 9px; padding: 3px 0; font-weight: bold; color: #000; }
-              .total-row span:first-child { color: #000; text-transform: uppercase; font-size: 8px;}
-              .total-row.border-top { border-top: 1px solid #000; margin-top: 3px; padding-top: 3px; }
-              .total-row.border-bottom { border-bottom: 1px solid #000; margin-bottom: 3px; padding-bottom: 3px; }
+              .totals-container { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; margin-top: 2px;}
+              .totals { width: 70%; }
+              .total-row { display: flex; justify-content: space-between; font-size: ${baseFont}px; padding: 2px 0; font-weight: bold; color: #000; }
+              .total-row span:first-child { color: #000; text-transform: uppercase; font-size: ${baseFont - 1}px;}
+              .total-row.border-top { border-top: 1px solid #000; margin-top: 2px; padding-top: 2px; }
+              .total-row.border-bottom { border-bottom: 1px solid #000; margin-bottom: 2px; padding-bottom: 2px; }
               
-              .footer { display: flex; flex-direction: column; justify-content: center; align-items: center; margin-top: 8px; text-align: center; }
-              .footer-cols { width: 100%; font-size: 9px; color: #000; line-height: 1.4; text-align: center;}
+              .footer { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; margin-top: 4px; text-align: left; }
+              .footer-cols { width: 100%; font-size: ${baseFont}px; color: #000; line-height: 1.4; text-align: left;}
               .footer-cols p { margin:0 0 2px 0; }
               .qr-box { flex-shrink: 0; padding-right: 10px; padding-bottom: 4px; }
-              .qr-code { width: 60px; height: 60px; border: 1px solid #000; padding: 2px; background: #fff;}
+              .qr-code { width: 50px; height: 50px; border: 1px solid #000; padding: 2px; background: #fff;}
             </style>
           </head>
           <body>
             <div class="screen-note">Preparing print preview...</div>
             <div class="receipt">
               <div class="content-wrapper">
-                <div class="header">
-                  <div class="header-logo">
-                    ${logoMarkup ? '<div>'+logoMarkup.replace('class="hospital-logo"', 'class="logo"')+'</div>' : '<div style="width:32px;height:32px;background:#000;border-radius:50%;margin-bottom:4px;"></div>'}
-                  </div>
-                  <div class="header-text">
-                    <div class="h-name">${escapeHtml(hospitalName)}</div>
-                    <div class="h-contact">${escapeHtml(hospitalContact)}</div>
-                  </div>
+                <div class="header-text">
+                  <div class="h-name">${escapeHtml(hospitalName)}</div>
+                  <div class="h-contact">${escapeHtml(hospitalContact)}</div>
                 </div>
 
                 <div class="blue-bar">
@@ -817,7 +810,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     </tr>
                   </thead>
                   <tbody>
-                    ${rowsMarkup80mm}
+                    ${rowsMarkupThermal}
                   </tbody>
                 </table>
 
@@ -829,143 +822,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <div class="total-row border-top"><span>Subtotal</span> <span>${netTotal.toFixed(2)}</span></div>
                     <div class="total-row"><span>Tax</span> <span>${totalsSummary.totalTax.toFixed(2)}</span></div>
                     <div class="total-row border-bottom"><span>Discount</span> <span>${totalsSummary.totalDiscount.toFixed(2)}</span></div>
-                    <div class="total-row" style="font-size: 11px;"><span>Total</span> <span>${netTotal.toFixed(2)}</span></div>
+                    <div class="total-row" style="font-size: ${baseFont + 1}px;"><span>Total</span> <span>${netTotal.toFixed(2)}</span></div>
                   </div>
                 </div>
 
                 <div class="footer">
                    <div class="footer-cols">
-                     <p><strong>Address:</strong> ${escapeHtml(hospitalAddress || hospitalContact).substring(0, 50)}</p>
+                     <p><strong>Address:</strong> ${escapeHtml(hospitalAddress || hospitalContact)}</p>
                    </div>
                 </div>
               </div>
             </div>
-            <script>
-              window.onload = function () {
-                setTimeout(function () {
-                  window.focus();
-                  window.print();
-                  window.close();
-                }, 250);
-              };
-            </script>
-          </body>
-        </html>
-      `;
-    } else {
-      const paperWidth = targetSize;
-      const baseFont = targetSize === '58mm' ? 9 : targetSize === '76mm' ? 10 : 11;
-
-      html = `
-        <!doctype html>
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>${escapeHtml(invoiceHeading)}</title>
-            <style>
-              @page { size: ${paperWidth} auto; margin: 2mm; }
-              * { box-sizing: border-box; }
-              html, body {
-                margin: 0;
-                padding: 0;
-                width: ${paperWidth};
-                background: #ffffff;
-                color: #111827;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: ${baseFont}px;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-              .screen-note {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                color: #64748b;
-                font-size: 12px;
-              }
-              @media screen {
-                .receipt { display: none; }
-                .screen-note { display: flex; }
-              }
-              @media print {
-                .screen-note { display: none !important; }
-                .receipt { display: block; }
-              }
-              .receipt { width: ${paperWidth}; padding: 2mm; }
-              .center { text-align: center; }
-              .title {
-                font-size: ${baseFont + 2}px;
-                font-weight: 800;
-                text-transform: uppercase;
-                margin: 0;
-                line-height: 1.25;
-              }
-              .meta { margin-top: 2px; color: #374151; line-height: 1.35; }
-              .divider { border-top: 1px dashed #4b5563; margin: 6px 0; }
-              .row { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; }
-              .muted { color: #6b7280; }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 6px;
-              }
-              th, td {
-                border-bottom: 1px solid #e5e7eb;
-                padding: 3px 2px;
-                vertical-align: top;
-              }
-              th {
-                text-transform: uppercase;
-                font-size: ${baseFont - 1}px;
-                color: #374151;
-                text-align: left;
-              }
-              td.num, th.num { text-align: right; }
-              td.item { width: 44%; word-break: break-word; }
-              td.strong { font-weight: 700; }
-              .totals { margin-top: 6px; }
-              .totals .row strong { font-size: ${baseFont + 1}px; }
-              .empty { text-align: center; color: #6b7280; padding: 6px 0; }
-            </style>
-          </head>
-          <body>
-            <div class="screen-note">Preparing print preview...</div>
-            <div class="receipt">
-              <div class="center">
-                <p class="title">${escapeHtml(hospitalName)}</p>
-                <div class="meta">${escapeHtml(hospitalContact || hospitalAddress || 'Contact not available')}</div>
-                <div class="meta">${escapeHtml(invoiceHeading)}</div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="row"><span class="muted">Invoice No</span><strong>${escapeHtml(String(trx.serialNo ?? '-'))}</strong></div>
-              <div class="row"><span class="muted">Date</span><strong>${escapeHtml(invoiceDate)}</strong></div>
-              <div class="row"><span class="muted">Bill To</span><strong>${escapeHtml(billedToName)}</strong></div>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Item</th>
-                    <th class="num">Qty</th>
-                    <th class="num">Price</th>
-                    <th class="num">Amt</th>
-                  </tr>
-                </thead>
-                <tbody>${rowsMarkupCompact}</tbody>
-              </table>
-
-              <div class="totals">
-                <div class="row"><span class="muted">Discount</span><strong>-${totalsSummary.totalDiscount.toFixed(2)}</strong></div>
-                <div class="row"><span class="muted">Tax</span><strong>+${totalsSummary.totalTax.toFixed(2)}</strong></div>
-                <div class="row"><span class="muted">Net</span><strong>${netTotal.toFixed(2)}</strong></div>
-                <div class="row"><span class="muted">Paid</span><strong>${Number(trx.paidAmount || 0).toFixed(2)}</strong></div>
-                <div class="row"><span class="muted">Due</span><strong>${Number(trx.dueAmount || 0).toFixed(2)}</strong></div>
-              </div>
-            </div>
-
             <script>
               window.onload = function () {
                 setTimeout(function () {
@@ -1091,7 +958,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const { XLSX } = await loadXlsxTools();
 
     const workSheet = XLSX.utils.json_to_sheet(filteredTransactions.map((t) => ({
-      ID: t.id,
+      ID: t.serialNo ?? t.id,
       Type: t.trxType,
       GrandTotal: t.grandTotal,
       Paid: t.paidAmount,
@@ -1127,7 +994,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     autoTable(doc, {
       head: [['ID', 'Type', 'Grand Total', 'Paid', 'Due', 'Created']],
       body: filteredTransactions.map((t) => [
-        `#${t.id}`,
+        `#${t.serialNo ?? t.id}`,
         t.trxType,
         t.grandTotal,
         t.paidAmount,
@@ -1146,7 +1013,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const term = searchTerm.toLowerCase();
     return scopedTransactions.filter((t) => {
       const matchesTerm =
-        String(t.id).includes(term) ||
+        String(t.serialNo ?? t.id).includes(term) ||
         (t.trxType || '').toLowerCase().includes(term) ||
         (t.details || []).some((d) => (d.medicineName || getMedicineName(d.medicineId)).toLowerCase().includes(term));
       const matchesType = trxTypeFilter === 'all' || t.trxType === trxTypeFilter;
@@ -1790,7 +1657,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               {paginatedTransactions.length > 0 ? (
                 paginatedTransactions.map((trx) => (
                   <tr key={trx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">#{trx.id}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">#{trx.serialNo ?? trx.id}</td>
                     <td className="px-4 py-2 text-xs">
                       <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${['purchase', 'purchase_return'].includes(trx.trxType)
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
@@ -2011,7 +1878,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                        {printTemplate === 'sale' ? 'Sale Invoice' : printTemplate === 'purchase' ? 'Purchase Invoice' : 'Supplier Invoice'}
                     </h2>
                     <p className="text-gray-600">Invoice No: <span className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</span></p>
-                    <p className="text-gray-600">Transaction ID: <span className="font-semibold text-gray-900">#{selectedTransaction.id}</span></p>
+                    <p className="text-gray-600">Transaction ID: <span className="font-semibold text-gray-900">#{selectedTransaction.serialNo ?? selectedTransaction.id}</span></p>
                     <p className="text-gray-600">Printed on: <span className="font-semibold text-gray-900">{new Date().toLocaleDateString()}</span></p>
                   </div>
                 </div>
@@ -2225,28 +2092,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400">Type</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.trxType}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 dark:text-gray-400">Grand Total</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.grandTotal}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 dark:text-gray-400">Paid</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.paidAmount}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 dark:text-gray-400">Due</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.dueAmount}</p>
-                  </div>
-                  <div>
                     <p className="text-gray-500 dark:text-gray-400">Hospital</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedTransaction.hospitalId)}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 dark:text-gray-400">Date</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleString() : '—'}</p>
                   </div>
                   {selectedTransaction.trxType === 'sales' || selectedTransaction.trxType === 'sales_return' ? (
                     <div>
@@ -2259,6 +2106,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <p className="font-semibold text-gray-900 dark:text-white">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
                     </div>
                   )}
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">Type</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.trxType}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">Date</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleString() : '—'}</p>
+                  </div>
                 </div>
 
                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">

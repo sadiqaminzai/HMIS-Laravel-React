@@ -317,7 +317,7 @@ test('delete sales transaction restores stock to previous balance', function () 
         ->and((int) $medicine->stock)->toBe(10);
 });
 
-test('prescription reservation blocks over-allocation and dispense deducts stock through transaction flow', function () {
+test('prescription creation does not reserve stock and dispense deducts stock through transaction flow', function () {
     $setup = pharmacySetupCoreData();
 
     /** @var PrescriptionController $controller */
@@ -331,12 +331,12 @@ test('prescription reservation blocks over-allocation and dispense deducts stock
     $firstPrescription = Prescription::query()->latest('id')->firstOrFail();
     $firstItem = PrescriptionItem::query()->where('prescription_id', $firstPrescription->id)->firstOrFail();
 
-    expect((int) $firstItem->reserved_quantity)->toBe(8)
+    expect((int) $firstItem->reserved_quantity)->toBe(0)
         ->and((int) $firstItem->dispensed_quantity)->toBe(0);
 
-    $overReserveRequest = pharmacyRequest('POST', pharmacyPrescriptionPayload($setup, 5), $setup['admin']);
-
-    expect(fn () => $controller->store($overReserveRequest))->toThrow(ValidationException::class);
+    $secondPrescriptionRequest = pharmacyRequest('POST', pharmacyPrescriptionPayload($setup, 5), $setup['admin']);
+    $secondStoreResponse = $controller->store($secondPrescriptionRequest);
+    expect($secondStoreResponse->getStatusCode())->toBe(201);
 
     $dispenseRequest = pharmacyRequest('POST', [], $setup['admin']);
     $dispenseResponse = $controller->dispense($dispenseRequest, $firstPrescription);

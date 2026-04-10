@@ -108,6 +108,8 @@ class LabOrderController extends Controller
             'doctor_name' => ['required', 'string', 'max:255'],
             'test_ids' => ['required', 'array', 'min:1'],
             'test_ids.*' => ['exists:test_templates,id'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'priority' => ['in:normal,urgent,stat'],
             'clinical_notes' => ['nullable', 'string'],
         ]);
@@ -187,7 +189,7 @@ class LabOrderController extends Controller
             ]);
 
             // Add test items
-            $totalAmount = 0;
+            $grossAmount = 0;
             foreach ($data['test_ids'] as $testId) {
                 $template = TestTemplate::with('parameters')->findOrFail($testId);
 
@@ -202,7 +204,7 @@ class LabOrderController extends Controller
                     'status' => 'pending',
                 ]);
 
-                $totalAmount += $template->price;
+                $grossAmount += (float) $template->price;
 
                 // Create result placeholders for each parameter
                 foreach ($template->parameters as $param) {
@@ -216,8 +218,21 @@ class LabOrderController extends Controller
                 }
             }
 
-            // Update total amount
-            $order->update(['total_amount' => $totalAmount]);
+            $canEditDiscount = (bool) ($request->user()?->hasPermission('lab_test_order_discount') ?? false);
+            $discountPercentInput = $canEditDiscount
+                ? (float) ($data['discount_percentage'] ?? 0)
+                : 0.0;
+
+            $discountPercent = min(max($discountPercentInput, 0), 100);
+            $discountAmount = round(($grossAmount * $discountPercent) / 100, 2);
+            $discountAmount = min(max($discountAmount, 0), max($grossAmount, 0));
+            $netAmount = max(0, $grossAmount - $discountAmount);
+
+            // Update financial amount fields after test items are created.
+            $order->update([
+                'discount_amount' => round($discountAmount, 2),
+                'total_amount' => round($netAmount, 2),
+            ]);
             $this->ledgerPostingService->upsertLabOrderSnapshot($order);
 
             return response()->json([

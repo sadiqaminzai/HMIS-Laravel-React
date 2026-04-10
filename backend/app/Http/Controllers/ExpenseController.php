@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Expense;
 use App\Services\LedgerPostingService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ExpenseController extends Controller
 {
@@ -48,18 +50,18 @@ class ExpenseController extends Controller
 
     public function store(Request $request)
     {
-        $data = $this->validatePayload($request);
+        $hospitalId = $this->resolveHospitalId($request);
+        $request->merge(['hospital_id' => $hospitalId]);
 
-        if ($request->user()->role !== 'super_admin') {
-            $data['hospital_id'] = $request->user()->hospital_id;
-        }
+        $data = $this->validatePayload($request, null, $hospitalId);
+        $data['hospital_id'] = $hospitalId;
 
         $expense = DB::transaction(function () use ($data, $request) {
             $hospitalId = (int) ($data['hospital_id'] ?? $request->user()->hospital_id);
-            $nextSequence = Expense::where('hospital_id', $hospitalId)
+            $nextSequence = Expense::withTrashed()
+                ->where('hospital_id', $hospitalId)
                 ->lockForUpdate()
                 ->max('sequence_id');
-            $data['sequence_id'] = (int) ($nextSequence ?? 0) + 1;
             $data['created_by'] = $data['created_by'] ?? ($request->user()->name ?? null);
             $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
 
@@ -67,11 +69,28 @@ class ExpenseController extends Controller
                 $data['document_path'] = $request->file('document')->store('expenses', 'public');
             }
 
-            $expense = Expense::create($data);
-            $expense->load('category');
-            $this->ledgerPostingService->upsertExpenseSnapshot($expense);
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                try {
+                    $data['sequence_id'] = (int) ($nextSequence ?? 0) + 1;
 
-            return $expense;
+                    $expense = Expense::create($data);
+                    $expense->load('category');
+                    $this->ledgerPostingService->upsertExpenseSnapshot($expense);
+
+                    return $expense;
+                } catch (QueryException $e) {
+                    if (!$this->isDuplicateSequenceError($e)) {
+                        throw $e;
+                    }
+
+                    // Fallback for environments that may still have a global unique index on sequence_id.
+                    $nextSequence = Expense::withTrashed()->lockForUpdate()->max('sequence_id');
+                }
+            }
+
+            throw ValidationException::withMessages([
+                'title' => ['Unable to generate a unique expense number. Please try again.'],
+            ]);
         });
 
         return response()->json($expense->load('category'), 201);
@@ -88,11 +107,11 @@ class ExpenseController extends Controller
     {
         $this->authorizeScope($request->user(), $expense);
 
-        $data = $this->validatePayload($request, $expense->id, $expense->hospital_id);
+        $hospitalId = (int) $expense->hospital_id;
+        $request->merge(['hospital_id' => $hospitalId]);
 
-        if ($request->user()->role !== 'super_admin') {
-            $data['hospital_id'] = $expense->hospital_id;
-        }
+        $data = $this->validatePayload($request, $expense->id, $hospitalId);
+        $data['hospital_id'] = $hospitalId;
 
         unset($data['sequence_id']);
         $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
@@ -124,14 +143,14 @@ class ExpenseController extends Controller
 
     private function validatePayload(Request $request, ?int $expenseId = null, ?int $defaultHospitalId = null): array
     {
-        $hospitalId = $request->integer('hospital_id') ?: $defaultHospitalId ?: $request->user()->hospital_id;
+        $hospitalId = $defaultHospitalId ?: $this->resolveHospitalId($request);
 
         return $request->validate([
-            'hospital_id' => [$request->user()->role === 'super_admin' ? 'required' : 'sometimes', 'exists:hospitals,id'],
+            'hospital_id' => ['required', 'exists:hospitals,id'],
             'expense_category_id' => [
                 'required',
                 Rule::exists('expense_categories', 'id')
-                    ->where(fn ($q) => $hospitalId ? $q->where('hospital_id', $hospitalId) : $q),
+                    ->where(fn ($q) => $q->where('hospital_id', $hospitalId)),
             ],
             'title' => ['required', 'string', 'max:191'],
             'amount' => ['required', 'numeric', 'min:0'],
@@ -144,10 +163,39 @@ class ExpenseController extends Controller
         ]);
     }
 
+    private function resolveHospitalId(Request $request, ?int $fallbackHospitalId = null): int
+    {
+        if ($request->user()->role !== 'super_admin') {
+            $tenantHospitalId = (int) ($fallbackHospitalId ?: $request->user()->hospital_id);
+
+            if ($tenantHospitalId <= 0) {
+                abort(422, 'Hospital tenant context is required for this user.');
+            }
+
+            return $tenantHospitalId;
+        }
+
+        $hospitalId = $request->integer('hospital_id') ?: $fallbackHospitalId;
+
+        if (!$hospitalId) {
+            abort(422, 'The hospital_id field is required.');
+        }
+
+        return (int) $hospitalId;
+    }
+
     private function authorizeScope($user, Expense $expense): void
     {
         if ($user->role !== 'super_admin' && (int) $user->hospital_id !== (int) $expense->hospital_id) {
             abort(403, 'Unauthorized expense access');
         }
+    }
+
+    private function isDuplicateSequenceError(QueryException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'duplicate')
+            && str_contains($message, 'sequence');
     }
 }

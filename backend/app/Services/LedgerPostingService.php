@@ -55,6 +55,8 @@ class LedgerPostingService
     public function upsertLabOrderSnapshot(LabOrder $labOrder): LedgerEntry
     {
         $netAmount = (float) ($labOrder->total_amount ?? 0);
+        $discountAmount = (float) ($labOrder->discount_amount ?? 0);
+        $grossAmount = max(0, $netAmount + $discountAmount);
         $paidAmount = min((float) ($labOrder->paid_amount ?? 0), $netAmount);
         $dueAmount = max(0, $netAmount - $paidAmount);
 
@@ -69,8 +71,8 @@ class LedgerPostingService
                 'title' => 'Lab Order #' . (string) ($labOrder->order_number ?? $labOrder->id),
                 'patient_id' => $labOrder->patient_id ? (int) $labOrder->patient_id : null,
                 'supplier_id' => null,
-                'amount' => $netAmount,
-                'discount_amount' => 0,
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
                 'tax_amount' => 0,
                 'net_amount' => $netAmount,
                 'paid_amount' => $paidAmount,
@@ -199,7 +201,7 @@ class LedgerPostingService
                 'entry_direction' => $direction,
                 'module' => 'pharmacy',
                 'category' => (string) $transaction->trx_type,
-                'title' => 'Transaction #' . (string) $transaction->id,
+                'title' => 'Transaction #' . (string) ($transaction->serial_no ?? $transaction->id),
                 'patient_id' => $transaction->patient_id ? (int) $transaction->patient_id : null,
                 'supplier_id' => $transaction->supplier_id ? (int) $transaction->supplier_id : null,
                 'amount' => (float) $transaction->grand_total,

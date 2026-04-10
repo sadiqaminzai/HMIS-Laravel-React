@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\LabOrder;
 use App\Models\Patient;
 use App\Models\Prescription;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 
@@ -70,6 +71,22 @@ class VerificationController extends Controller
                     'age' => $order->patient_age,
                     'gender' => $order->patient_gender,
                 ],
+            ],
+        ]);
+    }
+
+    public function transaction(string $token)
+    {
+        $transaction = Transaction::with(['details.medicine', 'hospital', 'patient', 'supplier'])
+            ->where('verification_token', $token)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'transaction' => $transaction,
+                'hospital' => $transaction->hospital,
+                'patient' => $transaction->patient,
+                'supplier' => $transaction->supplier,
             ],
         ]);
     }

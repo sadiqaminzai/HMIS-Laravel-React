@@ -516,55 +516,89 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               margin: 0 10px;
             }
             .content {
-              padding: ${isCompactReceipt ? '7px 8px 8px' : '8px 10px 10px'};
+              padding: ${isCompactReceipt ? '7px 8px 8px' : '12px 16px 16px'};
             }
             .row {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
               gap: 8px;
-              font-size: ${isCompactReceipt ? '9px' : '10px'};
-              margin: 4px 0;
+              font-size: ${isCompactReceipt ? '9px' : '12px'};
+              margin: 6px 0;
+              line-height: 1.4;
+              page-break-inside: avoid;
             }
             .key {
-              color: #6b7280;
-              min-width: 33%;
+              color: #4b5563;
+              text-align: left;
+              flex: 1;
+              font-weight: 500;
             }
             .val {
               text-align: right;
               font-weight: 600;
+              flex: 1.5;
+              max-width: 60%;
+              color: #111827;
+              word-break: break-word;
+            }
+            .remarks-block {
+              margin-top: 10px;
+              padding-top: 8px;
+              border-top: 1px dashed #d1d5db;
+              font-size: ${isCompactReceipt ? '9px' : '12px'};
+              page-break-inside: avoid;
+            }
+            .remarks-block .key {
+              color: #4b5563;
+              font-weight: 500;
+              margin-bottom: 3px;
+              text-align: left;
+            }
+            .remarks-block .val {
+              font-weight: 400;
+              font-style: italic;
+              color: #111827;
+              text-align: left;
+              word-break: break-word;
             }
             .amount {
-              margin-top: 7px;
+              margin-top: 10px;
               border-top: 1px solid #e5e7eb;
-              padding-top: 7px;
+              padding-top: 10px;
+              page-break-inside: avoid;
             }
             .amount .total {
-              font-size: ${isCompactReceipt ? '11px' : '12px'};
+              font-size: ${isCompactReceipt ? '11px' : '14px'};
               color: ${brandColor};
               font-weight: 700;
             }
             .footer {
-              margin-top: 8px;
+              margin-top: 12px;
               border-top: 1px dashed #d1d5db;
-              padding-top: 6px;
+              padding-top: 8px;
               text-align: center;
-              font-size: ${isCompactReceipt ? '7px' : '8px'};
+              font-size: ${isCompactReceipt ? '7px' : '10px'};
               color: #6b7280;
               line-height: 1.35;
+              page-break-inside: avoid;
             }
 
             @media print {
-              body {
+              html, body {
+                width: ${ticketWidth};
                 background: #ffffff;
                 padding: 0;
                 margin: 0;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
               }
               .ticket {
                 box-shadow: none;
-                border: ${isCompactReceipt ? '0' : '1px solid #e5e7eb'};
+                border: none;
                 width: ${ticketWidth};
                 margin: 0;
+                padding: 0 !important;
               }
               ${pageRule}
             }
@@ -581,13 +615,13 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
             </div>
             <div class="line"></div>
             <div class="content">
-              <div class="row"><div class="key">Receipt Date</div><div class="val">${new Date().toLocaleString()}</div></div>
+              <div class="row"><div class="key">Receipt Date</div><div class="val">${new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</div></div>
               <div class="row"><div class="key">Room</div><div class="val">${item.roomNumber}</div></div>
               <div class="row"><div class="key">Patient</div><div class="val">${item.patientName}</div></div>
               <div class="row"><div class="key">Doctor</div><div class="val">${item.doctorName || 'N/A'}</div></div>
-              <div class="row"><div class="key">Booking Date</div><div class="val">${item.bookingDate}</div></div>
-              <div class="row"><div class="key">Check In</div><div class="val">${item.checkInDate}</div></div>
-              <div class="row"><div class="key">Check Out</div><div class="val">${item.checkOutDate || 'Open'}</div></div>
+              <div class="row"><div class="key">Booking Date</div><div class="val">${new Date(item.bookingDate).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</div></div>
+              <div class="row"><div class="key">Check In</div><div class="val">${new Date(item.checkInDate).toLocaleDateString('en-US', { dateStyle: 'short' })}</div></div>
+              <div class="row"><div class="key">Check Out</div><div class="val">${item.checkOutDate ? new Date(item.checkOutDate).toLocaleDateString('en-US', { dateStyle: 'short' }) : 'Open'}</div></div>
               <div class="row"><div class="key">Nights / Beds</div><div class="val">${nights} / ${item.bedsToBook}</div></div>
               <div class="row"><div class="key">Status</div><div class="val">${item.status}</div></div>
               <div class="row"><div class="key">Payment</div><div class="val">${item.paymentStatus}</div></div>
@@ -597,7 +631,12 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                 <div class="row"><div class="key">Total</div><div class="val total">${item.totalCost.toFixed(2)}</div></div>
               </div>
 
-              <div class="row"><div class="key">Remarks</div><div class="val">${item.remarks || 'N/A'}</div></div>
+              ${item.remarks ? `
+              <div class="remarks-block">
+                <div class="key">Remarks</div>
+                <div class="val">${item.remarks}</div>
+              </div>
+              ` : ''}
 
               <div class="footer">
                 Generated by ${hospitalInfo.name}<br/>
@@ -654,9 +693,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
         <div className="relative flex-1 md:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by patient, room, status" className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
-        </div>
-        <button onClick={loadBookings} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">Refresh</button>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by patient, room, status" className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+          </div>
+          <button onClick={loadBookings} className="px-4 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">Refresh</button>
       </div>
 
       <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
@@ -760,7 +799,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
                     title="Hospital"
                     value={form.hospitalId}
                     onChange={(e) => setForm((p) => ({ ...p, hospitalId: e.target.value, roomId: '', patientId: '', doctorId: '' }))}
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border px-2 py-1 text-xs"
                     required
                   >
                     {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
@@ -769,54 +808,54 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               )}
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Room</label>
-                <select title="Room" value={form.roomId} onChange={(e) => setForm((p) => ({ ...p, roomId: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <select title="Room" value={form.roomId} onChange={(e) => setForm((p) => ({ ...p, roomId: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs">
                   <option value="">Select room</option>
                   {filteredRooms.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Patient</label>
-                <select title="Patient" value={form.patientId} onChange={(e) => setForm((p) => ({ ...p, patientId: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <select title="Patient" value={form.patientId} onChange={(e) => setForm((p) => ({ ...p, patientId: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs">
                   <option value="">Select patient</option>
                   {filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Doctor (optional)</label>
-                <select title="Doctor" value={form.doctorId} onChange={(e) => setForm((p) => ({ ...p, doctorId: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <select title="Doctor" value={form.doctorId} onChange={(e) => setForm((p) => ({ ...p, doctorId: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
                   <option value="">None</option>
                   {filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Booking Date</label>
-                <input title="Booking date" type="date" value={form.bookingDate} onChange={(e) => setForm((p) => ({ ...p, bookingDate: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <input title="Booking date" type="date" value={form.bookingDate} onChange={(e) => setForm((p) => ({ ...p, bookingDate: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs" />
               </div>
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Check In</label>
-                <input title="Check in date" type="date" value={form.checkInDate} onChange={(e) => setForm((p) => ({ ...p, checkInDate: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <input title="Check in date" type="date" value={form.checkInDate} onChange={(e) => setForm((p) => ({ ...p, checkInDate: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs" />
               </div>
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Check Out</label>
-                <input title="Check out date" type="date" value={form.checkOutDate} onChange={(e) => setForm((p) => ({ ...p, checkOutDate: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <input title="Check out date" type="date" value={form.checkOutDate} onChange={(e) => setForm((p) => ({ ...p, checkOutDate: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
               </div>
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Selected Beds</label>
-                <input title="Selected beds" value={selectedBedNumbers.join(', ')} readOnly className="mt-1 w-full rounded border px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700/40" />
+                <input title="Selected beds" value={selectedBedNumbers.join(', ')} readOnly className="mt-1 w-full rounded border px-2 py-1 text-xs bg-gray-50 dark:bg-gray-700/40" />
               </div>
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Beds To Book</label>
-                <input title="Beds to book" type="number" min={1} value={form.bedsToBook} onChange={(e) => setForm((p) => ({ ...p, bedsToBook: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <input title="Beds to book" type="number" min={1} value={form.bedsToBook} onChange={(e) => setForm((p) => ({ ...p, bedsToBook: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
               </div>
               {(hasPermission('add_discounts') || hasPermission('manage_discounts')) && (
                 <div className="col-span-12 md:col-span-4">
                   <label className="text-xs font-medium">Discount (%)</label>
-                  <input title="Discount percent" type="number" min={0} max={100} step="1" value={form.discountPercent} onChange={(e) => setForm((p) => ({ ...p, discountPercent: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                  <input title="Discount percent" type="number" min={0} max={100} step="1" value={form.discountPercent} onChange={(e) => setForm((p) => ({ ...p, discountPercent: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
                 </div>
               )}
               <div className="col-span-12 md:col-span-4">
                 <label className="text-xs font-medium">Status</label>
-                <select title="Booking status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as BookingItem['status'] }))} className="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <select title="Booking status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as BookingItem['status'] }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
                   <option value="Pending">Pending</option>
                   <option value="Confirmed">Confirmed</option>
                   <option value="Checked-in">Checked-in</option>
@@ -826,7 +865,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Payment Status</label>
-                <select title="Payment status" value={form.paymentStatus} onChange={(e) => setForm((p) => ({ ...p, paymentStatus: e.target.value as BookingItem['paymentStatus'] }))} className="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <select title="Payment status" value={form.paymentStatus} onChange={(e) => setForm((p) => ({ ...p, paymentStatus: e.target.value as BookingItem['paymentStatus'] }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
                   <option value="pending">pending</option>
                   <option value="paid">paid</option>
                   <option value="partial">partial</option>
@@ -835,7 +874,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="text-xs font-medium">Remarks</label>
-                <input title="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" />
+                <input title="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
               </div>
               <div className="col-span-12 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 bg-gray-50 dark:bg-gray-700/30 text-xs">
                 <div className="font-medium text-gray-700 dark:text-gray-200">Cost summary</div>

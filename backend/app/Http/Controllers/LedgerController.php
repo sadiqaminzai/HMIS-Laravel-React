@@ -122,6 +122,13 @@ class LedgerController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
+        } elseif (!$request->boolean('include_voided')) {
+            $query
+                ->whereNull('voided_at')
+                ->where(function ($q) {
+                    $q->whereNull('status')
+                        ->orWhere('status', '!=', 'voided');
+                });
         }
 
         if ($request->filled('patient_id')) {
