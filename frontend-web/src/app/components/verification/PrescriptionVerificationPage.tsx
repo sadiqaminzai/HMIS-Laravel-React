@@ -147,6 +147,7 @@ export function PrescriptionVerificationPage() {
       doctor={doctor}
       medicines={medicines}
       advice={payload.prescription?.advice ?? ''}
+      nextVisitDate={payload.prescription?.next_visit_date ? new Date(payload.prescription.next_visit_date) : null}
       prescriptionNumber={payload.prescription?.prescription_number ?? ''}
       diagnosis={payload.prescription?.diagnosis ?? ''}
       prescriptionDate={payload.prescription?.created_at ? new Date(payload.prescription.created_at) : new Date()}

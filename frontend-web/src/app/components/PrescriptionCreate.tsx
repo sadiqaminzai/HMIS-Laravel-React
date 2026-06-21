@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
+import { Search, X, Plus, Save, Printer, Trash2, Pill, CalendarDays } from 'lucide-react';
 import { Hospital, Patient, Medicine, Doctor, UserRole } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import api from '../../api/axios';
@@ -57,6 +57,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [medicines, setMedicines] = useState<MedicineRow[]>([]);
   const [diagnosis, setDiagnosis] = useState('');
   const [advice, setAdvice] = useState('');
+  const [hasNextVisit, setHasNextVisit] = useState(false);
+  const [nextVisitDate, setNextVisitDate] = useState('');
   const [showPrint, setShowPrint] = useState(false);
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
   const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
@@ -81,6 +83,38 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   }, [userRole, editPrescriptionData?.hospitalId, setSelectedHospitalId]);
 
   const patientInputRef = useRef<HTMLInputElement>(null);
+  const nextVisitInputRef = useRef<HTMLInputElement>(null);
+
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const nextVisitQuickButtons = useMemo(
+    () => [
+      { label: '3 Days', days: 3 },
+      { label: '5 Days', days: 5 },
+      { label: '7 Days', days: 7 },
+      { label: '14 Days', days: 14 },
+    ],
+    []
+  );
+
+  const formatToInputDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const setNextVisitByDays = (days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    setNextVisitDate(formatToInputDate(date));
+  };
+
+  const setNextVisitByMonth = () => {
+    const date = new Date();
+    date.setMonth(date.getMonth() + 1);
+    setNextVisitDate(formatToInputDate(date));
+  };
 
   const fallbackLoggedInDoctor: Doctor | null = useMemo(() => {
     const role = String(currentUser.role || '').toLowerCase();
@@ -168,6 +202,13 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       // Set diagnosis and advice
       setDiagnosis(editPrescriptionData.diagnosis || '');
       setAdvice(editPrescriptionData.advice || '');
+      if (editPrescriptionData.nextVisitDate) {
+        setHasNextVisit(true);
+        setNextVisitDate(formatToInputDate(new Date(editPrescriptionData.nextVisitDate)));
+      } else {
+        setHasNextVisit(false);
+        setNextVisitDate('');
+      }
 
       // Convert medicines to medicine rows
       const medicineRows: MedicineRow[] = editPrescriptionData.medicines.map((med: any) => {
@@ -192,7 +233,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           isTemporary: !originalMed && !med.medicineId
         };
       });
-      
+
       setMedicines(medicineRows);
     }
   }, [editPrescriptionData, patients, doctors, inventory]);
@@ -287,7 +328,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     };
 
     setSelectedPatient(tempPatient);
-    
+
     // Auto-add first medicine row
     if (medicines.length === 0) {
       addMedicineRow();
@@ -303,7 +344,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       setSelectedPatient(walkInDefaultPatient);
       setPatientSearch(walkInDefaultPatient.name);
     }
-    
+
     // Auto-assign logged-in doctor for walk-in patients if user is a doctor
     if (type === 'walkin' && String(currentUser.role || '').toLowerCase() === 'doctor') {
       const loggedInDoctor = doctors.find((d) => String(d.id) === String(currentUser.id));
@@ -355,14 +396,14 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     setMedicines(medicines.map(m => {
       if (m.rowId === rowId) {
         const updated = { ...m, [field]: value };
-        
+
         // Auto-calculate quantity when dose or duration changes
         if (field === 'dose' || field === 'duration') {
           const dose = field === 'dose' ? value : m.dose;
           const duration = field === 'duration' ? value : m.duration;
           updated.quantity = calculateQuantity(dose, duration);
         }
-        
+
         return updated;
       }
       return m;
@@ -381,7 +422,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const calculateQuantity = (dose: string, duration: string): number => {
     let dosePerDay = 0;
-    
+
     // Check for standard X-X-X format
     if (dose.includes('-')) {
       dosePerDay = dose.split('-').reduce((sum, val) => {
@@ -417,7 +458,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
 
     if (dosePerDay === 0 || days === 0) return 0;
-    
+
     return Math.ceil(dosePerDay * days);
   };
 
@@ -426,7 +467,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const handleMedicineSearch = (rowId: string, searchTerm: string) => {
     updateMedicineRow(rowId, 'brandName', searchTerm);
-    
+
     // Auto-complete if exact match found
     const medicine = inventory.find(m =>
       m.hospitalId === currentHospital.id &&
@@ -434,7 +475,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       (!hideOutOfStockForDoctors || (m.stock ?? 0) > 0) &&
       m.brandName.toLowerCase() === searchTerm.toLowerCase()
     );
-    
+
     if (medicine) {
       const medType = medicine.type || '';
       const displayName = formatMedicineDisplay(medicine.brandName, medicine.genericName, medType, medicine.strength, true);
@@ -473,14 +514,14 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
 
     const hospitalDoctors = doctors.filter((d) => d.hospitalId === currentHospital.id);
-    
+
     // For walk-in patients created by admin/super_admin, doctor can be null
     // For doctors, use logged-in doctor for walk-in prescriptions
     const role = String(currentUser.role || '').toLowerCase();
     const isAdminOrSuperAdmin = role === 'super_admin' || role === 'admin';
-    
+
     let doctor = selectedDoctor;
-    
+
     // If user is a doctor, ALWAYS use their associated doctor profile
     if (role === 'doctor') {
       const loggedInDoctor = currentUser.id
@@ -488,14 +529,19 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         : null;
       doctor = loggedInDoctor || fallbackLoggedInDoctor || doctor;
     }
-    
+
     // Fallback to first hospital doctor if no doctor selected (for non-admin users)
     if (!doctor && !isAdminOrSuperAdmin) {
       doctor = hospitalDoctors[0] || null;
     }
-    
+
     if (!doctor && !isAdminOrSuperAdmin) {
       toast.error('Please select a doctor');
+      return;
+    }
+
+    if (hasNextVisit && !nextVisitDate) {
+      toast.error('Please select the next visit date');
       return;
     }
 
@@ -523,6 +569,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       diagnosis,
       medicines: payloadMedicines,
       advice,
+      nextVisitDate: hasNextVisit ? (nextVisitDate || null) : null,
       createdBy: currentUser.name,
     };
 
@@ -540,6 +587,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     setMedicines([]);
     setDiagnosis('');
     setAdvice('');
+    setHasNextVisit(false);
+    setNextVisitDate('');
     setShowPrint(false);
   };
 
@@ -605,7 +654,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
       {/* Hospital Selector for Super Admin */}
       {userRole === 'super_admin' && (
-        <HospitalSelector 
+        <HospitalSelector
           userRole={userRole}
           selectedHospitalId={selectedHospitalId}
           onHospitalChange={(hospitalId) => {
@@ -617,6 +666,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
             setMedicines([]);
             setDiagnosis('');
             setAdvice('');
+            setHasNextVisit(false);
+            setNextVisitDate('');
           }}
         />
       )}
@@ -671,7 +722,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   placeholder="Type patient name or ID..."
                 />
               </div>
-              
+
               {/* Patient Dropdown */}
               {showPatientDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -773,6 +824,83 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           />
         </div>
       </div>
+
+      {/* Next Visit */}
+      {selectedPatient && (
+        <div className="bg-white border border-gray-200 rounded-lg p-2">
+          <div className="flex items-center gap-2 mb-2">
+            <CalendarDays className="w-4 h-4 text-blue-600" />
+            <h3 className="text-sm font-semibold text-gray-900">Next Visit</h3>
+          </div>
+
+          <div className="flex items-center gap-4 mb-2 text-xs">
+            <span className="text-gray-700 font-medium">Schedule next visit?</span>
+            <label className="inline-flex items-center gap-1.5 text-gray-700">
+              <input
+                type="radio"
+                checked={hasNextVisit}
+                onChange={() => setHasNextVisit(true)}
+              />
+              Yes
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-gray-700">
+              <input
+                type="radio"
+                checked={!hasNextVisit}
+                onChange={() => {
+                  setHasNextVisit(false);
+                  setNextVisitDate('');
+                }}
+              />
+              No
+            </label>
+          </div>
+
+          {hasNextVisit && (
+            <>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {nextVisitQuickButtons.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => setNextVisitByDays(item.days)}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-blue-50 hover:border-blue-400 transition-colors"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={setNextVisitByMonth}
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-blue-50 hover:border-blue-400 transition-colors"
+                >
+                  1 Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextVisitInputRef.current?.focus()}
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-blue-50 hover:border-blue-400 transition-colors"
+                >
+                  Custom
+                </button>
+              </div>
+
+              <div className="max-w-xs">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Visit Date</label>
+                <input
+                  ref={nextVisitInputRef}
+                  type="date"
+                  min={todayIso}
+                  value={nextVisitDate}
+                  onChange={(e) => setNextVisitDate(e.target.value)}
+                  aria-label="Next visit date"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Medicine Entry Table */}
       {selectedPatient && (
@@ -886,6 +1014,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           })}
           diagnosis={diagnosis}
           advice={advice}
+          nextVisitDate={hasNextVisit && nextVisitDate ? new Date(nextVisitDate) : null}
           prescriptionNumber={`RX-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`}
           onClose={() => setShowPrint(false)}
         />
@@ -1000,7 +1129,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
     if (field === 'medicine' && showMedicineDropdown && filteredMedicines.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setHighlightedIndex((prev) => 
+        setHighlightedIndex((prev) =>
           prev < filteredMedicines.length - 1 ? prev + 1 : prev
         );
       } else if (e.key === 'ArrowUp') {
@@ -1031,7 +1160,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
     const medType = med.type || '';
     const displayName = formatMedicineDisplay(med.brandName, med.genericName, medType, med.strength, true);
     setSearchTerm(displayName);
-    
+
     // Use batch update to ensure all fields are updated together
     onUpdateBatch(medicine.rowId, {
       medicineId: med.id,
@@ -1041,7 +1170,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
       type: medType,
       isTemporary: false
     });
-    
+
     setShowMedicineDropdown(false);
     onDropdownToggle(false);
     // Focus on next field (dose)
@@ -1107,8 +1236,8 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
                         }}
                         onMouseEnter={() => setHighlightedIndex(idx)}
                         className={`w-full px-3 py-2 text-left border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors cursor-pointer ${
-                          isHighlighted 
-                            ? 'bg-blue-100 dark:bg-blue-900/50' 
+                          isHighlighted
+                            ? 'bg-blue-100 dark:bg-blue-900/50'
                             : 'hover:bg-blue-50 dark:hover:bg-blue-900/30'
                         }`}
                         data-index={idx}

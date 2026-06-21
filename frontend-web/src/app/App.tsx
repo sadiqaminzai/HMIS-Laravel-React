@@ -39,6 +39,7 @@ import { LabTestManagementNew } from './components/LabTestManagementNew';
 import { TestManagement } from './components/TestManagement';
 import { PrescriptionCreate } from './components/PrescriptionCreate';
 import { PrescriptionList } from './components/PrescriptionList';
+import { NextVisitPatientsList } from './components/NextVisitPatientsList';
 import { UserManagement } from './components/UserManagement';
 import { RoleManagement } from './components/RoleManagement';
 import { PermissionManagement } from './components/PermissionManagement';
@@ -335,7 +336,7 @@ function AppContent() {
 
   return (
     <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
-      
+
       {/* License Expiry Warning Modal */}
       {showLicenseWarning && (
         <LicenseExpiryWarning
@@ -344,7 +345,7 @@ function AppContent() {
           onClose={handleLicenseWarningClose}
         />
       )}
-      
+
       <Sidebar
         role={currentRole}
         onLogout={logout}
@@ -478,6 +479,14 @@ function AppContent() {
               element={
                 <RequirePermission anyOf={["view_prescriptions", "manage_prescriptions"]}>
                   <PrescriptionList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/prescriptions/next-visits"
+              element={
+                <RequirePermission anyOf={["view_prescriptions", "manage_prescriptions"]}>
+                  <NextVisitPatientsList hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
                 </RequirePermission>
               }
             />

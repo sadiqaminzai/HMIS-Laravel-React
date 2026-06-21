@@ -17,6 +17,7 @@ interface AddPrescriptionInput {
   diagnosis?: string;
   medicines: PrescriptionMedicine[];
   advice: string;
+  nextVisitDate?: string | null;
   createdBy?: string;
 }
 
@@ -60,6 +61,7 @@ const mapPrescription = (p: any): Prescription => ({
     type: i.type,
   })),
   advice: p.advice ?? '',
+  nextVisitDate: p.next_visit_date ? new Date(p.next_visit_date) : null,
   createdAt: p.created_at ? new Date(p.created_at) : new Date(),
   createdBy: p.created_by ?? 'system',
   updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
@@ -125,6 +127,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
       doctor_name: input.doctorName,
       diagnosis: input.diagnosis,
       advice: input.advice,
+      next_visit_date: input.nextVisitDate || null,
       items: input.medicines.map((m) => ({
         medicine_id: m.medicineId || null,
         medicine_name: m.medicineName,
@@ -164,6 +167,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
     if (input.doctorName) payload.doctor_name = input.doctorName;
     if (input.diagnosis !== undefined) payload.diagnosis = input.diagnosis;
     if (input.advice !== undefined) payload.advice = input.advice;
+    if (input.nextVisitDate !== undefined) payload.next_visit_date = input.nextVisitDate;
     if (input.status) payload.status = input.status;
     if (input.medicines) {
       payload.items = input.medicines.map((m) => ({

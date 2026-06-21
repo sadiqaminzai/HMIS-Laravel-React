@@ -20,6 +20,7 @@ interface PrescriptionPrintProps {
   advice: string;
   prescriptionNumber: string;
   diagnosis?: string;
+  nextVisitDate?: Date | null;
   prescriptionDate?: Date;
   onClose: () => void;
   viewOnly?: boolean;
@@ -39,6 +40,7 @@ export function PrescriptionPrint({
   advice,
   prescriptionNumber,
   diagnosis = '',
+  nextVisitDate,
   prescriptionDate = new Date(),
   onClose,
   viewOnly = false,
@@ -48,32 +50,32 @@ export function PrescriptionPrint({
   updatedAt,
   updatedBy
 }: PrescriptionPrintProps) {
-  
+
   const formatMedicineForPrint = (med: ExtendedPrescriptionMedicine) => {
     // Format: Brand Name (Generic Name) Medicine Type Strength
     const brandName = med.brandName || med.medicineName || '';
     const genericName = med.genericName || '';
     const type = (med.type || '').trim();
     const strength = (med.strength || '').trim();
-    
+
     // Start with brand name
     let displayName = brandName.trim();
-    
+
     // Add generic name in parentheses if available and not already in brand name
     if (genericName && !displayName.toLowerCase().includes(genericName.toLowerCase())) {
       displayName += ` (${genericName})`;
     }
-    
+
     // Add medicine type if available and not already in name
     if (type && !displayName.toLowerCase().includes(type.toLowerCase())) {
       displayName += ` ${type}`;
     }
-    
+
     // Add strength if available and not already in name
     if (strength && !displayName.toLowerCase().includes(strength.toLowerCase())) {
       displayName += ` ${strength}`;
     }
-    
+
     return displayName.replace(/\s+/g, ' ').trim();
   };
 
@@ -120,7 +122,7 @@ export function PrescriptionPrint({
               margin: 0;
               padding: 0;
             }
-            
+
             /* Reset specific print container */
             #prescription-print-content {
               visibility: visible;
@@ -136,13 +138,13 @@ export function PrescriptionPrint({
               box-sizing: border-box !important; /* CRITICAL FIX */
               z-index: 9999;
               overflow: visible;
-              
+
               /* Layout */
               display: flex !important;
               flex-direction: column;
               justify-content: space-between;
             }
-            
+
 
             /* Force Prescribed Medicines heading to print white with blue background */
             #prescription-print-content h3.prescribed-medicines-print {
@@ -186,7 +188,7 @@ export function PrescriptionPrint({
                visibility: visible !important;
                page-break-inside: avoid;
             }
-            
+
             /* Ensure QR Code prints properly */
             #print-footer svg {
               visibility: visible !important;
@@ -194,7 +196,7 @@ export function PrescriptionPrint({
               print-color-adjust: exact;
               -webkit-print-color-adjust: exact;
             }
-            
+
             /* Ensure signature image prints */
             #print-footer img {
               visibility: visible !important;
@@ -203,7 +205,7 @@ export function PrescriptionPrint({
               print-color-adjust: exact;
               -webkit-print-color-adjust: exact;
             }
-            
+
             /* Helper to hide UI elements */
             .print-hide {
               display: none !important;
@@ -215,7 +217,7 @@ export function PrescriptionPrint({
 
       {/* Main Container */}
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-        
+
         {/* Header - Screen Only */}
         {!embedded && (
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10 print-hide rounded-t-xl">
@@ -244,7 +246,7 @@ export function PrescriptionPrint({
 
         {/* Printable Content */}
         <div id="prescription-print-content" className="p-8 bg-white text-gray-900 flex flex-col min-h-full">
-          
+
           {/* Hospital Header */}
           <div className="flex justify-between items-start border-b-4 border-blue-600 pb-6 mb-8">
             <div className="flex-1">
@@ -313,6 +315,12 @@ export function PrescriptionPrint({
                   <span className="block text-xs text-blue-400">Prescription #</span>
                   <span className="font-mono font-bold text-gray-900">{prescriptionNumber}</span>
                 </div>
+                <div className="col-span-2">
+                  <span className="block text-xs text-blue-400">Next Visit</span>
+                  <span className="text-gray-900">
+                    {nextVisitDate ? formatDate(nextVisitDate, hospital.timezone, hospital.calendarType) : 'Not scheduled'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -321,7 +329,7 @@ export function PrescriptionPrint({
           <div className="flex flex-row gap-6 mb-4 flex-grow print-content-grow">
             {/* Left Column: Diagnosis & Advice (30%) */}
             <div className="w-[30%] flex flex-col gap-6 border-r border-gray-200 pr-6">
-              
+
               {/* Top Left: Diagnosis */}
               <div className="flex-1">
                  <div className="flex items-center gap-2 mb-2 border-b border-gray-200 pb-1">
@@ -352,7 +360,7 @@ export function PrescriptionPrint({
 
             {/* Right Column: Medicines Table (70%) */}
             <div className="w-[70%]">
-              <div 
+              <div
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-t-lg flex justify-between items-center mb-0"
                 style={{ backgroundColor: hospital.brandColor }}
               >

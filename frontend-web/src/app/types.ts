@@ -229,6 +229,7 @@ export interface Prescription {
   diagnosis?: string;
   medicines: PrescriptionMedicine[];
   advice: string;
+  nextVisitDate?: Date | null;
   createdAt: Date;
   createdBy: string;
   updatedAt?: Date;

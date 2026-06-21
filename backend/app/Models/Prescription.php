@@ -27,6 +27,7 @@ class Prescription extends Model
         'doctor_name',
         'diagnosis',
         'advice',
+        'next_visit_date',
         'prescription_number',
         'status',
         'created_by',
@@ -36,6 +37,7 @@ class Prescription extends Model
     protected $casts = [
         'patient_age' => 'integer',
         'is_walk_in' => 'boolean',
+        'next_visit_date' => 'date',
     ];
 
     protected static function booted()

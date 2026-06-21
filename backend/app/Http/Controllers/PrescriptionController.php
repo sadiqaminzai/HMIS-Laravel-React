@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Patient;
 use App\Models\Prescription;
-use App\Models\PrescriptionItem;
 use App\Models\User;
 use App\Models\WalkInPatient;
 use Illuminate\Http\Request;
@@ -31,6 +30,14 @@ class PrescriptionController extends Controller
 
         if ($request->filled('patient_id')) {
             $query->where('patient_id', $request->integer('patient_id'));
+        }
+
+        if ($request->filled('next_visit_from')) {
+            $query->whereDate('next_visit_date', '>=', $request->string('next_visit_from'));
+        }
+
+        if ($request->filled('next_visit_to')) {
+            $query->whereDate('next_visit_date', '<=', $request->string('next_visit_to'));
         }
 
         if ($request->filled('search')) {
@@ -157,6 +164,7 @@ class PrescriptionController extends Controller
             'doctor_name' => ['required', 'string', 'max:255'],
             'diagnosis' => ['nullable', 'string'],
             'advice' => ['nullable', 'string'],
+            'next_visit_date' => ['nullable', 'date'],
             'status' => ['sometimes', Rule::in(['active', 'cancelled'])],
             'items' => ['required', 'array', 'min:1'],
             'items.*.medicine_id' => ['nullable', 'exists:medicines,id'],

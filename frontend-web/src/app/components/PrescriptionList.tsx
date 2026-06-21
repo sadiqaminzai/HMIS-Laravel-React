@@ -25,7 +25,7 @@ interface PrescriptionListProps {
   currentUser?: { id: string; name: string; email: string; role: UserRole; doctorId?: string };
 }
 
-type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'medicines';
+type SortField = 'prescriptionNumber' | 'patientName' | 'doctorName' | 'createdAt' | 'nextVisitDate' | 'medicines';
 type SortDirection = 'asc' | 'desc';
 
 // Helper to convert hex to RGB array for jsPDF
@@ -49,18 +49,18 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const { medicines: inventory } = useMedicines();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  
+
   // Apply hospital filter first
-  const hospitalFiltered = React.useMemo(() => 
+  const hospitalFiltered = React.useMemo(() =>
     filterByHospital(prescriptions),
   [filterByHospital, prescriptions]);
-  
+
   // Then apply doctor filter if applicable
   const doctorFiltered = React.useMemo(() => {
     if (userRole === 'doctor' && currentUser?.doctorId) {
@@ -99,12 +99,12 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     if (canManagePrescriptions) {
       return true;
     }
-    
+
     // Creator roles can only edit prescriptions created today
     if (canCreatePrescriptions && userRole === 'doctor') {
       return isPrescriptionCreatedToday(prescription.createdAt);
     }
-    
+
     // Other roles cannot edit
     return false;
   };
@@ -164,7 +164,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     if (sortField !== field) {
       return <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />;
     }
-    return sortDirection === 'asc' 
+    return sortDirection === 'asc'
       ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
       : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
   };
@@ -180,6 +180,10 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       return sortDirection === 'asc' ? a.patientName.localeCompare(b.patientName) : b.patientName.localeCompare(a.patientName);
     } else if (sortField === 'doctorName') {
       return sortDirection === 'asc' ? a.doctorName.localeCompare(b.doctorName) : b.doctorName.localeCompare(a.doctorName);
+    } else if (sortField === 'nextVisitDate') {
+      const dateA = a.nextVisitDate ? new Date(a.nextVisitDate).getTime() : 0;
+      const dateB = b.nextVisitDate ? new Date(b.nextVisitDate).getTime() : 0;
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     } else if (sortField === 'medicines') {
       return sortDirection === 'asc' ? a.medicines.length - b.medicines.length : b.medicines.length - a.medicines.length;
     }
@@ -195,6 +199,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       'Gender': prescription.patientGender,
       'Doctor': prescription.doctorName,
       'Date': formatDate(prescription.createdAt, currentHospital.timezone, currentHospital.calendarType),
+      'Next Visit': prescription.nextVisitDate ? formatDate(prescription.nextVisitDate, currentHospital.timezone, currentHospital.calendarType) : '',
       'Medicines Count': prescription.medicines.length,
       'Diagnosis': prescription.diagnosis?.replace(/<[^>]*>/g, '') || '',
       'Advice': prescription.advice?.replace(/<[^>]*>/g, '') || '',
@@ -211,10 +216,10 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   // Export to PDF
   const exportToPDF = () => {
     const doc = new jsPDF();
-    
+
     // Determine brand color for list export (only if specific hospital selected)
-    const brandRgb = !isAllHospitals && currentHospital.brandColor 
-      ? hexToRgb(currentHospital.brandColor) 
+    const brandRgb = !isAllHospitals && currentHospital.brandColor
+      ? hexToRgb(currentHospital.brandColor)
       : null;
     const tableHeaderColor = brandRgb || [66, 139, 202]; // Default Blue
 
@@ -228,12 +233,13 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     }
 
     autoTable(doc, {
-      head: [['Rx #', 'Patient', 'Doctor', 'Date', 'Meds']],
+      head: [['Rx #', 'Patient', 'Doctor', 'Date', 'Next Visit', 'Meds']],
       body: sortedPrescriptions.map(p => [
         p.prescriptionNumber,
         p.patientName,
         p.doctorName,
         formatDate(p.createdAt, currentHospital.timezone, currentHospital.calendarType),
+        p.nextVisitDate ? formatDate(p.nextVisitDate, currentHospital.timezone, currentHospital.calendarType) : '-',
         p.medicines.length
       ]),
       startY: isAllHospitals ? 40 : 46,
@@ -249,7 +255,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     const doc = new jsPDF();
     const hospitalInfo = hospitalDirectory.find(h => h.id === prescription.hospitalId) || hospital;
     const patientInfo = patients.find(p => p.id === prescription.patientId) || prescription.patient;
-    
+
     // Get brand color or use defaults
     const brandRgb = hexToRgb(hospitalInfo.brandColor);
     const primaryColor = brandRgb || [41, 128, 185]; // Default Header Blue
@@ -259,12 +265,12 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     doc.setFontSize(22);
     doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     doc.text(hospitalInfo.name, 105, 20, { align: 'center' });
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(hospitalInfo.address, 105, 26, { align: 'center' });
     doc.text(`Phone: ${hospitalInfo.phone} | Email: ${hospitalInfo.email}`, 105, 31, { align: 'center' });
-    
+
     doc.setLineWidth(0.5);
     doc.setDrawColor(200);
     doc.line(14, 36, 196, 36);
@@ -272,9 +278,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     // --- Patient & Doctor Info ---
     doc.setFontSize(10);
     doc.setTextColor(0);
-    
+
     const yInfo = 45;
-    
+
     // Left: Patient
     doc.setFont("helvetica", "bold");
     doc.text("Patient Details", 14, yInfo);
@@ -290,8 +296,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     doc.text(`Dr. ${prescription.doctorName}`, 120, yInfo + 6);
     doc.text(`Rx #: ${prescription.prescriptionNumber}`, 120, yInfo + 11);
     doc.text(`Date: ${formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType)}`, 120, yInfo + 16);
+    doc.text(`Next Visit: ${prescription.nextVisitDate ? formatDate(prescription.nextVisitDate, hospitalInfo.timezone, hospitalInfo.calendarType) : '-'}`, 120, yInfo + 21);
 
-    let currentY = yInfo + 25;
+    let currentY = yInfo + 30;
 
     // --- Diagnosis ---
     const stripHtml = (html: string) => {
@@ -304,7 +311,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         doc.setFont("helvetica", "bold");
         doc.text("Diagnosis:", 14, currentY);
         doc.setFont("helvetica", "normal");
-        
+
         const diagnosisText = stripHtml(prescription.diagnosis);
         const diagnosisLines = doc.splitTextToSize(diagnosisText, 180);
         doc.text(diagnosisLines, 14, currentY + 6);
@@ -318,7 +325,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         const displayName = medType && !med.medicineName.includes(medType)
           ? `${med.medicineName} ${medType}`
           : med.medicineName;
-            
+
         return [
             displayName,
             med.strength,
@@ -353,7 +360,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         doc.setFont("helvetica", "bold");
         doc.text("Advice / Instructions:", 14, currentY);
         doc.setFont("helvetica", "normal");
-        
+
         const adviceText = stripHtml(prescription.advice);
         const adviceLines = doc.splitTextToSize(adviceText, 180);
         doc.text(adviceLines, 14, currentY + 6);
@@ -367,12 +374,12 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         doc.addPage();
         currentY = 40;
     }
-    
+
     // Signature
     doc.setFontSize(10);
     doc.text("Doctor's Signature", 160, currentY + 20, { align: 'center' });
     doc.line(140, currentY + 15, 180, currentY + 15);
-    
+
     // Disclaimer
     doc.setFontSize(8);
     doc.setTextColor(150);
@@ -404,7 +411,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             Manage prescriptions for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
           </p>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-2">
           {/* Compact Search */}
           <div className="relative">
@@ -439,7 +446,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       </div>
 
       {/* Hospital Selector for Super Admin */}
-      <HospitalSelector 
+      <HospitalSelector
         userRole={userRole}
         selectedHospitalId={selectedHospitalId}
         onHospitalChange={setSelectedHospitalId}
@@ -475,6 +482,12 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     {renderSortIcon('doctorName')}
                   </div>
                 </th>
+                <th onClick={() => handleSort('nextVisitDate')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <div className="flex items-center gap-1.5">
+                    Next Visit
+                    {renderSortIcon('nextVisitDate')}
+                  </div>
+                </th>
                 <th onClick={() => handleSort('medicines')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-center transition-colors">
                   <div className="flex items-center justify-center gap-1.5">
                     Medicines
@@ -504,6 +517,11 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                       <div className="text-[10px] text-gray-500 dark:text-gray-400">{prescription.patientAge}Y • {prescription.patientGender}</div>
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{prescription.doctorName}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
+                      {prescription.nextVisitDate
+                        ? formatDate(prescription.nextVisitDate, currentHospital.timezone, currentHospital.calendarType)
+                        : '-'}
+                    </td>
                     <td className="px-4 py-2 text-center">
                       <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
                         {prescription.medicines.length}
@@ -556,7 +574,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
                         <Search className="w-6 h-6 text-gray-400 opacity-50" />
@@ -570,7 +588,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             </tbody>
           </table>
         </div>
-        
+
         {/* Footer with totals */}
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredPrescriptions.length}</span></span>
@@ -627,6 +645,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           advice={selectedPrescription.advice}
           prescriptionNumber={selectedPrescription.prescriptionNumber}
           diagnosis={selectedPrescription.diagnosis}
+          nextVisitDate={selectedPrescription.nextVisitDate ? new Date(selectedPrescription.nextVisitDate) : null}
           prescriptionDate={new Date(selectedPrescription.createdAt)}
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}
@@ -654,6 +673,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           advice={selectedPrescription.advice}
           prescriptionNumber={selectedPrescription.prescriptionNumber}
           diagnosis={selectedPrescription.diagnosis}
+          nextVisitDate={selectedPrescription.nextVisitDate ? new Date(selectedPrescription.nextVisitDate) : null}
           prescriptionDate={new Date(selectedPrescription.createdAt)}
           createdBy={selectedPrescription.createdBy}
           updatedAt={selectedPrescription.updatedAt ? new Date(selectedPrescription.updatedAt) : undefined}

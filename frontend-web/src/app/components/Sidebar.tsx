@@ -173,6 +173,12 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.viewAll',
         icon: <List className="w-3.5 h-3.5" />,
         anyPermissions: ['view_prescriptions', 'manage_prescriptions']
+      },
+      {
+        id: '/prescriptions/next-visits',
+        translationKey: 'nav.nextVisitPatients',
+        icon: <Calendar className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_prescriptions', 'manage_prescriptions']
       }
     ]
   },
@@ -237,7 +243,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const canSeePermissions = hasPermission('view_permissions') || hasPermission('manage_permissions');
   const canSeeHospitalSettings = hasPermission('view_hospital_settings') || hasPermission('manage_hospital_settings');
   const canSeeContactMessages = hasPermission('view_contact_messages') || hasPermission('manage_contact_messages');
-  
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
@@ -261,8 +267,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     });
 
   const toggleMenu = (menuId: string) => {
-    setExpandedMenus(prev => 
-      prev.includes(menuId) 
+    setExpandedMenus(prev =>
+      prev.includes(menuId)
         ? prev.filter(id => id !== menuId)
         : [...prev, menuId]
     );
@@ -273,39 +279,39 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     if (!path.startsWith('/')) {
       return;
     }
-    
+
     // Auto-collapse logic based on path groups
     // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
     const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stocks'].includes(path);
     if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
     }
-    
+
     // If navigating to a non-prescription page and prescription menu is expanded, collapse it
-    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions'].includes(path);
+    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions', '/prescriptions/next-visits'].includes(path);
     if (!isPrescriptionSubItem && path !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'prescription-menu'));
     }
-    
+
     // If navigating to a non-laboratory page and laboratory menu is expanded, collapse it
     const isLaboratorySubItem = ['/lab-tests', '/test-management'].includes(path);
     if (!isLaboratorySubItem && path !== 'laboratory' && expandedMenus.includes('laboratory')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'laboratory'));
     }
-    
+
     // If navigating to a non-reception page and reception menu is expanded, collapse it
     const isReceptionSubItem = ['/doctors', '/patients', '/appointments'].includes(path);
     if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
     }
-    
+
     navigate(path);
   };
 
   const renderMenuItem = (item: MenuItem, isSubItem = false) => {
     const hasSubItems = item.subItems && item.subItems.length > 0;
     const isExpanded = expandedMenus.includes(item.id);
-    
+
     // Check active status
     let isActive = false;
     if (hasSubItems) {
