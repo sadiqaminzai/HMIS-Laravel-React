@@ -37,6 +37,7 @@ type ReportType =
   | 'reception_prescription_sales'
   | 'reception_surgery_operations'
   | 'reception_expenses'
+  | 'reception_other_income'
   | 'reception_overall_clearance'
   | 'pharmacy_available_stock'
   | 'pharmacy_expiry'
@@ -84,6 +85,7 @@ interface ReportSourceState {
   transactions: any[];
   surgeries: any[];
   expenses: any[];
+  otherIncomes: any[];
   ledger: LedgerEntryApi[];
   medicines: any[];
   stocks: any[];
@@ -168,6 +170,17 @@ interface NormalizedExpense {
   date: Date | null;
 }
 
+interface NormalizedOtherIncome {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  paymentMethod: string;
+  status: string;
+  createdBy: string;
+  date: Date | null;
+}
+
 interface NormalizedLedgerEntry {
   id: string;
   module: string;
@@ -226,6 +239,7 @@ const REPORT_OPTIONS: Record<ReportModule, Array<{ key: ReportType; label: strin
     { key: 'reception_prescription_sales', label: 'Prescription Sales Report' },
     { key: 'reception_surgery_operations', label: 'Surgery Operations Report' },
     { key: 'reception_expenses', label: 'Expense Report' },
+    { key: 'reception_other_income', label: 'Other Income Report' },
     { key: 'reception_overall_clearance', label: 'Overall Daily Clearance' },
   ],
   pharmacy: [
@@ -252,6 +266,7 @@ const emptySource: ReportSourceState = {
   transactions: [],
   surgeries: [],
   expenses: [],
+  otherIncomes: [],
   ledger: [],
   medicines: [],
   stocks: [],
@@ -283,6 +298,7 @@ const normalizeModuleName = (value: string): string => {
   if (raw === 'room_booking') return 'Room Booking';
   if (raw === 'surgery') return 'Surgery';
   if (raw === 'expenses') return 'Expenses';
+  if (raw === 'other_income') return 'Other Income';
   return raw.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 };
 
@@ -406,6 +422,19 @@ const normalizeExpense = (item: any): NormalizedExpense => {
     status: String(item.status ?? '-'),
     createdBy: String(item.created_by ?? item.createdBy ?? '-'),
     date: toDate(item.expense_date ?? item.expenseDate ?? item.created_at ?? item.createdAt),
+  };
+};
+
+const normalizeOtherIncome = (item: any): NormalizedOtherIncome => {
+  return {
+    id: String(item.id),
+    title: String(item.title ?? '-'),
+    category: String(item.category?.name ?? item.category_name ?? '-'),
+    amount: toNumber(item.amount),
+    paymentMethod: String(item.payment_method ?? item.paymentMethod ?? '-'),
+    status: String(item.status ?? '-'),
+    createdBy: String(item.created_by ?? item.createdBy ?? '-'),
+    date: toDate(item.income_date ?? item.incomeDate ?? item.created_at ?? item.createdAt),
   };
 };
 
@@ -599,6 +628,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         transactionsRes,
         surgeriesRes,
         expensesRes,
+        otherIncomesRes,
         ledgerRes,
         medicinesRes,
         stocksRes,
@@ -629,6 +659,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           null
         ),
         safeCall(
+          () => api.get('/other-incomes', { params: { ...scope, start_date: startDate, end_date: endDate } }),
+          null
+        ),
+        safeCall(
           () => listLedger({ ...scope, date_from: startDate, date_to: endDate, per_page: 200 }),
           { data: [] }
         ),
@@ -655,6 +689,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         transactions: unwrapArray(transactionsRes?.data),
         surgeries: unwrapArray(surgeriesRes),
         expenses: unwrapArray(expensesRes?.data),
+        otherIncomes: unwrapArray(otherIncomesRes?.data),
         ledger: (ledgerRes?.data ?? []) as LedgerEntryApi[],
         medicines: unwrapArray(medicinesRes?.data),
         stocks: unwrapArray(stocksRes?.data),
@@ -714,6 +749,12 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       .map(normalizeExpense)
       .filter((item) => inDateRange(item.date, rangeStart, rangeEnd));
   }, [source.expenses, rangeEnd, rangeStart]);
+
+  const normalizedOtherIncomes = useMemo(() => {
+    return source.otherIncomes
+      .map(normalizeOtherIncome)
+      .filter((item) => inDateRange(item.date, rangeStart, rangeEnd));
+  }, [source.otherIncomes, rangeEnd, rangeStart]);
 
   const normalizedLedger = useMemo(() => {
     return source.ledger
@@ -1363,6 +1404,41 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         };
       }
 
+      case 'reception_other_income': {
+        const rows = normalizedOtherIncomes
+          .map((item) => ({
+            date: item.date,
+            title: item.title,
+            category: item.category,
+            paymentMethod: item.paymentMethod,
+            status: item.status,
+            createdBy: item.createdBy,
+            amount: item.amount,
+          }))
+          .sort((a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
+
+        const totalOtherIncome = rows.reduce((sum, row) => sum + row.amount, 0);
+
+        return {
+          title: 'Reception Other Income Report',
+          subtitle: 'Additional hospital income entries and source details.',
+          columns: [
+            { key: 'date', label: 'Date', kind: 'date' },
+            { key: 'title', label: 'Title' },
+            { key: 'category', label: 'Category' },
+            { key: 'paymentMethod', label: 'Payment Method' },
+            { key: 'status', label: 'Status' },
+            { key: 'createdBy', label: 'Created By' },
+            { key: 'amount', label: 'Amount', kind: 'currency' },
+          ],
+          rows,
+          summary: [
+            { label: 'Entries', value: String(rows.length) },
+            { label: 'Total Other Income', value: formatCurrency(totalOtherIncome), tone: 'positive' },
+          ],
+        };
+      }
+
       case 'reception_overall_clearance': {
         const rows = ledgerActive
           .map((item) => ({
@@ -1946,6 +2022,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     normalizedExpenses,
     normalizedLabOrders,
     normalizedLedger,
+    normalizedOtherIncomes,
     normalizedPatients,
     normalizedPrescriptions,
     normalizedStocks,

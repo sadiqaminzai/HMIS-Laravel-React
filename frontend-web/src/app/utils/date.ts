@@ -133,7 +133,7 @@ export function parseDateOnly(value: Date | string | undefined | null): Date | u
     const year = Number(match[1]);
     const month = Number(match[2]) - 1;
     const day = Number(match[3]);
-    return new Date(Date.UTC(year, month, day));
+    return new Date(Date.UTC(year, month, day, 12));
   }
   const d = new Date(String(value));
   if (isNaN(d.getTime())) return undefined;

@@ -22,18 +22,52 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return;
 
-          // Keep charting libs in their own async chunk.
-          if (id.includes('recharts') || id.includes('/d3-')) return 'vendor-charts';
-          // i18n stack is used across routes but can live outside the app entry chunk.
-          if (id.includes('i18next') || id.includes('react-i18next')) return 'vendor-i18n';
-          // Icon package is sizable and safe to isolate.
-          if (id.includes('lucide-react')) return 'vendor-icons';
-          // Shared HTTP/client utility libs.
-          if (id.includes('axios')) return 'vendor-http';
+          const normalizedId = id.replace(/\\/g, '/');
+          const inPackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`);
 
-          if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-export-pdf';
-          if (id.includes('xlsx')) return 'vendor-export-xlsx';
-          if (id.includes('date-fns')) return 'vendor-date';
+          // MUI + emotion stack can be sizable and is shared across screens.
+          if (
+            normalizedId.includes('/node_modules/@mui/') ||
+            normalizedId.includes('/node_modules/@emotion/') ||
+            inPackage('@popperjs/core')
+          ) {
+            return 'vendor-mui';
+          }
+
+          // Radix UI primitives in a dedicated bundle.
+          if (normalizedId.includes('/node_modules/@radix-ui/')) {
+            return 'vendor-radix';
+          }
+
+          // Keep charting libs separate to avoid inflating generic chunks.
+          if (inPackage('recharts')) return 'vendor-recharts';
+          if (normalizedId.includes('/node_modules/d3-') || inPackage('internmap')) return 'vendor-d3';
+
+          // i18n stack.
+          if (
+            inPackage('i18next') ||
+            inPackage('react-i18next') ||
+            inPackage('i18next-browser-languagedetector')
+          ) {
+            return 'vendor-i18n';
+          }
+
+          // Shared UI/utility libs.
+          if (inPackage('lucide-react')) return 'vendor-icons';
+          if (inPackage('axios')) return 'vendor-http';
+          if (inPackage('date-fns')) return 'vendor-date';
+          // Export and printing stack split to avoid one oversized chunk.
+          if (inPackage('jspdf') || inPackage('jspdf-autotable')) return 'vendor-jspdf';
+          if (inPackage('html2canvas') || inPackage('html-to-image')) return 'vendor-image-export';
+          if (inPackage('xlsx')) return 'vendor-export-xlsx';
+
+          // QR/barcode stack used by print flows.
+          if (inPackage('qrcode') || inPackage('qrcode.react') || inPackage('react-barcode')) {
+            return 'vendor-qr';
+          }
+
+          // Let Rollup place remaining dependencies automatically.
+          return;
         },
       },
     },

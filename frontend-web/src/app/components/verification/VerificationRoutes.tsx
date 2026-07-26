@@ -4,6 +4,7 @@ import { PrescriptionVerificationPage } from './PrescriptionVerificationPage';
 import { PatientCardVerificationPage } from './PatientCardVerificationPage';
 import { LabReportVerificationPage } from './LabReportVerificationPage';
 import { TransactionVerificationPage } from './TransactionVerificationPage';
+import { SurgeryDischargeVerificationPage } from './SurgeryDischargeVerificationPage';
 
 export function VerificationRoutes() {
   return (
@@ -12,6 +13,7 @@ export function VerificationRoutes() {
       <Route path="/verify/patient/:token" element={<PatientCardVerificationPage />} />
       <Route path="/verify/lab-report/:token" element={<LabReportVerificationPage />} />
       <Route path="/verify/transaction/:token" element={<TransactionVerificationPage />} />
+      <Route path="/verify/surgery-discharge/:token" element={<SurgeryDischargeVerificationPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

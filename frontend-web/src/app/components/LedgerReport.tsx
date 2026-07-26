@@ -35,6 +35,9 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
   const [summary, setSummary] = useState({
     income_total: 0,
     expense_total: 0,
+    expense_total_excluding_salary: 0,
+    salary_total: 0,
+    expense_with_salary_total: 0,
     net_total: 0,
     due_total: 0,
   });
@@ -96,7 +99,15 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
         setSummary(res);
       } catch {
         toast.error('Failed to load ledger summary');
-        setSummary({ income_total: 0, expense_total: 0, net_total: 0, due_total: 0 });
+        setSummary({
+          income_total: 0,
+          expense_total: 0,
+          expense_total_excluding_salary: 0,
+          salary_total: 0,
+          expense_with_salary_total: 0,
+          net_total: 0,
+          due_total: 0,
+        });
       } finally {
         setSummaryLoading(false);
       }
@@ -134,10 +145,10 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
     <div className="p-6 space-y-6 max-w-[1300px] mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ledger & Financial Reporting</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Unified income/expense ledger from transactions and expenses.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Unified income/expense ledger from transactions, expenses, other incomes, and payroll salary.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
         <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-900/20 p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Income</p>
@@ -147,14 +158,21 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
         </div>
         <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-900/20 p-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">Expense</p>
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">Expense (Excl. Salary)</p>
             <HandCoins className="w-4 h-4 text-rose-600" />
           </div>
-          <p className="mt-2 text-xl font-semibold text-rose-800 dark:text-rose-200">{money(summary.expense_total)}</p>
+          <p className="mt-2 text-xl font-semibold text-rose-800 dark:text-rose-200">{money(summary.expense_total_excluding_salary ?? summary.expense_total)}</p>
+        </div>
+        <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-900/20 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-red-700 dark:text-red-300">Salary</p>
+            <HandCoins className="w-4 h-4 text-red-600" />
+          </div>
+          <p className="mt-2 text-xl font-semibold text-red-800 dark:text-red-200">{money(summary.salary_total ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/20 p-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-blue-700 dark:text-blue-300">Net</p>
+            <p className="text-xs font-medium text-blue-700 dark:text-blue-300">Net (After Salary)</p>
             <BarChart3 className="w-4 h-4 text-blue-600" />
           </div>
           <p className="mt-2 text-xl font-semibold text-blue-800 dark:text-blue-200">{money(summary.net_total)}</p>
@@ -193,6 +211,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Module</label>
             <select
+              title="Module filter"
               value={moduleFilter}
               onChange={(e) => {
                 setPage(1);
@@ -207,12 +226,15 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
               <option value="surgery">Surgery</option>
               <option value="pharmacy">Pharmacy</option>
               <option value="expenses">Expenses</option>
+              <option value="salary">Salary</option>
+              <option value="other_income">Other Income</option>
             </select>
           </div>
 
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Direction</label>
             <select
+              title="Direction filter"
               value={directionFilter}
               onChange={(e) => {
                 setPage(1);
@@ -230,6 +252,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Status</label>
             <select
+              title="Status filter"
               value={statusFilter}
               onChange={(e) => {
                 setPage(1);
@@ -250,6 +273,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-gray-300">From</label>
             <input
+              title="From date"
               type="date"
               value={startDate}
               onChange={(e) => {
@@ -263,6 +287,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-gray-300">To</label>
             <input
+              title="To date"
               type="date"
               value={endDate}
               onChange={(e) => {

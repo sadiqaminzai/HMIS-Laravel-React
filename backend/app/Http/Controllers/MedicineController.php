@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Appointment;
 use App\Models\Manufacturer;
 use App\Models\Medicine;
 use App\Models\MedicineType;
@@ -16,7 +17,16 @@ class MedicineController extends Controller
         $query = Medicine::with(['manufacturer:id,name,hospital_id', 'medicineType:id,name,hospital_id']);
 
         if ($user->role !== 'super_admin') {
-            $query->where('hospital_id', $user->hospital_id ?? 0);
+            $scopedHospitalId = (int) ($user->hospital_id ?? 0);
+
+            if ($request->filled('hospital_id')) {
+                $requestedHospitalId = $request->integer('hospital_id');
+                if ($requestedHospitalId > 0 && $this->canAccessRequestedHospital($user, $requestedHospitalId)) {
+                    $scopedHospitalId = $requestedHospitalId;
+                }
+            }
+
+            $query->where('hospital_id', $scopedHospitalId);
         } elseif ($request->filled('hospital_id')) {
             $query->where('hospital_id', $request->integer('hospital_id'));
         }
@@ -151,5 +161,21 @@ class MedicineController extends Controller
         if ($user->role !== 'super_admin' && (int) $user->hospital_id !== (int) $medicine->hospital_id) {
             abort(403, 'Unauthorized medicine access');
         }
+    }
+
+    private function canAccessRequestedHospital($user, int $requestedHospitalId): bool
+    {
+        if ((int) ($user->hospital_id ?? 0) === $requestedHospitalId) {
+            return true;
+        }
+
+        if ($user->role !== 'doctor') {
+            return false;
+        }
+
+        return Appointment::query()
+            ->where('doctor_id', $user->id)
+            ->where('hospital_id', $requestedHospitalId)
+            ->exists();
     }
 }

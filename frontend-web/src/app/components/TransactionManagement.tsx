@@ -862,8 +862,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const getPatientDisplay = (id?: string) => {
     const patient = patients.find((p) => p.id === id);
     if (!patient) return '';
-    return `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}`.trim();
+    return `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}${patient.phone ? ` - ${patient.phone}` : ''}`.trim();
   };
+  const getPatientOptionDisplay = (patient: Patient) =>
+    `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}${patient.phone ? ` - ${patient.phone}` : ''}`.trim();
+  const getTransactionPatientPhone = (transaction: Transaction) =>
+    patients.find((patient) => String(patient.id) === String(transaction.patientId))?.phone || '';
 
   const getExpiryDisplay = (date: Date | string | undefined, hospitalId: string) => {
     const h = getHospital(hospitalId);
@@ -1012,14 +1016,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const filteredTransactions = useMemo(() => {
     const term = searchTerm.toLowerCase();
     return scopedTransactions.filter((t) => {
+      const patientPhone = getTransactionPatientPhone(t).toLowerCase();
       const matchesTerm =
         String(t.serialNo ?? t.id).includes(term) ||
         (t.trxType || '').toLowerCase().includes(term) ||
+        (t.patientName || '').toLowerCase().includes(term) ||
+        getPatientDisplay(t.patientId).toLowerCase().includes(term) ||
+        patientPhone.includes(term) ||
         (t.details || []).some((d) => (d.medicineName || getMedicineName(d.medicineId)).toLowerCase().includes(term));
       const matchesType = trxTypeFilter === 'all' || t.trxType === trxTypeFilter;
       return matchesTerm && matchesType;
     });
-  }, [scopedTransactions, searchTerm, trxTypeFilter, medicines]);
+  }, [scopedTransactions, searchTerm, trxTypeFilter, medicines, patients]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / itemsPerPage));
   const paginatedTransactions = useMemo(() => {
@@ -2244,7 +2252,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                             const selected = options[highlightedPatientIndex] || options[0];
                             if (selected) {
                               setFormData({ ...formData, patientId: selected.id });
-                              setPatientSearch(`${selected.name} ${selected.patientId ? `(${selected.patientId})` : ''}`.trim());
+                              setPatientSearch(getPatientOptionDisplay(selected));
                               setOpenPatientDropdown(false);
                               setHighlightedPatientIndex(-1);
                             }
@@ -2267,12 +2275,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                 onMouseEnter={() => setHighlightedPatientIndex(optionIndex)}
                                 onMouseDown={() => {
                                   setFormData({ ...formData, patientId: p.id });
-                                  setPatientSearch(`${p.name} ${p.patientId ? `(${p.patientId})` : ''}`.trim());
+                                  setPatientSearch(getPatientOptionDisplay(p));
                                   setOpenPatientDropdown(false);
                                   setHighlightedPatientIndex(-1);
                                 }}
                               >
-                                {p.name} {p.patientId ? `(${p.patientId})` : ''}
+                                <div className="font-medium text-gray-900 dark:text-gray-100">{p.name} {p.patientId ? `(${p.patientId})` : ''}</div>
+                                {p.phone && <div className="text-[10px] text-gray-500 dark:text-gray-400">{p.phone}</div>}
                               </button>
                             ))}
                           {patientOptions.length === 0 && (

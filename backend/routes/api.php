@@ -8,11 +8,23 @@ use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\DiscountTypeController;
+use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\DesignationController;
+use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeeAttendanceController;
+use App\Http\Controllers\LeaveRequestController;
+use App\Http\Controllers\SalaryStructureController;
+use App\Http\Controllers\PayrollBatchController;
+use App\Http\Controllers\PayrollItemController;
+use App\Http\Controllers\HrDataToolsController;
 use App\Http\Controllers\HospitalSettingController;
 use App\Http\Controllers\LabOrderController;
 use App\Http\Controllers\LedgerController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\OtherIncomeCategoryController;
+use App\Http\Controllers\OtherIncomeController;
 use App\Http\Controllers\PatientController;
 use App\Http\Controllers\HospitalController;
 use App\Http\Controllers\ManufacturerController;
@@ -45,6 +57,7 @@ Route::get('/verify/prescriptions/{token}', [VerificationController::class, 'pre
 Route::get('/verify/patients/{token}', [VerificationController::class, 'patient']);
 Route::get('/verify/lab-reports/{token}', [VerificationController::class, 'labReport']);
 Route::get('/verify/transactions/{token}', [VerificationController::class, 'transaction']);
+Route::get('/verify/surgery-discharges/{token}', [VerificationController::class, 'surgeryDischarge']);
 
 Route::middleware('auth:sanctum')->group(function () {
 	Route::get('/me', [AuthController::class, 'me']);
@@ -165,6 +178,97 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('expenses', [ExpenseController::class, 'store'])->middleware('permission:add_expenses,manage_expenses');
 	Route::match(['PUT', 'PATCH'], 'expenses/{expense}', [ExpenseController::class, 'update'])->middleware('permission:edit_expenses,manage_expenses');
 	Route::delete('expenses/{expense}', [ExpenseController::class, 'destroy'])->middleware('permission:delete_expenses,manage_expenses');
+
+	// Other Income Categories
+	Route::get('other-income-categories', [OtherIncomeCategoryController::class, 'index'])->middleware('permission:view_other_income_categories,manage_other_income_categories');
+	Route::get('other-income-categories/{otherIncomeCategory}', [OtherIncomeCategoryController::class, 'show'])->middleware('permission:view_other_income_categories,manage_other_income_categories');
+	Route::post('other-income-categories', [OtherIncomeCategoryController::class, 'store'])->middleware('permission:add_other_income_categories,manage_other_income_categories');
+	Route::match(['PUT', 'PATCH'], 'other-income-categories/{otherIncomeCategory}', [OtherIncomeCategoryController::class, 'update'])->middleware('permission:edit_other_income_categories,manage_other_income_categories');
+	Route::delete('other-income-categories/{otherIncomeCategory}', [OtherIncomeCategoryController::class, 'destroy'])->middleware('permission:delete_other_income_categories,manage_other_income_categories');
+
+	// Other Incomes
+	Route::get('other-incomes', [OtherIncomeController::class, 'index'])->middleware('permission:view_other_incomes,manage_other_incomes');
+	Route::get('other-incomes/{otherIncome}', [OtherIncomeController::class, 'show'])->middleware('permission:view_other_incomes,manage_other_incomes');
+	Route::post('other-incomes', [OtherIncomeController::class, 'store'])->middleware('permission:add_other_incomes,manage_other_incomes');
+	Route::match(['PUT', 'PATCH'], 'other-incomes/{otherIncome}', [OtherIncomeController::class, 'update'])->middleware('permission:edit_other_incomes,manage_other_incomes');
+	Route::delete('other-incomes/{otherIncome}', [OtherIncomeController::class, 'destroy'])->middleware('permission:delete_other_incomes,manage_other_incomes');
+
+	// HR - Departments
+	Route::get('departments', [DepartmentController::class, 'index'])->middleware('permission:view_departments,manage_departments');
+	Route::get('departments/{department}', [DepartmentController::class, 'show'])->middleware('permission:view_departments,manage_departments');
+	Route::post('departments', [DepartmentController::class, 'store'])->middleware('permission:add_departments,manage_departments');
+	Route::match(['PUT', 'PATCH'], 'departments/{department}', [DepartmentController::class, 'update'])->middleware('permission:edit_departments,manage_departments');
+	Route::delete('departments/{department}', [DepartmentController::class, 'destroy'])->middleware('permission:delete_departments,manage_departments');
+
+	// HR - Designations
+	Route::get('designations', [DesignationController::class, 'index'])->middleware('permission:view_designations,manage_designations');
+	Route::get('designations/{designation}', [DesignationController::class, 'show'])->middleware('permission:view_designations,manage_designations');
+	Route::post('designations', [DesignationController::class, 'store'])->middleware('permission:add_designations,manage_designations');
+	Route::match(['PUT', 'PATCH'], 'designations/{designation}', [DesignationController::class, 'update'])->middleware('permission:edit_designations,manage_designations');
+	Route::delete('designations/{designation}', [DesignationController::class, 'destroy'])->middleware('permission:delete_designations,manage_designations');
+
+	// HR - Shifts
+	Route::get('shifts', [ShiftController::class, 'index'])->middleware('permission:view_shifts,manage_shifts');
+	Route::get('shifts/{shift}', [ShiftController::class, 'show'])->middleware('permission:view_shifts,manage_shifts');
+	Route::post('shifts', [ShiftController::class, 'store'])->middleware('permission:add_shifts,manage_shifts');
+	Route::match(['PUT', 'PATCH'], 'shifts/{shift}', [ShiftController::class, 'update'])->middleware('permission:edit_shifts,manage_shifts');
+	Route::delete('shifts/{shift}', [ShiftController::class, 'destroy'])->middleware('permission:delete_shifts,manage_shifts');
+
+	// HR - Employees
+	Route::get('employees', [EmployeeController::class, 'index'])->middleware('permission:view_employees,manage_employees');
+	Route::get('employees/{employee}', [EmployeeController::class, 'show'])->middleware('permission:view_employees,manage_employees');
+	Route::post('employees', [EmployeeController::class, 'store'])->middleware('permission:add_employees,manage_employees');
+	Route::match(['PUT', 'PATCH'], 'employees/{employee}', [EmployeeController::class, 'update'])->middleware('permission:edit_employees,manage_employees');
+	Route::delete('employees/{employee}', [EmployeeController::class, 'destroy'])->middleware('permission:delete_employees,manage_employees');
+
+	// HR - Employee Attendances
+	Route::get('employee-attendances', [EmployeeAttendanceController::class, 'index'])->middleware('permission:view_employee_attendances,manage_employee_attendances');
+	Route::post('employee-attendances/bulk', [EmployeeAttendanceController::class, 'bulkStore'])->middleware('permission:add_employee_attendances,manage_employee_attendances');
+	Route::get('employee-attendances/{employeeAttendance}', [EmployeeAttendanceController::class, 'show'])->middleware('permission:view_employee_attendances,manage_employee_attendances');
+	Route::post('employee-attendances', [EmployeeAttendanceController::class, 'store'])->middleware('permission:add_employee_attendances,manage_employee_attendances');
+	Route::match(['PUT', 'PATCH'], 'employee-attendances/{employeeAttendance}', [EmployeeAttendanceController::class, 'update'])->middleware('permission:edit_employee_attendances,manage_employee_attendances');
+	Route::delete('employee-attendances/{employeeAttendance}', [EmployeeAttendanceController::class, 'destroy'])->middleware('permission:delete_employee_attendances,manage_employee_attendances');
+
+	// HR - Leave Requests
+	Route::get('leave-requests', [LeaveRequestController::class, 'index'])->middleware('permission:view_leave_requests,manage_leave_requests');
+	Route::get('leave-requests/{leaveRequest}', [LeaveRequestController::class, 'show'])->middleware('permission:view_leave_requests,manage_leave_requests');
+	Route::post('leave-requests', [LeaveRequestController::class, 'store'])->middleware('permission:add_leave_requests,manage_leave_requests');
+	Route::match(['PUT', 'PATCH'], 'leave-requests/{leaveRequest}', [LeaveRequestController::class, 'update'])->middleware('permission:edit_leave_requests,manage_leave_requests,approve_leave_requests');
+	Route::post('leave-requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve'])->middleware('permission:approve_leave_requests,manage_leave_requests');
+	Route::post('leave-requests/{leaveRequest}/reject', [LeaveRequestController::class, 'reject'])->middleware('permission:approve_leave_requests,manage_leave_requests');
+	Route::post('leave-requests/{leaveRequest}/cancel', [LeaveRequestController::class, 'cancel'])->middleware('permission:edit_leave_requests,approve_leave_requests,manage_leave_requests');
+	Route::delete('leave-requests/{leaveRequest}', [LeaveRequestController::class, 'destroy'])->middleware('permission:delete_leave_requests,manage_leave_requests');
+
+	// HR - Salary Structures
+	Route::get('salary-structures', [SalaryStructureController::class, 'index'])->middleware('permission:view_salary_structures,manage_salary_structures');
+	Route::get('salary-structures/{salaryStructure}', [SalaryStructureController::class, 'show'])->middleware('permission:view_salary_structures,manage_salary_structures');
+	Route::post('salary-structures', [SalaryStructureController::class, 'store'])->middleware('permission:add_salary_structures,manage_salary_structures');
+	Route::match(['PUT', 'PATCH'], 'salary-structures/{salaryStructure}', [SalaryStructureController::class, 'update'])->middleware('permission:edit_salary_structures,manage_salary_structures');
+	Route::delete('salary-structures/{salaryStructure}', [SalaryStructureController::class, 'destroy'])->middleware('permission:delete_salary_structures,manage_salary_structures');
+
+	// HR - Payroll Batches
+	Route::get('payroll-batches', [PayrollBatchController::class, 'index'])->middleware('permission:view_payroll_batches,manage_payroll_batches');
+	Route::post('payroll-batches/generate', [PayrollBatchController::class, 'generate'])->middleware('permission:add_payroll_batches,manage_payroll_batches,generate_payroll');
+	Route::get('payroll-batches/{payrollBatch}', [PayrollBatchController::class, 'show'])->middleware('permission:view_payroll_batches,manage_payroll_batches');
+	Route::post('payroll-batches', [PayrollBatchController::class, 'store'])->middleware('permission:add_payroll_batches,manage_payroll_batches,generate_payroll');
+	Route::match(['PUT', 'PATCH'], 'payroll-batches/{payrollBatch}', [PayrollBatchController::class, 'update'])->middleware('permission:edit_payroll_batches,manage_payroll_batches,approve_payroll');
+	Route::post('payroll-batches/{payrollBatch}/approve', [PayrollBatchController::class, 'approve'])->middleware('permission:approve_payroll,manage_payroll_batches');
+	Route::post('payroll-batches/{payrollBatch}/post', [PayrollBatchController::class, 'post'])->middleware('permission:approve_payroll,manage_payroll_batches');
+	Route::post('payroll-batches/{payrollBatch}/void', [PayrollBatchController::class, 'void'])->middleware('permission:approve_payroll,manage_payroll_batches');
+	Route::delete('payroll-batches/{payrollBatch}', [PayrollBatchController::class, 'destroy'])->middleware('permission:delete_payroll_batches,manage_payroll_batches');
+
+	// HR - Payroll Items
+	Route::get('payroll-items', [PayrollItemController::class, 'index'])->middleware('permission:view_payroll_items,manage_payroll_items,view_payroll_batches,manage_payroll_batches');
+	Route::get('payroll-items/{payrollItem}', [PayrollItemController::class, 'show'])->middleware('permission:view_payroll_items,manage_payroll_items,view_payroll_batches,manage_payroll_batches');
+	Route::get('payroll-items/{payrollItem}/payslip', [PayrollItemController::class, 'payslip'])->middleware('permission:view_payroll_items,manage_payroll_items,print_payslips,manage_payroll_batches');
+	Route::post('payroll-items', [PayrollItemController::class, 'store'])->middleware('permission:add_payroll_items,manage_payroll_items,manage_payroll_batches');
+	Route::match(['PUT', 'PATCH'], 'payroll-items/{payrollItem}', [PayrollItemController::class, 'update'])->middleware('permission:edit_payroll_items,manage_payroll_items,manage_payroll_batches');
+	Route::delete('payroll-items/{payrollItem}', [PayrollItemController::class, 'destroy'])->middleware('permission:delete_payroll_items,manage_payroll_items,manage_payroll_batches');
+
+	// HR - Data Tools
+	Route::get('hr-data-tools/modules', [HrDataToolsController::class, 'modules'])->middleware('permission:manage_departments,manage_designations,manage_shifts,manage_employees,manage_employee_attendances,manage_leave_requests,manage_salary_structures,manage_payroll_batches');
+	Route::get('hr-data-tools/{module}/export', [HrDataToolsController::class, 'export'])->middleware('permission:manage_departments,manage_designations,manage_shifts,manage_employees,manage_employee_attendances,manage_leave_requests,manage_salary_structures,manage_payroll_batches');
+	Route::post('hr-data-tools/{module}/import', [HrDataToolsController::class, 'import'])->middleware('permission:manage_departments,manage_designations,manage_shifts,manage_employees,manage_employee_attendances,manage_leave_requests,manage_salary_structures,manage_payroll_batches');
 
 	// Transactions
 	Route::get('transactions', [TransactionController::class, 'index'])->middleware('permission:view_transactions,manage_transactions');

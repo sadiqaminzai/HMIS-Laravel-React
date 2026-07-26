@@ -14,6 +14,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
   const { categories, addCategory, updateCategory, deleteCategory } = useExpenseCategories();
   const { hospitals } = useHospitals();
   const [editing, setEditing] = useState<ExpenseCategory | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<ExpenseCategory | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -116,6 +117,18 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
     }
   };
 
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+
+    try {
+      await deleteCategory(categoryToDelete.id);
+      setCategoryToDelete(null);
+      toast.success('Expense category deleted successfully');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to delete expense category');
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -167,7 +180,7 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
                             <Pencil className="w-4 h-4" />
                         </button>
                         <button 
-                            onClick={() => deleteCategory(category.id)} 
+                          onClick={() => setCategoryToDelete(category)} 
                             className="p-1.5 text-rose-600 hover:bg-rose-50 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400 rounded-md transition-colors"
                             title="Delete"
                         >
@@ -303,6 +316,46 @@ export function ExpenseCategories({ hospital, userRole }: ExpenseCategoriesProps
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {categoryToDelete && (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Delete Category</h3>
+              <button
+                onClick={() => setCategoryToDelete(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                title="Close"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Are you sure you want to delete this expense category?
+              </p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {categoryToDelete.name}
+              </p>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setCategoryToDelete(null)}
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteCategory}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-rose-600 text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

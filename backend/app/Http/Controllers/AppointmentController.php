@@ -26,7 +26,7 @@ class AppointmentController extends Controller
         $query = Appointment::with([
             'hospital:id,name',
             'doctor:id,name,hospital_id',
-            'patient:id,name,patient_id,hospital_id',
+            'patient:id,name,patient_id,hospital_id,phone',
         ]);
 
         if ($user->role !== 'super_admin') {
@@ -56,7 +56,10 @@ class AppointmentController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('patient_name', 'like', "%{$search}%")
                     ->orWhere('appointment_number', 'like', "%{$search}%")
-                    ->orWhere('reason', 'like', "%{$search}%");
+                    ->orWhere('reason', 'like', "%{$search}%")
+                    ->orWhereHas('patient', function ($patientQuery) use ($search) {
+                        $patientQuery->where('phone', 'like', "%{$search}%");
+                    });
             });
         }
 

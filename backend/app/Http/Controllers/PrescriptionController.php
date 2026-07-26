@@ -24,7 +24,7 @@ class PrescriptionController extends Controller
     {
         $user = $request->user();
 
-        $query = Prescription::with(['items.groupLink', 'walkInPatient'])->orderByDesc('created_at');
+        $query = Prescription::with(['items.groupLink', 'patient', 'walkInPatient'])->orderByDesc('created_at');
 
         if ($user->role !== 'super_admin') {
             $query->where('hospital_id', $user->hospital_id ?? 0);
@@ -45,7 +45,13 @@ class PrescriptionController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('prescription_number', 'like', "%{$search}%")
                     ->orWhere('patient_name', 'like', "%{$search}%")
-                    ->orWhere('doctor_name', 'like', "%{$search}%");
+                    ->orWhere('doctor_name', 'like', "%{$search}%")
+                    ->orWhereHas('patient', function ($patientQuery) use ($search) {
+                        $patientQuery->where('phone', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('walkInPatient', function ($walkInQuery) use ($search) {
+                        $walkInQuery->where('phone', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -328,7 +334,7 @@ class PrescriptionController extends Controller
             return [
                 'message' => $isFullyDispensed ? 'Prescription dispensed successfully.' : 'Prescription partially dispensed successfully.',
                 'transaction' => $transaction->load(['details.medicine', 'patient']),
-                'prescription' => $prescription->load(['items.groupLink', 'walkInPatient']),
+                'prescription' => $prescription->load(['items.groupLink', 'patient', 'walkInPatient']),
             ];
         });
 

@@ -35,7 +35,8 @@ import {
   Key,
   LogOut,
   Hospital,
-  Database
+  Database,
+  Briefcase
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
@@ -253,6 +254,32 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
+    id: 'other-income',
+    translationKey: 'nav.otherIncome',
+    icon: <Receipt className="w-3.5 h-3.5" />,
+    anyPermissions: ['view_other_incomes', 'manage_other_incomes', 'view_other_income_categories', 'manage_other_income_categories'],
+    subItems: [
+      {
+        id: '/other-income/categories',
+        translationKey: 'nav.otherIncomeCategories',
+        icon: <ClipboardList className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_other_income_categories', 'manage_other_income_categories']
+      },
+      {
+        id: '/other-income/entries',
+        translationKey: 'nav.otherIncomeEntries',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_other_incomes', 'manage_other_incomes']
+      },
+      {
+        id: '/other-income/report',
+        translationKey: 'nav.otherIncomeReport',
+        icon: <BarChart className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_other_incomes', 'manage_other_incomes']
+      }
+    ]
+  },
+  {
     id: 'reports-menu',
     translationKey: 'nav.reports',
     icon: <BarChart className="w-3.5 h-3.5" />,
@@ -269,6 +296,78 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.ledger',
         icon: <BarChart className="w-3.5 h-3.5" />,
         anyPermissions: ['view_ledger', 'manage_ledger', 'export_ledger']
+      }
+    ]
+  },
+  {
+    id: 'hr-menu',
+    translationKey: 'nav.hr',
+    icon: <Briefcase className="w-3.5 h-3.5" />,
+    anyPermissions: [
+      'view_departments', 'manage_departments',
+      'view_designations', 'manage_designations',
+      'view_shifts', 'manage_shifts',
+      'view_employees', 'manage_employees',
+      'view_employee_attendances', 'manage_employee_attendances',
+      'view_leave_requests', 'manage_leave_requests',
+      'view_salary_structures', 'manage_salary_structures',
+      'view_payroll_batches', 'manage_payroll_batches',
+      'view_payroll_items', 'manage_payroll_items'
+    ],
+    subItems: [
+      {
+        id: '/hr/departments',
+        translationKey: 'nav.hrDepartments',
+        icon: <Building2 className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_departments', 'add_departments', 'edit_departments', 'delete_departments', 'manage_departments']
+      },
+      {
+        id: '/hr/designations',
+        translationKey: 'nav.hrDesignations',
+        icon: <UserCog className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_designations', 'add_designations', 'edit_designations', 'delete_designations', 'manage_designations']
+      },
+      {
+        id: '/hr/shifts',
+        translationKey: 'nav.hrShifts',
+        icon: <Calendar className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_shifts', 'add_shifts', 'edit_shifts', 'delete_shifts', 'manage_shifts']
+      },
+      {
+        id: '/hr/employees',
+        translationKey: 'nav.hrEmployees',
+        icon: <Users className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_employees', 'add_employees', 'edit_employees', 'delete_employees', 'manage_employees']
+      },
+      {
+        id: '/hr/attendances',
+        translationKey: 'nav.hrAttendances',
+        icon: <ClipboardList className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_employee_attendances', 'add_employee_attendances', 'edit_employee_attendances', 'delete_employee_attendances', 'manage_employee_attendances']
+      },
+      {
+        id: '/hr/leave-requests',
+        translationKey: 'nav.hrLeaveRequests',
+        icon: <FileText className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_leave_requests', 'add_leave_requests', 'edit_leave_requests', 'delete_leave_requests', 'approve_leave_requests', 'manage_leave_requests']
+      },
+      {
+        id: '/hr/salary-structures',
+        translationKey: 'nav.hrSalaryStructures',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_salary_structures', 'add_salary_structures', 'edit_salary_structures', 'delete_salary_structures', 'manage_salary_structures']
+      },
+      {
+        id: '/hr/payroll',
+        translationKey: 'nav.hrPayroll',
+        icon: <BarChart className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_payroll_batches', 'manage_payroll_batches', 'view_payroll_items', 'manage_payroll_items', 'generate_payroll', 'approve_payroll', 'print_payslips']
+      },
+      {
+        id: '/hr/data-tools',
+        translationKey: 'nav.hrDataTools',
+        icon: <Database className="w-3.5 h-3.5" />,
+        anyPermissions: ['manage_departments', 'manage_designations', 'manage_shifts', 'manage_employees', 'manage_employee_attendances', 'manage_leave_requests', 'manage_salary_structures', 'manage_payroll_batches']
       }
     ]
   }
@@ -385,6 +484,26 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     const isReceptionSubItem = ['/doctors', '/patients', '/appointments', '/discount-types', '/discount-catalog', '/rooms', '/room-bookings', '/surgeries'].includes(path);
     if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
+    }
+
+    const isOtherIncomeSubItem = ['/other-income/categories', '/other-income/entries', '/other-income/report'].includes(path);
+    if (!isOtherIncomeSubItem && path !== 'other-income' && expandedMenus.includes('other-income')) {
+      setExpandedMenus(prev => prev.filter(id => id !== 'other-income'));
+    }
+
+    const isHrSubItem = [
+      '/hr/departments',
+      '/hr/designations',
+      '/hr/shifts',
+      '/hr/employees',
+      '/hr/attendances',
+      '/hr/leave-requests',
+      '/hr/salary-structures',
+      '/hr/payroll',
+      '/hr/data-tools'
+    ].includes(path);
+    if (!isHrSubItem && path !== 'hr-menu' && expandedMenus.includes('hr-menu')) {
+      setExpandedMenus(prev => prev.filter(id => id !== 'hr-menu'));
     }
     
     navigate(path);

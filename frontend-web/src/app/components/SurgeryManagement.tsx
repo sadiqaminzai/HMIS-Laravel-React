@@ -70,6 +70,7 @@ interface PatientSurgeryItem {
   dischargeSummary?: string;
   dischargeCreatedBy?: string;
   dischargeCompletedBy?: string;
+  verificationToken?: string;
 }
 
 const mapType = (item: any): SurgeryTypeItem => ({
@@ -109,6 +110,7 @@ const mapPatientSurgery = (item: any): PatientSurgeryItem => ({
   dischargeSummary: item.discharge_summary || undefined,
   dischargeCreatedBy: item.discharge_created_by || undefined,
   dischargeCompletedBy: item.discharge_completed_by || undefined,
+  verificationToken: item.verification_token || undefined,
 });
 
 export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps) {
@@ -262,11 +264,10 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               .meta-row {
                 display: flex;
                 justify-content: space-between;
-                margin-bottom: 15px;
-                ${isCompactReceipt ? 'flex-direction: column; gap: 8px;' : ''}
+                margin-bottom: 12px;
               }
               .meta-block {
-                ${isCompactReceipt ? 'width: 100%;' : 'width: 48%;'}
+                width: 48%;
               }
               .label {
                 font-size: 10px;
@@ -314,19 +315,16 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               
               <div class="meta-row">
                 <div class="meta-block">
-                  <div class="label">Patient Name</div>
+                  <div class="label">Patient ID</div>
+                  <div class="value">${item.patientId || 'N/A'}</div>
+                  <div class="label" style="margin-top: 8px;">Patient Name</div>
                   <div class="value">${item.patientName}</div>
                 </div>
-                <div class="meta-block" style="${isCompactReceipt ? '' : 'text-align: right;'}">
+                <div class="meta-block" style="text-align: right;">
                   <div class="label">Invoice No / Date</div>
-                  <div class="value">SURG-${item.id}</div>
+                  <div class="value" style="font-size: ${isCompactReceipt ? '12px' : '16px'}">SURG-${item.id}</div>
                   <div style="font-size: ${isCompactReceipt ? '10px' : '14px'}">${item.surgeryDate}</div>
-                </div>
-              </div>
-              
-              <div class="meta-row">
-                <div class="meta-block">
-                  <div class="label">Surgeon</div>
+                  <div class="label" style="margin-top: 8px;">Surgeon</div>
                   <div class="value">${item.doctorName || 'N/A'}</div>
                 </div>
               </div>
@@ -334,17 +332,17 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <table>
                 <thead>
                   <tr>
-                    <th>Description</th>
-                    <th class="text-right">Amount</th>
+                    <th style="font-size: ${isCompactReceipt ? '16px' : '20px'}; font-weight: bold;">Description</th>
+                    <th class="text-right" style="font-size: ${isCompactReceipt ? '16px' : '20px'}; font-weight: bold;">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td>
-                      <div class="value">${item.surgeryName}</div>
-                      <div class="notes">${item.notes || 'No notes'}</div>
+                      <div class="value" style="font-size: ${isCompactReceipt ? '16px' : '20px'};">${item.surgeryName}</div>
+                      <div class="notes" style="font-size: ${isCompactReceipt ? '11px' : '14px'};">${item.notes || 'No notes'}</div>
                     </td>
-                    <td class="text-right value">${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="text-right value" style="font-size: ${isCompactReceipt ? '16px' : '20px'};">${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   </tr>
                 </tbody>
               </table>

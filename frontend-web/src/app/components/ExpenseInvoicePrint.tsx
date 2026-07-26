@@ -9,6 +9,7 @@ interface ExpenseInvoicePrintProps {
   hospital: Hospital;
   expense: Expense;
   categoryName: string;
+  voucherLabel?: string;
   onClose: () => void;
 }
 
@@ -16,6 +17,7 @@ export function ExpenseInvoicePrint({
   hospital,
   expense,
   categoryName,
+  voucherLabel = 'Expense Voucher',
   onClose
 }: ExpenseInvoicePrintProps) {
   const voucherNo = String(expense.sequenceId);
@@ -42,7 +44,7 @@ export function ExpenseInvoicePrint({
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>Expense Voucher</title>
+            <title>${escapeHtml(voucherLabel)}</title>
             <style>
               @page { size: a4 auto; margin: 10mm; }
               * { box-sizing: border-box; }
@@ -97,7 +99,7 @@ export function ExpenseInvoicePrint({
               </div>
 
               <div class="title-box">
-                <span class="title-text">Expense Voucher</span>
+                <span class="title-text">${escapeHtml(voucherLabel)}</span>
               </div>
 
               <div class="grid">
@@ -138,7 +140,7 @@ export function ExpenseInvoicePrint({
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>Expense Voucher</title>
+            <title>${escapeHtml(voucherLabel)}</title>
             <style>
               @page { size: ${paperWidth} auto; margin: 0; }
               * { box-sizing: border-box; }
@@ -153,6 +155,7 @@ export function ExpenseInvoicePrint({
               .title { font-size: ${baseFont + 2}px; font-weight: bold; text-transform: uppercase; text-align: center; margin: 6px 0; background: #000; color: #fff; padding: 4px; line-height: 1;}
               .meta { font-size: ${baseFont}px; margin-bottom: 6px; display: flex; justify-content: space-between; }
               .row { margin-bottom: 4px; font-size: ${baseFont}px; }
+              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-bottom: 8px; }
               .label { font-size: ${baseFont - 2}px; color: #555; text-transform: uppercase; display: block; margin-bottom: 1px;}
               .val { font-weight: bold; }
               table { width: 100%; border-collapse: collapse; margin: 8px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
@@ -172,16 +175,18 @@ export function ExpenseInvoicePrint({
                 <p class="h-contact">${escapeHtml(hospital.address || 'Address not available')}</p>
                 <p class="h-contact">${escapeHtml(hospital.phone || '')}</p>
               </div>
-              <div class="title">Expense Voucher</div>
+              <div class="title">${escapeHtml(voucherLabel)}</div>
               <div class="meta">
                 <span>No: ${escapeHtml(voucherNo)}</span>
                 <span>Date: ${escapeHtml(dateFormatted)}</span>
               </div>
               
-              <div class="row"><span class="label">Purpose / Title</span><span class="val">${escapeHtml(expense.title)}</span></div>
-              <div class="row"><span class="label">Category</span><span class="val">${escapeHtml(categoryName)}</span></div>
-              <div class="row"><span class="label">Payment</span><span class="val">${escapeHtml(expense.paymentMethod || 'Cash')}</span></div>
-              ${expense.reference ? `<div class="row"><span class="label">Reference</span><span class="val">${escapeHtml(expense.reference)}</span></div>` : ''}
+              <div class="details-grid">
+                <div class="row"><span class="label">Purpose / Title</span><span class="val">${escapeHtml(expense.title)}</span></div>
+                <div class="row"><span class="label">Category</span><span class="val">${escapeHtml(categoryName)}</span></div>
+                <div class="row"><span class="label">Payment</span><span class="val">${escapeHtml(expense.paymentMethod || 'Cash')}</span></div>
+                ${expense.reference ? `<div class="row"><span class="label">Reference</span><span class="val">${escapeHtml(expense.reference)}</span></div>` : ''}
+              </div>
               ${expense.notes ? `<div class="row"><span class="label">Notes</span><span class="val">${escapeHtml(expense.notes)}</span></div>` : ''}
               
               <table>
@@ -229,7 +234,8 @@ export function ExpenseInvoicePrint({
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
       pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Expense_Voucher_${voucherNo.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
+      const safeVoucherLabel = voucherLabel.replace(/[^a-zA-Z0-9-]+/g, '_');
+      pdf.save(`${safeVoucherLabel}_${voucherNo.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
     }
@@ -341,7 +347,7 @@ export function ExpenseInvoicePrint({
             </div>
 
             <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 uppercase tracking-wide border-b-2 border-gray-100 pb-2 inline-block">Expense Voucher</h2>
+              <h2 className="text-2xl font-bold text-gray-800 uppercase tracking-wide border-b-2 border-gray-100 pb-2 inline-block">{voucherLabel}</h2>
             </div>
 
             {/* Voucher Info */}

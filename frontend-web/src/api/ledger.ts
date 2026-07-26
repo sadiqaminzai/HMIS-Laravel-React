@@ -31,6 +31,9 @@ export interface LedgerEntryApi {
 export interface LedgerSummaryApi {
   income_total: number;
   expense_total: number;
+  expense_total_excluding_salary?: number;
+  salary_total?: number;
+  expense_with_salary_total?: number;
   net_total: number;
   due_total: number;
 }

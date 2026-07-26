@@ -225,8 +225,7 @@ export function DischargeSummaryPrint({
                        <span className="text-sm font-medium italic text-gray-600 mb-2">{surgeryItem.dischargeCompletedBy || printedBy}</span>
                     </div>
                     <div className="border-t border-gray-900 pt-1">
-                      <p className="font-bold text-gray-900 text-sm">Completed By</p>
-                      <p className="text-[10px] text-gray-600 uppercase tracking-wide">Authorized User</p>
+                      <p className="font-bold text-gray-900 text-sm">Prepared By</p>
                     </div>
                   </div>
 
@@ -245,7 +244,7 @@ export function DischargeSummaryPrint({
             </div>
 
             <div className="text-center mt-8 pt-4 border-t border-gray-100 text-[10px] text-gray-400">
-              <p className="font-medium text-gray-500">{hospital.name} • {hospital.address}</p>
+              <p className="font-medium text-gray-500">{hospital.name} ï¿½ {hospital.address}</p>
               <p>License No: {hospital.license}</p>
               <p>Printed By: {printedBy} on {new Date().toLocaleString()}</p>
               <p className="mt-1 italic">Powered by: Soft Care IT Solutions - Kabul Afghanistan. +93 789 68 10 10 | +93 70 102 1319 | +93 78 979 5964 | softcareitsolutions.com</p>

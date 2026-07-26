@@ -461,195 +461,211 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       : 1;
 
     const receiptHtml = `
-      <html>
-        <head>
-          <title>Room Booking Receipt</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              color: #111827;
-              margin: 0;
-              background: ${isCompactReceipt ? '#ffffff' : '#f3f4f6'};
-              padding: ${isCompactReceipt ? '0' : '12px'};
-            }
-            .ticket {
-              width: ${ticketWidth};
-              margin: 0 auto;
-              background: #ffffff;
-              border: 1px solid #e5e7eb;
-              border-radius: ${isCompactReceipt ? '0' : '10px'};
-              overflow: hidden;
-              box-shadow: ${isCompactReceipt ? 'none' : '0 4px 14px rgba(0, 0, 0, 0.08)'};
-            }
-            .head {
-              border-top: 4px solid ${brandColor};
-              text-align: center;
-              padding: ${isCompactReceipt ? '8px 8px 7px' : '10px 10px 8px'};
-            }
-            .logo {
-              max-width: ${isCompactReceipt ? '32mm' : '40mm'};
-              max-height: ${isCompactReceipt ? '14mm' : '18mm'};
-              object-fit: contain;
-              margin: 0 auto 6px;
-              display: block;
-            }
-            .hospital {
-              font-size: ${isCompactReceipt ? '11px' : '13px'};
-              font-weight: 700;
-              margin-bottom: 3px;
-            }
-            .meta {
-              font-size: ${isCompactReceipt ? '8px' : '9px'};
-              color: #4b5563;
-              line-height: 1.35;
-            }
-            .title {
-              margin-top: 7px;
-              font-size: ${isCompactReceipt ? '9px' : '10px'};
-              font-weight: 700;
-              letter-spacing: 0.08em;
-              text-transform: uppercase;
-              color: ${brandColor};
-            }
-            .line {
-              border-top: 1px dashed #d1d5db;
-              margin: 0 10px;
-            }
-            .content {
-              padding: ${isCompactReceipt ? '7px 8px 8px' : '12px 16px 16px'};
-            }
-            .row {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              gap: 8px;
-              font-size: ${isCompactReceipt ? '9px' : '12px'};
-              margin: 6px 0;
-              line-height: 1.4;
-              page-break-inside: avoid;
-            }
-            .key {
-              color: #4b5563;
-              text-align: left;
-              flex: 1;
-              font-weight: 500;
-            }
-            .val {
-              text-align: right;
-              font-weight: 600;
-              flex: 1.5;
-              max-width: 60%;
-              color: #111827;
-              word-break: break-word;
-            }
-            .remarks-block {
-              margin-top: 10px;
-              padding-top: 8px;
-              border-top: 1px dashed #d1d5db;
-              font-size: ${isCompactReceipt ? '9px' : '12px'};
-              page-break-inside: avoid;
-            }
-            .remarks-block .key {
-              color: #4b5563;
-              font-weight: 500;
-              margin-bottom: 3px;
-              text-align: left;
-            }
-            .remarks-block .val {
-              font-weight: 400;
-              font-style: italic;
-              color: #111827;
-              text-align: left;
-              word-break: break-word;
-            }
-            .amount {
-              margin-top: 10px;
-              border-top: 1px solid #e5e7eb;
-              padding-top: 10px;
-              page-break-inside: avoid;
-            }
-            .amount .total {
-              font-size: ${isCompactReceipt ? '11px' : '14px'};
-              color: ${brandColor};
-              font-weight: 700;
-            }
-            .footer {
-              margin-top: 12px;
-              border-top: 1px dashed #d1d5db;
-              padding-top: 8px;
-              text-align: center;
-              font-size: ${isCompactReceipt ? '7px' : '10px'};
-              color: #6b7280;
-              line-height: 1.35;
-              page-break-inside: avoid;
-            }
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Room Booking Receipt</title>
+    <style>
+      :root {
+        --brand-color: ${brandColor};
+      }
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #111827;
+        margin: 0;
+        background: ${isCompactReceipt ? '#ffffff' : '#f3f4f6'};
+        padding: ${isCompactReceipt ? '0' : '20px'};
+        line-height: 1.5;
+        ${pageRule}
+      }
+      * { box-sizing: border-box; }
+      .ticket {
+        width: ${ticketWidth};
+        margin: 0 auto;
+        background: #ffffff;
+        border: ${isCompactReceipt ? 'none' : '1px solid #e5e7eb'};
+        border-radius: ${isCompactReceipt ? '0' : '8px'};
+        overflow: hidden;
+        box-shadow: ${isCompactReceipt ? 'none' : '0 10px 25px -5px rgba(0, 0, 0, 0.1)'};
+        page-break-inside: avoid;
+      }
+      .head {
+        background-color: ${isCompactReceipt ? 'transparent' : 'var(--brand-color)'};
+        color: ${isCompactReceipt ? '#111827' : '#ffffff'};
+        text-align: center;
+        padding: ${isCompactReceipt ? '12px 8px 8px' : '24px 20px'};
+        ${isCompactReceipt ? 'border-bottom: 2px dashed #d1d5db;' : ''}
+        page-break-inside: avoid;
+      }
+      .logo {
+        max-width: ${isCompactReceipt ? '36mm' : '50mm'};
+        max-height: ${isCompactReceipt ? '16mm' : '24mm'};
+        object-fit: contain;
+        margin: 0 auto 10px;
+        display: block;
+        ${!isCompactReceipt ? 'filter: brightness(0) invert(1);' : ''}
+      }
+      .hospital {
+        font-size: ${isCompactReceipt ? '14px' : '20px'};
+        font-weight: 800;
+        margin-bottom: 4px;
+      }
+      .meta {
+        font-size: ${isCompactReceipt ? '10px' : '13px'};
+        color: ${isCompactReceipt ? '#4b5563' : 'rgba(255, 255, 255, 0.9)'};
+        line-height: 1.4;
+      }
+      .title-banner {
+        text-align: center;
+        padding: ${isCompactReceipt ? '10px 0' : '16px 0'};
+        background: ${isCompactReceipt ? 'transparent' : '#f8fafc'};
+        border-bottom: 1px solid ${isCompactReceipt ? 'transparent' : '#e5e7eb'};
+      }
+      .title {
+        font-size: ${isCompactReceipt ? '12px' : '15px'};
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: ${isCompactReceipt ? 'var(--brand-color)' : '#475569'};
+        margin: 0;
+      }
+      .content { padding: ${isCompactReceipt ? '12px' : '24px'}; }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: ${isCompactReceipt ? '4px 0' : '8px 0'};
+        border-bottom: 1px dotted #e5e7eb;
+        font-size: ${isCompactReceipt ? '11px' : '13px'};
+        page-break-inside: avoid;
+      }
+      .row:last-child { border-bottom: none; }
+      .key { color: #6b7280; text-align: left; flex: 1; font-weight: 500; }
+      .val { text-align: right; font-weight: 600; flex: 1.5; color: #111827; word-break: break-word; }
+      .amount-card {
+        margin-top: ${isCompactReceipt ? '16px' : '24px'};
+        background: ${isCompactReceipt ? 'transparent' : '#f8fafc'};
+        border-radius: ${isCompactReceipt ? '0' : '8px'};
+        padding: ${isCompactReceipt ? '12px 0 0' : '16px'};
+        border-top: ${isCompactReceipt ? '2px dashed #d1d5db' : '1px solid #e5e7eb'};
+        page-break-inside: avoid;
+      }
+      .amount-card .row { border-bottom: none; padding: ${isCompactReceipt ? '3px 0' : '6px 0'}; }
+      .amount-card .total-row {
+        margin-top: ${isCompactReceipt ? '6px' : '10px'};
+        padding-top: ${isCompactReceipt ? '8px' : '12px'};
+        border-top: ${isCompactReceipt ? '1px solid #000' : '2px solid #e2e8f0'};
+      }
+      .amount-card .total-key { font-size: ${isCompactReceipt ? '13px' : '16px'}; font-weight: 700; color: #0f172a; }
+      .amount-card .total-val { font-size: ${isCompactReceipt ? '15px' : '20px'}; font-weight: 800; color: var(--brand-color); }
+      .footer {
+        margin-top: ${isCompactReceipt ? '16px' : '24px'};
+        padding: ${isCompactReceipt ? '12px 0' : '20px'};
+        text-align: center;
+        font-size: ${isCompactReceipt ? '9px' : '11px'};
+        color: #64748b;
+        background-color: ${isCompactReceipt ? 'transparent' : '#f8fafc'};
+        border-top: ${isCompactReceipt ? '1px dashed #d1d5db' : '1px solid #e5e7eb'};
+        page-break-inside: avoid;
+      }
+      @media print {
+        html, body {
+          width: ${ticketWidth};
+          background: #ffffff;
+          padding: 0 !important;
+          margin: 0 !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          height: auto;
+        }
+        .ticket {
+          box-shadow: none;
+          border: none;
+          border-radius: 0;
+          width: ${ticketWidth};
+          margin: 0;
+          padding: 0;
+          page-break-inside: avoid;
+        }
+        .head { page-break-inside: avoid; }
+        .row, .amount-card, .footer { page-break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ticket">
+      <div class="head">
+        ${logoUrl ? `<img src="${logoUrl}" class="logo" alt="Hospital Logo" />` : ''}
+        <div class="hospital">${hospitalInfo.name}</div>
+        <div class="meta">${hospitalInfo.address || ''}</div>
+        <div class="meta">${hospitalInfo.phone || ''}</div>
+      </div>
+      
+      <div class="title-banner">
+        <h1 class="title">Room Booking Receipt</h1>
+      </div>
+      
+      ${!isCompactReceipt && item.patientName ? `<div class="row" style="border: none; padding: 0;"><div class="val" style="text-align: center; color: var(--brand-color); font-size: 14px;">Patient: ${item.patientName}</div></div>` : ''}
+      
+      <div class="content">
+        <div class="row">
+          <div class="key">Receipt Date</div>
+          <div class="val">${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+        </div>
+        <div class="row">
+          <div class="key">Patient Name</div>
+          <div class="val">${item.patientName}</div>
+        </div>
+        <div class="row">
+          <div class="key">Room No.</div>
+          <div class="val">${item.roomNumber || 'N/A'}</div>
+        </div>
+        <div class="row">
+          <div class="key">Attending Doctor</div>
+          <div class="val">${item.doctorName || 'N/A'}</div>
+        </div>
+        <div class="row">
+          <div class="key">Check In</div>
+          <div class="val">${new Date(item.checkInDate).toLocaleDateString('en-US', { dateStyle: 'medium' })}</div>
+        </div>
+        <div class="row">
+          <div class="key">Check Out</div>
+          <div class="val">${item.checkOutDate ? new Date(item.checkOutDate).toLocaleDateString('en-US', { dateStyle: 'medium' }) : 'Open'}</div>
+        </div>
+        <div class="row">
+          <div class="key">Status</div>
+          <div class="val">${item.status}</div>
+        </div>
+        <div class="row">
+          <div class="key">Payment</div>
+          <div class="val">${item.paymentStatus}</div>
+        </div>
 
-            @media print {
-              html, body {
-                width: ${ticketWidth};
-                background: #ffffff;
-                padding: 0;
-                margin: 0;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-              .ticket {
-                box-shadow: none;
-                border: none;
-                width: ${ticketWidth};
-                margin: 0;
-                padding: 0 !important;
-              }
-              ${pageRule}
-            }
-          </style>
-        </head>
-        <body>
-          <div class="ticket">
-            <div class="head">
-              ${logoUrl ? `<img src="${logoUrl}" class="logo" alt="Hospital Logo" />` : ''}
-              <div class="hospital">${hospitalInfo.name}</div>
-              <div class="meta">${hospitalInfo.address || ''}</div>
-              <div class="meta">${hospitalInfo.phone || ''} ${hospitalInfo.email ? `| ${hospitalInfo.email}` : ''}</div>
-              <div class="title">Room Booking Receipt</div>
-            </div>
-            <div class="line"></div>
-            <div class="content">
-              <div class="row"><div class="key">Receipt Date</div><div class="val">${new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</div></div>
-              <div class="row"><div class="key">Room</div><div class="val">${item.roomNumber}</div></div>
-              <div class="row"><div class="key">Patient</div><div class="val">${item.patientName}</div></div>
-              <div class="row"><div class="key">Doctor</div><div class="val">${item.doctorName || 'N/A'}</div></div>
-              <div class="row"><div class="key">Booking Date</div><div class="val">${new Date(item.bookingDate).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</div></div>
-              <div class="row"><div class="key">Check In</div><div class="val">${new Date(item.checkInDate).toLocaleDateString('en-US', { dateStyle: 'short' })}</div></div>
-              <div class="row"><div class="key">Check Out</div><div class="val">${item.checkOutDate ? new Date(item.checkOutDate).toLocaleDateString('en-US', { dateStyle: 'short' }) : 'Open'}</div></div>
-              <div class="row"><div class="key">Nights / Beds</div><div class="val">${nights} / ${item.bedsToBook}</div></div>
-              <div class="row"><div class="key">Status</div><div class="val">${item.status}</div></div>
-              <div class="row"><div class="key">Payment</div><div class="val">${item.paymentStatus}</div></div>
-
-              <div class="amount">
-                <div class="row"><div class="key">Discount</div><div class="val">${item.discountAmount.toFixed(2)}</div></div>
-                <div class="row"><div class="key">Total</div><div class="val total">${item.totalCost.toFixed(2)}</div></div>
-              </div>
-
-              ${item.remarks ? `
-              <div class="remarks-block">
-                <div class="key">Remarks</div>
-                <div class="val">${item.remarks}</div>
-              </div>
-              ` : ''}
-
-              <div class="footer">
-                Generated by ${hospitalInfo.name}<br/>
-                ShifaaScript
-              </div>
-            </div>
+        <div class="amount-card">
+          <div class="row total-row">
+            <div class="key total-key">Total Amount</div>
+            <div class="val total-val">${(item.totalCost || 0).toFixed(2)}</div>
           </div>
-          <script>window.onload = function() { window.print(); window.close(); }</script>
-        </body>
-      </html>
-    `;
+        </div>
 
-    const printWindow = window.open('', '_blank', 'width=900,height=700');
+      </div>
+      <div class="footer">
+        Generated by <strong>${hospitalInfo.name}</strong><br/>
+        Powered by ShifaaScript HMIS
+      </div>
+    </div>
+    <script>
+      window.onload = function() { 
+        setTimeout(function() {
+          window.print(); 
+          window.close(); 
+        }, 200);
+      }
+    </script>
+  </body>
+</html>
+`;
+const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) {
       toast.error('Unable to open print window. Please allow popups.');
       return;

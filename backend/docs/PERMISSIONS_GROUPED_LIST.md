@@ -44,6 +44,22 @@
 - print_discounts
 - view_expense_categories
 - view_expenses
+- add_other_income_categories
+- add_other_incomes
+- delete_other_income_categories
+- delete_other_incomes
+- edit_other_income_categories
+- edit_other_incomes
+- export_other_income_categories
+- export_other_incomes
+- import_other_income_categories
+- import_other_incomes
+- manage_other_income_categories
+- manage_other_incomes
+- print_other_income_categories
+- print_other_incomes
+- view_other_income_categories
+- view_other_incomes
 - view_discounts
 
 ## Hospitals

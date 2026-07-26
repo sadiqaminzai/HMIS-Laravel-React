@@ -35,6 +35,16 @@ const formatDoctorOptionLabel = (doctor: Doctor): string => {
   return `${nameLabel} (${truncateText(specialization, 52)})`;
 };
 
+const toDateInputValue = (value?: Date | string | null): string => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export function AppointmentManagement({ hospital, userRole, currentUser }: AppointmentManagementProps) {
   
       const doctorNeedsLinking =
@@ -64,8 +74,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [sortField, setSortField] = useState<string>('appointmentDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const today = (tz: string = currentHospital.timezone || 'UTC') => getISODateInTimeZone(tz);
-  const nowTime = (tz: string = currentHospital.timezone || 'UTC') => getTimeInTimeZone(tz);
+  const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
+  const nowTime = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getTimeInTimeZone(tz);
 
   const [formData, setFormData] = useState({
     patientId: '',
@@ -98,6 +108,12 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   // Get hospital-specific patients and doctors (or all if viewing all hospitals)
   const hospitalPatients = filterByHospital(patients);
   const hospitalDoctors = filterByHospital(doctors);
+  const patientsById = React.useMemo(() => {
+    return new Map(patients.map((patient) => [String(patient.id), patient]));
+  }, [patients]);
+
+  const getAppointmentPatientPhone = (apt: Appointment) =>
+    String(apt.patientPhone || patientsById.get(String(apt.patientId))?.phone || '').trim();
 
   // Filter appointments based on hospital and user role
   const getFilteredAppointments = () => {
@@ -116,9 +132,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       filtered = filtered.filter((apt) => {
         const dateLabel = formatOnlyDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType).toLowerCase();
         const timeLabel = String(apt.appointmentTime || '').toLowerCase();
+        const patientPhone = getAppointmentPatientPhone(apt).toLowerCase();
         return (
           apt.appointmentNumber.toLowerCase().includes(q) ||
           apt.patientName.toLowerCase().includes(q) ||
+          patientPhone.includes(q) ||
           apt.doctorName.toLowerCase().includes(q) ||
           apt.status.toLowerCase().includes(q) ||
           dateLabel.includes(q) ||
@@ -134,8 +152,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
       // Handle nested properties or special fields if necessary, but direct access works for flat props
       if (sortField === 'appointmentDate') {
-        aValue = a.appointmentDate.getTime();
-        bValue = b.appointmentDate.getTime();
+        const aTime = String(a.appointmentTime || '00:00').slice(0, 5);
+        const bTime = String(b.appointmentTime || '00:00').slice(0, 5);
+        aValue = new Date(`${toDateInputValue(a.appointmentDate)}T${aTime || '00:00'}`).getTime();
+        bValue = new Date(`${toDateInputValue(b.appointmentDate)}T${bTime || '00:00'}`).getTime();
+      } else if (sortField === 'createdAt' || sortField === 'updatedAt') {
+        aValue = aValue instanceof Date ? aValue.getTime() : (aValue ? new Date(aValue).getTime() : 0);
+        bValue = bValue instanceof Date ? bValue.getTime() : (bValue ? new Date(bValue).getTime() : 0);
       } else {
         aValue = aValue?.toString().toLowerCase() || '';
         bValue = bValue?.toString().toLowerCase() || '';
@@ -191,7 +214,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       AppointmentNo: apt.appointmentNumber,
       Patient: apt.patientName,
       Doctor: apt.doctorName,
-      Date: formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
+      Date: formatOnlyDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
       Time: apt.appointmentTime || '-',
       Reason: apt.reason,
       OriginalFee: apt.originalFeeAmount ?? 0,
@@ -226,7 +249,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
         apt.appointmentNumber,
         apt.patientName,
         apt.doctorName,
-        formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
+        formatOnlyDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType),
         apt.appointmentTime || '-',
         String((apt.originalFeeAmount ?? 0).toFixed(2)),
         String((apt.discountAmount ?? 0).toFixed(2)),
@@ -315,9 +338,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
           <div class="dashed-line"></div>
 
-          <div class="font-bold uppercase mt-4 mb-2">Patient Details</div>
-          <div class="flex-between">
-              <span class="label">Name:</span>
+          <div class="flex-between mt-4">
+              <span class="label font-bold uppercase">Patient Details</span>
               <span class="val font-bold">${selectedAppointment.patientName}</span>
           </div>
           <div class="flex-between">
@@ -329,9 +351,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <span class="val">${patientDisplayId}</span>
           </div>
 
-          <div class="font-bold uppercase mt-4 mb-2">Assigned Doctor</div>
-          <div class="flex-between">
-              <span class="label">Name:</span>
+          <div class="dashed-line"></div>
+
+          <div class="flex-between mt-2">
+              <span class="label font-bold uppercase">Assigned Doctor</span>
               <span class="val font-bold">${selectedAppointment.doctorName}</span>
           </div>
           <div class="flex-between mb-2">
@@ -639,7 +662,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     setFormData({
       patientId: apt.patientId,
       doctorId: apt.doctorId,
-      appointmentDate: apt.appointmentDate.toISOString().split('T')[0],
+      appointmentDate: toDateInputValue(apt.appointmentDate),
       appointmentTime: apt.appointmentTime || '',
       reason: apt.reason,
       notes: apt.notes || '',
@@ -710,7 +733,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search appointments..."
+              placeholder="Search name, phone, doctor..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -827,7 +850,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   </td>
                 </tr>
               ) : (
-                paginatedAppointments.map((apt) => (
+                paginatedAppointments.map((apt) => {
+                  const patientPhone = getAppointmentPatientPhone(apt);
+
+                  return (
                   <tr key={apt.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2">
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 font-mono">{apt.appointmentNumber}</span>
@@ -836,6 +862,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                       <div>
                         <div className="text-xs font-medium text-gray-900 dark:text-white">{apt.patientName}</div>
                         <div className="text-[10px] text-gray-600 dark:text-gray-400">{apt.patientAge}Y • {apt.patientGender}</div>
+                        {patientPhone && (
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{patientPhone}</div>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-2">
@@ -844,7 +873,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-1.5 text-[10px] text-gray-600 dark:text-gray-400">
                         <Calendar className="w-3 h-3" />
-                        <span>{formatDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType)}</span>
+                        <span>{formatOnlyDate(apt.appointmentDate, currentHospital.timezone, currentHospital.calendarType)}</span>
                         <Clock className="w-3 h-3 ml-1" />
                         <span>{apt.appointmentTime || 'No time'}</span>
                       </div>
@@ -983,7 +1012,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

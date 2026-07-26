@@ -6,6 +6,9 @@ use App\Models\Appointment;
 use App\Models\Expense;
 use App\Models\LabOrder;
 use App\Models\LedgerEntry;
+use App\Models\OtherIncome;
+use App\Models\PayrollBatch;
+use App\Models\PayrollItem;
 use App\Models\PatientSurgery;
 use App\Models\RoomBooking;
 use App\Models\Transaction;
@@ -263,6 +266,93 @@ class LedgerPostingService
     public function voidExpenseSnapshot(Expense $expense, ?string $actor = null): void
     {
         $this->voidSnapshot((int) $expense->hospital_id, 'expense', (int) $expense->id, $actor);
+    }
+
+    public function upsertOtherIncomeSnapshot(OtherIncome $otherIncome): LedgerEntry
+    {
+        return $this->upsertSnapshot(
+            (int) $otherIncome->hospital_id,
+            'other_income',
+            (int) $otherIncome->id,
+            [
+                'entry_direction' => 'income',
+                'module' => 'other_income',
+                'category' => $otherIncome->category?->name,
+                'title' => (string) $otherIncome->title,
+                'patient_id' => null,
+                'supplier_id' => null,
+                'amount' => (float) $otherIncome->amount,
+                'discount_amount' => 0,
+                'tax_amount' => 0,
+                'net_amount' => (float) $otherIncome->amount,
+                'paid_amount' => (float) $otherIncome->amount,
+                'due_amount' => 0,
+                'status' => (string) $otherIncome->status,
+                'posted_at' => $otherIncome->income_date ?? $otherIncome->created_at ?? now(),
+                'posted_by' => $otherIncome->updated_by ?? $otherIncome->created_by,
+                'voided_at' => null,
+                'metadata' => [
+                    'other_income_category_id' => $otherIncome->other_income_category_id,
+                    'sequence_id' => $otherIncome->sequence_id,
+                    'reference' => $otherIncome->reference,
+                    'payment_method' => $otherIncome->payment_method,
+                ],
+            ]
+        );
+    }
+
+    public function voidOtherIncomeSnapshot(OtherIncome $otherIncome, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $otherIncome->hospital_id, 'other_income', (int) $otherIncome->id, $actor);
+    }
+
+    public function upsertPayrollItemSnapshot(PayrollBatch $payrollBatch, PayrollItem $payrollItem): LedgerEntry
+    {
+        $netAmount = (float) ($payrollItem->final_amount ?? 0);
+        $isPaid = strtolower((string) ($payrollItem->status ?? 'pending')) === 'paid';
+        $paidAmount = $isPaid ? $netAmount : 0.0;
+        $dueAmount = $isPaid ? 0.0 : $netAmount;
+
+        $employeeName = trim((string) ($payrollItem->employee?->first_name ?? '') . ' ' . (string) ($payrollItem->employee?->last_name ?? ''));
+        $title = 'Salary #' . (string) ($payrollItem->slip_number ?? $payrollItem->id) . ($employeeName !== '' ? ' - ' . $employeeName : '');
+
+        return $this->upsertSnapshot(
+            (int) $payrollItem->hospital_id,
+            'payroll_item',
+            (int) $payrollItem->id,
+            [
+                'entry_direction' => 'expense',
+                'module' => 'salary',
+                'category' => 'payroll',
+                'title' => $title,
+                'patient_id' => null,
+                'supplier_id' => null,
+                'amount' => $netAmount,
+                'discount_amount' => 0,
+                'tax_amount' => 0,
+                'net_amount' => $netAmount,
+                'paid_amount' => $paidAmount,
+                'due_amount' => $dueAmount,
+                'status' => (string) ($payrollItem->status ?? 'pending'),
+                'currency' => (string) ($payrollBatch->currency ?? 'AFN'),
+                'posted_at' => $payrollItem->paid_at ?? $payrollBatch->posted_at ?? now(),
+                'posted_by' => $payrollBatch->posted_by ?? $payrollItem->updated_by ?? $payrollItem->created_by,
+                'voided_at' => null,
+                'metadata' => [
+                    'payroll_batch_id' => $payrollBatch->id,
+                    'payroll_month' => $payrollBatch->payroll_month,
+                    'employee_id' => $payrollItem->employee_id,
+                    'salary_structure_id' => $payrollItem->salary_structure_id,
+                    'slip_number' => $payrollItem->slip_number,
+                    'payment_method' => $payrollItem->payment_method,
+                ],
+            ]
+        );
+    }
+
+    public function voidPayrollItemSnapshot(PayrollItem $payrollItem, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $payrollItem->hospital_id, 'payroll_item', (int) $payrollItem->id, $actor);
     }
 
     private function upsertSnapshot(int $hospitalId, string $sourceType, int $sourceId, array $values): LedgerEntry

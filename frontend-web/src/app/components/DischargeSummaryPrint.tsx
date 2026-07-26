@@ -2,10 +2,10 @@ import React, { useRef, useEffect } from "react";
 import { useReactToPrint } from "react-to-print";
 import { X, Phone, Mail, Printer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { Hospital } from "../types";
-import { Patient } from "../context/PatientContext";
-import { Doctor } from "../context/DoctorContext";
+import { Doctor, Hospital, Patient } from "../types";
+import { useDoctors } from "../context/DoctorContext";
 import { useSettings } from "../context/SettingsContext";
+import { buildVerificationUrl } from "../utils/verification";
 
 interface PatientSurgeryItem {
   id: string;
@@ -25,6 +25,7 @@ interface PatientSurgeryItem {
   dischargeSummary?: string;
   dischargeCreatedBy?: string;
   dischargeCompletedBy?: string;
+  verificationToken?: string;
 }
 
 interface DischargeSummaryPrintProps {
@@ -53,6 +54,7 @@ export function DischargeSummaryPrint({
   onClose,
 }: DischargeSummaryPrintProps) {
   const componentRef = useRef<HTMLDivElement>(null);
+  const { doctors } = useDoctors();
   const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
 
   useEffect(() => {
@@ -69,7 +71,7 @@ export function DischargeSummaryPrint({
   const resolveAssetUrl = (path?: string | null): string => {
     if (!path) return "";
     if (path.startsWith("http")) return path;
-    const base = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api").replace("/api", "");
+    const base = (((import.meta as any).env?.VITE_API_BASE_URL as string) || "http://localhost:8000/api").replace("/api", "");
     const normalized = path.startsWith("/") ? path : `/${path}`;
     const withStorage = normalized.startsWith("/storage/") ? normalized : `/storage${normalized}`;
     return `${base}${withStorage}`;
@@ -95,9 +97,9 @@ export function DischargeSummaryPrint({
 
   const pageStyle = `
     @page { size: A4; margin: 0; }
-    body { visibility: hidden; background-color: white; margin: 0; padding: 0; }
+    body { visibility: hidden; background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     #discharge-print-content {
-      visibility: visible; position: relative; width: 100%; height: auto;
+      visibility: visible; position: relative; width: 100%; height: auto; min-height: auto;
       padding: 6mm 8mm 30mm 8mm !important; margin: 0; background: white;
       box-sizing: border-box !important; z-index: 9999; overflow: visible; display: block !important;
     }
@@ -107,12 +109,21 @@ export function DischargeSummaryPrint({
       left: 8mm; right: 8mm; bottom: 6mm; background: white; z-index: 10000;
       break-inside: avoid; page-break-inside: avoid; page-break-before: avoid;
     }
+    #print-signatures {
+      display: flex !important; justify-content: space-between !important; align-items: flex-end !important;
+      width: 100% !important; visibility: visible !important;
+      page-break-inside: avoid; break-inside: avoid; padding-top: 0 !important;
+    }
     #discharge-print-content .rx-print-logo {
       width: ${logoWidthPx}px !important; height: ${logoHeightPx}px !important; object-fit: contain !important;
     }
     #discharge-print-content .rx-print-signature {
       width: ${signatureWidthPx}px !important; height: ${signatureHeightPx}px !important; object-fit: contain !important;
     }
+    #print-footer p { margin: 0 !important; line-height: 1.1 !important; }
+    #print-footer .text-center.mt-8.pt-4 { margin-top: 2px !important; }
+    #print-footer svg { visibility: visible !important; display: block !important; width: 92px !important; height: 92px !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    #print-footer img { visibility: visible !important; display: block !important; max-height: none !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   `;
 
   const handlePrint = useReactToPrint({
@@ -152,8 +163,15 @@ export function DischargeSummaryPrint({
     doctorId: doctor?.id,
     dischargeDate: surgeryItem.dischargeDate
   });
+  const verificationUrl = buildVerificationUrl("surgery-discharge", surgeryItem.verificationToken);
+  const qrValue = verificationUrl || qrData;
 
   const completedByName = surgeryItem.dischargeCompletedBy || doctor?.name || surgeryItem.doctorName || "-";
+  const normalizedCompletedBy = completedByName.trim().toLowerCase();
+  const matchedDoctorByName = normalizedCompletedBy
+    ? doctors.find((d) => String(d.name || "").trim().toLowerCase() === normalizedCompletedBy)
+    : undefined;
+  const doctorForPrint = doctor || matchedDoctorByName;
 
   return (
     <div className={embedded ? "min-h-screen bg-white dark:bg-gray-900 py-4 px-3 sm:py-6 sm:px-4" : "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"}>
@@ -169,13 +187,13 @@ export function DischargeSummaryPrint({
           }
         `}
       </style>
-      <div className={`bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl flex flex-col ${embedded ? "shadow-none" : "max-h-[90vh] overflow-y-auto shadow-2xl"}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-xl w-full max-w-6xl flex flex-col ${embedded ? "shadow-none" : "max-h-[90vh] overflow-y-auto shadow-2xl"}`}>
         {!embedded && (
           <div className="screen-only sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">Print Discharge Summary</h2>
             <div className="flex gap-3">
               <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"><Printer className="w-4 h-4" />Print</button>
-              <button onClick={onClose} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+              <button onClick={onClose} title="Close" aria-label="Close" className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
             </div>
           </div>
         )}
@@ -183,34 +201,35 @@ export function DischargeSummaryPrint({
         <div id="discharge-print-content" ref={componentRef} className="p-4 sm:p-8 bg-white text-gray-900 flex flex-col min-h-full">
           {renderHospitalHeader("mb-2")}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mt-2 mb-6 sm:mb-8">
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mt-4 mb-8">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Patient Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm">
-                <div><span className="block text-xs font-bold text-blue-900">Name</span><span className="font-semibold text-gray-900">{patient?.name || surgeryItem.patientName}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Patient ID</span><span className="font-mono text-gray-900">{patient?.patientId || "N/A"}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Age / Gender</span><span className="text-gray-900">{patient?.age ? `${patient.age} Y` : "-"} / {patient?.gender || "-"}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Discharge Date</span><span className="text-gray-900">{surgeryItem.dischargeDate ? formatDate(surgeryItem.dischargeDate, hospital.timezone, hospital.calendarType) : "-"}</span></div>
+              <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-sm">
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Name</span><span className="font-semibold text-gray-900">{patient?.name || surgeryItem.patientName}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Patient ID</span><span className="font-mono text-gray-900">{patient?.patientId || "N/A"}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Age / Gender</span><span className="text-gray-900">{patient?.age ? `${patient.age} Y` : "-"} / {patient?.gender || "-"}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Discharge Date</span><span className="text-gray-900">{surgeryItem.dischargeDate ? formatDate(surgeryItem.dischargeDate, hospital.timezone, hospital.calendarType) : "-"}</span></div>
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-5">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-2 mb-3">Surgery Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm">
-                <div><span className="block text-xs font-bold text-blue-900">Doctor/Surgeon</span><span className="font-semibold text-gray-900">{doctor?.name || surgeryItem.doctorName || "N/A"}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Surgery Name</span><span className="text-gray-900">{surgeryItem.surgeryName}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Surgery Date</span><span className="text-gray-900">{formatDate(surgeryItem.surgeryDate, hospital.timezone, hospital.calendarType)}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900">Surgery Case #</span><span className="font-mono font-bold text-gray-900">SURG-{surgeryItem.id}</span></div>
+              <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-sm">
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Doctor/Surgeon</span><span className="font-semibold text-gray-900">{doctorForPrint?.name || surgeryItem.doctorName || completedByName || "N/A"}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Name</span><span className="text-gray-900">{surgeryItem.surgeryName}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Date</span><span className="text-gray-900">{formatDate(surgeryItem.surgeryDate, hospital.timezone, hospital.calendarType)}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Case #</span><span className="font-mono font-bold text-gray-900">SURG-{surgeryItem.id}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Status</span><span className="text-gray-900 capitalize">{surgeryItem.status.replace('_', ' ')}</span></div>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 print:grid-cols-12 gap-4 lg:gap-6 mb-4 flex-grow print-content-grow">
-            <div className="md:col-span-7 print:col-span-7 overflow-hidden">
-              <div className="bg-blue-600 text-white px-3 py-1.5 rounded-t-lg mb-0">
-                <h3 className="font-bold text-xs uppercase tracking-wide">Discharge Summary</h3>
+          <div className="grid grid-cols-1 gap-4 lg:gap-6 mb-8 flex-grow print-content-grow">
+            <div className="overflow-hidden">
+              <div className="bg-blue-600 print:bg-blue-600 print:!text-white print:!bg-blue-600 px-4 py-2 rounded-t-lg mb-0 text-white" style={{ WebkitPrintColorAdjust: 'exact', colorAdjust: 'exact', backgroundColor: '#2563eb', color: '#ffffff' }}>
+                <h3 className="font-bold text-xs uppercase tracking-wide text-white print:!text-white m-0" style={{ color: '#ffffff' }}>Discharge Summary</h3>
               </div>
-              <div className="border border-gray-200 rounded-b-lg p-3 min-h-[260px]">
+              <div className="border border-gray-200 rounded-b-lg p-5 min-h-[320px]">
                 {surgeryItem.dischargeSummary ? (
                   <div className="text-sm text-gray-800 rx-quill-content" dangerouslySetInnerHTML={{ __html: surgeryItem.dischargeSummary }} />
                 ) : (
@@ -219,57 +238,33 @@ export function DischargeSummaryPrint({
               </div>
             </div>
 
-            <div className="md:col-span-5 print:col-span-5 overflow-hidden">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Case Metadata</h3>
-                <div className="grid grid-cols-2 gap-y-2 text-sm">
-                  <div>
-                    <span className="block text-xs font-bold text-blue-900">Prepared By</span>
-                    <span className="text-gray-900">{surgeryItem.dischargeCreatedBy || "-"}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-blue-900">Completed By</span>
-                    <span className="text-gray-900">{completedByName}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-blue-900">Case</span>
-                    <span className="font-mono text-gray-900">SURG-{surgeryItem.id}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-blue-900">Status</span>
-                    <span className="text-gray-900 capitalize">{surgeryItem.status.replace('_', ' ')}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
-          <div id="print-footer" className="mt-auto">
-            <div id="print-signatures" className="pt-6 sm:pt-8 border-t border-gray-200 flex flex-col sm:flex-row items-center sm:items-end justify-between gap-6 sm:gap-0">
+          <div id="print-footer" className="mt-auto pt-8 mt-12 print:mt-16">
+            <div id="print-signatures" className="pt-6 sm:pt-8 border-t border-gray-200 flex flex-row items-end justify-between gap-0">
               <div className="flex flex-col items-center">
-                <div className="bg-white p-1 border border-gray-200 rounded-lg"><QRCodeSVG value={qrData} size={80} /></div>
+                <div className="bg-white p-1 border border-gray-200 rounded-lg"><QRCodeSVG value={qrValue} size={92} level="M" includeMargin /></div>
                 <span className="text-[10px] text-gray-500 mt-1 uppercase tracking-wide">Scan Case</span>
               </div>
               
               <div className="flex gap-10">
                   <div className="text-center min-w-[150px]">
                     <div className="h-28 mb-1 flex items-end justify-center">
-                       <span className="text-sm font-medium italic text-gray-600 mb-2">{completedByName}</span>
+                       <span className="text-sm font-medium italic text-gray-600 mb-2">{surgeryItem.dischargeCreatedBy || "-"}</span>
                     </div>
                     <div className="border-t border-gray-900 pt-1">
-                      <p className="font-bold text-gray-900 text-sm">Completed By</p>
-                      <p className="text-[10px] text-gray-600 uppercase tracking-wide">Authorized User</p>
+                      <p className="font-bold text-gray-900 text-sm">Prepared By</p>
                     </div>
                   </div>
 
                   <div className="text-center min-w-[150px]">
-                    {doctor?.signature ? (
-                      <img src={resolveAssetUrl(doctor.signature)} alt="Signature" className="rx-print-signature max-h-28 h-auto mx-auto mb-1 object-contain" />
+                    {doctorForPrint?.signature ? (
+                      <img src={resolveAssetUrl(doctorForPrint.signature)} alt="Signature" className="rx-print-signature max-h-28 h-auto mx-auto mb-1 object-contain" />
                     ) : (
-                      <div className="h-28 mb-1"></div>
+                      <div className="h-28 mb-1 flex items-end justify-center text-xs italic text-gray-500">No signature on file</div>
                     )}
                     <div className="border-t border-gray-900 pt-1">
-                      <p className="font-bold text-gray-900 text-sm">{doctor?.name || surgeryItem.doctorName || "Doctor"}</p>
+                      <p className="font-bold text-gray-900 text-sm">{doctorForPrint?.name || surgeryItem.doctorName || completedByName || "Doctor"}</p>
                       <p className="text-[10px] text-gray-600 uppercase tracking-wide">Doctor / Surgeon</p>
                     </div>
                   </div>

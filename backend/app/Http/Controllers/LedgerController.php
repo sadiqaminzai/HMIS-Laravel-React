@@ -89,13 +89,29 @@ class LedgerController extends Controller
         $query = $this->buildFilteredQuery($request)->whereNull('voided_at');
 
         $income = (clone $query)->where('entry_direction', 'income')->sum('net_amount');
-        $expense = (clone $query)->where('entry_direction', 'expense')->sum('net_amount');
+        $salaryExpense = (clone $query)
+            ->where('entry_direction', 'expense')
+            ->where('module', 'salary')
+            ->sum('net_amount');
+
+        $expenseExcludingSalary = (clone $query)
+            ->where('entry_direction', 'expense')
+            ->where(function ($q) {
+                $q->whereNull('module')
+                    ->orWhere('module', '!=', 'salary');
+            })
+            ->sum('net_amount');
+
+        $expenseWithSalary = (float) $expenseExcludingSalary + (float) $salaryExpense;
         $due = (clone $query)->sum('due_amount');
 
         return response()->json([
             'income_total' => round((float) $income, 2),
-            'expense_total' => round((float) $expense, 2),
-            'net_total' => round((float) $income - (float) $expense, 2),
+            'expense_total' => round($expenseWithSalary, 2),
+            'expense_total_excluding_salary' => round((float) $expenseExcludingSalary, 2),
+            'salary_total' => round((float) $salaryExpense, 2),
+            'expense_with_salary_total' => round($expenseWithSalary, 2),
+            'net_total' => round((float) $income - $expenseWithSalary, 2),
             'due_total' => round((float) $due, 2),
         ]);
     }

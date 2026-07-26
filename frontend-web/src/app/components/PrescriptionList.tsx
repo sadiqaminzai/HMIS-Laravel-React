@@ -112,7 +112,7 @@ const loadImage = (url: string): Promise<string | null> => {
 export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getShowPrescriptionListMeta } = useSettings();
   const { prescriptions, deletePrescription, dispensePrescription } = usePrescriptions();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -156,6 +156,11 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  React.useEffect(() => {
+    if (!currentHospital?.id || isAllHospitals) return;
+    loadHospitalSetting(currentHospital.id).catch(() => {});
+  }, [currentHospital?.id, isAllHospitals, loadHospitalSetting]);
 
   // Update prescriptions when filter dependencies change
   React.useEffect(() => {
@@ -308,6 +313,13 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     return `walkin-name:${String(prescription.patientName || '').trim().toLowerCase()}`;
   };
 
+  const getPrescriptionPatientPhone = (prescription: any) =>
+    String(
+      prescription.patientPhone ||
+      patients.find((patient) => String(patient.id) === String(prescription.patientId))?.phone ||
+      ''
+    ).trim();
+
   const sortedByDateDesc = React.useMemo(() => {
     return [...visiblePrescriptions].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -342,6 +354,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const filteredPrescriptions = basePrescriptions.filter((p) => {
     const search = searchTerm.toLowerCase();
     const previous = previousPrescriptionById.get(p.id);
+    const patientPhone = getPrescriptionPatientPhone(p).toLowerCase();
 
     const nextVisitDate = p.nextVisit ? new Date(p.nextVisit) : null;
     const now = new Date();
@@ -375,6 +388,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     const matchesSearch =
       p.prescriptionNumber.toLowerCase().includes(search) ||
       p.patientName.toLowerCase().includes(search) ||
+      patientPhone.includes(search) ||
       p.doctorName.toLowerCase().includes(search) ||
       (p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType).toLowerCase().includes(search) : false) ||
       (showNextVisitOnly && previous?.prescriptionNumber ? previous.prescriptionNumber.toLowerCase().includes(search) : false);
@@ -396,6 +410,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           name: prescription.patientName,
           age: prescription.patientAge,
           gender: prescription.patientGender,
+          phone: getPrescriptionPatientPhone(prescription),
           hospitalId: prescription.hospitalId,
         };
     const doctor = doctors.find(d => d.id === prescription.doctorId);
@@ -414,6 +429,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           name: prescription.patientName,
           age: prescription.patientAge,
           gender: prescription.patientGender,
+          phone: getPrescriptionPatientPhone(prescription),
           hospitalId: prescription.hospitalId,
         };
     const doctor = doctors.find(d => d.id === prescription.doctorId);
@@ -485,7 +501,15 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const paginatedPrescriptions = sortedPrescriptions.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(sortedPrescriptions.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(sortedPrescriptions.length / itemsPerPage));
+  const showPrescriptionListMeta = isAllHospitals ? true : getShowPrescriptionListMeta(currentHospital.id);
+  const tableColumnCount = (showPrescriptionListMeta ? 1 : 0) + 7 + (showNextVisitOnly ? 1 : 0);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -618,6 +642,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     // Load Settings
     await loadHospitalSetting(hospitalInfo.id);
     const printAssetSettings = getPrescriptionPrintAssetSettings(hospitalInfo.id);
+    const showPrescriptionListMetaForPrint = getShowPrescriptionListMeta(hospitalInfo.id);
 
     // Load Images
     const logoUrl = resolveAssetUrl(hospitalInfo.logo);
@@ -755,9 +780,17 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     const pCol2 = pX + (cardWidth / 2);
 
     drawField("Name", prescription.patientName, pX, row1);
-    drawField("Patient ID", patientInfo?.patientId || prescription.walkInPatientId || '-', pCol2, row1);
+    if (showPrescriptionListMetaForPrint) {
+      drawField("Patient ID", patientInfo?.patientId || prescription.walkInPatientId || '-', pCol2, row1);
+    } else {
+      drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row1);
+    }
     drawField("Age / Gender", `${prescription.patientAge} Y / ${prescription.patientGender}`, pX, row2);
-    drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row2);
+    if (showPrescriptionListMetaForPrint) {
+      drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row2);
+    } else {
+      drawField("Next Visit", prescription.nextVisit ? formatDate(prescription.nextVisit, hospitalInfo.timezone, hospitalInfo.calendarType) : '-', pCol2, row2);
+    }
 
     // Doctor Data (Grid + Wrap)
     const dCol2 = dX + (cardWidth / 2);
@@ -1037,7 +1070,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={showNextVisitOnly ? 'Search next visit patients...' : 'Search prescriptions...'}
+              placeholder={showNextVisitOnly ? 'Search next visits by name or phone...' : 'Search prescriptions, patient, phone...'}
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -1139,12 +1172,14 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th onClick={() => handleSort('prescriptionNumber')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <div className="flex items-center gap-1.5">
-                    Rx #
-                    {renderSortIcon('prescriptionNumber')}
-                  </div>
-                </th>
+                {showPrescriptionListMeta && (
+                  <th onClick={() => handleSort('prescriptionNumber')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      Rx #
+                      {renderSortIcon('prescriptionNumber')}
+                    </div>
+                  </th>
+                )}
                 <th onClick={() => handleSort('createdAt')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
                     Date
@@ -1186,6 +1221,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               {paginatedPrescriptions.length > 0 ? (
                 paginatedPrescriptions.map((prescription) => {
                   const dispenseSummary = getDispenseSummary(prescription);
+                  const patientPhone = getPrescriptionPatientPhone(prescription);
                   const nextVisitDate = prescription.nextVisit ? new Date(prescription.nextVisit) : null;
                   const now = new Date();
                   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1198,11 +1234,13 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     key={prescription.id}
                     className={`${isTodayVisit ? 'bg-amber-50/80 dark:bg-amber-900/20' : ''} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group`}
                   >
-                    <td className="px-4 py-2">
-                      <span className="font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">
-                        {prescription.prescriptionNumber}
-                      </span>
-                    </td>
+                    {showPrescriptionListMeta && (
+                      <td className="px-4 py-2">
+                        <span className="font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">
+                          {prescription.prescriptionNumber}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400">
                       <div className="flex items-center gap-1.5">
                         <Calendar className="w-3 h-3 text-gray-400" />
@@ -1222,6 +1260,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     <td className="px-4 py-2">
                       <div className="text-xs font-medium text-gray-900 dark:text-white">{prescription.patientName}</div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400">{prescription.patientAge}Y • {prescription.patientGender}</div>
+                      {patientPhone && (
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400">{patientPhone}</div>
+                      )}
                     </td>
                     {showNextVisitOnly && (
                       <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
@@ -1320,7 +1361,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                 )})
               ) : (
                 <tr>
-                  <td colSpan={showNextVisitOnly ? 9 : 8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={tableColumnCount} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
                         <Search className="w-6 h-6 text-gray-400 opacity-50" />
@@ -1337,9 +1378,10 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         
         {/* Footer with totals and pagination */}
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
+          {showPrescriptionListMeta ? (
           <div className="flex items-center gap-4">
              <span>
-              Showing <span className="font-semibold text-gray-900 dark:text-white">{indexOfFirstItem + 1}</span> to <span className="font-semibold text-gray-900 dark:text-white">{Math.min(indexOfLastItem, sortedPrescriptions.length)}</span> of <span className="font-semibold text-gray-900 dark:text-white">{sortedPrescriptions.length}</span> results
+              Showing <span className="font-semibold text-gray-900 dark:text-white">{sortedPrescriptions.length ? indexOfFirstItem + 1 : 0}</span> to <span className="font-semibold text-gray-900 dark:text-white">{Math.min(indexOfLastItem, sortedPrescriptions.length)}</span> of <span className="font-semibold text-gray-900 dark:text-white">{sortedPrescriptions.length}</span> results
              </span>
              <div className="flex items-center gap-2">
                <span>Rows per page:</span>
@@ -1359,6 +1401,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                </select>
              </div>
           </div>
+          ) : (
+            <div aria-hidden="true" />
+          )}
           
           <div className="flex items-center gap-1">
             <button
@@ -1379,8 +1424,14 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             </button>
             
             <div className="flex items-center gap-1 mx-2">
+              {showPrescriptionListMeta ? (
+              <>
               <span className="font-medium text-gray-900 dark:text-white">Page {currentPage}</span>
               <span>of {totalPages}</span>
+              </>
+              ) : (
+                <span className="sr-only">Page {currentPage} of {totalPages}</span>
+              )}
             </div>
 
             <button

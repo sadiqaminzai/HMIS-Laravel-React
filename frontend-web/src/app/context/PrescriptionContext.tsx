@@ -82,6 +82,7 @@ const mapPrescription = (p: any): Prescription => ({
     : (p.walk_in_patient_serial_no ? String(p.walk_in_patient_serial_no) : (p.walk_in_patient_id ? String(p.walk_in_patient_id) : null)),
   isWalkIn: Boolean(p.is_walk_in),
   patientName: p.patient_name,
+  patientPhone: p.patient?.phone ?? p.walk_in_patient?.phone ?? p.patient_phone ?? '',
   patientAge: Number(p.patient_age ?? 0),
   patientGender: p.patient_gender ?? 'other',
   doctorId: String(p.doctor_id),

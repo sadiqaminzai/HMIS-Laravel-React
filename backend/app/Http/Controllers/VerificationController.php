@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LabOrder;
 use App\Models\Patient;
+use App\Models\PatientSurgery;
 use App\Models\Prescription;
 use App\Models\Transaction;
 use App\Models\User;
@@ -87,6 +88,24 @@ class VerificationController extends Controller
                 'hospital' => $transaction->hospital,
                 'patient' => $transaction->patient,
                 'supplier' => $transaction->supplier,
+            ],
+        ]);
+    }
+
+    public function surgeryDischarge(string $token)
+    {
+        $surgeryCase = PatientSurgery::with(['hospital', 'patient', 'doctor', 'surgery'])
+            ->where('verification_token', $token)
+            ->where('is_delete', false)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'patient_surgery' => $surgeryCase,
+                'hospital' => $surgeryCase->hospital,
+                'patient' => $surgeryCase->patient,
+                'doctor' => $this->doctorPayload($surgeryCase->doctor),
+                'surgery' => $surgeryCase->surgery,
             ],
         ]);
     }

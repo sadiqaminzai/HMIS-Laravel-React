@@ -33,6 +33,7 @@ export interface HospitalSetting {
   prescriptionPrintAssetSettings: PrescriptionPrintAssetSettings;
   showOutOfStockMedicines: boolean;
   showOutOfStockMedicinesForPharmacy: boolean;
+  showPrescriptionListMeta: boolean;
 }
 
 interface Settings {
@@ -53,6 +54,7 @@ interface SettingsContextType {
   getPrescriptionPrintAssetSettings: (hospitalId: string) => PrescriptionPrintAssetSettings;
   getShowOutOfStockMedicines: (hospitalId: string) => boolean;
   getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
+  getShowPrescriptionListMeta: (hospitalId: string) => boolean;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
@@ -103,6 +105,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getPrescriptionPrintAssetSettings: () => defaultPrescriptionPrintAssetSettings,
   getShowOutOfStockMedicines: () => false,
   getShowOutOfStockMedicinesForPharmacy: () => false,
+  getShowPrescriptionListMeta: () => true,
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -191,6 +194,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (payload.showOutOfStockMedicinesForPharmacy !== undefined) {
       body.show_out_of_stock_medicines_to_pharmacy = payload.showOutOfStockMedicinesForPharmacy;
     }
+    if (payload.showPrescriptionListMeta !== undefined) {
+      body.show_prescription_list_meta = payload.showPrescriptionListMeta;
+    }
 
     const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
     setSettingsByHospital((prev) => ({
@@ -224,6 +230,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       },
       showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
+      showPrescriptionListMeta: Boolean(raw.show_prescription_list_meta ?? true),
     };
   };
 
@@ -238,6 +245,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       prescriptionPrintAssetSettings: { ...defaultPrescriptionPrintAssetSettings },
       showOutOfStockMedicines: false,
       showOutOfStockMedicinesForPharmacy: false,
+      showPrescriptionListMeta: true,
     };
   };
 
@@ -273,6 +281,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).showOutOfStockMedicinesForPharmacy;
   };
 
+  const getShowPrescriptionListMeta = (hospitalId: string): boolean => {
+    return getHospitalSetting(hospitalId).showPrescriptionListMeta;
+  };
+
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
     const config = getPatientIdConfig(hospitalId);
     const number = (config.startNumber + currentCount).toString().padStart(config.digits, '0');
@@ -291,6 +303,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getPrescriptionPrintAssetSettings,
       getShowOutOfStockMedicines,
       getShowOutOfStockMedicinesForPharmacy,
+      getShowPrescriptionListMeta,
       generatePatientId,
       loadHospitalSetting,
       saveHospitalSetting

@@ -59,6 +59,8 @@ const formatMedicineDisplay = (brand: string, generic?: string, type?: string, s
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 };
 
+const createMedicineRowId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 const toMaxLength = (value: string | undefined | null, max = 255) => {
   if (!value) return '';
   return String(value).slice(0, max);
@@ -428,7 +430,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         const displayName = formatMedicineDisplay(normalizedBrand, generic, medType, strength, true);
 
         return {
-          rowId: Date.now().toString() + Math.random().toString(),
+          rowId: createMedicineRowId(),
           medicineId: med.medicineId || '',
           brandName: displayName,
           genericName: generic || '',
@@ -486,13 +488,17 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   // Filter patients based on search and current hospital.
   // Doctors/Admins: only show patients that have scheduled appointments.
+  const getPatientSearchDisplay = (patient: Patient) =>
+    `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}${patient.phone ? ` - ${patient.phone}` : ''}`.trim();
+
   const filteredPatients = patients.filter((p) => {
     if (String(p.hospitalId) !== String(currentHospital.id)) return false;
 
     const search = patientSearch.toLowerCase();
     const matchesSearch =
       p.name.toLowerCase().includes(search) ||
-      p.patientId.toLowerCase().includes(search);
+      p.patientId.toLowerCase().includes(search) ||
+      String(p.phone || '').toLowerCase().includes(search);
 
     if (!matchesSearch) return false;
 
@@ -506,7 +512,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const handlePatientSelect = (patient: Patient) => {
     setSelectedPatient(patient);
-    setPatientSearch(patient.name);
+    setPatientSearch(getPatientSearchDisplay(patient));
     setShowPatientDropdown(false);
 
     // Auto-add first medicine row
@@ -581,7 +587,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   const addMedicineRow = () => {
     const newRow: MedicineRow = {
-      rowId: Date.now().toString(),
+      rowId: createMedicineRowId(),
       medicineId: '',
       brandName: '',
       genericName: '',
@@ -593,12 +599,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       isTemporary: false
     };
     shouldScrollMedicinesToBottomRef.current = true;
-    setMedicines([...medicines, newRow]);
+    setMedicines((prev) => [...prev, newRow]);
   };
 
   const addTemporaryMedicineRow = () => {
     const newRow: MedicineRow = {
-      rowId: Date.now().toString(),
+      rowId: createMedicineRowId(),
       medicineId: '',
       brandName: '',
       genericName: '',
@@ -610,7 +616,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       isTemporary: true
     };
     shouldScrollMedicinesToBottomRef.current = true;
-    setMedicines([...medicines, newRow]);
+    setMedicines((prev) => [...prev, newRow]);
   };
 
   const addMedicineSetRows = () => {
@@ -634,7 +640,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
           ? inventory.find((invMedicine) => invMedicine.id === item.medicineId)
           : inventory.find(
               (invMedicine) =>
-                invMedicine.hospitalId === currentHospital.id &&
+                String(invMedicine.hospitalId) === String(currentHospital.id) &&
                 invMedicine.brandName.toLowerCase() === item.medicineName.toLowerCase()
             );
 
@@ -644,7 +650,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         const strength = item.strength || matchedInventoryMedicine?.strength || '';
 
         return {
-          rowId: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+          rowId: `${createMedicineRowId()}-${index}`,
           medicineId: matchedInventoryMedicine?.id || item.medicineId || '',
           brandName: formatMedicineDisplay(brand, generic, medType, strength, true),
           genericName: generic,
@@ -824,12 +830,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   }, []);
 
   const removeMedicineRow = (rowId: string) => {
-    setMedicines(medicines.filter(m => m.rowId !== rowId));
+    setMedicines((prev) => prev.filter((m) => m.rowId !== rowId));
   };
 
   const updateMedicineRow = (rowId: string, field: keyof MedicineRow, value: any) => {
-    setMedicines(medicines.map(m => {
-      if (m.rowId === rowId) {
+    setMedicines((prev) => prev.map((m) => {
+      if (String(m.rowId) === String(rowId)) {
         const updated = { ...m, [field]: value };
         
         // Auto-calculate quantity when dose or duration changes
@@ -847,8 +853,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 
   // Batch update multiple fields at once to avoid React state batching issues
   const updateMedicineRowBatch = (rowId: string, updates: Partial<MedicineRow>) => {
-    setMedicines(medicines.map(m => {
-      if (m.rowId === rowId) {
+    setMedicines((prev) => prev.map((m) => {
+      if (String(m.rowId) === String(rowId)) {
         return { ...m, ...updates };
       }
       return m;
@@ -905,7 +911,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     
     // Auto-complete if exact match found
     const medicine = inventory.find(m =>
-      m.hospitalId === currentHospital.id &&
+      String(m.hospitalId) === String(currentHospital.id) &&
       m.status === 'active' &&
       (!hideOutOfStockForDoctors || (m.stock ?? 0) > 0) &&
       m.brandName.toLowerCase() === searchTerm.toLowerCase()
@@ -1188,11 +1194,19 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   onChange={(e) => {
                     setPatientSearch(e.target.value);
                     setShowPatientDropdown(true);
+                    setHighlightedPatientIndex(0);
                   }}
-                  onFocus={() => setShowPatientDropdown(true)}
+                  onFocus={() => {
+                    setShowPatientDropdown(true);
+                    setHighlightedPatientIndex(0);
+                  }}
+                  onBlur={() => setTimeout(() => {
+                    setShowPatientDropdown(false);
+                    setHighlightedPatientIndex(-1);
+                  }, 200)}
                   onKeyDown={handlePatientSearchKeyDown}
                   className="w-full pl-9 pr-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Type patient name or ID..."
+                  placeholder="Type patient name, ID, or phone..."
                 />
               </div>
               
@@ -1203,7 +1217,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     filteredPatients.map((patient, index) => (
                       <div
                         key={patient.id}
-                        onClick={() => handlePatientSelect(patient)}
+                        onMouseEnter={() => setHighlightedPatientIndex(index)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handlePatientSelect(patient);
+                        }}
                         className={`px-3 py-2 cursor-pointer transition-colors ${
                           index === highlightedPatientIndex
                             ? 'bg-blue-50 border-l-2 border-blue-500'
@@ -1214,6 +1232,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                         <div className="text-xs text-gray-500">
                           {patient.patientId} • Age: {patient.age} • {patient.gender}
                         </div>
+                        {patient.phone && (
+                          <div className="text-xs text-gray-500">{patient.phone}</div>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -1652,6 +1673,20 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
   const [remoteMedicines, setRemoteMedicines] = useState<Medicine[]>([]);
   const medicineInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+
+  const clearBlurTimeout = React.useCallback(() => {
+    if (blurTimeoutRef.current !== null) {
+      window.clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      clearBlurTimeout();
+    };
+  }, [clearBlurTimeout]);
 
   const updateDropdownPosition = React.useCallback(() => {
     if (showMedicineDropdown && medicineInputRef.current && dropdownRef.current) {
@@ -1679,16 +1714,68 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
     setSearchTerm(medicine.brandName);
   }, [medicine.brandName]);
 
-  const localMatches = medicineOptions.filter(m =>
-    m.hospitalId === hospital.id &&
-    m.status === 'active' &&
-    (!hideOutOfStock || (m.stock ?? 0) > 0) &&
-    searchTerm.length > 0 &&
-    (m.brandName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     m.genericName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const mapApiMedicine = (m: any): Medicine => ({
+    id: String(m.id),
+    hospitalId: String(m.hospital_id),
+    manufacturerId: String(m.manufacturer_id),
+    medicineTypeId: String(m.medicine_type_id),
+    brandName: m.brand_name ?? '',
+    genericName: m.generic_name ?? '',
+    strength: m.strength ?? '',
+    type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
+    stock: typeof m.stock === 'number' ? m.stock : (m.stock ? Number(m.stock) : undefined),
+    status: (m.status ?? 'active') as Medicine['status'],
+    createdAt: m.created_at ? new Date(m.created_at) : undefined,
+    updatedAt: m.updated_at ? new Date(m.updated_at) : undefined,
+  });
+
+  const medicineMatchesTerm = (m: Medicine, term: string) => {
+    const normalizedTerm = term.trim().toLowerCase();
+    if (!normalizedTerm) return true;
+
+    const searchableText = [
+      m.brandName,
+      m.genericName,
+      m.type,
+      m.strength,
+      formatMedicineDisplay(m.brandName, m.genericName, m.type, m.strength),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return searchableText.includes(normalizedTerm);
+  };
+
+  const shouldIncludeByStock = (m: Medicine) => {
+    if (!hideOutOfStock) return true;
+    if (typeof m.stock === 'number') return m.stock > 0;
+
+    // Some API responses omit stock; rely on cached stock when available.
+    const cached = medicineOptions.find(
+      (localMedicine) =>
+        String(localMedicine.id) === String(m.id) &&
+        String(localMedicine.hospitalId) === String(hospital.id)
+    );
+
+    if (cached && typeof cached.stock === 'number') {
+      return cached.stock > 0;
+    }
+
+    return true;
+  };
+
+  const localMatches = medicineOptions
+    .filter((m) =>
+      String(m.hospitalId) === String(hospital.id) &&
+      m.status === 'active' &&
+      shouldIncludeByStock(m) &&
+      medicineMatchesTerm(m, searchTerm)
+    )
+    .slice(0, 120);
 
   const filteredMedicines = localMatches.length > 0 ? localMatches : remoteMedicines;
+  const displayedMedicines = filteredMedicines.slice(0, 50);
 
 
   // Fetch remote suggestions when local cache has no matches
@@ -1710,23 +1797,25 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
         });
         if (!active) return;
         const records: any[] = data.data ?? data;
-        const mapped = records.map((m) => ({
-          id: String(m.id),
-          hospitalId: String(m.hospital_id),
-          manufacturerId: String(m.manufacturer_id),
-          medicineTypeId: String(m.medicine_type_id),
-          brandName: m.brand_name ?? '',
-          genericName: m.generic_name ?? '',
-          strength: m.strength ?? '',
-          type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
-          stock: typeof m.stock === 'number' ? m.stock : (m.stock ? Number(m.stock) : undefined),
-          status: (m.status ?? 'active') as Medicine['status'],
-          createdAt: m.created_at ? new Date(m.created_at) : undefined,
-          updatedAt: m.updated_at ? new Date(m.updated_at) : undefined,
-        })) as Medicine[];
-        const filtered = hideOutOfStock
-          ? mapped.filter((m) => (m.stock ?? 0) > 0)
-          : mapped;
+        let mapped = records.map(mapApiMedicine) as Medicine[];
+
+        // Fallback: if backend search returns nothing, fetch the first page and apply broader client matching
+        // (helps with terms such as dosage form/type like "cap").
+        if (mapped.length === 0) {
+          const allResponse = await api.get('/medicines', {
+            params: {
+              hospital_id: hospital.id,
+              per_page: 200,
+              status: 'active',
+            },
+          });
+
+          if (!active) return;
+          const allRecords: any[] = allResponse.data.data ?? allResponse.data;
+          mapped = allRecords.map(mapApiMedicine).filter((m) => medicineMatchesTerm(m, term));
+        }
+
+        const filtered = mapped.filter((m) => shouldIncludeByStock(m));
         setRemoteMedicines(filtered);
       } catch {
         if (active) setRemoteMedicines([]);
@@ -1737,37 +1826,37 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
       active = false;
       clearTimeout(timer);
     };
-  }, [hospital.id, localMatches.length, searchTerm, hideOutOfStock]);
+  }, [hospital.id, localMatches.length, searchTerm, hideOutOfStock, medicineOptions]);
 
   // Reset highlighted index when filtered medicines change
   React.useEffect(() => {
     setHighlightedIndex(0);
-  }, [filteredMedicines.length]);
+  }, [displayedMedicines.length]);
 
   // Scroll to highlighted item
   React.useEffect(() => {
-    if (dropdownRef.current && filteredMedicines.length > 0) {
+    if (dropdownRef.current && displayedMedicines.length > 0) {
       const highlightedElement = dropdownRef.current.querySelector(`[data-index="${highlightedIndex}"]`);
       if (highlightedElement) {
         highlightedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
-  }, [highlightedIndex, filteredMedicines.length]);
+  }, [highlightedIndex, displayedMedicines.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent, field: string) => {
-    if (field === 'medicine' && showMedicineDropdown && filteredMedicines.length > 0) {
+    if (field === 'medicine' && showMedicineDropdown && displayedMedicines.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setHighlightedIndex((prev) => 
-          prev < filteredMedicines.length - 1 ? prev + 1 : prev
+          prev < displayedMedicines.length - 1 ? prev + 1 : prev
         );
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (filteredMedicines[highlightedIndex]) {
-          handleSelectMedicine(filteredMedicines[highlightedIndex]);
+        if (displayedMedicines[highlightedIndex]) {
+          handleSelectMedicine(displayedMedicines[highlightedIndex]);
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -1833,10 +1922,12 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
             value={searchTerm}
             onChange={(e) => {
               const value = e.target.value;
+              clearBlurTimeout();
               setSearchTerm(value);
               onMedicineSearch(medicine.rowId, value);
               setShowMedicineDropdown(true);
               onDropdownToggle(true);
+              setHighlightedIndex(0);
 
               const currentInput = medicineInputRef.current;
               if (currentInput) {
@@ -1844,8 +1935,10 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
               }
             }}
             onFocus={() => {
+              clearBlurTimeout();
               setShowMedicineDropdown(true);
               onDropdownToggle(true);
+              setHighlightedIndex(0);
 
               const currentInput = medicineInputRef.current;
               if (currentInput) {
@@ -1853,11 +1946,13 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
               }
             }}
             onBlur={() => {
-              // Delay to allow click on dropdown items
-              setTimeout(() => {
+              clearBlurTimeout();
+              blurTimeoutRef.current = window.setTimeout(() => {
                 setShowMedicineDropdown(false);
                 onDropdownToggle(false);
-              }, 250);
+                setHighlightedIndex(-1);
+                blurTimeoutRef.current = null;
+              }, 200);
             }}
             onKeyDown={(e) => handleKeyDown(e, 'medicine')}
             placeholder="Type medicine name..."
@@ -1865,14 +1960,14 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
             className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             autoComplete="off"
           />
-          {showMedicineDropdown && searchTerm.length > 0 && createPortal(
+          {showMedicineDropdown && createPortal(
             <div
               ref={dropdownRef}
               className="fixed z-[99999] bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl overflow-hidden max-h-[280px] min-h-[60px]"
             >
-              {filteredMedicines.length > 0 ? (
+              {displayedMedicines.length > 0 ? (
                 <div className="overflow-y-auto max-h-[280px]">
-                  {filteredMedicines.map((med, idx) => {
+                  {displayedMedicines.map((med, idx) => {
                     const isHighlighted = idx === highlightedIndex;
                     return (
                       <button

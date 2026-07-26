@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check } from 'lucide-react';
-import { Hospital, LabTest, TestResult, TestTemplate, UserRole } from '../types';
+import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check, Pencil } from 'lucide-react';
+import { Hospital, LabTest, Patient, TestResult, TestTemplate, UserRole } from '../types';
 import { Toast } from './Toast';
 import { LabReportPrintNew } from './LabReportPrintNew';
 import { LabReportTemplate } from './LabReportTemplate';
@@ -122,6 +122,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     patientId: order.patientId || '',
     patientDisplayId,
     patientName: order.patientName,
+    patientPhone: order.patientPhone || patient?.phone || '',
     patientAge: order.patientAge,
     patientGender: order.patientGender,
     doctorId: order.doctorId,
@@ -176,6 +177,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
@@ -207,7 +209,6 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     hospitalId: currentHospital.id,
     doctorId: userRole === 'doctor' ? currentUserId || '' : '',
   });
-
   // Safety: auto-clear toast even if child component unmount effect is interrupted
   useEffect(() => {
     if (!toast) return;
@@ -277,7 +278,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     } finally {
       setLoading(false);
     }
-  }, [currentHospital.id, currentUserId, isAllHospitals, testTemplates, userRole]);
+  }, [currentHospital.id, currentUserId, isAllHospitals, patients, testTemplates, userRole]);
 
   useEffect(() => {
     loadTestTemplates();
@@ -369,10 +370,12 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
 
     if (searchTerm) {
+      const query = searchTerm.toLowerCase();
       filtered = filtered.filter((test) =>
-        test.testNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        test.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        test.testName.toLowerCase().includes(searchTerm.toLowerCase())
+        test.testNumber.toLowerCase().includes(query) ||
+        test.patientName.toLowerCase().includes(query) ||
+        String(test.patientPhone || '').toLowerCase().includes(query) ||
+        test.testName.toLowerCase().includes(query)
       );
     }
 
@@ -434,6 +437,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     const workSheet = XLSX.utils.json_to_sheet(filteredLabTests.map((test) => ({
       TestNumber: test.testNumber,
       Patient: test.patientName,
+      Phone: test.patientPhone || '',
       TestsOrdered: test.testName,
       Doctor: test.doctorName,
       Priority: test.priority,
@@ -458,10 +462,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
 
     autoTable(doc, {
-      head: [['Test #', 'Patient', 'Tests Ordered', 'Doctor', 'Priority', 'Status']],
+      head: [['Test #', 'Patient', 'Phone', 'Tests Ordered', 'Doctor', 'Priority', 'Status']],
       body: filteredLabTests.map((test) => [
         test.testNumber,
         test.patientName,
+        test.patientPhone || '',
         test.testName,
         test.doctorName,
         test.priority,
@@ -509,6 +514,74 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     } catch (err: any) {
       console.error(err);
       setToast({ message: 'Failed to create lab order', type: 'danger' });
+    }
+  };
+
+  const openEditModal = (test: LabTest) => {
+    const grossAmount = Number(test.totalAmount || 0) + Number(test.discountAmount || 0);
+    const discountPercent = grossAmount > 0 ? (Number(test.discountAmount || 0) / grossAmount) * 100 : 0;
+
+    setSelectedTest(test);
+    setFormData({
+      patientId: test.patientId || '',
+      selectedTests: (test.selectedTests || []).map(String),
+      instructions: test.instructions || '',
+      discountPercentage: discountPercent ? String(Number(discountPercent.toFixed(2))) : '',
+      priority: test.priority,
+      hospitalId: test.hospitalId || currentHospital.id,
+      doctorId: test.doctorId || (userRole === 'doctor' ? currentUserId || '' : ''),
+    });
+    setIsHospitalDropdownOpen(false);
+    setIsPatientDropdownOpen(false);
+    setIsDoctorDropdownOpen(false);
+    setIsTestDropdownOpen(false);
+    setHospitalSearchKeyword('');
+    setPatientSearchKeyword('');
+    setDoctorSearchKeyword('');
+    setTestSearchKeyword('');
+    setShowEditModal(true);
+  };
+
+  const handleEdit = async () => {
+    if (!selectedTest) return;
+
+    if (!formData.patientId || formData.selectedTests.length === 0) {
+      setToast({ message: 'Please select patient and at least one test.', type: 'warning' });
+      return;
+    }
+
+    if (userRole !== 'doctor' && !formData.doctorId) {
+      setToast({ message: 'Please select a doctor.', type: 'warning' });
+      return;
+    }
+
+    try {
+      const selectedDoctor = doctors.find((d) => String(d.id) === String(formData.doctorId));
+      await updateLabOrder(selectedTest.id, {
+        hospitalId: String(formData.hospitalId),
+        patientId: formData.patientId,
+        doctorId: userRole === 'doctor' ? (currentUserId || '') : (formData.doctorId || ''),
+        doctorName:
+          userRole === 'doctor'
+            ? (doctors.find((d) => String(d.id) === String(currentUserId))?.name || 'Doctor')
+            : (selectedDoctor?.name || 'Doctor'),
+        testIds: formData.selectedTests,
+        discountAmount: selectedDiscountAmount,
+        discountPercentage: selectedDiscountPercent,
+        priority: formData.priority,
+        clinicalNotes: formData.instructions,
+      });
+      await refreshLabOrders();
+      setShowEditModal(false);
+      setSelectedTest(null);
+      resetForm();
+      setToast({ message: 'Lab test updated successfully.', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      const apiMessage = err?.response?.data?.message;
+      const validation = err?.response?.data?.errors;
+      const detail = apiMessage || (validation ? Object.values(validation).flat().join(' ') : null);
+      setToast({ message: detail || 'Failed to update lab test', type: 'danger' });
     }
   };
 
@@ -696,6 +769,8 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     });
     setIsTestDropdownOpen(false);
     setTestSearchKeyword('');
+    setPatientSearchKeyword('');
+    setDoctorSearchKeyword('');
   };
 
   const toggleTestSelection = (testId: string) => {
@@ -773,7 +848,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search lab tests..."
+              placeholder="Search lab tests, patient, phone..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
@@ -897,6 +972,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           <div className="text-xs font-semibold text-gray-900 dark:text-white">{test.patientName}</div>
                           <div className="text-[10px] text-gray-500 dark:text-gray-400">ID: {test.patientDisplayId || '-'}</div>
                           <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientAge}Y • {test.patientGender}</div>
+                          {test.patientPhone && (
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientPhone}</div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2">
@@ -1040,6 +1118,15 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
+                          {canEditOrders && (
+                            <button
+                              onClick={() => openEditModal(test)}
+                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                              title="Edit"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           
                           {canPayment && test.status === 'unpaid' && (
                             <button
@@ -1155,13 +1242,13 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
         </div>
       )}
 
-      {/* Add Modal */}
-      {showAddModal && (
+      {/* Add/Edit Modal */}
+      {(showAddModal || showEditModal) && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg sticky top-0 z-10">
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">New Lab Test Order</h2>
-              <button onClick={() => { setShowAddModal(false); resetForm(); }} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">{showEditModal ? 'Edit Lab Test Order' : 'New Lab Test Order'}</h2>
+              <button onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedTest(null); resetForm(); }} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1454,16 +1541,16 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               </div>
 <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
                 <button
-                  onClick={() => { setShowAddModal(false); resetForm(); }}
+                  onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedTest(null); resetForm(); }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleAdd}
+                  onClick={showEditModal ? handleEdit : handleAdd}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
                 >
-                  Create Order
+                  {showEditModal ? 'Save Order' : 'Create Order'}
                 </button>
               </div>
             </div>
@@ -1502,6 +1589,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient</label>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">{selectedTest.patientName}</div>
                     <div className="text-xs text-gray-500">{selectedTest.patientAge} Years • {selectedTest.patientGender}</div>
+                    {selectedTest.patientPhone && (
+                      <div className="text-xs text-gray-500">{selectedTest.patientPhone}</div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Doctor</label>

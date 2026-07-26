@@ -32,6 +32,7 @@ const mapAppointment = (a: any): Appointment => ({
   patientId: a.patient_id ? String(a.patient_id) : '',
   patientDisplayId: a.patient?.patient_id ? String(a.patient.patient_id) : (a.patient_display_id ? String(a.patient_display_id) : undefined),
   patientName: a.patient_name ?? a.patient?.name ?? '',
+  patientPhone: a.patient?.phone ?? a.patient_phone ?? '',
   patientAge: Number(a.patient_age ?? a.patient?.age ?? 0),
   patientGender: a.patient_gender ?? a.patient?.gender ?? 'other',
   doctorId: a.doctor_id ? String(a.doctor_id) : '',
@@ -141,7 +142,10 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
   const formatDateOnly = (value: Date | string) => {
     if (!value) return '';
     if (typeof value === 'string') return value;
-    return value.toISOString().split('T')[0];
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   return (

@@ -41,6 +41,7 @@ class HospitalSettingController extends Controller
             'prescription_signature_height' => ['integer', 'min:40', 'max:800'],
             'show_out_of_stock_medicines_to_doctors' => ['boolean'],
             'show_out_of_stock_medicines_to_pharmacy' => ['boolean'],
+            'show_prescription_list_meta' => ['boolean'],
         ]);
 
         $setting = $this->getOrCreateSetting($hospital->id);
@@ -101,6 +102,7 @@ class HospitalSettingController extends Controller
                 'prescription_signature_height' => 112,
                 'show_out_of_stock_medicines_to_doctors' => false,
                 'show_out_of_stock_medicines_to_pharmacy' => false,
+                'show_prescription_list_meta' => true,
             ]
         );
     }

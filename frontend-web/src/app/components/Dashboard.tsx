@@ -90,8 +90,11 @@ interface DashboardSummary {
     total_surgery_fees?: number;
     total_room_fees?: number;
     total_sales_invoice_amount: number;
+    total_other_income?: number;
     total_income: number;
     total_expenses: number;
+    total_salary?: number;
+    total_expenses_with_salary?: number;
     total_revenue?: number;
   };
 }
@@ -162,11 +165,14 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     total_surgery_fees: 0,
     total_room_fees: 0,
     total_sales_invoice_amount: 0,
+    total_other_income: 0,
     total_income: 0,
     total_expenses: 0,
+    total_salary: 0,
+    total_expenses_with_salary: 0,
     total_revenue: 0,
   };
-  const netIncome = dailyFinancials.total_income - dailyFinancials.total_expenses;
+  const netIncome = dailyFinancials.total_income - dailyFinancials.total_expenses - (dailyFinancials.total_salary ?? 0);
 
   const formatMoney = (amount: number) => {
     try {
@@ -201,6 +207,15 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     const canViewExpenses = hasPermission('view_dashboard_expenses')
       || hasPermission('view_expenses')
       || hasPermission('manage_expenses');
+    const canViewOtherIncomes = hasPermission('view_other_incomes')
+      || hasPermission('manage_other_incomes');
+    const canViewSalary = hasPermission('view_payroll_batches')
+      || hasPermission('manage_payroll_batches')
+      || hasPermission('view_payroll_items')
+      || hasPermission('manage_payroll_items')
+      || hasPermission('generate_payroll')
+      || hasPermission('approve_payroll')
+      || hasPermission('print_payslips');
     const canViewSurgeries = hasPermission('view_dashboard_surgery_fees')
       || hasPermission('view_surgeries')
       || hasPermission('manage_surgeries')
@@ -213,7 +228,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       || canViewAppointments
       || canViewLabOrders
       || canViewSurgeries
-      || canViewRoomBookings;
+      || canViewRoomBookings
+      || canViewSalary;
 
     return [
       {
@@ -274,16 +290,34 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         key: 'expenses',
         label: 'Expenses',
         value: formatMoney(dailyFinancials.total_expenses),
-        helper: 'Total expenses for selected period',
+        helper: 'Total non-salary expenses for selected period',
         icon: <TrendingDown className="w-4 h-4" />,
         color: 'bg-rose-500',
         visible: canViewExpenses,
       },
       {
+        key: 'other_income',
+        label: 'Other Income',
+        value: formatMoney(dailyFinancials.total_other_income ?? 0),
+        helper: 'Additional hospital income for selected period',
+        icon: <TrendingUp className="w-4 h-4" />,
+        color: 'bg-emerald-600',
+        visible: canViewOtherIncomes,
+      },
+      {
+        key: 'salary',
+        label: 'Salary',
+        value: formatMoney(dailyFinancials.total_salary ?? 0),
+        helper: 'Total payroll salary for selected period',
+        icon: <ClipboardList className="w-4 h-4" />,
+        color: 'bg-red-500',
+        visible: canViewSalary,
+      },
+      {
         key: 'revenue_total',
         label: 'Revenue Total',
         value: formatMoney(dailyFinancials.total_revenue ?? netIncome),
-        helper: 'Total income minus expenses',
+        helper: 'Total income minus expenses and salary',
         icon: <TrendingUp className="w-4 h-4" />,
         color: 'bg-emerald-500',
         visible: canViewRevenue,
@@ -293,12 +327,14 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     dailyFinancials.total_revenue,
     dailyFinancials.total_stock_cost_amount,
     dailyFinancials.total_expenses,
+    dailyFinancials.total_salary,
     dailyFinancials.total_fees,
     dailyFinancials.total_income,
     dailyFinancials.total_lab_fees,
     dailyFinancials.total_surgery_fees,
     dailyFinancials.total_room_fees,
     dailyFinancials.total_sales_invoice_amount,
+    dailyFinancials.total_other_income,
     formatMoney,
     hasPermission,
     netIncome,
@@ -360,9 +396,12 @@ export function Dashboard({ role, hospital }: DashboardProps) {
               <tr><td>Total Fees</td><td class="num">${formatMoney(dailyFinancials.total_fees)}</td></tr>
               <tr><td>Total Lab Fees</td><td class="num">${formatMoney(dailyFinancials.total_lab_fees)}</td></tr>
               <tr><td>Total Sales Invoice Amount</td><td class="num">${formatMoney(dailyFinancials.total_sales_invoice_amount)}</td></tr>
+              <tr><td>Total Other Income</td><td class="num">${formatMoney(dailyFinancials.total_other_income ?? 0)}</td></tr>
               <tr><td>Total Income</td><td class="num">${formatMoney(dailyFinancials.total_income)}</td></tr>
-              <tr><td>Total Expenses</td><td class="num">${formatMoney(dailyFinancials.total_expenses)}</td></tr>
-              <tr class="total"><td>Net Income</td><td class="num">${formatMoney(netIncome)}</td></tr>
+              <tr><td>Total Expenses (Excl. Salary)</td><td class="num">${formatMoney(dailyFinancials.total_expenses)}</td></tr>
+              <tr><td>Total Salary</td><td class="num">${formatMoney(dailyFinancials.total_salary ?? 0)}</td></tr>
+              <tr><td>Total Expenses (Incl. Salary)</td><td class="num">${formatMoney(dailyFinancials.total_expenses_with_salary ?? (dailyFinancials.total_expenses + (dailyFinancials.total_salary ?? 0)))}</td></tr>
+              <tr class="total"><td>Net Income</td><td class="num">${formatMoney(dailyFinancials.total_revenue ?? netIncome)}</td></tr>
             </tbody>
           </table>
           <div class="footer">Generated from ShifaaScript dashboard</div>
@@ -992,6 +1031,10 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Income</p>
             <p className="text-sm font-semibold text-green-700 dark:text-green-400">{formatMoney(dailyFinancials.total_income)}</p>
+          </div>
+          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400">Total Other Income</p>
+            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{formatMoney(dailyFinancials.total_other_income ?? 0)}</p>
           </div>
           <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Expenses</p>

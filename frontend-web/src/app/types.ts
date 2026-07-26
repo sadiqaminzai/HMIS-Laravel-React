@@ -152,6 +152,38 @@ export interface Expense {
   updatedBy?: string;
 }
 
+export interface OtherIncomeCategory {
+  id: string;
+  hospitalId: string;
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive';
+  createdAt?: Date;
+  createdBy?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
+export interface OtherIncome {
+  id: string;
+  hospitalId: string;
+  otherIncomeCategoryId: string;
+  sequenceId: number;
+  title: string;
+  amount: number;
+  incomeDate: Date;
+  paymentMethod?: string;
+  reference?: string;
+  documentUrl?: string | null;
+  notes?: string;
+  status: 'approved' | 'pending' | 'rejected';
+  category?: OtherIncomeCategory;
+  createdAt?: Date;
+  createdBy?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
 export interface TransactionDetail {
   id: string;
   trxId: string;
@@ -175,6 +207,7 @@ export interface Transaction {
   supplierName?: string;
   patientId?: string;
   patientName?: string;
+  patientPhone?: string;
   trxType: 'purchase' | 'sales' | 'purchase_return' | 'sales_return';
   grandTotal: number;
   totalDiscount: number;
@@ -255,6 +288,7 @@ export interface Prescription {
   walkInPatientId?: string | null;
   isWalkIn?: boolean;
   patientName: string;
+  patientPhone?: string;
   patientAge: number;
   patientGender: string;
   doctorId: string;
@@ -297,6 +331,7 @@ export interface Appointment {
   patientId: string;
   patientDisplayId?: string;
   patientName: string;
+  patientPhone?: string;
   patientAge: number;
   patientGender: string;
   doctorId: string;
@@ -406,6 +441,7 @@ export interface LabTest {
   patientId: string;
   patientDisplayId?: string;
   patientName: string;
+  patientPhone?: string;
   patientAge: number;
   patientGender: string;
   doctorId: string;

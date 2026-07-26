@@ -29,7 +29,7 @@ class LabOrderController extends Controller
         $user = $request->user();
 
         $query = LabOrder::query()
-            ->with(['items.results', 'patient', 'doctor']);
+            ->with(['items.results', 'patient', 'walkInPatient', 'doctor']);
 
         // If logged-in user is a doctor, always scope to their own hospital and their own orders.
         if ($user && (string) $user->role === 'doctor') {
@@ -67,11 +67,17 @@ class LabOrderController extends Controller
             $query->whereDate('created_at', '<=', $request->get('to_date'));
         }
 
-        // Search by order number, patient name
+        // Search by order number, patient name, or patient phone
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('order_number', 'like', "%{$search}%")
-                  ->orWhere('patient_name', 'like', "%{$search}%");
+                  ->orWhere('patient_name', 'like', "%{$search}%")
+                  ->orWhereHas('patient', function ($patientQuery) use ($search) {
+                      $patientQuery->where('phone', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('walkInPatient', function ($walkInQuery) use ($search) {
+                      $walkInQuery->where('phone', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -236,7 +242,7 @@ class LabOrderController extends Controller
             $this->ledgerPostingService->upsertLabOrderSnapshot($order);
 
             return response()->json([
-                'data' => tap($order->load(['items.results', 'patient', 'doctor']), function (LabOrder $loaded) {
+                'data' => tap($order->load(['items.results', 'patient', 'walkInPatient', 'doctor']), function (LabOrder $loaded) {
                     if ($loaded->doctor) {
                         $loaded->doctor_name = $loaded->doctor->name;
                     }
@@ -282,7 +288,7 @@ class LabOrderController extends Controller
             }
         }
 
-        $loaded = $labOrder->load(['items.results', 'patient', 'doctor']);
+        $loaded = $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']);
         if ($loaded->doctor) {
             $loaded->doctor_name = $loaded->doctor->name;
         }
@@ -298,6 +304,14 @@ class LabOrderController extends Controller
     public function update(Request $request, LabOrder $labOrder)
     {
         $validator = Validator::make($request->all(), [
+            'hospital_id' => ['sometimes', 'exists:hospitals,id'],
+            'patient_id' => ['sometimes', 'nullable', 'exists:patients,id'],
+            'doctor_id' => ['sometimes', 'exists:users,id'],
+            'doctor_name' => ['sometimes', 'string', 'max:255'],
+            'test_ids' => ['sometimes', 'array', 'min:1'],
+            'test_ids.*' => ['exists:test_templates,id'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'priority' => ['in:normal,urgent,stat'],
             'clinical_notes' => ['nullable', 'string'],
             'remarks' => ['nullable', 'string'],
@@ -309,33 +323,155 @@ class LabOrderController extends Controller
         }
 
         $validated = $validator->validated();
-        $labOrder->fill($validated);
 
-        // If an admin resets status away from completed, clear completion metadata.
-        if (array_key_exists('status', $validated) && $validated['status'] !== 'completed') {
-            $labOrder->completed_at = null;
+        if (array_key_exists('hospital_id', $validated) && (int) $validated['hospital_id'] !== (int) $labOrder->hospital_id) {
+            return response()->json(['message' => 'Hospital cannot be changed for an existing lab order'], 422);
+        }
 
-            // If resetting all the way back to pending, also clear assignment/sample info.
-            if ($validated['status'] === 'pending') {
-                $labOrder->sample_collected_at = null;
-                $labOrder->assigned_to = null;
-                $labOrder->assigned_to_name = null;
+        return DB::transaction(function () use ($validated, $labOrder, $request) {
+            $labOrder->load(['items.results']);
+
+            if (array_key_exists('patient_id', $validated) && !empty($validated['patient_id'])) {
+                $patient = Patient::findOrFail($validated['patient_id']);
+                if ((int) $patient->hospital_id !== (int) $labOrder->hospital_id) {
+                    return response()->json(['message' => 'Patient does not belong to this hospital'], 422);
+                }
+
+                $labOrder->patient_id = $patient->id;
+                $labOrder->walk_in_patient_id = null;
+                $labOrder->is_walk_in = false;
+                $labOrder->patient_name = $patient->name;
+                $labOrder->patient_age = $patient->age;
+                $labOrder->patient_gender = $patient->gender;
             }
-        }
 
-        $labOrder->updated_by = $request->user()?->name;
-        $labOrder->save();
+            if (array_key_exists('doctor_id', $validated) && !empty($validated['doctor_id'])) {
+                $doctor = $this->resolveDoctorUser((int) $validated['doctor_id']);
+                if ((int) $doctor->hospital_id !== (int) $labOrder->hospital_id) {
+                    return response()->json(['message' => 'Doctor does not belong to this hospital'], 422);
+                }
 
-        if ((string) $labOrder->status === 'cancelled') {
-            $this->ledgerPostingService->voidLabOrderSnapshot($labOrder, $request->user()?->name);
-        } else {
-            $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
-        }
+                $labOrder->doctor_id = $doctor->id;
+                $labOrder->doctor_name = $doctor->name;
+            }
 
-        return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
-            'message' => 'Lab order updated successfully'
-        ]);
+            $orderFields = collect($validated)
+                ->only(['priority', 'clinical_notes', 'remarks', 'status'])
+                ->all();
+
+            $labOrder->fill($orderFields);
+
+            if (array_key_exists('test_ids', $validated)) {
+                $hasEnteredResults = $labOrder->items
+                    ->flatMap(fn (LabOrderItem $item) => $item->results)
+                    ->contains(fn (LabOrderResult $result) => filled($result->result_value));
+
+                $requestedIds = collect($validated['test_ids'])
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                $existingIds = $labOrder->items
+                    ->pluck('test_template_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->values();
+
+                if ($hasEnteredResults && $requestedIds->sort()->values()->all() !== $existingIds->sort()->values()->all()) {
+                    return response()->json(['message' => 'Tests cannot be changed after results have been entered'], 422);
+                }
+
+                $removeIds = $existingIds->diff($requestedIds)->values();
+                if ($removeIds->isNotEmpty()) {
+                    $labOrder->items()
+                        ->whereIn('test_template_id', $removeIds->all())
+                        ->get()
+                        ->each(function (LabOrderItem $item) {
+                            $item->results()->delete();
+                            $item->delete();
+                        });
+                }
+
+                $addIds = $requestedIds->diff($existingIds)->values();
+                foreach ($addIds as $testId) {
+                    $template = TestTemplate::with('parameters')->findOrFail($testId);
+
+                    $item = LabOrderItem::create([
+                        'lab_order_id' => $labOrder->id,
+                        'test_template_id' => $template->id,
+                        'test_code' => $template->test_code,
+                        'test_name' => $template->test_name,
+                        'test_type' => $template->test_type,
+                        'sample_type' => $template->sample_type,
+                        'price' => $template->price,
+                        'status' => 'pending',
+                    ]);
+
+                    foreach ($template->parameters as $param) {
+                        LabOrderResult::create([
+                            'lab_order_item_id' => $item->id,
+                            'parameter_id' => $param->id,
+                            'parameter_name' => $param->name,
+                            'unit' => $param->unit,
+                            'normal_range' => $param->normal_range,
+                        ]);
+                    }
+                }
+            }
+
+            $grossAmount = (float) $labOrder->items()->sum('price');
+            $canEditDiscount = (bool) ($request->user()?->hasPermission('lab_test_order_discount') ?? false);
+            $existingDiscount = (float) ($labOrder->discount_amount ?? 0);
+
+            if ($canEditDiscount && array_key_exists('discount_percentage', $validated)) {
+                $discountPercent = min(max((float) ($validated['discount_percentage'] ?? 0), 0), 100);
+                $discountAmount = round(($grossAmount * $discountPercent) / 100, 2);
+            } elseif ($canEditDiscount && array_key_exists('discount_amount', $validated)) {
+                $discountAmount = (float) ($validated['discount_amount'] ?? 0);
+            } else {
+                $discountAmount = $existingDiscount;
+            }
+
+            $discountAmount = min(max($discountAmount, 0), max($grossAmount, 0));
+            $netAmount = max(0, $grossAmount - $discountAmount);
+
+            $labOrder->discount_amount = round($discountAmount, 2);
+            $labOrder->total_amount = round($netAmount, 2);
+            $labOrder->paid_amount = min((float) ($labOrder->paid_amount ?? 0), $netAmount);
+
+            if ((float) $labOrder->paid_amount <= 0) {
+                $labOrder->payment_status = 'unpaid';
+            } elseif ((float) $labOrder->paid_amount < $netAmount) {
+                $labOrder->payment_status = 'partial';
+            } else {
+                $labOrder->payment_status = 'paid';
+            }
+
+            // If an admin resets status away from completed, clear completion metadata.
+            if (array_key_exists('status', $validated) && $validated['status'] !== 'completed') {
+                $labOrder->completed_at = null;
+
+                // If resetting all the way back to pending, also clear assignment/sample info.
+                if ($validated['status'] === 'pending') {
+                    $labOrder->sample_collected_at = null;
+                    $labOrder->assigned_to = null;
+                    $labOrder->assigned_to_name = null;
+                }
+            }
+
+            $labOrder->updated_by = $request->user()?->name;
+            $labOrder->save();
+
+            if ((string) $labOrder->status === 'cancelled') {
+                $this->ledgerPostingService->voidLabOrderSnapshot($labOrder, $request->user()?->name);
+            } else {
+                $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
+            }
+
+            return response()->json([
+                'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']),
+                'message' => 'Lab order updated successfully'
+            ]);
+        });
     }
 
     /**
@@ -365,7 +501,7 @@ class LabOrderController extends Controller
         $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
 
         return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
+            'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']),
             'message' => 'Payment reset to unpaid'
         ]);
     }
@@ -405,7 +541,7 @@ class LabOrderController extends Controller
         $this->ledgerPostingService->upsertLabOrderSnapshot($labOrder);
 
         return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
+            'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']),
             'message' => 'Payment processed successfully'
         ]);
     }
@@ -428,7 +564,7 @@ class LabOrderController extends Controller
         ]);
 
         return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor']),
+            'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']),
             'message' => 'Sample collected successfully'
         ]);
     }
@@ -502,7 +638,7 @@ class LabOrderController extends Controller
     public function getForResultEntry(LabOrder $labOrder)
     {
         return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'doctor'])
+            'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor'])
         ]);
     }
 
@@ -562,7 +698,7 @@ class LabOrderController extends Controller
 
         return response()->json([
             'data' => [
-                'order' => $labOrder->load(['items.results', 'patient', 'doctor']),
+                'order' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']),
                 'hospital' => $labOrder->hospital,
             ]
         ]);

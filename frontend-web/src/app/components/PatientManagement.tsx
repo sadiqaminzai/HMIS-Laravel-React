@@ -29,6 +29,11 @@ const hexToRgb = (hex?: string): [number, number, number] | null => {
   ] : null;
 };
 
+const formatPatientGender = (gender?: string) => {
+  if (!gender) return '-';
+  return gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+};
+
 interface PatientManagementProps {
   hospital: Hospital;
   userRole?: UserRole;
@@ -524,7 +529,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search patients..."
+              placeholder="Search name, ID, phone..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -1159,6 +1164,24 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
                 }
+                #patient-id-card-print,
+                #patient-id-card-print * {
+                  color: #000000 !important;
+                  opacity: 1 !important;
+                  -webkit-text-fill-color: #000000 !important;
+                  text-shadow: none !important;
+                  filter: none !important;
+                }
+                #patient-id-card-print .patient-card-header,
+                #patient-id-card-print .patient-card-footer {
+                  background: #ffffff !important;
+                  border-color: #000000 !important;
+                }
+                #patient-id-card-print .patient-card-photo,
+                #patient-id-card-print .patient-card-qr {
+                  border-color: #000000 !important;
+                  background: #ffffff !important;
+                }
                 /* Break out of the fixed modal container for printing */
                 .fixed.inset-0 {
                   position: absolute !important;
@@ -1228,52 +1251,52 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             </div>
 
             <div className="p-6 flex justify-center bg-gray-100 dark:bg-gray-900">
-               <div id="patient-id-card-print" className="w-[85.6mm] h-[54mm] bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col print:shadow-none print:border-none print:rounded-none relative overflow-hidden print:[&_*]:!text-black print:!bg-white print:[&>div:first-child]:!bg-white print:[&>div:first-child]:!border-b print:[&>div:first-child]:!border-black print:[&_*]:!border-black pt-0 pb-0">
-                  <div className="h-10 flex items-center justify-between px-3 shrink-0" style={{ backgroundColor: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>
-                     <div className="text-white font-bold text-xs tracking-wide print:!text-black">
+               <div id="patient-id-card-print" className="w-[85.6mm] h-[54mm] bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col print:shadow-none print:rounded-none relative overflow-hidden pt-0 pb-0">
+                  <div className="patient-card-header h-10 flex items-center justify-between px-3 shrink-0" style={{ backgroundColor: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>
+                     <div className="text-white font-bold text-xs tracking-wide">
                         {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.name || 'Medical Center'}
                      </div>
-                     <div className="text-[8px] text-white/80 uppercase tracking-widest print:!text-black">Patient Card</div>
+                     <div className="text-[8px] text-white uppercase tracking-widest font-bold">Patient Card</div>
                   </div>
                   
-                  <div className="flex-1 p-3 flex gap-3 z-10 box-border print:!bg-white">
-                     <div className="w-20 h-24 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden shrink-0 self-center print:!bg-white print:!border-black">
+                  <div className="flex-1 p-3 flex gap-3 z-10 box-border">
+                     <div className="patient-card-photo w-20 h-24 bg-white rounded-lg border border-gray-900 overflow-hidden shrink-0 self-center">
                         {selectedPatient.image ? (
-                           <img src={selectedPatient.image} alt="" className="w-full h-full object-cover print:grayscale" />
+                           <img src={selectedPatient.image} alt="" className="w-full h-full object-cover" />
                         ) : (
-                           <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400 print:!text-black print:!bg-white">
+                           <div className="w-full h-full flex items-center justify-center bg-white text-black">
                               <Users className="w-8 h-8" />
                            </div>
                         )}
                      </div>
                      
-                     <div className="flex-1 space-y-1 pt-1 print:!bg-white">
+                     <div className="flex-1 space-y-1 pt-1">
                         <div>
-                           <div className="text-[8px] text-gray-400 print:!text-black uppercase tracking-wider font-semibold">Name</div>
-                           <div className="text-sm font-bold text-gray-900 leading-tight print:!text-black">{selectedPatient.name}</div>
+                           <div className="text-[8px] text-black uppercase tracking-wider font-black">Name</div>
+                           <div className="text-sm font-bold text-gray-900 leading-tight">{selectedPatient.name}</div>
                         </div>
                         <div className="grid grid-cols-2 gap-1 mt-1">
                            <div>
-                              <div className="text-[7px] text-gray-400 print:!text-black uppercase tracking-wider font-semibold">ID No.</div>
-                              <div className="text-xs font-mono font-bold print:!text-black" style={{ color: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>{selectedPatient.patientId}</div>
+                              <div className="text-[7px] text-black uppercase tracking-wider font-black">ID No.</div>
+                              <div className="text-xs font-mono font-black text-black">{selectedPatient.patientId}</div>
                            </div>
                            <div>
-                              <div className="text-[7px] text-gray-400 print:!text-black uppercase tracking-wider font-semibold">Gender/Age</div>
-                              <div className="text-xs font-medium text-gray-700 print:!text-black">{selectedPatient.gender.charAt(0)} / {selectedPatient.age}</div>
+                              <div className="text-[7px] text-black uppercase tracking-wider font-black">Age / Gender</div>
+                              <div className="text-xs font-bold text-black">{selectedPatient.age}Y / {formatPatientGender(selectedPatient.gender)}</div>
                            </div>
                         </div>
                         <div className="mt-1.5">
-                           <div className="text-[7px] text-gray-400 print:!text-black uppercase tracking-wider font-semibold">Emergency Contact</div>
-                           <div className="text-[10px] font-medium text-gray-700 print:!text-black">{selectedPatient.phone}</div>
+                           <div className="text-[7px] text-black uppercase tracking-wider font-black">Phone</div>
+                           <div className="text-[10px] font-bold text-black">{selectedPatient.phone || '-'}</div>
                         </div>
                      </div>
                   </div>
                   
-                  <div className="h-12 bg-gray-50 border-t border-gray-100 print:!border-black print:!bg-white flex items-center justify-between px-3 shrink-0">
-                     <div className="text-[6px] text-gray-400 print:!text-black leading-tight max-w-[60%] print:!bg-white">
+                  <div className="patient-card-footer h-12 bg-white border-t border-gray-900 flex items-center justify-between px-3 shrink-0">
+                     <div className="text-[6px] text-black font-semibold leading-tight max-w-[60%]">
                         {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.address || '123 Medical Center Drive'}
                      </div>
-                     <div className="opacity-80 shrink-0 print:!opacity-100">
+                     <div className="patient-card-qr shrink-0 border border-gray-900 bg-white">
                        <QRCodeSVG
                         value={getPatientQrValue(selectedPatient)}
                       size={40}

@@ -275,8 +275,24 @@ class DashboardController extends Controller
             ->where('entry_direction', 'income')
             ->sum('net_amount'), 2);
 
+        $totalSalary = round((float) (clone $dailyLedgerQuery)
+            ->where('entry_direction', 'expense')
+            ->where('module', 'salary')
+            ->sum('net_amount'), 2);
+
         $totalExpenses = round((float) (clone $dailyLedgerQuery)
             ->where('entry_direction', 'expense')
+            ->where(function ($query) {
+                $query->whereNull('module')
+                    ->orWhere('module', '!=', 'salary');
+            })
+            ->sum('net_amount'), 2);
+
+        $totalExpensesWithSalary = round($totalExpenses + $totalSalary, 2);
+
+        $totalOtherIncome = round((float) (clone $dailyLedgerQuery)
+            ->where('module', 'other_income')
+            ->where('entry_direction', 'income')
             ->sum('net_amount'), 2);
 
         $dailyFinancials = [
@@ -305,9 +321,12 @@ class DashboardController extends Controller
                 ->where('module', 'pharmacy')
                 ->where('category', 'sales')
                 ->sum('net_amount'), 2),
+            'total_other_income' => $totalOtherIncome,
             'total_income' => $totalIncome,
             'total_expenses' => $totalExpenses,
-            'total_revenue' => round($totalIncome - $totalExpenses, 2),
+            'total_salary' => $totalSalary,
+            'total_expenses_with_salary' => $totalExpensesWithSalary,
+            'total_revenue' => round($totalIncome - $totalExpensesWithSalary, 2),
         ];
 
         return response()->json([

@@ -31,6 +31,7 @@ class HospitalSetting extends Model
         'prescription_signature_height',
         'show_out_of_stock_medicines_to_doctors',
         'show_out_of_stock_medicines_to_pharmacy',
+        'show_prescription_list_meta',
     ];
 
     protected $casts = [
@@ -46,6 +47,7 @@ class HospitalSetting extends Model
         'prescription_signature_height' => 'integer',
         'show_out_of_stock_medicines_to_doctors' => 'boolean',
         'show_out_of_stock_medicines_to_pharmacy' => 'boolean',
+        'show_prescription_list_meta' => 'boolean',
     ];
 
     public function hospital()

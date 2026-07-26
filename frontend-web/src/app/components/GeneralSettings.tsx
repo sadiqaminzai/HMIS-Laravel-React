@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -31,7 +31,7 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, generatePatientId } = useSettings();
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -71,6 +71,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
   const [showOutOfStockMedicines, setShowOutOfStockMedicines] = useState(false);
   const [showOutOfStockMedicinesForPharmacy, setShowOutOfStockMedicinesForPharmacy] = useState(false);
+  const [showPrescriptionListMeta, setShowPrescriptionListMeta] = useState(true);
 
   // Get doctors for currently selected hospital
   const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
@@ -90,11 +91,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
       setShowOutOfStockMedicines(getShowOutOfStockMedicines(selectedHospital.id));
       setShowOutOfStockMedicinesForPharmacy(getShowOutOfStockMedicinesForPharmacy(selectedHospital.id));
+      setShowPrescriptionListMeta(getShowPrescriptionListMeta(selectedHospital.id));
 
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
     });
-  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy]);
+  }, [selectedHospital.id, selectedHospital.timezone, selectedHospital.calendarType, loadHospitalSetting, getDefaultDoctorId, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta]);
 
   const handleSaveDefaultDoctor = () => {
     saveHospitalSetting(selectedHospital.id, { defaultDoctorId: selectedDoctorId || undefined })
@@ -144,6 +146,17 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       .catch((err) => {
         setShowOutOfStockMedicinesForPharmacy(!newValue);
         toast.error(err?.response?.data?.message || 'Failed to update pharmacy medicine visibility');
+      });
+  };
+
+  const handlePrescriptionListMetaToggle = () => {
+    const newValue = !showPrescriptionListMeta;
+    setShowPrescriptionListMeta(newValue);
+    saveHospitalSetting(selectedHospital.id, { showPrescriptionListMeta: newValue })
+      .then(() => toast.success(newValue ? 'Prescription list Rx column and count details are visible' : 'Prescription list Rx column and count details are hidden'))
+      .catch((err) => {
+        setShowPrescriptionListMeta(!newValue);
+        toast.error(err?.response?.data?.message || 'Failed to update prescription list visibility');
       });
   };
 
@@ -602,6 +615,60 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               {showOutOfStockMedicinesForPharmacy
                 ? '✓ Out-of-stock medicines visible to pharmacy'
                 : 'Out-of-stock medicines hidden from pharmacy'}
+            </p>
+          </div>
+        </div>
+
+        {/* Prescription List Visibility */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <ListChecks className="w-4 h-4 text-blue-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription List Visibility</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Control whether the prescription list shows the Rx number column and pagination count details.
+          </p>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Show Rx column and count details</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                When disabled, the Rx number column, result count, rows-per-page selector, and page text are hidden. Next and previous arrows still work.
+              </p>
+            </div>
+            <button
+              onClick={handlePrescriptionListMetaToggle}
+              aria-label="Toggle prescription list Rx column and pagination visibility"
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                ${showPrescriptionListMeta
+                  ? 'bg-blue-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${showPrescriptionListMeta ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+
+          <div className={`p-2 rounded-lg border mt-3 ${
+            showPrescriptionListMeta
+              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+              : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+          }`}>
+            <p className={`text-xs font-semibold ${
+              showPrescriptionListMeta
+                ? 'text-blue-700 dark:text-blue-300'
+                : 'text-gray-700 dark:text-gray-300'
+            }`}>
+              {showPrescriptionListMeta
+                ? 'Rx column and count details visible'
+                : 'Rx column and count details hidden'}
             </p>
           </div>
         </div>

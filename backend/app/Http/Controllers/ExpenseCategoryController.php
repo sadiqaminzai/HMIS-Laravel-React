@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ExpenseCategory;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ExpenseCategoryController extends Controller
 {
@@ -78,6 +79,12 @@ class ExpenseCategoryController extends Controller
     public function destroy(Request $request, ExpenseCategory $expenseCategory)
     {
         $this->authorizeScope($request->user(), $expenseCategory);
+
+        if ($expenseCategory->expenses()->exists()) {
+            throw ValidationException::withMessages([
+                'expense_category_id' => ['Cannot delete expense category because it is used in expenses.'],
+            ]);
+        }
 
         $expenseCategory->delete();
 

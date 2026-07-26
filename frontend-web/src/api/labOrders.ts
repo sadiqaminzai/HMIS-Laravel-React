@@ -36,6 +36,7 @@ export interface LabOrderResponse {
   updated_at: string;
   items: LabOrderItemResponse[];
   patient?: PatientResponse;
+  walk_in_patient?: PatientResponse;
   doctor?: DoctorResponse;
 }
 
@@ -96,6 +97,7 @@ export interface LabOrder {
   walkInPatientId: string | null;
   isWalkIn: boolean;
   patientName: string;
+  patientPhone?: string;
   patientAge: number;
   patientGender: 'male' | 'female' | 'other';
   doctorId: string;
@@ -211,6 +213,7 @@ function transformToFrontend(order: LabOrderResponse): LabOrder {
     walkInPatientId: order.walk_in_patient_id ? String(order.walk_in_patient_id) : null,
     isWalkIn: order.is_walk_in,
     patientName: order.patient_name,
+    patientPhone: order.patient?.phone ?? order.walk_in_patient?.phone ?? (order as any).patient_phone ?? '',
     patientAge: order.patient_age,
     patientGender: order.patient_gender,
     doctorId: String(order.doctor_id),
@@ -321,9 +324,28 @@ export async function createLabOrder(payload: CreateLabOrderPayload): Promise<La
 
 export async function updateLabOrder(
   id: string | number,
-  payload: { priority?: string; clinicalNotes?: string; remarks?: string; status?: string }
+  payload: {
+    hospitalId?: string | number;
+    patientId?: string | number;
+    doctorId?: string | number;
+    doctorName?: string;
+    testIds?: Array<string | number>;
+    discountAmount?: number;
+    discountPercentage?: number;
+    priority?: string;
+    clinicalNotes?: string;
+    remarks?: string;
+    status?: string;
+  }
 ): Promise<LabOrder> {
   const response = await api.put<{ data: LabOrderResponse }>(`/lab-orders/${id}`, {
+    hospital_id: payload.hospitalId !== undefined ? Number(payload.hospitalId) : undefined,
+    patient_id: payload.patientId !== undefined && payload.patientId !== null && payload.patientId !== '' ? Number(payload.patientId) : undefined,
+    doctor_id: payload.doctorId !== undefined && payload.doctorId !== null && payload.doctorId !== '' ? Number(payload.doctorId) : undefined,
+    doctor_name: payload.doctorName,
+    test_ids: payload.testIds?.map(Number),
+    discount_amount: payload.discountAmount,
+    discount_percentage: payload.discountPercentage,
     priority: payload.priority,
     clinical_notes: payload.clinicalNotes,
     remarks: payload.remarks,

@@ -1,7 +1,34 @@
 import axios from 'axios';
 
+const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const resolveApiBaseUrl = () => {
+  const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+
+  if (configuredBaseUrl) {
+    if (/^https?:\/\//i.test(configuredBaseUrl)) {
+      return stripTrailingSlash(configuredBaseUrl);
+    }
+
+    if (typeof window !== 'undefined') {
+      const hostBase = `${window.location.protocol}//${window.location.hostname}`;
+      if (configuredBaseUrl.startsWith('/')) {
+        return stripTrailingSlash(`${hostBase}${configuredBaseUrl}`);
+      }
+
+      return stripTrailingSlash(`${hostBase}/${configuredBaseUrl.replace(/^\/+/, '')}`);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    return stripTrailingSlash(`${window.location.protocol}//${window.location.hostname}/shifaascript/backend/public/api`);
+  }
+
+  return 'http://localhost/shifaascript/backend/public/api';
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  baseURL: resolveApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

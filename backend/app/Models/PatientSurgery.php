@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class PatientSurgery extends Model
 {
@@ -23,6 +24,7 @@ class PatientSurgery extends Model
         'payment_status',
         'cost',
         'notes',
+        'verification_token',
         'is_active',
         'is_delete',
         'created_by',
@@ -56,5 +58,14 @@ class PatientSurgery extends Model
     public function surgery()
     {
         return $this->belongsTo(Surgery::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $patientSurgery) {
+            if (empty($patientSurgery->verification_token)) {
+                $patientSurgery->verification_token = (string) Str::uuid();
+            }
+        });
     }
 }

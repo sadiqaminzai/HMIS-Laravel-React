@@ -53,7 +53,7 @@ export function PrescriptionPrint({
   updatedBy
 }: PrescriptionPrintProps) {
   const componentRef = useRef<HTMLDivElement>(null);
-  const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getShowPrescriptionListMeta } = useSettings();
 
   useEffect(() => {
     if (!hospital?.id) return;
@@ -63,6 +63,7 @@ export function PrescriptionPrint({
   }, [hospital?.id, loadHospitalSetting]);
 
   const printAssetSettings = getPrescriptionPrintAssetSettings(hospital.id);
+  const showPrescriptionListMeta = getShowPrescriptionListMeta(hospital.id);
   const logoWidthPx = printAssetSettings.logoWidth || 176;
   const logoHeightPx = printAssetSettings.logoHeight || 160;
   const signatureWidthPx = printAssetSettings.signatureWidth || 200;
@@ -503,10 +504,12 @@ export function PrescriptionPrint({
                   <span className="block text-xs font-bold text-blue-900">Name</span>
                   <span className="font-semibold text-gray-900">{patient.name}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Patient ID</span>
-                  <span className="font-mono text-gray-900">{patient.patientId}</span>
-                </div>
+                {showPrescriptionListMeta && (
+                  <div>
+                    <span className="block text-xs font-bold text-blue-900">Patient ID</span>
+                    <span className="font-mono text-gray-900">{patient.patientId}</span>
+                  </div>
+                )}
                 <div>
                   <span className="block text-xs font-bold text-blue-900">Age / Gender</span>
                   <span className="text-gray-900">{patient.age} Y / {patient.gender}</span>

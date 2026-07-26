@@ -43,6 +43,11 @@ const mapPatient = (p: any, hospitalId: string): Patient => ({
   verificationToken: p.verification_token ?? undefined,
 });
 
+const formatPatientGender = (gender?: string) => {
+  if (!gender) return '-';
+  return gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+};
+
 export function PatientCardVerificationPage() {
   const { token } = useParams();
   const [loading, setLoading] = useState(true);
@@ -93,7 +98,7 @@ export function PatientCardVerificationPage() {
         <div className="w-[85.6mm] h-[53.98mm] bg-white rounded-xl shadow-lg overflow-hidden relative border border-gray-200 flex flex-col mx-auto">
           <div className="h-10 flex items-center justify-between px-3" style={{ backgroundColor: hospital.brandColor || '#2563eb' }}>
             <div className="text-white font-bold text-xs tracking-wide">{hospital.name}</div>
-            <div className="text-[8px] text-white/80 uppercase tracking-widest">Patient Card</div>
+            <div className="text-[8px] text-white uppercase tracking-widest font-bold">Patient Card</div>
           </div>
 
           <div className="flex-1 p-3 flex gap-3 relative z-10">
@@ -109,29 +114,29 @@ export function PatientCardVerificationPage() {
 
             <div className="flex-1 space-y-1 pt-1">
               <div>
-                <div className="text-[8px] text-gray-400 uppercase tracking-wider font-semibold">Name</div>
+                <div className="text-[8px] text-black uppercase tracking-wider font-black">Name</div>
                 <div className="text-sm font-bold text-gray-900 leading-tight">{patient.name}</div>
               </div>
               <div className="grid grid-cols-2 gap-1 mt-1">
                 <div>
-                  <div className="text-[7px] text-gray-400 uppercase tracking-wider font-semibold">ID No.</div>
-                  <div className="text-xs font-mono font-bold" style={{ color: hospital.brandColor || '#2563eb' }}>{patient.patientId}</div>
+                  <div className="text-[7px] text-black uppercase tracking-wider font-black">ID No.</div>
+                  <div className="text-xs font-mono font-black text-black">{patient.patientId}</div>
                 </div>
                 <div>
-                  <div className="text-[7px] text-gray-400 uppercase tracking-wider font-semibold">Gender/Age</div>
-                  <div className="text-xs font-medium text-gray-700">{patient.gender.charAt(0)} / {patient.age}</div>
+                  <div className="text-[7px] text-black uppercase tracking-wider font-black">Age / Gender</div>
+                  <div className="text-xs font-bold text-black">{patient.age}Y / {formatPatientGender(patient.gender)}</div>
                 </div>
               </div>
               <div className="mt-1.5">
-                <div className="text-[7px] text-gray-400 uppercase tracking-wider font-semibold">Emergency Contact</div>
-                <div className="text-[10px] font-medium text-gray-700">{patient.phone || '-'}</div>
+                <div className="text-[7px] text-black uppercase tracking-wider font-black">Phone</div>
+                <div className="text-[10px] font-bold text-black">{patient.phone || '-'}</div>
               </div>
             </div>
           </div>
 
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gray-50 border-t border-gray-100 flex items-center justify-between px-3">
-            <div className="text-[6px] text-gray-400 leading-tight max-w-[60%]">{hospital.address}</div>
-            <div className="opacity-80">
+            <div className="text-[6px] text-black font-semibold leading-tight max-w-[60%]">{hospital.address}</div>
+            <div>
               <QRCodeSVG value={qrValue} size={32} />
             </div>
           </div>
