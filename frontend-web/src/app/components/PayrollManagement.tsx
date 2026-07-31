@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Search, Check, Send, Ban, Trash2, Eye, Pencil, Printer } from 'lucide-react';
 import { Hospital, UserRole, PayrollItem } from '../types';
 import { usePayroll } from '../context/PayrollContext';
@@ -12,6 +13,7 @@ interface PayrollManagementProps {
 }
 
 export function PayrollManagement({ hospital, userRole }: PayrollManagementProps) {
+  const { t } = useTranslation();
   const {
     payrollBatches,
     payrollItems,
@@ -309,7 +311,7 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
       <form onSubmit={onGenerate} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
         {userRole === 'super_admin' && (
           <div>
-            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">Hospital</label>
+            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">{t('ui.hospital')}</label>
             <div className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/60 px-3.5 py-2 text-sm text-gray-700 dark:text-gray-200">
               {currentHospital.name}
             </div>
@@ -329,17 +331,17 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">Currency</label>
+          <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">{t('ui.currency')}</label>
           <input
             value={generateForm.currency}
             onChange={(e) => setGenerateForm((prev) => ({ ...prev, currency: e.target.value }))}
-            title="Currency"
+            title={t('ui.currency')}
             className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
             required
           />
         </div>
         <div className="md:col-span-2">
-          <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">Notes</label>
+          <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">{t('ui.notes')}</label>
           <input
             value={generateForm.notes}
             onChange={(e) => setGenerateForm((prev) => ({ ...prev, notes: e.target.value }))}
@@ -382,13 +384,13 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
           <table className="w-full text-left text-sm min-w-[1080px]">
             <thead className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 font-semibold sticky top-0 backdrop-blur-sm z-10">
               <tr>
-                <th className="px-3 py-2.5 text-xs font-medium">Month</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Employees</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Gross</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Deductions</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Net</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Status</th>
-                <th className="px-3 py-2.5 text-xs font-medium text-center">Actions</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.month')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.employees')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.gross')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.deductions')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.net')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.status')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -425,7 +427,7 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
                         <button
                           onClick={() => onApprove(batch.id)}
                           className="p-2.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors text-emerald-600 hover:bg-emerald-100"
-                          title="Approve"
+                          title={t('ui.approve')}
                         >
                           <Check className="w-4 h-4" />
                         </button>
@@ -452,7 +454,7 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
                         <button
                           onClick={() => onDeleteBatch(batch.id)}
                           className="p-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-red-600 hover:bg-red-100"
-                          title="Delete"
+                          title={t('ui.delete')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -479,16 +481,12 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
                 onClick={() => setBatchCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={batchCurrentPage === 1}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
+              >{t('ui.previous')}</button>
               <button
                 onClick={() => setBatchCurrentPage((page) => Math.min(batchTotalPages, page + 1))}
                 disabled={batchCurrentPage === batchTotalPages}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         )}
@@ -498,20 +496,20 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
         <div className="bg-white dark:bg-gray-800 rounded-[12px] border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <div className="px-3 py-2.5 text-xs font-medium border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payroll Items</h2>
-            <button onClick={() => setSelectedBatchId('')} className="text-sm text-gray-500 hover:text-gray-700">Close</button>
+            <button onClick={() => setSelectedBatchId('')} className="text-sm text-gray-500 hover:text-gray-700">{t('ui.close')}</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[1100px]">
               <thead className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 font-semibold sticky top-0 backdrop-blur-sm z-10">
                 <tr>
-                  <th className="px-3 py-2.5 text-xs font-medium">Employee</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Slip</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Base</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Allowances</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Deductions</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Final</th>
-                  <th className="px-3 py-2.5 text-xs font-medium">Status</th>
-                  <th className="px-3 py-2.5 text-xs font-medium text-center">Actions</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.employee')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.slip')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.base')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.allowances')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.deductions')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.final')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium">{t('table.status')}</th>
+                  <th className="px-3 py-2.5 text-xs font-medium text-center">{t('table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -565,16 +563,12 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
                   onClick={() => setItemCurrentPage((page) => Math.max(1, page - 1))}
                   disabled={itemCurrentPage === 1}
                   className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
+                >{t('ui.previous')}</button>
                 <button
                   onClick={() => setItemCurrentPage((page) => Math.min(itemTotalPages, page + 1))}
                   disabled={itemCurrentPage === itemTotalPages}
                   className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
+                >{t('ui.next')}</button>
               </div>
             </div>
           )}

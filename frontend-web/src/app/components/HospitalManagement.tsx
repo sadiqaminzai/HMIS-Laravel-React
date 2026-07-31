@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Building2, X, Search, Eye, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Printer } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
@@ -16,6 +17,7 @@ interface HospitalManagementProps {
 type ManagedHospital = Hospital & { id: string };
 
 export function HospitalManagement({ userRole }: HospitalManagementProps) {
+  const { t } = useTranslation();
   const { hospitals, addHospital, updateHospital, deleteHospital, refresh, loading } = useHospitals();
   const { hasPermission } = useAuth();
   const canAdd = hasPermission('add_hospitals') || hasPermission('manage_hospitals');
@@ -311,7 +313,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -321,7 +323,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -332,9 +334,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium shadow-sm bg-blue-600 text-white hover:bg-blue-700"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -347,32 +347,32 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
               <tr>
                 <th onClick={() => handleSort('name')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Hospital
+                    {t('table.hospital')}
                     {renderSortIcon('name')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('code')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Code
+                    {t('table.code')}
                     {renderSortIcon('code')}
                   </div>
                 </th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">
-                  Contact
+                  {t('table.contact')}
                 </th>
                 <th onClick={() => handleSort('license')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    License Info
+                    {t('table.licenseInfo')}
                     {renderSortIcon('license')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -424,21 +424,21 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                         <button
                           onClick={() => handleEdit(hospital)}
                           className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                          title="Edit"
+                          title={t('ui.edit')}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDelete(hospital)}
                           className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                          title="Delete"
+                          title={t('ui.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleView(hospital)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -454,7 +454,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                         <Search className="w-6 h-6 text-gray-400" />
                       </div>
                       <p className="text-sm font-medium">No hospitals found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -473,18 +473,14 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -495,7 +491,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {modalMode === 'add' ? 'Add New Hospital' : 'Edit Hospital Details'}
+                {modalMode === 'add' ? t('ui.addNewHospital') : 'Edit Hospital Details'}
               </h2>
               <button
                 onClick={handleCloseModal}
@@ -543,8 +539,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
                   {/* Status */}
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Status <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}<span className="text-red-500">*</span>
                     </label>
                     <select
                       required
@@ -552,23 +547,21 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                       onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'suspended' })}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     >
-                      <option value="active">Active</option>
+                      <option value="active">{t('ui.active')}</option>
                       <option value="suspended">Suspended</option>
                     </select>
                   </div>
 
                   {/* Brand Color */}
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Brand Color
-                    </label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.brandColor')}</label>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
                         value={formData.brandColor}
                         onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
                         className="h-8 w-10 rounded border border-gray-300 dark:border-gray-600 bg-transparent p-0"
-                        title="Brand Color"
+                        title={t('ui.brandColor')}
                       />
                       <input
                         type="text"
@@ -620,8 +613,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
                   {/* Phone */}
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Phone Number <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.phoneNumber')}<span className="text-red-500">*</span>
                     </label>
                     <input
                       type="tel"
@@ -635,8 +627,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
                   {/* Email */}
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Email Address <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.emailAddress')}<span className="text-red-500">*</span>
                     </label>
                     <input
                       type="email"
@@ -670,8 +661,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="md:col-span-1">
-                        <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                          License Number <span className="text-red-500">*</span>
+                        <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.licenseNumber')}<span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -695,8 +685,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                          Expiry Date <span className="text-red-500">*</span>
+                        <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.expiryDate')}<span className="text-red-500">*</span>
                         </label>
                         <input
                           type="date"
@@ -716,15 +705,13 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                   type="button"
                   onClick={handleCloseModal}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Saving...' : modalMode === 'add' ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : modalMode === 'add' ? t('ui.create') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -792,7 +779,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 </div>
               </div>
               <div className="text-right text-gray-500">
-                <p className="text-sm">Report Generated</p>
+                <p className="text-sm">{t('ui.reportGenerated')}</p>
                 <p className="font-bold text-gray-900 text-lg">{new Date().toLocaleDateString()}</p>
               </div>
             </div>
@@ -806,16 +793,16 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Address</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.address')}</label>
                     <p className="text-gray-900 font-medium text-base">{selectedHospital.address}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.phone')}</label>
                       <p className="text-gray-900 font-medium text-base font-mono">{selectedHospital.phone}</p>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.email')}</label>
                       <p className="text-gray-900 font-medium text-base">{selectedHospital.email}</p>
                     </div>
                   </div>
@@ -829,7 +816,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">License Number</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.licenseNumber')}</label>
                     <p className="text-gray-900 font-bold text-xl font-mono">{selectedHospital.license}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -838,7 +825,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                       <p className="text-gray-900 font-medium text-base">{selectedHospital.licenseIssueDate}</p>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Expiry Date</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.expiryDate')}</label>
                       <p className="text-gray-900 font-medium text-base">{selectedHospital.licenseExpiryDate}</p>
                     </div>
                   </div>
@@ -865,14 +852,14 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 <button
                   onClick={() => setTimeout(() => window.print(), 100)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Print"
+                  title={t('ui.print')}
                 >
                   <Printer className="w-4 h-4" />
                 </button>
                 <button
                   onClick={handleCloseViewModal}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -922,20 +909,20 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Address</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.address')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedHospital.address}
                       </p>
                     </div>
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.phone')}</label>
                         <p className="text-xs text-gray-900 dark:text-white font-medium font-mono">
                           {selectedHospital.phone}
                         </p>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.email')}</label>
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer">
                           {selectedHospital.email}
                         </p>
@@ -952,7 +939,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">License Number</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.licenseNumber')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-bold font-mono bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded inline-block">
                         {selectedHospital.license}
                       </p>
@@ -964,7 +951,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiry Date</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.expiryDate')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium text-red-600 dark:text-red-400">
                         {selectedHospital.licenseExpiryDate}
                       </p>
@@ -974,26 +961,24 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
 
                 {/* Audit Information */}
                 <div className="md:col-span-2 bg-white dark:bg-gray-700/30 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-2">
-                    System Information
-                  </h4>
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-2">{t('ui.systemInformation')}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created By</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdBy')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedHospital.createdBy || '-'}</p>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdAt')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedHospital.createdAt ? new Date(selectedHospital.createdAt).toLocaleString() : '-'}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedBy')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedHospital.updatedBy || '-'}</p>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedAt')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedHospital.updatedAt ? new Date(selectedHospital.updatedAt).toLocaleString() : '-'}
                       </p>
@@ -1007,9 +992,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
               <button
                 onClick={handleCloseViewModal}
                 className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs shadow-sm"
-              >
-                Close Detail View
-              </button>
+              >{t('ui.closeDetailView')}</button>
             </div>
           </div>
         </div>

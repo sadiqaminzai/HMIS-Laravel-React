@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText, Stethoscope, Scissors, Users } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
@@ -24,6 +25,7 @@ import {
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { toast } from 'sonner';
 
 type TabKey = 'types' | 'surgeries' | 'patientSurgeries' | 'dischargeSummary';
@@ -114,10 +116,23 @@ const mapPatientSurgery = (item: any): PatientSurgeryItem => ({
 });
 
 export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
+  const { getPrintPaperSize, loadHospitalSetting } = useSettings();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  // These screens previously had no permission checks at all.
+  const canAddTypes = hasPermission('add_surgery_types') || hasPermission('manage_surgery_types');
+  const canEditTypes = hasPermission('edit_surgery_types') || hasPermission('manage_surgery_types');
+  const canDeleteTypes = hasPermission('delete_surgery_types') || hasPermission('manage_surgery_types');
+  const canAddSurgeries = hasPermission('add_surgeries') || hasPermission('manage_surgeries');
+  const canEditSurgeries = hasPermission('edit_surgeries') || hasPermission('manage_surgeries');
+  const canDeleteSurgeries = hasPermission('delete_surgeries') || hasPermission('manage_surgeries');
+  const canAddPatientSurgeries = hasPermission('add_patient_surgeries') || hasPermission('manage_patient_surgeries');
+  const canEditPatientSurgeries = hasPermission('edit_patient_surgeries') || hasPermission('manage_patient_surgeries');
+  const canDeletePatientSurgeries = hasPermission('delete_patient_surgeries') || hasPermission('manage_patient_surgeries');
+  const canPrintPatientSurgeries = hasPermission('print_patient_surgeries') || hasPermission('view_patient_surgeries') || hasPermission('manage_patient_surgeries');
 
   const [activeTab, setActiveTab] = useState<TabKey>('types');
   const [search, setSearch] = useState('');
@@ -160,11 +175,20 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     notes: '',
     isActive: true,
   });
-    const [receiptSize, setReceiptSize] = useState<'a4' | '58mm' | '76mm' | '80mm'>(() => {
+    const [receiptSize, setReceiptSize] = useState<'a4' | 'a5' | '58mm' | '76mm' | '80mm'>(() => {
       const saved = localStorage.getItem('surgery_receipt_size');
       if (saved === '58mm' || saved === '76mm' || saved === '80mm' || saved === 'a4') return saved;
       return '80mm';
     });
+
+  // Follow the hospital-wide paper size (Settings > General > Print Settings).
+  const configuredPaperSize = getPrintPaperSize(currentHospital.id, 'surgery_receipt');
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
+  useEffect(() => {
+    setReceiptSize(configuredPaperSize);
+  }, [configuredPaperSize, currentHospital.id]);
 
   const [printingDischargeItem, setPrintingDischargeItem] = useState<PatientSurgeryItem | null>(null);
 
@@ -216,12 +240,12 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       localStorage.setItem('surgery_receipt_size', receiptSize);
     }, [receiptSize]);
 
-    const printSurgeryReceipt = (item: PatientSurgeryItem, size: 'a4' | '58mm' | '76mm' | '80mm' = receiptSize) => {
-      const isCompactReceipt = size !== 'a4';
-      const ticketWidth = isCompactReceipt ? size : '190mm';
+    const printSurgeryReceipt = (item: PatientSurgeryItem, size: 'a4' | 'a5' | '58mm' | '76mm' | '80mm' = receiptSize) => {
+      const isCompactReceipt = size !== 'a4' && size !== 'a5';
+      const ticketWidth = isCompactReceipt ? size : (size === 'a5' ? '128mm' : '190mm');
       const pageRule = isCompactReceipt
         ? `@page { size: ${size} auto; margin: 0; }`
-        : '@page { size: A4; margin: 10mm; }';
+        : `@page { size: ${size === 'a5' ? 'A5' : 'A4'}; margin: 10mm; }`;
       
       const receiptHtml = `
         <html>
@@ -655,42 +679,60 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   }, [patientSurgeryForm.surgeryId, patientSurgeryForm.cost, surgeries]);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-2">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Surgery Management</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage surgery types, surgeries, and patient surgery scheduling.</p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.surgeriesTitle')}</h1>
+          <p className="text-xs text-gray-600 dark:text-gray-400">{t('modules.surgeriesSubtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={loadAll} className="px-3 py-2 rounded border text-sm flex items-center gap-2"><RefreshCw className="w-4 h-4" /> Refresh</button>
-          {activeTab === 'types' && <button onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Type</button>}
-          {activeTab === 'surgeries' && <button onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Surgery</button>}
-          {activeTab === 'patientSurgeries' && <button onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'pending', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Patient Surgery</button>}
-          {activeTab === 'dischargeSummary' && <button onClick={openNewDischargeModal} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Add Discharge Summary</button>}
-        </div>
-      </div>
-
-      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
         <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
-        <div className="relative flex-1 md:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Search"
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
-          />
-        </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button onClick={() => setActiveTab('types')} className={`px-3 py-2 text-sm rounded ${activeTab === 'types' ? 'bg-blue-600 text-white' : 'border'}`}>Surgery Types</button>
-        <button onClick={() => setActiveTab('surgeries')} className={`px-3 py-2 text-sm rounded ${activeTab === 'surgeries' ? 'bg-blue-600 text-white' : 'border'}`}>Surgeries</button>
-        <button onClick={() => setActiveTab('patientSurgeries')} className={`px-3 py-2 text-sm rounded ${activeTab === 'patientSurgeries' ? 'bg-blue-600 text-white' : 'border'}`}>Patient Surgeries</button>
-        <button onClick={() => setActiveTab('dischargeSummary')} className={`px-3 py-2 text-sm rounded ${activeTab === 'dischargeSummary' ? 'bg-blue-600 text-white' : 'border'}`}>Discharge Summary</button>
+      {/* Same underline tab style as the Master Data / Invoices modules. */}
+      <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex gap-4 min-w-max overflow-x-auto" aria-label="Surgery sections">
+          {([
+            ['types', t('ui.surgeryTypes'), Stethoscope],
+            ['surgeries', t('ui.surgeries'), Scissors],
+            ['patientSurgeries', t('ui.patientSurgeries'), Users],
+            ['dischargeSummary', t('ui.dischargeSummary'), FileText],
+          ] as const).map(([key, label, Icon]) => {
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key as TabKey)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`group inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-1 py-2.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="ml-auto flex items-center gap-2 pb-1.5">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+              placeholder="Search..."
+              aria-label="Search surgeries"
+              className="w-40 pl-8 pr-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
+          {activeTab === 'types' && canAddTypes && <button onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" />{t('ui.addType')}</button>}
+          {activeTab === 'surgeries' && canAddSurgeries && <button onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Surgery</button>}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <button onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'pending', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Patient Surgery</button>}
+          {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <button onClick={openNewDischargeModal} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Discharge</button>}
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
@@ -698,11 +740,11 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
             <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
               <tr>
-                {activeTab === 'types' && <><th className="px-4 py-2">Name</th><th className="px-4 py-2">Description</th><th className="px-4 py-2">Status</th></>}
-                {activeTab === 'surgeries' && <><th className="px-4 py-2">Name</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">Cost</th><th className="px-4 py-2">Status</th></>}
-                {activeTab === 'patientSurgeries' && <><th className="px-4 py-2">Patient</th><th className="px-4 py-2">Surgery</th><th className="px-4 py-2">Date</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Payment</th><th className="px-4 py-2">Cost</th></>}
-                {activeTab === 'dischargeSummary' && <><th className="px-4 py-2">Patient</th><th className="px-4 py-2">Surgery</th><th className="px-4 py-2">Discharge Date</th><th className="px-4 py-2">Created By</th><th className="px-4 py-2">Completed By</th><th className="px-4 py-2">Summary</th></>}
-                <th className="px-4 py-2 text-center">Actions</th>
+                {activeTab === 'types' && <><th className="px-4 py-2">{t('table.name')}</th><th className="px-4 py-2">{t('table.description')}</th><th className="px-4 py-2">{t('common.status')}</th></>}
+                {activeTab === 'surgeries' && <><th className="px-4 py-2">{t('table.name')}</th><th className="px-4 py-2">{t('table.type')}</th><th className="px-4 py-2">{t('table.cost')}</th><th className="px-4 py-2">{t('common.status')}</th></>}
+                {activeTab === 'patientSurgeries' && <><th className="px-4 py-2">{t('table.patient')}</th><th className="px-4 py-2">{t('table.surgery')}</th><th className="px-4 py-2">{t('table.date')}</th><th className="px-4 py-2">{t('common.status')}</th><th className="px-4 py-2">{t('table.payment')}</th><th className="px-4 py-2">{t('table.cost')}</th></>}
+                {activeTab === 'dischargeSummary' && <><th className="px-4 py-2">{t('table.patient')}</th><th className="px-4 py-2">{t('table.surgery')}</th><th className="px-4 py-2">{t('table.dischargeDate')}</th><th className="px-4 py-2">{t('table.createdBy')}</th><th className="px-4 py-2">{t('table.completedBy')}</th><th className="px-4 py-2">{t('table.summary')}</th></>}
+                <th className="px-4 py-2 text-center">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -716,11 +758,11 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                     <tr key={row.id}>
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
                       <td className="px-4 py-2">{row.description || '-'}</td>
-                      <td className="px-4 py-2">{row.isActive ? 'Active' : 'Inactive'}</td>
+                      <td className="px-4 py-2">{row.isActive ? t('ui.active') : t('ui.inactive')}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => { setEditingType(row); setTypeForm({ name: row.name, description: row.description || '', isActive: row.isActive }); setIsTypeModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
-                          <button onClick={async () => { try { await deleteSurgeryType(row.id); toast.success('Surgery type deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                          {canEditTypes && (<button onClick={() => { setEditingType(row); setTypeForm({ name: row.name, description: row.description || '', isActive: row.isActive }); setIsTypeModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
+                          {canDeleteTypes && (<button onClick={async () => { try { await deleteSurgeryType(row.id); toast.success('Surgery type deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
                         </div>
                       </td>
                     </tr>
@@ -730,11 +772,11 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
                       <td className="px-4 py-2">{row.typeName || row.typeId}</td>
                       <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
-                      <td className="px-4 py-2">{row.isActive ? 'Active' : 'Inactive'}</td>
+                      <td className="px-4 py-2">{row.isActive ? t('ui.active') : t('ui.inactive')}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => { setEditingSurgery(row); setSurgeryForm({ name: row.name, typeId: row.typeId, cost: String(row.cost), description: row.description || '', isActive: row.isActive }); setIsSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
-                          <button onClick={async () => { try { await deleteSurgery(row.id); toast.success('Surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                          {canEditSurgeries && (<button onClick={() => { setEditingSurgery(row); setSurgeryForm({ name: row.name, typeId: row.typeId, cost: String(row.cost), description: row.description || '', isActive: row.isActive }); setIsSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
+                          {canDeleteSurgeries && (<button onClick={async () => { try { await deleteSurgery(row.id); toast.success('Surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
                         </div>
                       </td>
                     </tr>
@@ -749,10 +791,10 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title="Print Invoice"><Printer className="w-4 h-4" /></button>
+                          {canPrintPatientSurgeries && (<button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title={t('ui.printInvoice')}><Printer className="w-4 h-4" /></button>)}
                           <button onClick={async () => { try { const updated = await togglePatientSurgeryPaymentStatus(row.id); setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item)); toast.success('Payment status toggled'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
-                          <button onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>
-                          <button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                          {canEditPatientSurgeries && (<button onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
+                          {canDeletePatientSurgeries && (<button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
                         </div>
                       </td>
                     </tr>
@@ -791,18 +833,14 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >
-                Prev
-              </button>
+              >{t('ui.prev')}</button>
               <span>Page {currentPage} of {totalPages}</span>
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         )}
@@ -811,15 +849,15 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       {isTypeModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700">
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">{editingType ? 'Edit Surgery Type' : 'Add Surgery Type'}</h2>
-              <button onClick={() => setIsTypeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">{editingType ? 'Edit Surgery Type' : 'Add Surgery Type'}</h2>
+              <button onClick={() => setIsTypeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={saveType} className="p-5 grid grid-cols-12 gap-3">
-              <div className="col-span-12"><label className="text-xs font-medium">Name</label><input value={typeForm.name} onChange={(e) => setTypeForm((p) => ({ ...p, name: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12"><label className="text-xs font-medium">Description</label><input value={typeForm.description} onChange={(e) => setTypeForm((p) => ({ ...p, description: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12 flex items-center gap-2"><input id="type-active" type="checkbox" checked={typeForm.isActive} onChange={(e) => setTypeForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="type-active" className="text-sm">Active</label></div>
-              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsTypeModalOpen(false)} className="px-3 py-2 text-sm rounded border">Cancel</button><button type="submit" className="px-3 py-2 text-sm rounded bg-blue-600 text-white">{editingType ? 'Update' : 'Create'}</button></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.name')}</label><input value={typeForm.name} onChange={(e) => setTypeForm((p) => ({ ...p, name: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.description')}</label><input value={typeForm.description} onChange={(e) => setTypeForm((p) => ({ ...p, description: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 flex items-center gap-2"><input id="type-active" type="checkbox" checked={typeForm.isActive} onChange={(e) => setTypeForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="type-active" className="text-sm">{t('ui.active')}</label></div>
+              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsTypeModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button><button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editingType ? t('ui.update') : t('ui.create')}</button></div>
             </form>
           </div>
         </div>
@@ -828,17 +866,17 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       {isSurgeryModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700">
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">{editingSurgery ? 'Edit Surgery' : 'Add Surgery'}</h2>
-              <button onClick={() => setIsSurgeryModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">{editingSurgery ? t('ui.editSurgery') : t('ui.addSurgery')}</h2>
+              <button onClick={() => setIsSurgeryModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={saveSurgery} className="p-5 grid grid-cols-12 gap-3">
-              <div className="col-span-12"><label className="text-xs font-medium">Name</label><input value={surgeryForm.name} onChange={(e) => setSurgeryForm((p) => ({ ...p, name: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12"><label className="text-xs font-medium">Type</label><select value={surgeryForm.typeId} onChange={(e) => setSurgeryForm((p) => ({ ...p, typeId: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="">Select type</option>{types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="text-xs font-medium">Cost</label><input type="number" min={0} step="0.01" value={surgeryForm.cost} onChange={(e) => setSurgeryForm((p) => ({ ...p, cost: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12 md:col-span-6 flex items-end gap-2 pb-2"><input id="surgery-active" type="checkbox" checked={surgeryForm.isActive} onChange={(e) => setSurgeryForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="surgery-active" className="text-sm">Active</label></div>
-              <div className="col-span-12"><label className="text-xs font-medium">Description</label><input value={surgeryForm.description} onChange={(e) => setSurgeryForm((p) => ({ ...p, description: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsSurgeryModalOpen(false)} className="px-3 py-2 text-sm rounded border">Cancel</button><button type="submit" className="px-3 py-2 text-sm rounded bg-blue-600 text-white">{editingSurgery ? 'Update' : 'Create'}</button></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.name')}</label><input value={surgeryForm.name} onChange={(e) => setSurgeryForm((p) => ({ ...p, name: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.type')}</label><select value={surgeryForm.typeId} onChange={(e) => setSurgeryForm((p) => ({ ...p, typeId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">{t('ui.selectType')}</option>{types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Cost</label><input type="number" min={0} step="0.01" value={surgeryForm.cost} onChange={(e) => setSurgeryForm((p) => ({ ...p, cost: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 md:col-span-6 flex items-end gap-2 pb-2"><input id="surgery-active" type="checkbox" checked={surgeryForm.isActive} onChange={(e) => setSurgeryForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="surgery-active" className="text-sm">{t('ui.active')}</label></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.description')}</label><input value={surgeryForm.description} onChange={(e) => setSurgeryForm((p) => ({ ...p, description: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsSurgeryModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button><button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editingSurgery ? t('ui.update') : t('ui.create')}</button></div>
             </form>
           </div>
         </div>
@@ -847,21 +885,21 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       {isPatientSurgeryModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">{editingPatientSurgery ? 'Edit Patient Surgery' : 'Add Patient Surgery'}</h2>
-              <button onClick={() => setIsPatientSurgeryModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">{editingPatientSurgery ? 'Edit Patient Surgery' : 'Add Patient Surgery'}</h2>
+              <button onClick={() => setIsPatientSurgeryModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={savePatientSurgery} className="p-5 grid grid-cols-12 gap-3">
-              <div className="col-span-12 md:col-span-6"><label className="text-xs font-medium">Patient</label><select value={patientSurgeryForm.patientId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, patientId: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="">Select patient</option>{filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="text-xs font-medium">Doctor (optional)</label><select value={patientSurgeryForm.doctorId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, doctorId: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="">None</option>{filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="text-xs font-medium">Surgery</label><select value={patientSurgeryForm.surgeryId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryId: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="">Select surgery</option>{surgeries.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="text-xs font-medium">Surgery Date</label><input type="date" value={patientSurgeryForm.surgeryDate} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryDate: e.target.value }))} required className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12 md:col-span-4"><label className="text-xs font-medium">Status</label><select value={patientSurgeryForm.status} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, status: e.target.value as PatientSurgeryItem['status'] }))} className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="scheduled">scheduled</option><option value="in_progress">in_progress</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select></div>
-              <div className="col-span-12 md:col-span-4"><label className="text-xs font-medium">Payment Status</label><select value={patientSurgeryForm.paymentStatus} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="mt-1 w-full rounded border px-3 py-2 text-sm"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>
-              <div className="col-span-12 md:col-span-4"><label className="text-xs font-medium">Cost (optional)</label><input type="number" min={0} step="0.01" value={patientSurgeryForm.cost} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, cost: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12"><label className="text-xs font-medium">Notes</label><input value={patientSurgeryForm.notes} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, notes: e.target.value }))} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></div>
-              <div className="col-span-12 flex items-center gap-2"><input id="ps-active" type="checkbox" checked={patientSurgeryForm.isActive} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="ps-active" className="text-sm">Active</label></div>
-              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsPatientSurgeryModalOpen(false)} className="px-3 py-2 text-sm rounded border">Cancel</button><button type="submit" className="px-3 py-2 text-sm rounded bg-blue-600 text-white">{editingPatientSurgery ? 'Update' : 'Create'}</button></div>
+              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label><select value={patientSurgeryForm.patientId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, patientId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">Select patient</option>{filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label><select value={patientSurgeryForm.doctorId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, doctorId: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">None</option>{filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.surgery')}</label><select value={patientSurgeryForm.surgeryId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">Select surgery</option>{surgeries.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Surgery Date</label><input type="date" value={patientSurgeryForm.surgeryDate} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label><select value={patientSurgeryForm.status} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, status: e.target.value as PatientSurgeryItem['status'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="scheduled">scheduled</option><option value="in_progress">in_progress</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select></div>
+              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label><select value={patientSurgeryForm.paymentStatus} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>
+              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Cost (optional)</label><input type="number" min={0} step="0.01" value={patientSurgeryForm.cost} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, cost: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.notes')}</label><input value={patientSurgeryForm.notes} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, notes: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 flex items-center gap-2"><input id="ps-active" type="checkbox" checked={patientSurgeryForm.isActive} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="ps-active" className="text-sm">{t('ui.active')}</label></div>
+              <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsPatientSurgeryModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button><button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editingPatientSurgery ? t('ui.update') : t('ui.create')}</button></div>
             </form>
           </div>
         </div>
@@ -874,7 +912,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">{editingDischargeSurgery ? 'Edit Discharge Summary' : 'Add Discharge Summary'}</h2>
               </div>
-              <button onClick={() => setIsDischargeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+              <button onClick={() => setIsDischargeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <style>
               {`
@@ -897,7 +935,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
             </style>
             <form onSubmit={saveDischargeSummary} className="p-4 sm:p-5 grid grid-cols-12 gap-3 overflow-y-auto max-h-[calc(72vh-86px)]">
               <div className="col-span-12">
-                <label className="text-xs font-medium">Patient Surgery Case</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Patient Surgery Case</label>
                 <select
                   value={dischargeForm.patientSurgeryId}
                   onChange={(e) => {
@@ -914,7 +952,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                     }));
                   }}
                   required
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                 >
                   <option value="">Select surgery case</option>
                   {patientSurgeries.map((row) => (
@@ -925,45 +963,45 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 </select>
               </div>
               <div className="col-span-12 sm:col-span-6">
-                <label className="text-xs font-medium">Discharge Date</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discharge Date</label>
                 <input
                   type="date"
                   value={dischargeForm.dischargeDate}
                   onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeDate: e.target.value }))}
                   required
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
 
               <div className="col-span-12 sm:col-span-6">
-                <label className="text-xs font-medium">Discharge Status</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discharge Status</label>
                 <div className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-700 capitalize">
                   {editingDischargeSurgery?.status || 'scheduled'}
                 </div>
               </div>
 
               <div className="col-span-12 sm:col-span-6">
-                <label className="text-xs font-medium">Created By</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.createdBy')}</label>
                 <input
                   value={dischargeForm.dischargeCreatedBy}
                   onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeCreatedBy: e.target.value }))}
                   placeholder="Doctor or staff name"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
               <div className="col-span-12 sm:col-span-6">
-                <label className="text-xs font-medium">Completed By</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Completed By</label>
                 <input
                   value={dischargeForm.dischargeCompletedBy}
                   onChange={(e) => setDischargeForm((prev) => ({ ...prev, dischargeCompletedBy: e.target.value }))}
                   placeholder="Assigned doctor"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
 
               <div className="col-span-12">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium">Discharge Summary</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.dischargeSummary')}</label>
                   <button
                     type="button"
                     onClick={resetDischargeTemplate}
@@ -1012,7 +1050,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               </div>
 
               <div className="col-span-12 flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-                <button type="button" onClick={() => setIsDischargeModalOpen(false)} className="px-4 py-2 text-sm rounded border">Cancel</button>
+                <button type="button" onClick={() => setIsDischargeModalOpen(false)} className="px-4 py-2 text-sm rounded border">{t('ui.cancel')}</button>
                 <button type="submit" className="px-5 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save Summary</button>
               </div>
             </form>
@@ -1023,7 +1061,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       {showInvoiceModal && editingPatientSurgery && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600" />
                 Surgery Invoice
@@ -1041,7 +1079,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                     <p className="text-sm text-gray-600">Surgery Department</p>
                   </div>
                   <div className="text-right">
-                    <h2 className="text-xl font-bold text-gray-400 uppercase">Invoice</h2>
+                    <h2 className="text-xl font-bold text-gray-400 uppercase">{t('ui.invoice')}</h2>
                     <p className="text-sm text-gray-600">No: SURG-{editingPatientSurgery.id}</p>
                     <p className="text-sm text-gray-600">Date: {editingPatientSurgery.surgeryDate}</p>
                   </div>
@@ -1049,7 +1087,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
 
                 <div className="grid grid-cols-2 gap-8 mb-8">
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">Patient Details</h3>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase mb-2">{t('ui.patientDetails')}</h3>
                     <p className="font-bold">{editingPatientSurgery.patientName}</p>
                   </div>
                   <div className="text-right">
@@ -1061,9 +1099,9 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 <table className="w-full mb-8">
                   <thead>
                     <tr className="border-b-2 border-gray-100">
-                      <th className="text-left py-2 font-bold">Description</th>
-                      <th className="text-right py-2 font-bold">Status</th>
-                      <th className="text-right py-2 font-bold">Amount</th>
+                      <th className="text-left py-2 font-bold">{t('table.description')}</th>
+                      <th className="text-right py-2 font-bold">{t('common.status')}</th>
+                      <th className="text-right py-2 font-bold">{t('table.amount')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1081,11 +1119,11 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 <div className="flex justify-end">
                   <div className="w-1/2 space-y-2 font-bold">
                     <div className="flex justify-between text-lg text-blue-900 pt-2 border-t-2 border-blue-900">
-                      <span>Total Amount</span>
+                      <span>{t('ui.totalAmount')}</span>
                       <span>{editingPatientSurgery.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-sm text-green-600 capitalize italic">
-                      <span>Payment Status</span>
+                      <span>{t('ui.paymentStatus')}</span>
                       <span>{editingPatientSurgery.paymentStatus}</span>
                     </div>
                   </div>
@@ -1103,23 +1141,23 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                   <select
                     title="Receipt Size"
                     value={receiptSize}
-                    onChange={(e) => setReceiptSize(e.target.value as 'a4' | '80mm' | '76mm' | '58mm')}
-                    className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
+                    onChange={(e) => setReceiptSize(e.target.value as 'a4' | 'a5' | '80mm' | '76mm' | '58mm')}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   >
                     <option value="a4">A4 Invoice</option>
+                    <option value="a5">A5 Invoice</option>
                     <option value="80mm">80mm Receipt</option>
                     <option value="76mm">76mm Receipt</option>
                     <option value="58mm">58mm Receipt</option>
                   </select>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 text-sm font-medium border rounded-md">Close</button>
+                  <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 text-sm font-medium border rounded-md">{t('ui.close')}</button>
                   <button
                     onClick={() => printSurgeryReceipt(editingPatientSurgery)}
                     className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md flex items-center gap-2"
                   >
-                    <Printer className="w-4 h-4" /> Print
-                  </button>
+                    <Printer className="w-4 h-4" />{t('ui.print')}</button>
                 </div>
             </div>
           </div>

@@ -1,13 +1,12 @@
 <?php
 
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContactMessageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
-use App\Http\Controllers\DiscountController;
-use App\Http\Controllers\DiscountTypeController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\ShiftController;
@@ -39,6 +38,7 @@ use App\Http\Controllers\StockReconciliationController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\PharmacyFinanceController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\RoomBookingController;
 use App\Http\Controllers\RoomController;
@@ -46,6 +46,8 @@ use App\Http\Controllers\PatientSurgeryController;
 use App\Http\Controllers\SurgeryController;
 use App\Http\Controllers\SurgeryTypeController;
 use App\Http\Controllers\TestTemplateController;
+use App\Http\Controllers\UltrasoundExamController;
+use App\Http\Controllers\UltrasoundTypeController;
 use App\Http\Controllers\ShifaaScriptController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VerificationController;
@@ -91,19 +93,6 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('appointments', [AppointmentController::class, 'store'])->middleware('permission:add_appointments,schedule_appointments,manage_appointments');
 	Route::match(['PUT', 'PATCH'], 'appointments/{appointment}', [AppointmentController::class, 'update'])->middleware('permission:edit_appointments,manage_appointments,update_appointment_status');
 	Route::delete('appointments/{appointment}', [AppointmentController::class, 'destroy'])->middleware('permission:delete_appointments,manage_appointments');
-
-	// Discount catalog
-	Route::get('discount-types', [DiscountTypeController::class, 'index'])->middleware('permission:view_discounts,manage_discounts');
-	Route::get('discount-types/{discountType}', [DiscountTypeController::class, 'show'])->middleware('permission:view_discounts,manage_discounts');
-	Route::post('discount-types', [DiscountTypeController::class, 'store'])->middleware('permission:add_discounts,manage_discounts');
-	Route::match(['PUT', 'PATCH'], 'discount-types/{discountType}', [DiscountTypeController::class, 'update'])->middleware('permission:edit_discounts,manage_discounts');
-	Route::delete('discount-types/{discountType}', [DiscountTypeController::class, 'destroy'])->middleware('permission:delete_discounts,manage_discounts');
-
-	Route::get('discounts', [DiscountController::class, 'index'])->middleware('permission:view_discounts,manage_discounts');
-	Route::get('discounts/{discount}', [DiscountController::class, 'show'])->middleware('permission:view_discounts,manage_discounts');
-	Route::post('discounts', [DiscountController::class, 'store'])->middleware('permission:add_discounts,manage_discounts');
-	Route::match(['PUT', 'PATCH'], 'discounts/{discount}', [DiscountController::class, 'update'])->middleware('permission:edit_discounts,manage_discounts');
-	Route::delete('discounts/{discount}', [DiscountController::class, 'destroy'])->middleware('permission:delete_discounts,manage_discounts');
 
 	// Room management and booking
 	Route::get('rooms', [RoomController::class, 'index'])->middleware('permission:view_rooms,manage_rooms');
@@ -277,6 +266,14 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::match(['PUT', 'PATCH'], 'transactions/{transaction}', [TransactionController::class, 'update'])->middleware('permission:edit_transactions,manage_transactions');
 	Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])->middleware('permission:delete_transactions,manage_transactions');
 
+	// Pharmacy Finance — financial control over invoices, purchases and returns.
+	// Per-document-type access is enforced inside the controller.
+	Route::get('pharmacy-finance', [PharmacyFinanceController::class, 'index'])->middleware('permission:view_finance_sales,view_finance_purchases,view_finance_sales_returns,view_finance_purchase_returns,manage_finance');
+	Route::get('pharmacy-finance/summary', [PharmacyFinanceController::class, 'summary'])->middleware('permission:view_finance_sales,view_finance_purchases,view_finance_sales_returns,view_finance_purchase_returns,manage_finance');
+	Route::get('pharmacy-finance/export', [PharmacyFinanceController::class, 'export'])->middleware('permission:export_finance,manage_finance');
+	Route::post('pharmacy-finance/{transaction}/payment', [PharmacyFinanceController::class, 'recordPayment'])->middleware('permission:record_finance_payments,manage_finance');
+	Route::match(['PUT', 'PATCH'], 'pharmacy-finance/{transaction}/status', [PharmacyFinanceController::class, 'updateStatus'])->middleware('permission:edit_finance_payment_status,manage_finance');
+
 	// Ledger & finance summary
 	Route::get('ledger', [LedgerController::class, 'index'])->middleware('permission:view_ledger,manage_ledger');
 	Route::get('ledger/summary', [LedgerController::class, 'summary'])->middleware('permission:view_ledger,manage_ledger');
@@ -332,6 +329,29 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('lab-order-items/{labOrderItem}/results', [LabOrderController::class, 'enterResults'])->middleware('permission:enter_lab_results,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}/receipt', [LabOrderController::class, 'getReceipt'])->middleware('permission:print_lab_orders,view_lab_orders,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}/report', [LabOrderController::class, 'getReport'])->middleware('permission:export_lab_orders,print_lab_orders,view_lab_orders,manage_lab_orders');
+
+	// Radiology - Ultrasound report templates
+	Route::get('ultrasound-types', [UltrasoundTypeController::class, 'index'])->middleware('permission_or_doctor:view_ultrasound_types,manage_ultrasound_types,view_ultrasound_exams,manage_ultrasound_exams');
+	Route::get('ultrasound-types/{ultrasoundType}', [UltrasoundTypeController::class, 'show'])->middleware('permission_or_doctor:view_ultrasound_types,manage_ultrasound_types,view_ultrasound_exams,manage_ultrasound_exams');
+	Route::post('ultrasound-types', [UltrasoundTypeController::class, 'store'])->middleware('permission:add_ultrasound_types,manage_ultrasound_types');
+	Route::match(['PUT', 'PATCH'], 'ultrasound-types/{ultrasoundType}', [UltrasoundTypeController::class, 'update'])->middleware('permission:edit_ultrasound_types,manage_ultrasound_types');
+	Route::delete('ultrasound-types/{ultrasoundType}', [UltrasoundTypeController::class, 'destroy'])->middleware('permission:delete_ultrasound_types,manage_ultrasound_types');
+
+	// Radiology - Ultrasound exams
+	Route::get('ultrasound-exams', [UltrasoundExamController::class, 'index'])->middleware('permission_or_doctor:view_ultrasound_exams,manage_ultrasound_exams');
+	Route::get('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'show'])->middleware('permission_or_doctor:view_ultrasound_exams,manage_ultrasound_exams');
+	Route::get('ultrasound-exams/{ultrasoundExam}/report', [UltrasoundExamController::class, 'report'])->middleware('permission_or_doctor:print_ultrasound_exams,export_ultrasound_exams,view_ultrasound_exams,manage_ultrasound_exams');
+	Route::post('ultrasound-exams', [UltrasoundExamController::class, 'store'])->middleware('permission_or_doctor:add_ultrasound_exams,manage_ultrasound_exams');
+	Route::match(['PUT', 'PATCH'], 'ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'update'])->middleware('permission_or_doctor:edit_ultrasound_exams,manage_ultrasound_exams');
+	Route::delete('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'destroy'])->middleware('permission:delete_ultrasound_exams,manage_ultrasound_exams');
+
+	// Audit Log (read-only; entries are written by the application itself)
+	Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:view_audit_logs,manage_audit_logs');
+	Route::get('audit-logs/filters', [AuditLogController::class, 'filters'])->middleware('permission:view_audit_logs,manage_audit_logs');
+	Route::get('audit-logs/export', [AuditLogController::class, 'export'])->middleware('permission:export_audit_logs,view_audit_logs,manage_audit_logs');
+	Route::get('audit-logs/{auditLog}', [AuditLogController::class, 'show'])->middleware('permission:view_audit_logs,manage_audit_logs');
+	// Any authenticated user may report their own print/export activity.
+	Route::post('audit-logs/events', [AuditLogController::class, 'storeClientEvent']);
 
 	Route::get('hospital-settings/{hospital}', [HospitalSettingController::class, 'show'])->middleware('permission_or_doctor:view_hospital_settings,manage_hospital_settings');
 	Route::put('hospital-settings/{hospital}', [HospitalSettingController::class, 'update'])->middleware('permission:edit_hospital_settings,manage_hospital_settings');

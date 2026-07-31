@@ -39,6 +39,7 @@ import { LicenseExpired } from './components/LicenseExpired';
 import { VerificationRoutes } from './components/verification/VerificationRoutes';
 import { UserRole, Hospital } from './types';
 import { useLicenseCheck, shouldShowWarningToday, markWarningShownToday } from './hooks/useLicenseCheck';
+import { isRtlLanguage } from './utils/direction';
 import api from '../api/axios';
 import '../i18n/config';
 
@@ -62,10 +63,11 @@ const DashboardLazy = lazy(() => import('./components/Dashboard').then((m) => ({
 const HospitalManagementLazy = lazy(() => import('./components/HospitalManagement').then((m) => ({ default: m.HospitalManagement })));
 const DoctorManagementLazy = lazy(() => import('./components/DoctorManagement').then((m) => ({ default: m.DoctorManagement })));
 const ManufacturerManagementLazy = lazy(() => import('./components/ManufacturerManagement').then((m) => ({ default: m.ManufacturerManagement })));
+const PharmacyMasterDataLazy = lazy(() => import('./components/PharmacyMasterData').then((m) => ({ default: m.PharmacyMasterData })));
+const StockControlLazy = lazy(() => import('./components/StockControl').then((m) => ({ default: m.StockControl })));
+const RoomModuleLazy = lazy(() => import('./components/RoomModule').then((m) => ({ default: m.RoomModule })));
 const MedicineTypeManagementLazy = lazy(() => import('./components/MedicineTypeManagement').then((m) => ({ default: m.MedicineTypeManagement })));
 const SupplierManagementLazy = lazy(() => import('./components/SupplierManagement').then((m) => ({ default: m.SupplierManagement })));
-const DiscountTypeManagementLazy = lazy(() => import('./components/DiscountTypeManagement').then((m) => ({ default: m.DiscountTypeManagement })));
-const DiscountCatalogManagementLazy = lazy(() => import('./components/DiscountCatalogManagement').then((m) => ({ default: m.DiscountCatalogManagement })));
 const RoomManagementLazy = lazy(() => import('./components/RoomManagement').then((m) => ({ default: m.RoomManagement })));
 const MedicineSetManagementLazy = lazy(() => import('./components/MedicineSetManagement').then((m) => ({ default: m.MedicineSetManagement })));
 const PrescriptionDiagnosisManagementLazy = lazy(() => import('./components/PrescriptionDiagnosisManagement').then((m) => ({ default: m.PrescriptionDiagnosisManagement })));
@@ -98,6 +100,9 @@ const OtherIncomeCategoriesLazy = lazy(() => import('./components/OtherIncomeCat
 const OtherIncomeManagementLazy = lazy(() => import('./components/OtherIncomeManagement').then((m) => ({ default: m.OtherIncomeManagement })));
 const OtherIncomeReportLazy = lazy(() => import('./components/OtherIncomeReport').then((m) => ({ default: m.OtherIncomeReport })));
 const LedgerReportLazy = lazy(() => import('./components/LedgerReport'));
+const UltrasoundManagementLazy = lazy(() => import('./components/UltrasoundManagement').then((m) => ({ default: m.UltrasoundManagement })));
+const AuditLogManagementLazy = lazy(() => import('./components/AuditLogManagement').then((m) => ({ default: m.AuditLogManagement })));
+const PharmacyFinanceLazy = lazy(() => import('./components/PharmacyFinance').then((m) => ({ default: m.PharmacyFinance })));
 
 function RouteLoadingFallback() {
   return (
@@ -155,8 +160,19 @@ function AppContent() {
   const [currentHospital, setCurrentHospital] = useState<Hospital | null>(hospitals[0] || null);
   const [myHospitalLoading, setMyHospitalLoading] = useState(false);
   const [showLicenseWarning, setShowLicenseWarning] = useState(false);
-  const [isRTL, setIsRTL] = useState(false);
   const shouldShowUserLoading = isAuthenticated && !user;
+
+  // Drive the document direction from the active language. Setting `dir` on
+  // <html> is what flips the whole layout: flex/grid ordering, logical
+  // margins/padding and text alignment all follow it, so the sidebar moves to
+  // the right and content to the left without per-component overrides.
+  useEffect(() => {
+    const language = String(i18n.language || 'en').toLowerCase();
+    const dir = isRtlLanguage(language) ? 'rtl' : 'ltr';
+
+    document.documentElement.setAttribute('dir', dir);
+    document.documentElement.setAttribute('lang', language.split('-')[0]);
+  }, [i18n.language]);
 
   // Update currentHospital when hospitals context changes (e.g. color update)
   useEffect(() => {
@@ -376,8 +392,10 @@ function AppContent() {
     doctorId: user.doctorId
   };
 
+  // `dir` on <html> reverses flex ordering, so the sidebar lands on the correct
+  // side in both directions without a flex-row-reverse override here.
   return (
-    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       
       {/* License Expiry Warning Modal */}
       {showLicenseWarning && (
@@ -440,6 +458,38 @@ function AppContent() {
                 <RequirePermission anyOf={["view_patients", "add_patients", "edit_patients", "delete_patients", "export_patients", "print_patients", "manage_patients", "register_patients"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <PatientManagementLazy hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/room-management"
+              element={
+                <RequirePermission anyOf={["view_rooms", "manage_rooms", "view_room_bookings", "manage_room_bookings"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <RoomModuleLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* Grouped pharmacy reference data (tabs). The individual routes below
+                are kept so existing links/bookmarks still resolve. */}
+            <Route
+              path="/pharmacy-master"
+              element={
+                <RequirePermission anyOf={["view_medicines", "manage_medicines", "dispense_medicines", "view_medicine_types", "manage_medicine_types", "view_manufacturers", "manage_manufacturers", "view_suppliers", "manage_suppliers"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PharmacyMasterDataLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/stock-control"
+              element={
+                <RequirePermission anyOf={["view_stocks", "manage_stocks", "edit_stocks"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <StockControlLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }
@@ -525,26 +575,6 @@ function AppContent() {
               }
             />
             <Route
-              path="/discount-types"
-              element={
-                <RequirePermission anyOf={["view_discounts", "add_discounts", "edit_discounts", "delete_discounts", "manage_discounts"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <DiscountTypeManagementLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/discount-catalog"
-              element={
-                <RequirePermission anyOf={["view_discounts", "add_discounts", "edit_discounts", "delete_discounts", "manage_discounts"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <DiscountCatalogManagementLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
               path="/rooms"
               element={
                 <RequirePermission anyOf={["view_rooms", "add_rooms", "edit_rooms", "delete_rooms", "manage_rooms"]}>
@@ -610,6 +640,36 @@ function AppContent() {
                 <RequirePermission anyOf={["view_prescriptions", "add_prescriptions", "edit_prescriptions", "delete_prescriptions", "export_prescriptions", "print_prescriptions", "manage_prescriptions", "create_prescription"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <PrescriptionListLazy hospital={currentHospital} userRole={currentRole} currentUser={currentUser} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/pharmacy-finance"
+              element={
+                <RequirePermission anyOf={["view_finance_sales", "view_finance_purchases", "view_finance_sales_returns", "view_finance_purchase_returns", "record_finance_payments", "edit_finance_payment_status", "export_finance", "manage_finance"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PharmacyFinanceLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/radiology/ultrasound"
+              element={
+                <RequirePermission anyOf={["view_ultrasound_exams", "add_ultrasound_exams", "edit_ultrasound_exams", "delete_ultrasound_exams", "export_ultrasound_exams", "print_ultrasound_exams", "manage_ultrasound_exams", "view_ultrasound_types", "manage_ultrasound_types"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/settings/audit-log"
+              element={
+                <RequirePermission anyOf={["view_audit_logs", "manage_audit_logs"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <AuditLogManagementLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }

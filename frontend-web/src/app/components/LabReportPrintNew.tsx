@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 import { LabTest, Hospital, TestTemplate } from '../types';
@@ -13,6 +14,7 @@ interface LabReportPrintNewProps {
 }
 
 export function LabReportPrintNew({ test, hospital, onClose, onPrint }: LabReportPrintNewProps) {
+  const { t } = useTranslation();
   const handlePrint = () => {
     window.print();
     onPrint?.();
@@ -155,9 +157,7 @@ export function LabReportPrintNew({ test, hospital, onClose, onPrint }: LabRepor
               onClick={handlePrint}
               className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 text-xs"
             >
-              <Printer className="w-3.5 h-3.5" />
-              Print Report
-            </button>
+              <Printer className="w-3.5 h-3.5" />{t('ui.printReport')}</button>
             <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
               <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             </button>

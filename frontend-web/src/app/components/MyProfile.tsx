@@ -105,8 +105,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Full Name */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Full Name <span className="text-red-500">*</span>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.fullName')}<span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -122,8 +121,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
 
             {/* Email */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Email Address <span className="text-red-500">*</span>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.emailAddress')}<span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -139,9 +137,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
 
             {/* Phone */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone Number
-              </label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.phoneNumber')}</label>
               <div className="relative">
                 <Phone className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -155,9 +151,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
 
             {/* Date of Birth */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Date of Birth
-              </label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.dateOfBirth')}</label>
               <div className="relative">
                 <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -172,9 +166,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
             {/* Specialization */}
             {(user?.role === 'doctor' || user?.role === 'admin') && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Specialization
-                </label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.specialization')}</label>
                 <div className="relative">
                   <Briefcase className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                   <input
@@ -190,9 +182,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
             {/* License Number */}
             {user?.role === 'doctor' && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  License Number
-                </label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.licenseNumber')}</label>
                 <input
                   type="text"
                   value={formData.licenseNumber}
@@ -204,9 +194,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
 
             {/* Address - Full Width */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Address
-              </label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.address')}</label>
               <div className="relative">
                 <MapPin className="absolute left-2 top-2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -240,9 +228,7 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
             type="button"
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('ui.cancel')}</button>
           <button
             onClick={handleSubmit}
             disabled={loading}
@@ -251,12 +237,12 @@ export function MyProfile({ isOpen, onClose }: MyProfileProps) {
             {loading ? (
               <>
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
+                {t('ui.saving')}
               </>
             ) : (
               <>
                 <Save className="w-3.5 h-3.5" />
-                Save Changes
+                {t('ui.saveChanges')}
               </>
             )}
           </button>

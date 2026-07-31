@@ -9,7 +9,7 @@ export function Settings() {
   const { settings, updateSettings } = useSettings();
 
   const dateFormats = [
-    { value: 'gregorian', label: 'Gregorian', example: '01/05/2026' },
+    { value: 'gregorian', label: t('ui.gregorian'), example: '01/05/2026' },
     { value: 'hijri_shamsi', label: 'Hijri Shamsi (Solar)', example: '15/10/1404' },
   ];
 

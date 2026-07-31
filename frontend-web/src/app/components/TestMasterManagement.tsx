@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Edit, Trash2, Search, TestTube2, X } from 'lucide-react';
 import { TestMaster, TestParameter } from '../types';
 import { useLanguage } from '../context/LanguageContext';
@@ -13,6 +14,7 @@ interface TestMasterManagementProps {
 }
 
 export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }: TestMasterManagementProps) {
+  const { t } = useTranslation();
   const { t } = useLanguage();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
@@ -307,16 +309,12 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -387,7 +385,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
                       <option value="Immunology">Immunology</option>
                       <option value="Pathology">Pathology</option>
                       <option value="Radiology">Radiology</option>
-                      <option value="Other">Other</option>
+                      <option value="Other">{t('ui.other')}</option>
                     </select>
                   </div>
                   <div>
@@ -406,7 +404,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
                       <option value="X-Ray">X-Ray</option>
                       <option value="Ultrasound">Ultrasound</option>
                       <option value="ECG">ECG</option>
-                      <option value="Other">Other</option>
+                      <option value="Other">{t('ui.other')}</option>
                     </select>
                   </div>
                   <div>

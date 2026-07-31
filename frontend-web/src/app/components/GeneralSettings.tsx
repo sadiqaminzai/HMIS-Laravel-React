@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks } from 'lucide-react';
-import { useSettings } from '../context/SettingsContext';
+import {
+  useSettings,
+  PRINT_PAPER_SIZES,
+  PRINT_PAPER_SIZE_LABELS,
+  PRINT_MODULE_GROUPS,
+  DEFAULT_PRINT_PAPER_SIZES,
+  type PrintPaperSize,
+  type PrintModule,
+} from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useDoctors } from '../context/DoctorContext';
 import { Hospital, UserRole } from '../types';
@@ -31,7 +40,9 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, generatePatientId } = useSettings();
+  const { hasPermission } = useAuth();
+  const canManagePrintSettings = hasPermission('manage_print_settings');
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -62,6 +73,10 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     showBonusColumn: true,
   });
 
+  const [printPaperSizes, setPrintPaperSizes] = useState<Record<PrintModule, PrintPaperSize>>({
+    ...DEFAULT_PRINT_PAPER_SIZES,
+  });
+
   const [prescriptionPrintAssetSettings, setPrescriptionPrintAssetSettings] = useState({
     logoWidth: 176,
     logoHeight: 160,
@@ -86,6 +101,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
       const printConfig = getPrintColumnSettings(selectedHospital.id);
       setPrintColumns(printConfig);
+      setPrintPaperSizes(getPrintPaperSizes(selectedHospital.id));
       const prescriptionPrintConfig = getPrescriptionPrintAssetSettings(selectedHospital.id);
       setPrescriptionPrintAssetSettings(prescriptionPrintConfig);
 
@@ -114,6 +130,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     saveHospitalSetting(selectedHospital.id, { printColumns, prescriptionPrintAssetSettings })
       .then(() => toast.success('Print settings saved successfully'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save print settings'));
+  };
+
+  const handleSavePrintPaperSizes = () => {
+    saveHospitalSetting(selectedHospital.id, { printPaperSizes })
+      .then(() => toast.success('Print paper sizes saved successfully'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save print paper sizes'));
   };
 
   const handleSaveTimezone = () => {
@@ -186,9 +208,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       {userRole === 'super_admin' && (
         <div className="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
           <Building2 className="w-4 h-4 text-purple-500 flex-shrink-0" />
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-            Select Hospital
-          </label>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{t('ui.selectHospital')}</label>
           <select
             value={selectedHospitalId}
             onChange={(e) => setSelectedHospitalId(e.target.value)}
@@ -370,9 +390,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Calendar System
-              </label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.calendarSystem')}</label>
               <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
                 <button
                   type="button"
@@ -382,9 +400,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                       ? 'bg-indigo-600 text-white'
                       : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
                   }`}
-                >
-                  Gregorian
-                </button>
+                >{t('ui.gregorian')}</button>
                 <button
                   type="button"
                   onClick={() => setCalendarType('shamsi')}
@@ -402,9 +418,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             <button
               onClick={handleSaveTimezone}
               className="w-full px-2 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
-            >
-              Save Settings
-            </button>
+            >{t('ui.saveSettings')}</button>
           </div>
 
           <div className="mt-2 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
@@ -673,6 +687,67 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
           </div>
         </div>
 
+        {/* Print Settings - Paper Size per Module */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Printer className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Print Paper Size</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Configure the paper size for each printable document separately — thermal mini
+            printers for counter receipts, A4 for purchase invoices, reports and discharge
+            summaries. Staff still see a preview before printing.
+          </p>
+
+          {!canManagePrintSettings && (
+            <p className="mb-3 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 text-[11px] text-amber-700 dark:text-amber-300">
+              You do not have permission to change print paper sizes. Values below are read-only.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            {PRINT_MODULE_GROUPS.map(({ group, modules }) => (
+              <div key={group}>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
+                  {group}
+                </h3>
+                <div className="space-y-1.5">
+                  {modules.map(({ key, label }) => (
+                    <div key={key} className="grid grid-cols-2 gap-2 items-center">
+                      <label htmlFor={`paper-size-${key}`} className="text-xs text-gray-700 dark:text-gray-300">
+                        {label}
+                      </label>
+                      <select
+                        id={`paper-size-${key}`}
+                        value={printPaperSizes[key]}
+                        disabled={!canManagePrintSettings}
+                        onChange={(e) => setPrintPaperSizes({
+                          ...printPaperSizes,
+                          [key]: e.target.value as PrintPaperSize,
+                        })}
+                        className="w-full px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {PRINT_PAPER_SIZES.map((size) => (
+                          <option key={size} value={size}>{PRINT_PAPER_SIZE_LABELS[size]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {canManagePrintSettings && (
+            <button
+              onClick={handleSavePrintPaperSizes}
+              className="mt-3 w-full px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              Save Paper Sizes
+            </button>
+          )}
+        </div>
+
         {/* Print Settings - Column Visibility */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
@@ -684,6 +759,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
           </p>
 
           <div className="space-y-2">
+
             <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
               <input
                 type="checkbox"

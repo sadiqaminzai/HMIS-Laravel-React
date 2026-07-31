@@ -55,7 +55,11 @@ export function DischargeSummaryPrint({
 }: DischargeSummaryPrintProps) {
   const componentRef = useRef<HTMLDivElement>(null);
   const { doctors } = useDoctors();
-  const { loadHospitalSetting, getPrescriptionPrintAssetSettings } = useSettings();
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getPrintPaperSize } = useSettings();
+
+  // Discharge summaries are usually A4, but follow whatever the hospital configured.
+  const dischargePaperSize = getPrintPaperSize(hospital?.id ?? '', 'surgery_discharge_summary');
+  const dischargePageSize = dischargePaperSize === 'a4' ? 'A4' : `${dischargePaperSize} auto`;
 
   useEffect(() => {
     if (!hospital?.id) return;
@@ -96,7 +100,7 @@ export function DischargeSummaryPrint({
   };
 
   const pageStyle = `
-    @page { size: A4; margin: 0; }
+    @page { size: ${dischargePageSize}; margin: 0; }
     body { visibility: hidden; background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     #discharge-print-content {
       visibility: visible; position: relative; width: 100%; height: auto; min-height: auto;

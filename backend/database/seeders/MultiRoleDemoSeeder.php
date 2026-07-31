@@ -93,6 +93,7 @@ class MultiRoleDemoSeeder extends Seeder
                 'view_test_templates', 'manage_test_templates',
                 'view_lab_orders', 'manage_lab_orders',
                 'lab_test_order_discount',
+                'view_unpaid_lab_orders',
                 'update_lab_order_status',
                 'enter_lab_results', 'manage_lab_payments',
                 'view_hospital_settings', 'manage_hospital_settings',

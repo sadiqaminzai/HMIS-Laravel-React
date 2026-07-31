@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Search, X, Printer } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Plus, Pencil, Trash2, Search, X, Printer, Eye, CalendarCheck } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms, getRoomBookingAvailability } from '../../api/rooms';
@@ -7,6 +8,9 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
+import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
+import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
 
 interface RoomBookingManagementProps {
@@ -54,7 +58,7 @@ interface AvailabilityState {
   suggestedBeds: string[];
 }
 
-type ReceiptSize = 'a4' | '58mm' | '76mm' | '80mm';
+type ReceiptSize = 'a4' | 'a5' | '58mm' | '76mm' | '80mm';
 
 const toDateInputValue = (value?: string): string => {
   if (!value) return '';
@@ -97,11 +101,17 @@ const mapBooking = (b: any): BookingItem => ({
 });
 
 export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
+  const { getPrintPaperSize, loadHospitalSetting } = useSettings();
   const { hospitals } = useHospitals();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { hasPermission } = useAuth();
+  const embedded = useIsEmbedded();
+  const canAdd = hasPermission('add_room_bookings') || hasPermission('manage_room_bookings');
+  const canEdit = hasPermission('edit_room_bookings') || hasPermission('manage_room_bookings');
+  const canDelete = hasPermission('delete_room_bookings') || hasPermission('manage_room_bookings');
 
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [roomOptions, setRoomOptions] = useState<RoomOption[]>([]);
@@ -114,11 +124,22 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<BookingItem | null>(null);
   const [printBooking, setPrintBooking] = useState<BookingItem | null>(null);
+  const [viewing, setViewing] = useState<BookingItem | null>(null);
   const [receiptSize, setReceiptSize] = useState<ReceiptSize>(() => {
     const saved = localStorage.getItem('room_booking_receipt_size');
     if (saved === '58mm' || saved === '76mm' || saved === '80mm' || saved === 'a4') return saved;
     return '80mm';
   });
+
+  // The hospital-wide paper size (Settings > General > Print Settings) is the source of
+  // truth; it overrides the remembered per-user choice when the hospital changes.
+  const configuredPaperSize = getPrintPaperSize(currentHospital.id, 'room_booking_receipt');
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
+  useEffect(() => {
+    setReceiptSize(configuredPaperSize as ReceiptSize);
+  }, [configuredPaperSize, currentHospital.id]);
   const [form, setForm] = useState({
     hospitalId: currentHospital.id,
     roomId: '',
@@ -451,11 +472,11 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
     const hospitalInfo = hospitals.find((h) => h.id === item.hospitalId) || currentHospital;
     const brandColor = hospitalInfo.brandColor || '#2563eb';
     const logoUrl = resolveHospitalLogoUrl(hospitalInfo.logo);
-    const isCompactReceipt = size !== 'a4';
-    const ticketWidth = isCompactReceipt ? size : '190mm';
+    const isCompactReceipt = size !== 'a4' && size !== 'a5';
+    const ticketWidth = isCompactReceipt ? size : (size === 'a5' ? '128mm' : '190mm');
     const pageRule = isCompactReceipt
       ? `@page { size: ${size} auto; margin: 0; }`
-      : '@page { size: A4; margin: 10mm; }';
+      : `@page { size: ${size === 'a5' ? 'A5' : 'A4'}; margin: 10mm; }`;
     const nights = item.checkOutDate
       ? Math.max(1, Math.ceil((new Date(item.checkOutDate).getTime() - new Date(item.checkInDate).getTime()) / (1000 * 60 * 60 * 24)))
       : 1;
@@ -693,26 +714,39 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
   }, [selectedHospitalId, currentHospital.id, userRole]);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className={embedded ? 'space-y-2' : 'space-y-3'}>
+      {!embedded && (
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Room Booking</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Track patient room bookings and occupancy status.</p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Room Booking</h1>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Track patient room bookings and occupancy status.</p>
         </div>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          Add Booking
-        </button>
-      </div>
+      )}
 
-      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-        <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
-        <div className="relative flex-1 md:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by patient, room, status" className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+      <TabActionsSlot>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search bookings..."
+              aria-label="Search bookings"
+              className="w-44 pl-8 pr-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
-          <button onClick={loadBookings} className="px-4 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">Refresh</button>
-      </div>
+          <button onClick={loadBookings} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs">{t('ui.refresh')}</button>
+          {canAdd && (
+            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" />
+              Add Booking
+            </button>
+          )}
+        </div>
+      </TabActionsSlot>
+
+      {!embedded && (
+        <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
+      )}
 
       <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
         Workflow: Pending to Confirmed to Checked-in to Checked-out. Final cost is calculated by server based on room price, bed count, stay duration, and discount.
@@ -723,15 +757,15 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
           <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
             <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
               <tr>
-                <th className="px-4 py-2">Room</th>
-                <th className="px-4 py-2">Patient</th>
-                <th className="px-4 py-2">Dates</th>
-                <th className="px-4 py-2">Nights</th>
-                <th className="px-4 py-2">Beds</th>
-                <th className="px-4 py-2">Bed Numbers</th>
-                <th className="px-4 py-2">Cost</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2 text-center">Actions</th>
+                <th className="px-4 py-2">{t('table.room')}</th>
+                <th className="px-4 py-2">{t('table.patient')}</th>
+                <th className="px-4 py-2">{t('table.dates')}</th>
+                <th className="px-4 py-2">{t('table.nights')}</th>
+                <th className="px-4 py-2">{t('table.beds')}</th>
+                <th className="px-4 py-2">{t('table.bedNumbers')}</th>
+                <th className="px-4 py-2">{t('table.cost')}</th>
+                <th className="px-4 py-2">{t('table.status')}</th>
+                <th className="px-4 py-2 text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -770,8 +804,9 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                         <button onClick={() => quickStatusUpdate(item, 'Checked-out')} className="px-2 py-1 text-[10px] rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200" title="Check out">Check-out</button>
                       )}
                       <button onClick={() => openPrintReceipt(item)} className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded-md" title="Print receipt"><Printer className="w-4 h-4" /></button>
-                      <button onClick={() => openEdit(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title="Edit"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => removeBooking(item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => setViewing(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title={t('ui.view')}><Eye className="w-4 h-4" /></button>
+                      {canEdit && (<button onClick={() => openEdit(item)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title={t('ui.edit')}><Pencil className="w-4 h-4" /></button>)}
+                      {canDelete && (<button onClick={() => removeBooking(item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title={t('ui.delete')}><Trash2 className="w-4 h-4" /></button>)}
                     </div>
                   </td>
                 </tr>
@@ -786,16 +821,12 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -803,19 +834,19 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">{editing ? 'Edit Booking' : 'Add Booking'}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-5 h-5" /></button>
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">{editing ? 'Edit Booking' : 'Add Booking'}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={submitForm} className="p-5 grid grid-cols-12 gap-3">
               {userRole === 'super_admin' && selectedHospitalId === 'all' && (
                 <div className="col-span-12">
-                  <label className="text-xs font-medium">Hospital</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}</label>
                   <select
-                    title="Hospital"
+                    title={t('ui.hospital')}
                     value={form.hospitalId}
                     onChange={(e) => setForm((p) => ({ ...p, hospitalId: e.target.value, roomId: '', patientId: '', doctorId: '' }))}
-                    className="mt-1 w-full rounded border px-2 py-1 text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   >
                     {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
@@ -823,56 +854,56 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                 </div>
               )}
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Room</label>
-                <select title="Room" value={form.roomId} onChange={(e) => setForm((p) => ({ ...p, roomId: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Room</label>
+                <select title="Room" value={form.roomId} onChange={(e) => setForm((p) => ({ ...p, roomId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="">Select room</option>
                   {filteredRooms.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Patient</label>
-                <select title="Patient" value={form.patientId} onChange={(e) => setForm((p) => ({ ...p, patientId: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label>
+                <select title={t('ui.patient')} value={form.patientId} onChange={(e) => setForm((p) => ({ ...p, patientId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="">Select patient</option>
                   {filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Doctor (optional)</label>
-                <select title="Doctor" value={form.doctorId} onChange={(e) => setForm((p) => ({ ...p, doctorId: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label>
+                <select title={t('ui.doctor')} value={form.doctorId} onChange={(e) => setForm((p) => ({ ...p, doctorId: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="">None</option>
                   {filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Booking Date</label>
-                <input title="Booking date" type="date" value={form.bookingDate} onChange={(e) => setForm((p) => ({ ...p, bookingDate: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Booking Date</label>
+                <input title="Booking date" type="date" value={form.bookingDate} onChange={(e) => setForm((p) => ({ ...p, bookingDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Check In</label>
-                <input title="Check in date" type="date" value={form.checkInDate} onChange={(e) => setForm((p) => ({ ...p, checkInDate: e.target.value }))} required className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Check In</label>
+                <input title="Check in date" type="date" value={form.checkInDate} onChange={(e) => setForm((p) => ({ ...p, checkInDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Check Out</label>
-                <input title="Check out date" type="date" value={form.checkOutDate} onChange={(e) => setForm((p) => ({ ...p, checkOutDate: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Check Out</label>
+                <input title="Check out date" type="date" value={form.checkOutDate} onChange={(e) => setForm((p) => ({ ...p, checkOutDate: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Selected Beds</label>
-                <input title="Selected beds" value={selectedBedNumbers.join(', ')} readOnly className="mt-1 w-full rounded border px-2 py-1 text-xs bg-gray-50 dark:bg-gray-700/40" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Selected Beds</label>
+                <input title="Selected beds" value={selectedBedNumbers.join(', ')} readOnly className="w-full px-2 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Beds To Book</label>
-                <input title="Beds to book" type="number" min={1} value={form.bedsToBook} onChange={(e) => setForm((p) => ({ ...p, bedsToBook: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Beds To Book</label>
+                <input title="Beds to book" type="number" min={1} value={form.bedsToBook} onChange={(e) => setForm((p) => ({ ...p, bedsToBook: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               {(hasPermission('add_discounts') || hasPermission('manage_discounts')) && (
                 <div className="col-span-12 md:col-span-4">
-                  <label className="text-xs font-medium">Discount (%)</label>
-                  <input title="Discount percent" type="number" min={0} max={100} step="1" value={form.discountPercent} onChange={(e) => setForm((p) => ({ ...p, discountPercent: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount (%)</label>
+                  <input title="Discount percent" type="number" min={0} max={100} step="1" value={form.discountPercent} onChange={(e) => setForm((p) => ({ ...p, discountPercent: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
                 </div>
               )}
               <div className="col-span-12 md:col-span-4">
-                <label className="text-xs font-medium">Status</label>
-                <select title="Booking status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as BookingItem['status'] }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
-                  <option value="Pending">Pending</option>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label>
+                <select title="Booking status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as BookingItem['status'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
+                  <option value="Pending">{t('ui.pending')}</option>
                   <option value="Confirmed">Confirmed</option>
                   <option value="Checked-in">Checked-in</option>
                   <option value="Checked-out">Checked-out</option>
@@ -880,8 +911,8 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Payment Status</label>
-                <select title="Payment status" value={form.paymentStatus} onChange={(e) => setForm((p) => ({ ...p, paymentStatus: e.target.value as BookingItem['paymentStatus'] }))} className="mt-1 w-full rounded border px-2 py-1 text-xs">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label>
+                <select title="Payment status" value={form.paymentStatus} onChange={(e) => setForm((p) => ({ ...p, paymentStatus: e.target.value as BookingItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="pending">pending</option>
                   <option value="paid">paid</option>
                   <option value="partial">partial</option>
@@ -889,8 +920,8 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                 </select>
               </div>
               <div className="col-span-12 md:col-span-6">
-                <label className="text-xs font-medium">Remarks</label>
-                <input title="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="mt-1 w-full rounded border px-2 py-1 text-xs" />
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Remarks</label>
+                <input title="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>
               <div className="col-span-12 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 bg-gray-50 dark:bg-gray-700/30 text-xs">
                 <div className="font-medium text-gray-700 dark:text-gray-200">Cost summary</div>
@@ -974,11 +1005,11 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
               </div>
               <div className="col-span-12 flex items-center gap-2 mt-1">
                 <input id="booking-active" type="checkbox" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />
-                <label htmlFor="booking-active" className="text-sm">Active</label>
+                <label htmlFor="booking-active" className="text-sm">{t('ui.active')}</label>
               </div>
-              <div className="col-span-12 flex items-center justify-end gap-2 mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-3 py-2 text-sm rounded border">Cancel</button>
-                <button type="submit" className="px-3 py-2 text-sm rounded bg-blue-600 text-white">{editing ? 'Update' : 'Create'}</button>
+              <div className="col-span-12 flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
+                <button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editing ? t('ui.update') : t('ui.create')}</button>
               </div>
             </form>
           </div>
@@ -989,43 +1020,86 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
             <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Print Receipt</h3>
-              <button onClick={() => setPrintBooking(null)} className="p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-4 h-4" /></button>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('ui.printReceipt')}</h3>
+              <button onClick={() => setPrintBooking(null)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-4 h-4" /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="text-gray-700 dark:text-gray-300">Room: <strong>{printBooking.roomNumber}</strong></div>
               <div className="text-gray-700 dark:text-gray-300">Patient: <strong>{printBooking.patientName}</strong></div>
               <div className="text-gray-700 dark:text-gray-300">Total Cost: <strong>{printBooking.totalCost.toFixed(2)}</strong></div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Receipt Size</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Receipt Size</label>
                 <select
                   title="Receipt size"
                   value={receiptSize}
                   onChange={(e) => setReceiptSize(e.target.value as ReceiptSize)}
-                  className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-xs"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                 >
                   <option value="a4">A4 Invoice</option>
+                  <option value="a5">A5 Invoice</option>
                   <option value="58mm">58mm Receipt</option>
                   <option value="76mm">76mm Receipt</option>
                   <option value="80mm">80mm Receipt</option>
                 </select>
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                <button onClick={() => setPrintBooking(null)} className="px-3 py-2 text-xs rounded border">Cancel</button>
+                <button onClick={() => setPrintBooking(null)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
                 <button
                   onClick={() => {
                     printReceipt(printBooking, receiptSize);
                     setPrintBooking(null);
                   }}
                   className="px-3 py-2 text-xs rounded bg-indigo-600 text-white"
-                >
-                  Print Receipt
-                </button>
+                >{t('ui.printReceipt')}</button>
               </div>
             </div>
           </div>
         </div>
       )}
+      <ModalOverlay open={!!viewing}>
+        <ModalPanel size="md" scroll>
+          <DetailModalHeader
+            title="Booking Details"
+            icon={<CalendarCheck className="w-4 h-4" />}
+            gradient="from-blue-600 to-blue-700"
+            onClose={() => setViewing(null)}
+          />
+          {viewing && (
+            <div className="p-4 space-y-3">
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-4 border border-blue-100 dark:border-blue-800">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">{viewing.patientName}</h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Room {viewing.roomNumber}</p>
+              </div>
+              <div>
+                <DetailRow label={t('ui.patient')} value={viewing.patientName} />
+                <DetailRow label={t('ui.doctor')} value={viewing.doctorName || '—'} />
+                <DetailRow label="Room" value={viewing.roomNumber} />
+                <DetailRow label="Bed(s)" value={viewing.bedNumber || '—'} />
+                <DetailRow label="Beds Booked" value={viewing.bedsToBook} />
+                <DetailRow label="Check In" value={viewing.checkInDate || '—'} />
+                <DetailRow label="Check Out" value={viewing.checkOutDate || '—'} />
+                <DetailRow label={t('ui.discount')} value={viewing.discountAmount.toFixed(2)} />
+                <DetailRow label="Total Cost" value={viewing.totalCost.toFixed(2)} />
+                <DetailRow label={t('ui.status')} value={viewing.status} />
+                <DetailRow label={t('ui.payment')} value={viewing.paymentStatus} />
+                <DetailRow label={t('ui.remarks')} value={viewing.remarks || '—'} />
+              </div>
+              <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                {canEdit && (
+                  <button
+                    onClick={() => { const b = viewing; setViewing(null); openEdit(b); }}
+                    className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs"
+                  >{t('ui.edit')}</button>
+                )}
+                <button
+                  onClick={() => setViewing(null)}
+                  className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
+                >{t('ui.close')}</button>
+              </div>
+            </div>
+          )}
+        </ModalPanel>
+      </ModalOverlay>
     </div>
   );
 }

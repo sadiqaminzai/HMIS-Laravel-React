@@ -343,7 +343,6 @@ export interface Appointment {
   notes?: string;
   originalFeeAmount?: number;
   discountEnabled?: boolean;
-  discountTypeId?: string;
   discountAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -354,22 +353,6 @@ export interface Appointment {
   updatedBy?: string;
 }
 
-export interface DiscountType {
-  id: string;
-  hospitalId: string;
-  name: string;
-  isActive: boolean;
-}
-
-export interface DiscountCatalog {
-  id: string;
-  hospitalId: string;
-  name: string;
-  discountTypeId: string;
-  amount: number;
-  currency: string;
-  isActive: boolean;
-}
 
 export interface Room {
   id: string;

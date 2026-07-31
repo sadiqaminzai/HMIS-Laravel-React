@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   BarChart3,
   CalendarDays,
@@ -506,6 +507,7 @@ async function loadXlsxTools() {
 }
 
 export function Reports({ hospital, userRole }: ReportsProps) {
+  const { t } = useTranslation();
   const { doctors } = useDoctors();
   const { patients: contextPatients } = usePatients();
   const { transactions: contextTransactions } = useTransactions();
@@ -882,21 +884,21 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Overall Financial Report',
           subtitle: 'All financial parts consolidated by module.',
           columns: [
-            { key: 'module', label: 'Module' },
-            { key: 'entries', label: 'Entries', kind: 'number' },
-            { key: 'incoming', label: 'Incoming', kind: 'currency' },
-            { key: 'outgoing', label: 'Outgoing', kind: 'currency' },
-            { key: 'net', label: 'Net', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'module', label: t('ui.module') },
+            { key: 'entries', label: t('ui.entries'), kind: 'number' },
+            { key: 'incoming', label: t('ui.incoming'), kind: 'currency' },
+            { key: 'outgoing', label: t('ui.outgoing'), kind: 'currency' },
+            { key: 'net', label: t('ui.net'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Modules', value: String(rows.length) },
-            { label: 'Incoming', value: formatCurrency(totalIncoming), tone: 'positive' },
-            { label: 'Outgoing', value: formatCurrency(totalOutgoing), tone: 'negative' },
-            { label: 'Net', value: formatCurrency(totalIncoming - totalOutgoing), tone: totalIncoming - totalOutgoing >= 0 ? 'positive' : 'negative' },
-            { label: 'Due', value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
+            { label: t('ui.incoming'), value: formatCurrency(totalIncoming), tone: 'positive' },
+            { label: t('ui.outgoing'), value: formatCurrency(totalOutgoing), tone: 'negative' },
+            { label: t('ui.net'), value: formatCurrency(totalIncoming - totalOutgoing), tone: totalIncoming - totalOutgoing >= 0 ? 'positive' : 'negative' },
+            { label: t('ui.due'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
           ],
         };
       }
@@ -978,22 +980,22 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Doctor Detailed Report',
           subtitle: 'Doctor-wise detailed rows with patient and fee information.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'doctor', label: 'Doctor' },
-            { key: 'patient', label: 'Patient' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'doctor', label: t('ui.doctor') },
+            { key: 'patient', label: t('ui.patient') },
             { key: 'service', label: 'Service' },
-            { key: 'reference', label: 'Reference' },
-            { key: 'status', label: 'Status' },
-            { key: 'amount', label: 'Amount', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'reference', label: t('ui.reference') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'amount', label: t('ui.amount'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows: filteredRows,
           summary: [
-            { label: 'Rows', value: String(filteredRows.length) },
+            { label: t('ui.rows'), value: String(filteredRows.length) },
             { label: 'Unique Patients', value: String(uniquePatients.size) },
-            { label: 'Total Amount', value: formatCurrency(totalAmount), tone: 'positive' },
-            { label: 'Total Due', value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
+            { label: t('ui.totalAmount'), value: formatCurrency(totalAmount), tone: 'positive' },
+            { label: t('ui.totalDue'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
           ],
         };
       }
@@ -1108,22 +1110,22 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           columns: [
             { key: 'patientId', label: 'Patient ID' },
             { key: 'patientName', label: 'Patient Name' },
-            { key: 'phone', label: 'Phone' },
+            { key: 'phone', label: t('ui.phone') },
             { key: 'visits', label: 'Visits', kind: 'number' },
             { key: 'appointmentFees', label: 'Appointment Fees', kind: 'currency' },
             { key: 'labFees', label: 'Lab Fees', kind: 'currency' },
             { key: 'medicineSales', label: 'Medicine Sold', kind: 'currency' },
-            { key: 'surgeryFees', label: 'Surgery Fees', kind: 'currency' },
-            { key: 'totalFees', label: 'Total Fees', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'surgeryFees', label: t('ui.surgeryFees'), kind: 'currency' },
+            { key: 'totalFees', label: t('ui.totalFees'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Total Patients', value: String(rows.length) },
             { label: 'Active Patients', value: String(activePatients) },
-            { label: 'Total Fees', value: formatCurrency(totalFees), tone: 'positive' },
-            { label: 'Total Due', value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
+            { label: t('ui.totalFees'), value: formatCurrency(totalFees), tone: 'positive' },
+            { label: t('ui.totalDue'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
           ],
         };
       }
@@ -1154,17 +1156,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: reportType === 'fees_detailed' ? 'Fees Detailed Report' : 'Reception Fees Report (Overall)',
           subtitle: 'Fee collection summary grouped by module.',
           columns: [
-            { key: 'module', label: 'Module' },
-            { key: 'entries', label: 'Entries', kind: 'number' },
-            { key: 'amount', label: 'Amount', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'module', label: t('ui.module') },
+            { key: 'entries', label: t('ui.entries'), kind: 'number' },
+            { key: 'amount', label: t('ui.amount'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Modules', value: String(rows.length) },
-            { label: 'Total Fees', value: formatCurrency(totalAmount), tone: 'positive' },
-            { label: 'Total Due', value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
+            { label: t('ui.totalFees'), value: formatCurrency(totalAmount), tone: 'positive' },
+            { label: t('ui.totalDue'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
           ],
         };
       }
@@ -1235,17 +1237,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Fees Report (Doctor Wise)',
           subtitle: 'Doctor-wise fee breakdown for appointments, lab orders, and surgeries.',
           columns: [
-            { key: 'doctor', label: 'Doctor' },
+            { key: 'doctor', label: t('ui.doctor') },
             { key: 'patientCount', label: 'Patients', kind: 'number' },
             { key: 'appointmentFees', label: 'Appointment Fees', kind: 'currency' },
             { key: 'labFees', label: 'Lab Fees', kind: 'currency' },
-            { key: 'surgeryFees', label: 'Surgery Fees', kind: 'currency' },
-            { key: 'totalFees', label: 'Total Fees', kind: 'currency' },
+            { key: 'surgeryFees', label: t('ui.surgeryFees'), kind: 'currency' },
+            { key: 'totalFees', label: t('ui.totalFees'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Doctors', value: String(rows.length) },
-            { label: 'Total Fees', value: formatCurrency(totalFees), tone: 'positive' },
+            { label: t('ui.totalFees'), value: formatCurrency(totalFees), tone: 'positive' },
           ],
         };
       }
@@ -1272,21 +1274,21 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Lab Orders Report',
           subtitle: 'Date-wise lab orders with patient, doctor, and payment details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
             { key: 'orderNumber', label: 'Order No' },
-            { key: 'patient', label: 'Patient' },
-            { key: 'doctor', label: 'Doctor' },
-            { key: 'status', label: 'Status' },
-            { key: 'paymentStatus', label: 'Payment' },
-            { key: 'totalAmount', label: 'Total', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'patient', label: t('ui.patient') },
+            { key: 'doctor', label: t('ui.doctor') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'paymentStatus', label: t('ui.payment') },
+            { key: 'totalAmount', label: t('ui.total'), kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Orders', value: String(rows.length) },
-            { label: 'Total Amount', value: formatCurrency(total), tone: 'positive' },
-            { label: 'Due', value: formatCurrency(due), tone: due > 0 ? 'negative' : 'default' },
+            { label: t('ui.orders'), value: String(rows.length) },
+            { label: t('ui.totalAmount'), value: formatCurrency(total), tone: 'positive' },
+            { label: t('ui.due'), value: formatCurrency(due), tone: due > 0 ? 'negative' : 'default' },
           ],
         };
       }
@@ -1311,17 +1313,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Prescription Sales Report',
           subtitle: 'Medicine sold report with invoice-level payment details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'invoice', label: 'Invoice' },
-            { key: 'patient', label: 'Patient' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'invoice', label: t('ui.invoice') },
+            { key: 'patient', label: t('ui.patient') },
             { key: 'itemsCount', label: 'Items', kind: 'number' },
-            { key: 'grandTotal', label: 'Total', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'grandTotal', label: t('ui.total'), kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Invoices', value: String(rows.length) },
+            { label: t('ui.invoices'), value: String(rows.length) },
             { label: 'Sales Total', value: formatCurrency(sales), tone: 'positive' },
           ],
         };
@@ -1351,15 +1353,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Surgery Operations Report',
           subtitle: 'Surgery operations with fee and payment status details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'surgery', label: 'Surgery' },
-            { key: 'patient', label: 'Patient' },
-            { key: 'doctor', label: 'Doctor' },
-            { key: 'status', label: 'Status' },
-            { key: 'paymentStatus', label: 'Payment' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'surgery', label: t('ui.surgery') },
+            { key: 'patient', label: t('ui.patient') },
+            { key: 'doctor', label: t('ui.doctor') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'paymentStatus', label: t('ui.payment') },
             { key: 'cost', label: 'Cost', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
@@ -1388,17 +1390,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Expense Report',
           subtitle: 'Outgoing amounts and expense-level details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'title', label: 'Title' },
-            { key: 'category', label: 'Category' },
-            { key: 'paymentMethod', label: 'Payment Method' },
-            { key: 'status', label: 'Status' },
-            { key: 'createdBy', label: 'Created By' },
-            { key: 'amount', label: 'Amount', kind: 'currency' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'title', label: t('ui.title') },
+            { key: 'category', label: t('ui.category') },
+            { key: 'paymentMethod', label: t('ui.paymentMethod') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'createdBy', label: t('ui.createdBy') },
+            { key: 'amount', label: t('ui.amount'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Expenses', value: String(rows.length) },
+            { label: t('ui.expenses'), value: String(rows.length) },
             { label: 'Total Outgoing', value: formatCurrency(totalExpense), tone: 'negative' },
           ],
         };
@@ -1423,17 +1425,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Other Income Report',
           subtitle: 'Additional hospital income entries and source details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'title', label: 'Title' },
-            { key: 'category', label: 'Category' },
-            { key: 'paymentMethod', label: 'Payment Method' },
-            { key: 'status', label: 'Status' },
-            { key: 'createdBy', label: 'Created By' },
-            { key: 'amount', label: 'Amount', kind: 'currency' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'title', label: t('ui.title') },
+            { key: 'category', label: t('ui.category') },
+            { key: 'paymentMethod', label: t('ui.paymentMethod') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'createdBy', label: t('ui.createdBy') },
+            { key: 'amount', label: t('ui.amount'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Entries', value: String(rows.length) },
+            { label: t('ui.entries'), value: String(rows.length) },
             { label: 'Total Other Income', value: formatCurrency(totalOtherIncome), tone: 'positive' },
           ],
         };
@@ -1461,22 +1463,22 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Reception Overall Clearance Report',
           subtitle: 'Incoming and outgoing details for day-end/date-wise clearance.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'module', label: 'Module' },
-            { key: 'title', label: 'Title' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'module', label: t('ui.module') },
+            { key: 'title', label: t('ui.title') },
             { key: 'direction', label: 'Direction' },
-            { key: 'amount', label: 'Amount', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
-            { key: 'status', label: 'Status' },
-            { key: 'reference', label: 'Reference' },
+            { key: 'amount', label: t('ui.amount'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
+            { key: 'status', label: t('ui.status') },
+            { key: 'reference', label: t('ui.reference') },
           ],
           rows,
           summary: [
-            { label: 'Entries', value: String(rows.length) },
-            { label: 'Incoming', value: formatCurrency(incoming), tone: 'positive' },
-            { label: 'Outgoing', value: formatCurrency(outgoing), tone: 'negative' },
-            { label: 'Net', value: formatCurrency(incoming - outgoing), tone: incoming - outgoing >= 0 ? 'positive' : 'negative' },
+            { label: t('ui.entries'), value: String(rows.length) },
+            { label: t('ui.incoming'), value: formatCurrency(incoming), tone: 'positive' },
+            { label: t('ui.outgoing'), value: formatCurrency(outgoing), tone: 'negative' },
+            { label: t('ui.net'), value: formatCurrency(incoming - outgoing), tone: incoming - outgoing >= 0 ? 'positive' : 'negative' },
           ],
         };
       }
@@ -1525,17 +1527,17 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             title: 'Available Stock Report (Company Wise)',
             subtitle: 'Company-level stock clearance by quantity and stock value.',
             columns: [
-              { key: 'company', label: 'Company' },
+              { key: 'company', label: t('ui.company') },
               { key: 'products', label: 'Products', kind: 'number' },
-              { key: 'batches', label: 'Batches', kind: 'number' },
-              { key: 'qty', label: 'Total Qty', kind: 'number' },
+              { key: 'batches', label: t('ui.batches'), kind: 'number' },
+              { key: 'qty', label: t('ui.totalQty'), kind: 'number' },
               { key: 'stockCost', label: 'Stock Value (Cost)', kind: 'currency' },
               { key: 'stockSale', label: 'Stock Value (Sale)', kind: 'currency' },
             ],
             rows,
             summary: [
               { label: 'Companies', value: String(rows.length) },
-              { label: 'Total Qty', value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
+              { label: t('ui.totalQty'), value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
               { label: 'Cost Value', value: formatCurrency(rows.reduce((sum, row) => sum + row.stockCost, 0)), tone: 'positive' },
             ],
           };
@@ -1584,10 +1586,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             title: 'Available Stock Report (Product Wise)',
             subtitle: 'Product-level stock clearance including batch coverage and nearest expiry.',
             columns: [
-              { key: 'company', label: 'Company' },
-              { key: 'product', label: 'Product' },
-              { key: 'batches', label: 'Batches', kind: 'number' },
-              { key: 'qty', label: 'Qty', kind: 'number' },
+              { key: 'company', label: t('ui.company') },
+              { key: 'product', label: t('ui.product') },
+              { key: 'batches', label: t('ui.batches'), kind: 'number' },
+              { key: 'qty', label: t('ui.qty'), kind: 'number' },
               { key: 'nearestExpiry', label: 'Nearest Expiry', kind: 'date' },
               { key: 'stockCost', label: 'Stock Value (Cost)', kind: 'currency' },
               { key: 'stockSale', label: 'Stock Value (Sale)', kind: 'currency' },
@@ -1595,7 +1597,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             rows,
             summary: [
               { label: 'Products', value: String(rows.length) },
-              { label: 'Total Qty', value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
+              { label: t('ui.totalQty'), value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
               { label: 'Cost Value', value: formatCurrency(rows.reduce((sum, row) => sum + row.stockCost, 0)), tone: 'positive' },
             ],
           };
@@ -1617,18 +1619,18 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Available Stock Report (Batch Wise)',
           subtitle: 'Batch-level stock clearance with quantity and valuation.',
           columns: [
-            { key: 'company', label: 'Company' },
-            { key: 'product', label: 'Product' },
+            { key: 'company', label: t('ui.company') },
+            { key: 'product', label: t('ui.product') },
             { key: 'batch', label: 'Batch' },
-            { key: 'expiryDate', label: 'Expiry', kind: 'date' },
-            { key: 'qty', label: 'Qty', kind: 'number' },
+            { key: 'expiryDate', label: t('ui.expiry'), kind: 'date' },
+            { key: 'qty', label: t('ui.qty'), kind: 'number' },
             { key: 'stockCost', label: 'Stock Value (Cost)', kind: 'currency' },
             { key: 'stockSale', label: 'Stock Value (Sale)', kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Batches', value: String(rows.length) },
-            { label: 'Total Qty', value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
+            { label: t('ui.batches'), value: String(rows.length) },
+            { label: t('ui.totalQty'), value: String(rows.reduce((sum, row) => sum + row.qty, 0)) },
             { label: 'Cost Value', value: formatCurrency(rows.reduce((sum, row) => sum + row.stockCost, 0)), tone: 'positive' },
           ],
         };
@@ -1667,18 +1669,18 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Pharmacy Expiry Report',
           subtitle: 'Expired and near-expiry stock visibility for clearance planning.',
           columns: [
-            { key: 'company', label: 'Company' },
-            { key: 'product', label: 'Product' },
+            { key: 'company', label: t('ui.company') },
+            { key: 'product', label: t('ui.product') },
             { key: 'batch', label: 'Batch' },
-            { key: 'expiryDate', label: 'Expiry', kind: 'date' },
+            { key: 'expiryDate', label: t('ui.expiry'), kind: 'date' },
             { key: 'daysLeft', label: 'Days Left', kind: 'number' },
-            { key: 'qty', label: 'Qty', kind: 'number' },
-            { key: 'status', label: 'Status' },
+            { key: 'qty', label: t('ui.qty'), kind: 'number' },
+            { key: 'status', label: t('ui.status') },
             { key: 'atRiskValue', label: 'At Risk Value', kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Rows', value: String(rows.length) },
+            { label: t('ui.rows'), value: String(rows.length) },
             { label: 'Expired', value: String(expiredCount), tone: expiredCount > 0 ? 'negative' : 'default' },
             { label: 'Near Expiry', value: String(nearExpiryCount), tone: nearExpiryCount > 0 ? 'negative' : 'default' },
             { label: 'At Risk Value', value: formatCurrency(atRisk), tone: atRisk > 0 ? 'negative' : 'default' },
@@ -1726,19 +1728,19 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: titleMap[trxType],
           subtitle: 'Transaction-level report with complete payment details.',
           columns: [
-            { key: 'date', label: 'Date', kind: 'date' },
-            { key: 'invoice', label: 'Invoice' },
-            { key: 'supplier', label: 'Supplier' },
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'invoice', label: t('ui.invoice') },
+            { key: 'supplier', label: t('ui.supplier') },
             { key: 'patient', label: 'Customer/Patient' },
             { key: 'itemsCount', label: 'Items', kind: 'number' },
-            { key: 'grandTotal', label: 'Grand Total', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'grandTotal', label: t('ui.grandTotal'), kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Transactions', value: String(rows.length) },
-            { label: 'Total Amount', value: formatCurrency(total), tone: 'positive' },
+            { label: t('ui.totalAmount'), value: formatCurrency(total), tone: 'positive' },
           ],
         };
       }
@@ -1795,13 +1797,13 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Pharmacy Customer Wise Report',
           subtitle: 'Customer-level sales, returns, and net values.',
           columns: [
-            { key: 'customer', label: 'Customer' },
-            { key: 'invoices', label: 'Invoices', kind: 'number' },
+            { key: 'customer', label: t('ui.customer') },
+            { key: 'invoices', label: t('ui.invoices'), kind: 'number' },
             { key: 'salesAmount', label: 'Sales', kind: 'currency' },
             { key: 'returnAmount', label: 'Returns', kind: 'currency' },
             { key: 'netSales', label: 'Net Sales', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
@@ -1842,14 +1844,14 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           columns: [
             { key: 'type', label: 'Transaction Type' },
             { key: 'transactions', label: 'Count', kind: 'number' },
-            { key: 'grandTotal', label: 'Grand Total', kind: 'currency' },
-            { key: 'paid', label: 'Paid', kind: 'currency' },
-            { key: 'due', label: 'Due', kind: 'currency' },
+            { key: 'grandTotal', label: t('ui.grandTotal'), kind: 'currency' },
+            { key: 'paid', label: t('ui.paid'), kind: 'currency' },
+            { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Types', value: String(rows.length) },
-            { label: 'Grand Total', value: formatCurrency(totalGrand), tone: 'positive' },
+            { label: t('ui.grandTotal'), value: formatCurrency(totalGrand), tone: 'positive' },
           ],
         };
       }
@@ -1878,16 +1880,16 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             { key: 'orderNumber', label: 'Order No' },
             { key: 'date', label: 'Created', kind: 'date' },
             { key: 'sampleCollectedAt', label: 'Sample Collected', kind: 'date' },
-            { key: 'patient', label: 'Patient' },
-            { key: 'doctor', label: 'Doctor' },
-            { key: 'priority', label: 'Priority' },
-            { key: 'status', label: 'Status' },
-            { key: 'paymentStatus', label: 'Payment' },
-            { key: 'totalAmount', label: 'Amount', kind: 'currency' },
+            { key: 'patient', label: t('ui.patient') },
+            { key: 'doctor', label: t('ui.doctor') },
+            { key: 'priority', label: t('ui.priority') },
+            { key: 'status', label: t('ui.status') },
+            { key: 'paymentStatus', label: t('ui.payment') },
+            { key: 'totalAmount', label: t('ui.amount'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Orders', value: String(rows.length) },
+            { label: t('ui.orders'), value: String(rows.length) },
             { label: 'Samples Collected', value: String(collected), tone: collected > 0 ? 'positive' : 'default' },
           ],
         };
@@ -1925,18 +1927,18 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Lab Orders Report (Date Wise)',
           subtitle: 'Date-wise lab orders and financial totals.',
           columns: [
-            { key: 'date', label: 'Date' },
-            { key: 'orders', label: 'Orders', kind: 'number' },
+            { key: 'date', label: t('ui.date') },
+            { key: 'orders', label: t('ui.orders'), kind: 'number' },
             { key: 'completed', label: 'Completed', kind: 'number' },
-            { key: 'totalAmount', label: 'Total', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'totalAmount', label: t('ui.total'), kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Days', value: String(rows.length) },
-            { label: 'Orders', value: String(rows.reduce((sum, row) => sum + row.orders, 0)) },
-            { label: 'Total Amount', value: formatCurrency(rows.reduce((sum, row) => sum + row.totalAmount, 0)), tone: 'positive' },
+            { label: t('ui.orders'), value: String(rows.reduce((sum, row) => sum + row.orders, 0)) },
+            { label: t('ui.totalAmount'), value: formatCurrency(rows.reduce((sum, row) => sum + row.totalAmount, 0)), tone: 'positive' },
           ],
         };
       }
@@ -1987,19 +1989,19 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           title: 'Lab Doctor Wise Report',
           subtitle: 'Doctor-level lab order volume and amount details.',
           columns: [
-            { key: 'doctor', label: 'Doctor' },
-            { key: 'orders', label: 'Orders', kind: 'number' },
+            { key: 'doctor', label: t('ui.doctor') },
+            { key: 'orders', label: t('ui.orders'), kind: 'number' },
             { key: 'completed', label: 'Completed', kind: 'number' },
-            { key: 'pending', label: 'Pending', kind: 'number' },
-            { key: 'totalAmount', label: 'Total', kind: 'currency' },
-            { key: 'paidAmount', label: 'Paid', kind: 'currency' },
-            { key: 'dueAmount', label: 'Due', kind: 'currency' },
+            { key: 'pending', label: t('ui.pending'), kind: 'number' },
+            { key: 'totalAmount', label: t('ui.total'), kind: 'currency' },
+            { key: 'paidAmount', label: t('ui.paid'), kind: 'currency' },
+            { key: 'dueAmount', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
             { label: 'Doctors', value: String(rows.length) },
             { label: 'Total Orders', value: String(rows.reduce((sum, row) => sum + row.orders, 0)) },
-            { label: 'Total Amount', value: formatCurrency(rows.reduce((sum, row) => sum + row.totalAmount, 0)), tone: 'positive' },
+            { label: t('ui.totalAmount'), value: formatCurrency(rows.reduce((sum, row) => sum + row.totalAmount, 0)), tone: 'positive' },
           ],
         };
       }
@@ -2355,7 +2357,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             type="button"
             onClick={exportToCsv}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-sky-600 text-white text-xs md:text-sm font-medium hover:bg-sky-700"
-            title="Export CSV"
+            title={t('ui.exportCsv')}
           >
             <FileDown className="w-4 h-4" />
             CSV
@@ -2384,9 +2386,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-gray-900 text-white text-xs md:text-sm font-medium hover:bg-black"
             title="Print report"
           >
-            <Printer className="w-4 h-4" />
-            Print
-          </button>
+            <Printer className="w-4 h-4" />{t('ui.print')}</button>
         </div>
       </div>
 
@@ -2434,7 +2434,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
-            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Start Date</label>
+            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.startDate')}</label>
             <div className="relative">
               <CalendarDays className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
@@ -2448,7 +2448,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">End Date</label>
+            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.endDate')}</label>
             <div className="relative">
               <CalendarDays className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
@@ -2463,7 +2463,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
           {showDoctorFilter && (
             <div>
-              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Doctor</label>
+              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.doctor')}</label>
               <select
                 value={selectedDoctorId}
                 onChange={(event) => setSelectedDoctorId(event.target.value)}
@@ -2618,7 +2618,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs text-gray-600 dark:text-gray-400">Rows</label>
+            <label className="text-xs text-gray-600 dark:text-gray-400">{t('ui.rows')}</label>
             <select
               value={rowsPerPage}
               onChange={(event) => {
@@ -2650,17 +2650,13 @@ export function Reports({ hospital, userRole }: ReportsProps) {
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               disabled={pagination.currentPage === 1}
               className="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-200"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <button
               type="button"
               onClick={() => setCurrentPage((prev) => Math.min(pagination.totalPages, prev + 1))}
               disabled={pagination.currentPage >= pagination.totalPages}
               className="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-200"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
             <button
               type="button"
               onClick={() => setCurrentPage(pagination.totalPages)}

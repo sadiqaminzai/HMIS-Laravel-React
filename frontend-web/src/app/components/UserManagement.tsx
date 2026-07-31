@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Search, UserCog, Eye, Trash2, X, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import jsPDF from 'jspdf';
@@ -45,6 +46,7 @@ type RoleOption = {
 };
 
 export function UserManagement({ hospital, userRole }: UserManagementProps) {
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canAddUsers = hasPermission('add_users') || hasPermission('manage_users');
   const canEditUsers = hasPermission('edit_users') || hasPermission('manage_users');
@@ -561,7 +563,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -571,7 +573,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -597,37 +599,37 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <tr>
                 <th onClick={() => handleSort('name')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Name
+                    {t('table.name')}
                     {renderSortIcon('name')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('email')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Email
+                    {t('table.email')}
                     {renderSortIcon('email')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('role')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Role
+                    {t('table.role')}
                     {renderSortIcon('role')}
                   </div>
                 </th>
                 {userRole === 'super_admin' && (
                   <th onClick={() => handleSort('hospitalId')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                     <div className="flex items-center gap-1.5">
-                      Hospital
+                      {t('table.hospital')}
                       {renderSortIcon('hospitalId')}
                     </div>
                   </th>
                 )}
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -667,7 +669,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                         <button
                           onClick={() => handleView(user)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -676,7 +678,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                             onClick={() => handleEdit(user)}
                             disabled={!canManageTarget(user)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
@@ -686,7 +688,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                             onClick={() => handleDelete(user)}
                             disabled={!canManageTarget(user)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -722,18 +724,14 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -744,15 +742,15 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {showAddModal ? 'Add New User' : 'Edit User Details'}
+                {showAddModal ? t('ui.addNewUser') : 'Edit User Details'}
               </h2>
               <button 
                 onClick={() => {
                   setShowAddModal(false);
                   setShowEditModal(false);
                 }} 
-                aria-label="Close"
-                title="Close"
+                aria-label={t('ui.close')}
+                title={t('ui.close')}
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -761,23 +759,23 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             <form onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit} className="p-4 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Full Name <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.fullName')}<span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    aria-label="Full Name"
+                    aria-label={t('ui.fullName')}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Email <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.email')}<span className="text-red-500">*</span></label>
                   <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    aria-label="Email"
+                    aria-label={t('ui.email')}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                   />
@@ -785,7 +783,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Role <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.role')}<span className="text-red-500">*</span></label>
                   <select
                     value={formData.roleId}
                     onChange={(e) => {
@@ -803,7 +801,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    aria-label="Role"
+                    aria-label={t('ui.role')}
                     required
                     disabled={userRole === 'super_admin' && !formData.hospitalId}
                   >
@@ -814,15 +812,15 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Status <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}<span className="text-red-500">*</span></label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    aria-label="Status"
+                    aria-label={t('ui.status')}
                   >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">{t('ui.active')}</option>
+                    <option value="inactive">{t('ui.inactive')}</option>
                   </select>
                 </div>
               </div>
@@ -830,7 +828,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               {/* Hospital Selection - Only for Super Admin and NOT for super_admin role */}
               {userRole === 'super_admin' && selectedRoleName !== 'super_admin' && (
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span></label>
                   <select
                     value={formData.hospitalId}
                     onChange={(e) =>
@@ -846,7 +844,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                       })
                     }
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    aria-label="Hospital"
+                    aria-label={t('ui.hospital')}
                     required
                   >
                     <option value="">Select hospital</option>
@@ -861,22 +859,22 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               {effectiveIsDoctor && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone</label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.phone')}</label>
                     <input
                       type="text"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      aria-label="Phone"
+                      aria-label={t('ui.phone')}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Specialization</label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.specialization')}</label>
                     <input
                       type="text"
                       value={formData.specialization}
                       onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                      aria-label="Specialization"
+                      aria-label={t('ui.specialization')}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                   </div>
@@ -886,18 +884,18 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                       type="text"
                       value={formData.registrationNumber}
                       onChange={(e) => setFormData({ ...formData, registrationNumber: e.target.value })}
-                      aria-label="Registration Number"
+                      aria-label={t('ui.registrationNumber')}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Consultation Fee</label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.consultationFee')}</label>
                     <input
                       type="number"
                       min={0}
                       value={formData.consultationFee}
                       onChange={(e) => setFormData({ ...formData, consultationFee: e.target.value })}
-                      aria-label="Consultation Fee"
+                      aria-label={t('ui.consultationFee')}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                   </div>
@@ -909,20 +907,20 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                       aria-label="Doctor Status"
                     >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="active">{t('ui.active')}</option>
+                      <option value="inactive">{t('ui.inactive')}</option>
                     </select>
                   </div>
                 </div>
               )}
               {showAddModal && (
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Password <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.password')}<span className="text-red-500">*</span></label>
                   <input
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    aria-label="Password"
+                    aria-label={t('ui.password')}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     required
                     minLength={8}
@@ -936,7 +934,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    aria-label="Password"
+                    aria-label={t('ui.password')}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                     minLength={8}
                   />
@@ -951,15 +949,13 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     setShowEditModal(false);
                   }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -1027,23 +1023,21 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 </div>
               </div>
               <div className="text-right text-gray-500">
-                <p className="text-sm">Report Generated</p>
+                <p className="text-sm">{t('ui.reportGenerated')}</p>
                 <p className="font-bold text-gray-900 text-lg">{new Date().toLocaleDateString()}</p>
               </div>
             </div>
 
             {/* Print Content Grid */}
             <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-              <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
-                User Details
-              </h3>
+              <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">{t('ui.userDetails')}</h3>
               <div className="grid grid-cols-2 gap-8">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Role</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.role')}</label>
                   <p className="text-gray-900 font-bold text-xl">{getRoleLabel(String(selectedUser.role))}</p>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Hospital</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('ui.hospital')}</label>
                   <p className="text-gray-900 font-medium text-base">{getHospitalName(selectedUser.hospitalId)}</p>
                 </div>
               </div>
@@ -1061,13 +1055,13 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 flex items-center justify-between rounded-t-lg shadow-md z-10">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <UserCog className="w-4 h-4" />
-                User Details
+                {t('ui.userDetails')}
               </h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowViewModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1090,13 +1084,13 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Role</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{t('ui.role')}</label>
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(String(selectedUser.role))}`}>
                       {getRoleLabel(String(selectedUser.role))}
                     </span>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Status</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{t('ui.status')}</label>
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                       selectedUser.status === 'active'
                         ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
@@ -1106,7 +1100,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                     </span>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Hospital</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{t('ui.hospital')}</label>
                     <p className="text-xs font-medium text-gray-900 dark:text-white">{getHospitalName(selectedUser.hospitalId)}</p>
                   </div>
 
@@ -1117,9 +1111,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 <button
                   onClick={() => setShowViewModal(false)}
                   className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs shadow-sm"
-                >
-                  Close Detail View
-                </button>
+                >{t('ui.closeDetailView')}</button>
               </div>
             </div>
           </div>
@@ -1141,15 +1133,13 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={handleConfirmDelete}
                 disabled={submitting}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {submitting ? 'Deleting...' : 'Delete'}
+                {submitting ? 'Deleting...' : t('ui.delete')}
               </button>
             </div>
           </div>

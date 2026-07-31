@@ -206,9 +206,7 @@ export function AccountSettings({ isOpen, onClose }: AccountSettingsProps) {
               
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Calendar System
-                  </label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.calendarSystem')}</label>
                   <select
                     value={settings.dateFormat}
                     onChange={(e) => setSettings({ ...settings, dateFormat: e.target.value })}
@@ -285,9 +283,7 @@ export function AccountSettings({ isOpen, onClose }: AccountSettingsProps) {
             type="button"
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('ui.cancel')}</button>
           <button
             onClick={handleSubmit}
             disabled={loading}
@@ -296,12 +292,12 @@ export function AccountSettings({ isOpen, onClose }: AccountSettingsProps) {
             {loading ? (
               <>
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
+                {t('ui.saving')}
               </>
             ) : (
               <>
                 <Save className="w-3.5 h-3.5" />
-                Save Settings
+                {t('ui.saveSettings')}
               </>
             )}
           </button>

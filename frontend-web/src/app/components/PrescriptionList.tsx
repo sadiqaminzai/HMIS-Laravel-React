@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Printer, Trash2, Search, Calendar, X, Edit, ArrowUp, ArrowDown, ArrowUpDown, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, ChevronFirst, ChevronLast, Pill } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Eye, Printer, Trash2, Search, Calendar, X, Edit, ArrowUp, ArrowDown, ArrowUpDown, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, ChevronFirst, ChevronLast, Pill, Plus } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { Toast } from './Toast';
@@ -110,6 +111,7 @@ const loadImage = (url: string): Promise<string | null> => {
 };
 
 export function PrescriptionList({ hospital, userRole, currentUser }: PrescriptionListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getShowPrescriptionListMeta } = useSettings();
@@ -1035,16 +1037,16 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
   };
 
   return (
-    <div className="space-y-3">
-      {/* Compact Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Prescriptions</h1>
-          <p className="text-xs text-gray-600 dark:text-gray-400">
-            {showNextVisitOnly ? 'Next visit patients list' : `Manage prescriptions for ${isAllHospitals ? 'All Hospitals' : currentHospital.name}`}
-          </p>
+    <div className="space-y-2">
+      {/* Compact header: title and subtitle share one line to save vertical space */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <h1 className="text-base font-bold text-gray-900 dark:text-white">Prescriptions</h1>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {showNextVisitOnly ? 'Next visit patients list' : isAllHospitals ? 'All Hospitals' : currentHospital.name}
+          </span>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-md p-0.5">
             <button
@@ -1080,7 +1082,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -1090,11 +1092,19 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
+          )}
+          {canCreatePrescriptions && (
+            <button
+              onClick={() => navigate('/prescriptions/create')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
+              title={t('ui.addPrescription')}
+            >
+              <Plus className="w-3.5 h-3.5" />{t('ui.addPrescription')}</button>
           )}
         </div>
       </div>
@@ -1182,39 +1192,39 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                 )}
                 <th onClick={() => handleSort('createdAt')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Date
+                    {t('table.date')}
                     {renderSortIcon('createdAt')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('nextVisit')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Next Visit
+                    {t('table.nextVisit')}
                     {renderSortIcon('nextVisit')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('patientName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Patient
+                    {t('table.patient')}
                     {renderSortIcon('patientName')}
                   </div>
                 </th>
                 {showNextVisitOnly && (
-                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Last Rx</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.lastRx')}</th>
                 )}
                 <th onClick={() => handleSort('doctorName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Doctor
+                    {t('table.doctor')}
                     {renderSortIcon('doctorName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('medicines')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-center transition-colors">
                   <div className="flex items-center justify-center gap-1.5">
-                    Medicines
+                    {t('table.medicines')}
                     {renderSortIcon('medicines')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Dispense</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.dispense')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1306,7 +1316,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                         <button
                           onClick={() => handleViewPrescription(prescription)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -1314,7 +1324,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                           <button
                             onClick={() => handlePrintPrescription(prescription)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Print"
+                            title={t('ui.print')}
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </button>
@@ -1341,7 +1351,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                           <button
                             onClick={() => navigate('/prescriptions/create', { state: { editPrescriptionData: prescription } })}
                             className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -1350,7 +1360,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                           <button
                             onClick={() => handleDeletePrescription(prescription)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1367,7 +1377,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                         <Search className="w-6 h-6 text-gray-400 opacity-50" />
                       </div>
                       <p className="text-sm font-medium">No prescriptions found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -1418,7 +1428,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               onClick={() => handlePageChange(currentPage - 1)}
               disabled={currentPage === 1}
               className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Previous Page"
+              title={t('ui.previousPage')}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -1438,7 +1448,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               onClick={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
               className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Next Page"
+              title={t('ui.nextPage')}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -1470,15 +1480,11 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={confirmDelete}
                 className="flex-1 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium text-xs shadow-md"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>
@@ -1501,7 +1507,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                   setDispenseItems([]);
                 }}
                 className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                title="Close"
+                title={t('ui.close')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1511,9 +1517,9 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
               <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
                   <tr>
-                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider">Medicine</th>
-                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">Remaining</th>
-                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">Dispense Qty</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider">{t('table.medicine')}</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">{t('table.remaining')}</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-center">{t('table.dispenseQty')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1545,9 +1551,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                   setDispenseItems([]);
                 }}
                 className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-xs font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={confirmDispense}
                 disabled={dispensing}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Users,
   FileText,
@@ -100,6 +101,7 @@ interface DashboardSummary {
 }
 
 export function Dashboard({ role, hospital }: DashboardProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -270,7 +272,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'surgery_fees',
-        label: 'Surgery Fees',
+        label: t('ui.surgeryFees'),
         value: formatMoney(dailyFinancials.total_surgery_fees ?? 0),
         helper: 'Total surgery fees for selected period',
         icon: <HeartPulse className="w-4 h-4" />,
@@ -288,7 +290,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'expenses',
-        label: 'Expenses',
+        label: t('ui.expenses'),
         value: formatMoney(dailyFinancials.total_expenses),
         helper: 'Total non-salary expenses for selected period',
         icon: <TrendingDown className="w-4 h-4" />,
@@ -306,7 +308,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'salary',
-        label: 'Salary',
+        label: t('ui.salary'),
         value: formatMoney(dailyFinancials.total_salary ?? 0),
         helper: 'Total payroll salary for selected period',
         icon: <ClipboardList className="w-4 h-4" />,
@@ -578,7 +580,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
           <StatCard
-            label="Surgeries"
+            label={t('ui.surgeries')}
             value={counts.surgeries.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
@@ -693,7 +695,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {canViewAny('view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
-            label="Medicines"
+            label={t('ui.medicines')}
             value={counts.medicines.toString()}
             icon={<Pill className="w-4 h-4" />}
             color="bg-purple-500"
@@ -714,7 +716,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
           <StatCard
-            label="Surgeries"
+            label={t('ui.surgeries')}
             value={counts.surgeries.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
@@ -1009,15 +1011,13 @@ export function Dashboard({ role, hospital }: DashboardProps) {
               onClick={printReceptionFinancialReport}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
             >
-              <Printer className="w-3.5 h-3.5" />
-              Print
-            </button>
+              <Printer className="w-3.5 h-3.5" />{t('ui.print')}</button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
           <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Fees</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{t('ui.totalFees')}</p>
             <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_fees)}</p>
           </div>
           <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
@@ -1153,7 +1153,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {canViewAny('view_manufacturers', 'manage_manufacturers') && (
           <StatCard
-            label="Manufacturers"
+            label={t('ui.manufacturers')}
             value={counts.manufacturers.toString()}
             icon={<Package className="w-4 h-4" />}
             color="bg-purple-500"

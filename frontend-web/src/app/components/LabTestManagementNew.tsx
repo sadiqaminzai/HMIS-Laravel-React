@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check, Pencil } from 'lucide-react';
 import { Hospital, LabTest, Patient, TestResult, TestTemplate, UserRole } from '../types';
 import { Toast } from './Toast';
@@ -154,6 +155,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
 };
 
 export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabTestManagementNewProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -834,9 +836,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Lab Tests</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.labTestsTitle')}</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Manage laboratory test orders for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
+            {t('modules.labTestsSubtitle')} {isAllHospitals ? t('modules.allHospitals') : currentHospital.name}
           </p>
         </div>
         
@@ -857,7 +859,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
              <button
                onClick={exportToExcel}
                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-               title="Export to Excel"
+               title={t('ui.exportToExcel')}
              >
                <FileSpreadsheet className="w-3.5 h-3.5" />
                Excel
@@ -867,7 +869,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
              <button
                onClick={exportToPDF}
                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-               title="Export to PDF"
+               title={t('ui.exportToPdf')}
              >
                <FileText className="w-3.5 h-3.5" />
                PDF
@@ -881,21 +883,17 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               setToast({ message: 'Refreshed latest data', type: 'success' });
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-sm"
-            title="Refresh"
+            title={t('ui.refresh')}
             type="button"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </button>
+            <RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
 
           {canCreate && (
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" />
-              New Test
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.newTest')}</button>
           )}
         </div>
       </div>
@@ -921,30 +919,30 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 </th>
                 <th onClick={() => handleSort('patientName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Patient
+                    {t('table.patient')}
                     {renderSortIcon('patientName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('testName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Tests Ordered
+                    {t('table.testsOrdered')}
                     {renderSortIcon('testName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('doctorName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Doctor
+                    {t('table.doctor')}
                     {renderSortIcon('doctorName')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Priority</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.priority')}</th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -956,7 +954,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                         <Beaker className="w-6 h-6 text-gray-400 opacity-50" />
                       </div>
                       <p className="text-sm font-medium">No lab tests found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -1065,9 +1063,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                       handleAdminResetToPending(test);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-yellow-600 dark:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Reset to Pending
-                                  </button>
+                                  >{t('ui.resetToPending')}</button>
                                 )}
                                 
                                 {test.status === 'pending' && canProcess && (
@@ -1076,9 +1072,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                       handleCollectSample(test);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Start Processing
-                                  </button>
+                                  >{t('ui.startProcessing')}</button>
                                 )}
                                 
                                 {test.status === 'in_progress' && canEnterResults && (
@@ -1100,9 +1094,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                       handleCancelOrder(test);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Cancel Test
-                                  </button>
+                                  >{t('ui.cancelTest')}</button>
                                 )}
                               </div>
                             </>
@@ -1114,7 +1106,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           <button
                             onClick={() => { setSelectedTest(test); setShowViewModal(true); }}
                             className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                            title="View Details"
+                            title={t('ui.viewDetails')}
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -1122,7 +1114,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             <button
                               onClick={() => openEditModal(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                              title="Edit"
+                              title={t('ui.edit')}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
@@ -1155,7 +1147,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             <button
                               onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
                               className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
-                              title="Print Report"
+                              title={t('ui.printReport')}
                             >
                               <Printer className="w-3.5 h-3.5" />
                             </button>
@@ -1175,7 +1167,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             <button
                               onClick={() => { setSelectedTest(test); setShowDeleteModal(true); }}
                               className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                              title="Delete"
+                              title={t('ui.delete')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1210,17 +1202,13 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -1256,8 +1244,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 {/* Hospital Selection for Super Admin */}
                 {userRole === 'super_admin' && (
                   <div className="relative">
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Hospital <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span>
                     </label>
                     <button
                       type="button"
@@ -1300,7 +1287,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 )}
                 {/* Patient Selection */}
                 <div className="relative">
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Patient <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}<span className="text-red-500">*</span></label>
                   <button
                     type="button"
                     onClick={() => setIsPatientDropdownOpen((prev) => !prev)}
@@ -1342,7 +1329,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 {/* Doctor Selection */}
                 {userRole !== 'doctor' ? (
                   <div className="relative">
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor <span className="text-red-500">*</span></label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.doctor')}<span className="text-red-500">*</span></label>
                     <button
                       type="button"
                       onClick={() => setIsDoctorDropdownOpen((prev) => !prev)}
@@ -1383,7 +1370,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor</label>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.doctor')}</label>
                     <input
                       type="text"
                       value={doctors.find((d) => String(d.id) === String(currentUserId))?.name || 'Doctor'}
@@ -1456,7 +1443,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 
                 {/* Instructions */}
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Instructions</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.instructions')}</label>
                   <input
                     type="text"
                     value={formData.instructions}
@@ -1468,7 +1455,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
                 {/* Priority */}
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Priority</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.priority')}</label>
                   <div className="flex items-center gap-3 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded flex-wrap">
                     <label className="flex items-center text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
                       <input
@@ -1516,10 +1503,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     value={formData.discountPercentage}
                     onChange={(e) => setFormData({ ...formData, discountPercentage: e.target.value })}
                     placeholder="0"
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+                    disabled={!canEditLabOrderDiscount}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                  {formData.discountPercentage && Number(formData.discountPercentage) > 0 && !canEditLabOrderDiscount && (
-                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">You need lab_test_order_discount permission to edit discount.</p>
+                  {!canEditLabOrderDiscount && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">{t('ui.noDiscountPermission')}</p>
                   )}
                 </div>
 
@@ -1543,9 +1531,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 <button
                   onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedTest(null); resetForm(); }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   onClick={showEditModal ? handleEdit : handleAdd}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
@@ -1586,7 +1572,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.patient')}</label>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">{selectedTest.patientName}</div>
                     <div className="text-xs text-gray-500">{selectedTest.patientAge} Years • {selectedTest.patientGender}</div>
                     {selectedTest.patientPhone && (
@@ -1594,7 +1580,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     )}
                   </div>
                   <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Doctor</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.doctor')}</label>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">{selectedTest.doctorName}</div>
                   </div>
                 </div>
@@ -1605,7 +1591,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                     <div className="text-xs text-gray-500">{selectedTest.testType}</div>
                   </div>
                    <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.priority')}</label>
                     <div className={`font-bold text-sm uppercase ${getPriorityColor(selectedTest.priority)}`}>{selectedTest.priority}</div>
                   </div>
                 </div>
@@ -1614,7 +1600,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               {/* Instructions */}
               {selectedTest.instructions && (
                 <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Instructions</label>
+                  <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{t('ui.instructions')}</label>
                   <p className="text-xs text-gray-700 dark:text-gray-300 italic">{selectedTest.instructions}</p>
                 </div>
               )}
@@ -1641,26 +1627,24 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
               {/* Audit Information */}
               <div className="bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                  System Information
-                </h4>
+                <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">{t('ui.systemInformation')}</h4>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="space-y-0.5">
                     <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Completed By</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedTest.completedBy || '-'}</p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdAt')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
                       {selectedTest.createdAt ? formatDate(selectedTest.createdAt, currentHospital.timezone, currentHospital.calendarType) : '-'}
                     </p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedBy')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedTest.updatedBy || '-'}</p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedAt')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
                       {selectedTest.updatedAt ? formatDate(selectedTest.updatedAt, currentHospital.timezone, currentHospital.calendarType) : '-'}
                     </p>
@@ -1679,9 +1663,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                  <button
                   onClick={() => setShowViewModal(false)}
                   className="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs shadow-sm"
-                >
-                  Close Detail View
-                </button>
+                >{t('ui.closeDetailView')}</button>
               </div>
             </div>
           </div>
@@ -1726,15 +1708,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={handleDelete}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>
@@ -1751,16 +1729,12 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                    onClick={() => window.print()}
                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm"
                  >
-                   <Printer className="w-4 h-4" />
-                   Print Report
-                 </button>
+                   <Printer className="w-4 h-4" />{t('ui.printReport')}</button>
                  <button 
                    onClick={() => setShowPrintModal(false)}
                    className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-medium text-sm"
                  >
-                   <X className="w-4 h-4" />
-                   Close
-                 </button>
+                   <X className="w-4 h-4" />{t('ui.close')}</button>
                </div>
             </div>
             <div className="flex-1 overflow-auto bg-gray-100 p-8">

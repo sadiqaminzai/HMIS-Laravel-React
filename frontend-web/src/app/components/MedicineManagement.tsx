@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, ArrowUpDown, Eye, FileSpreadsheet, FileText, Pencil, Pill, Plus, Search, Trash2, X, Upload, Download } from 'lucide-react';
+import { DetailModalHeader } from './ui/ModalParts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -20,6 +22,7 @@ interface MedicineManagementProps {
 type SortField = 'brandName' | 'genericName' | 'medicineType' | 'strength';
 
 export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { medicines, addMedicine, updateMedicine, deleteMedicine, loading } = useMedicines();
   const { manufacturers } = useManufacturers();
@@ -498,13 +501,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             />
           </div>
           {canExport && (
-            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToExcel')}>
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
             </button>
           )}
           {canExport && (
-            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToPdf')}>
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
@@ -514,19 +517,15 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <button
                 onClick={downloadImportTemplate}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
-                title="Download import template"
+                title={t('ui.downloadImportTemplate')}
               >
-                <Download className="w-3.5 h-3.5" />
-                Template
-              </button>
+                <Download className="w-3.5 h-3.5" />{t('ui.template')}</button>
               <button
                 onClick={() => importInputRef.current?.click()}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
                 title="Import medicines"
               >
-                <Upload className="w-3.5 h-3.5" />
-                Import
-              </button>
+                <Upload className="w-3.5 h-3.5" />{t('ui.import')}</button>
               <input
                 ref={importInputRef}
                 type="file"
@@ -539,9 +538,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
           )}
           {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -565,12 +562,12 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 <th onClick={() => handleSort('medicineType')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">Type {renderSortIcon('medicineType')}</div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Manufacturer</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Stock</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Cost</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Sale</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Status</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.manufacturer')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.stock')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.cost')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.sale')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.status')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -597,21 +594,21 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                         ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
                         : 'bg-gray-100 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200'
                       }`}>
-                        {medicine.status === 'active' ? 'Active' : 'Inactive'}
+                        {medicine.status === 'active' ? t('ui.active') : t('ui.inactive')}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-xs text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <button onClick={() => handleView(medicine)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
+                        <button onClick={() => handleView(medicine)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title={t('ui.view')}>
                           <Eye className="w-4 h-4" />
                         </button>
                         {canEdit && (
-                          <button onClick={() => handleEdit(medicine)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
+                          <button onClick={() => handleEdit(medicine)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title={t('ui.edit')}>
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
                         {canDelete && (
-                          <button onClick={() => handleDelete(medicine)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
+                          <button onClick={() => handleDelete(medicine)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title={t('ui.delete')}>
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -639,31 +636,27 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
 
       {/* View Modal */}
-      <div className={`fixed inset-0 z-50 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Medicine Details</h3>
-            <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+      <div className={`fixed inset-0 z-50 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700">
+          <DetailModalHeader
+            title="Medicine Details"
+            icon={<Pill className="w-4 h-4" />}
+            gradient="from-emerald-600 to-emerald-700"
+            onClose={() => setShowViewModal(false)}
+          />
           <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
             {selectedMedicine && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -676,40 +669,40 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.genericName}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Strength</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.strength')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.strength || '—'}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Type</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.type')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getMedicineTypeName(selectedMedicine.medicineTypeId)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Manufacturer</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.manufacturer')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getManufacturerName(selectedMedicine.manufacturerId)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Stock</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.stock')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.stock ?? 0}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Cost Price</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.costPrice')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.costPrice ?? 0}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Sale Price</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.salePrice')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedMedicine.salePrice ?? 0}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Hospital</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.hospital')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedMedicine.hospitalId)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Status</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.status')}</p>
                   <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${selectedMedicine.status === 'active'
                     ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
                     : 'bg-gray-100 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200'
                   }`}>
-                    {selectedMedicine.status === 'active' ? 'Active' : 'Inactive'}
+                    {selectedMedicine.status === 'active' ? t('ui.active') : t('ui.inactive')}
                   </span>
                 </div>
               </div>
@@ -719,64 +712,64 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       </div>
 
       {/* Add Modal */}
-      <div className={`fixed inset-0 z-50 ${showAddModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add Medicine</h3>
-            <button onClick={() => setShowAddModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+      <div className={`fixed inset-0 z-50 ${showAddModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">{t('ui.addMedicine')}</h2>
+            <button type="button" onClick={() => setShowAddModal(false)} aria-label={t('ui.close')} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
           <form className="p-4 space-y-3 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitAdd}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.brandName')}<span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Brand Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.brandName')}
                   value={formData.brandName}
                   onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Generic Name</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.genericName')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Generic Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.genericName')}
                   value={formData.genericName}
                   onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Strength</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.strength')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Strength"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.strength')}
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Type</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.type')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   title="Medicine Type"
                   value={formData.medicineTypeId}
                   onChange={(e) => setFormData({ ...formData, medicineTypeId: e.target.value })}
                   required
                 >
-                  <option value="">Select type</option>
+                  <option value="">{t('ui.selectType')}</option>
                   {hospitalSpecificTypes.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Manufacturer</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.manufacturer')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Manufacturer"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.manufacturer')}
                   value={formData.manufacturerId}
                   onChange={(e) => setFormData({ ...formData, manufacturerId: e.target.value })}
                 >
@@ -786,13 +779,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Stock</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.stock')}</label>
                 <input
                   type="number"
                   min={0}
                   step={1}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 px-3 py-1.5 text-xs h-9"
+                  className="w-full px-2 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   title="Stock is managed by purchase/sales transactions"
                   value={formData.stock}
                   readOnly
@@ -800,48 +793,48 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 />
                 <p className="text-[10px] text-gray-500">Stock updates automatically from transactions.</p>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.costPrice')}</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Cost Price"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.costPrice')}
                   value={formData.costPrice}
                   onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Sale Price</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.salePrice')}</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Sale Price"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.salePrice')}
                   value={formData.salePrice}
                   onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Status</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                  title="Status"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.status')}
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="active">{t('ui.active')}</option>
+                  <option value="inactive">{t('ui.inactive')}</option>
                 </select>
               </div>
               {userRole === 'super_admin' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}</label>
                   <select
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs h-9"
-                    title="Hospital"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title={t('ui.hospital')}
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required
@@ -854,14 +847,14 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {submitting ? 'Saving...' : 'Save'}
+                {submitting ? t('ui.saving') : t('ui.save')}
               </button>
             </div>
           </form>
@@ -869,64 +862,64 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       </div>
 
       {/* Edit Modal */}
-      <div className={`fixed inset-0 z-50 ${showEditModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Edit Medicine</h3>
-            <button onClick={() => setShowEditModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+      <div className={`fixed inset-0 z-50 ${showEditModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">Edit Medicine</h2>
+            <button type="button" onClick={() => setShowEditModal(false)} aria-label={t('ui.close')} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
           <form className="p-4 space-y-4 max-h-[70vh] overflow-y-auto" onSubmit={handleSubmitEdit}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Brand Name <span className="text-red-500">*</span></label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.brandName')}<span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Brand Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.brandName')}
                   value={formData.brandName}
                   onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Generic Name</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.genericName')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Generic Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.genericName')}
                   value={formData.genericName}
                   onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Strength</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.strength')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Strength"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.strength')}
                   value={formData.strength}
                   onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Type</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.type')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   title="Medicine Type"
                   value={formData.medicineTypeId}
                   onChange={(e) => setFormData({ ...formData, medicineTypeId: e.target.value })}
                   required
                 >
-                  <option value="">Select type</option>
+                  <option value="">{t('ui.selectType')}</option>
                   {hospitalSpecificTypes.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Manufacturer</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.manufacturer')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Manufacturer"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.manufacturer')}
                   value={formData.manufacturerId}
                   onChange={(e) => setFormData({ ...formData, manufacturerId: e.target.value })}
                 >
@@ -936,13 +929,13 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Stock</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.stock')}</label>
                 <input
                   type="number"
                   min={0}
                   step={1}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 px-3 py-2 text-sm"
+                  className="w-full px-2 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
                   title="Stock is managed by purchase/sales transactions"
                   value={formData.stock}
                   readOnly
@@ -950,48 +943,48 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 />
                 <p className="text-[10px] text-gray-500">Stock updates automatically from transactions.</p>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Cost Price</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.costPrice')}</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Cost Price"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.costPrice')}
                   value={formData.costPrice}
                   onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Sale Price</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.salePrice')}</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Sale Price"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.salePrice')}
                   value={formData.salePrice}
                   onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Status</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Status"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.status')}
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="active">{t('ui.active')}</option>
+                  <option value="inactive">{t('ui.inactive')}</option>
                 </select>
               </div>
               {userRole === 'super_admin' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}</label>
                   <select
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    title="Hospital"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title={t('ui.hospital')}
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required
@@ -1004,14 +997,14 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowEditModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button
                 type="submit"
                 disabled={submitting}
                 className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {submitting ? 'Saving...' : 'Update'}
+                {submitting ? t('ui.saving') : t('ui.update')}
               </button>
             </div>
           </form>
@@ -1019,19 +1012,19 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       </div>
 
       {/* Delete Modal */}
-      <div className={`fixed inset-0 z-50 ${showDeleteModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+      <div className={`fixed inset-0 z-50 ${showDeleteModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Delete Medicine</h3>
-            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
             <p>Are you sure you want to delete <strong>{selectedMedicine?.brandName}</strong>? This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">Delete</button>
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button onClick={() => setShowDeleteModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
+              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">{t('ui.delete')}</button>
             </div>
           </div>
         </div>

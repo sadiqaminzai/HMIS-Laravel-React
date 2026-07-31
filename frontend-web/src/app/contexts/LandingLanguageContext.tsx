@@ -617,11 +617,13 @@ export function LandingLanguageProvider({ children }: { children: React.ReactNod
 
   const isRTL = language === 'ps' || language === 'fa' || language === 'ar';
 
+  // This provider wraps the whole application, so it must NOT force a `dir`
+  // here: doing so overrode the RTL direction that App.tsx sets on <html> and
+  // pinned the authenticated layout to LTR. The landing page owns its own
+  // direction via its root element instead (see LandingPage.tsx).
   return (
     <LandingLanguageContext.Provider value={{ language, setLanguage, t, isRTL }}>
-      <div dir={isRTL ? 'rtl' : 'ltr'}>
-        {children}
-      </div>
+      {children}
     </LandingLanguageContext.Provider>
   );
 }

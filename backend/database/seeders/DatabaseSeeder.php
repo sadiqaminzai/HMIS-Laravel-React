@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             PatientSeeder::class,
             SupplierSeeder::class,
             TransactionSeeder::class,
+            UltrasoundTypeSeeder::class,
         ]);
     }
 }

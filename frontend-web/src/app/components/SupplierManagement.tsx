@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Search, Trash2, Truck, X, Upload, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, FileSpreadsheet, FileText, Pencil, Plus, Search, Trash2, Truck, X, Upload, Download } from 'lucide-react';
 import { Hospital, Supplier, UserRole } from '../types';
+import { DetailModalHeader } from './ui/ModalParts';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useSuppliers } from '../context/SupplierContext';
@@ -16,6 +18,7 @@ interface SupplierManagementProps {
 }
 
 export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { suppliers, addSupplier, updateSupplier, deleteSupplier, loading } = useSuppliers();
   const { hospitals } = useHospitals();
@@ -32,6 +35,8 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [sortField, setSortField] = useState<string>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
@@ -55,13 +60,46 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
     );
   }, [scopedSuppliers, searchTerm]);
 
+  const sortedSuppliers = useMemo(() => {
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    const valueOf = (s: Supplier) => {
+      switch (sortField) {
+        case 'contactInfo': return (s.contactInfo || '').toLowerCase();
+        case 'address': return (s.address || '').toLowerCase();
+        // Looked up inline: getHospitalName is declared further down the component,
+        // and this memo body runs during render before that binding exists.
+        case 'hospital': return (hospitals.find((h) => h.id === s.hospitalId)?.name || '').toLowerCase();
+        default: return (s.name || '').toLowerCase();
+      }
+    };
+    return [...filteredSuppliers].sort((a, b) => valueOf(a).localeCompare(valueOf(b)) * dir);
+  }, [filteredSuppliers, sortField, sortDirection, hospitals]);
+
   const itemsPerPage = 10;
-  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(sortedSuppliers.length / itemsPerPage));
 
   const paginatedSuppliers = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredSuppliers.slice(start, start + itemsPerPage);
-  }, [filteredSuppliers, currentPage]);
+    return sortedSuppliers.slice(start, start + itemsPerPage);
+  }, [sortedSuppliers, currentPage]);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />;
+    }
+    return sortDirection === 'asc'
+      ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+      : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
+  };
 
   React.useEffect(() => {
     setCurrentPage(1);
@@ -93,7 +131,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
   };
 
   const exportToExcel = () => {
-    const workSheet = XLSX.utils.json_to_sheet(filteredSuppliers.map((s) => ({
+    const workSheet = XLSX.utils.json_to_sheet(sortedSuppliers.map((s) => ({
       Name: s.name,
       Contact: s.contactInfo || '',
       Address: s.address || '',
@@ -213,7 +251,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
 
     autoTable(doc, {
       head: [['Name', 'Contact', 'Address', 'Hospital']],
-      body: filteredSuppliers.map((s) => [
+      body: sortedSuppliers.map((s) => [
         s.name,
         s.contactInfo || '—',
         s.address || '—',
@@ -332,13 +370,13 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             />
           </div>
           {canExport && (
-            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToExcel')}>
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
             </button>
           )}
           {canExport && (
-            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToPdf')}>
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
@@ -348,19 +386,15 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               <button
                 onClick={downloadImportTemplate}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
-                title="Download import template"
+                title={t('ui.downloadImportTemplate')}
               >
-                <Download className="w-3.5 h-3.5" />
-                Template
-              </button>
+                <Download className="w-3.5 h-3.5" />{t('ui.template')}</button>
               <button
                 onClick={() => importInputRef.current?.click()}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
                 title="Import suppliers"
               >
-                <Upload className="w-3.5 h-3.5" />
-                Import
-              </button>
+                <Upload className="w-3.5 h-3.5" />{t('ui.import')}</button>
               <input
                 ref={importInputRef}
                 type="file"
@@ -372,9 +406,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
           )}
           {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -386,11 +418,24 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Name</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Contact</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Address</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Hospital</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                {([
+                  ['name', 'Name'],
+                  ['contactInfo', 'Contact'],
+                  ['address', 'Address'],
+                  ['hospital', 'Hospital'],
+                ] as const).map(([field, label]) => (
+                  <th
+                    key={field}
+                    onClick={() => handleSort(field)}
+                    className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {label}
+                      {renderSortIcon(field)}
+                    </div>
+                  </th>
+                ))}
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -410,16 +455,16 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getHospitalName(supplier.hospitalId)}</td>
                     <td className="px-4 py-2 text-xs text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <button onClick={() => handleView(supplier)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
+                        <button onClick={() => handleView(supplier)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title={t('ui.view')}>
                           <Eye className="w-4 h-4" />
                         </button>
                         {canEdit && (
-                          <button onClick={() => handleEdit(supplier)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
+                          <button onClick={() => handleEdit(supplier)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title={t('ui.edit')}>
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
                         {canDelete && (
-                          <button onClick={() => handleDelete(supplier)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
+                          <button onClick={() => handleDelete(supplier)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title={t('ui.delete')}>
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -447,41 +492,28 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
 
       {/* View Modal */}
-      <div className={`fixed inset-0 z-50 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Supplier Details</h3>
-            <div className="flex items-center gap-2">
-              {canPrint && (
-                <button
-                  onClick={() => setTimeout(() => window.print(), 100)}
-                  className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-                >
-                  Print
-                </button>
-              )}
-              <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+      <div className={`fixed inset-0 z-50 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+          <DetailModalHeader
+            title="Supplier Details"
+            icon={<Truck className="w-4 h-4" />}
+            gradient="from-teal-600 to-teal-700"
+            onPrint={canPrint ? () => setTimeout(() => window.print(), 100) : undefined}
+            onClose={() => setShowViewModal(false)}
+          />
           <style>
             {`
               @media print {
@@ -505,7 +537,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             {selectedSupplier && (
               <div className="space-y-6">
                 <div className="flex items-start justify-between border-b-2 border-gray-800 pb-4">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     {getHospital(selectedSupplier.hospitalId)?.logo && (
                       <img
                         src={getHospital(selectedSupplier.hospitalId)?.logo}
@@ -526,7 +558,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                 </div>
                 <div className="grid grid-cols-2 gap-6 text-sm">
                   <div>
-                    <p className="text-gray-500">Name</p>
+                    <p className="text-gray-500">{t('ui.name')}</p>
                     <p className="font-semibold text-gray-900">{selectedSupplier.name}</p>
                   </div>
                   <div>
@@ -534,7 +566,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                     <p className="font-semibold text-gray-900">{selectedSupplier.contactInfo || '—'}</p>
                   </div>
                   <div className="col-span-2">
-                    <p className="text-gray-500">Address</p>
+                    <p className="text-gray-500">{t('ui.address')}</p>
                     <p className="font-semibold text-gray-900">{selectedSupplier.address || '—'}</p>
                   </div>
                 </div>
@@ -545,7 +577,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             {selectedSupplier && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Name</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.name')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedSupplier.name}</p>
                 </div>
                 <div className="space-y-1">
@@ -553,11 +585,11 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedSupplier.contactInfo || '—'}</p>
                 </div>
                 <div className="space-y-1 md:col-span-2">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Address</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.address')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{selectedSupplier.address || '—'}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Hospital</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{t('ui.hospital')}</p>
                   <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedSupplier.hospitalId)}</p>
                 </div>
               </div>
@@ -567,51 +599,51 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
       </div>
 
       {/* Add Modal */}
-      <div className={`fixed inset-0 z-50 ${showAddModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add Supplier</h3>
-            <button onClick={() => setShowAddModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+      <div className={`fixed inset-0 z-50 ${showAddModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">Add Supplier</h2>
+            <button type="button" onClick={() => setShowAddModal(false)} aria-label={t('ui.close')} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-4 space-y-4" onSubmit={handleSubmitAdd}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Supplier Name <span className="text-red-500">*</span></label>
+          <form className="p-4 space-y-3" onSubmit={handleSubmitAdd}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.supplierName')}<span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Supplier Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.supplierName')}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Contact Info</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.contactInfo')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Contact Info"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.contactInfo')}
                   value={formData.contactInfo}
                   onChange={(e) => setFormData({ ...formData, contactInfo: e.target.value })}
                 />
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Address</label>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.address')}</label>
                 <textarea
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Address"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.address')}
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   rows={3}
                 />
               </div>
               {userRole === 'super_admin' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}</label>
                   <select
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    title="Hospital"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title={t('ui.hospital')}
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required
@@ -624,10 +656,10 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button type="submit" disabled={submitting} className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed">
-                {submitting ? 'Saving...' : 'Save'}
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
+              <button type="submit" disabled={submitting} className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                {submitting ? t('ui.saving') : t('ui.save')}
               </button>
             </div>
           </form>
@@ -635,51 +667,51 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
       </div>
 
       {/* Edit Modal */}
-      <div className={`fixed inset-0 z-50 ${showEditModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Edit Supplier</h3>
-            <button onClick={() => setShowEditModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+      <div className={`fixed inset-0 z-50 ${showEditModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">Edit Supplier</h2>
+            <button type="button" onClick={() => setShowEditModal(false)} aria-label={t('ui.close')} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-4 space-y-4" onSubmit={handleSubmitEdit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200 flex items-center gap-1">Supplier Name <span className="text-red-500">*</span></label>
+          <form className="p-4 space-y-3" onSubmit={handleSubmitEdit}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.supplierName')}<span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Supplier Name"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.supplierName')}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Contact Info</label>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.contactInfo')}</label>
                 <input
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Contact Info"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.contactInfo')}
                   value={formData.contactInfo}
                   onChange={(e) => setFormData({ ...formData, contactInfo: e.target.value })}
                 />
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Address</label>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.address')}</label>
                 <textarea
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                  title="Address"
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.address')}
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   rows={3}
                 />
               </div>
               {userRole === 'super_admin' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Hospital</label>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}</label>
                   <select
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    title="Hospital"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    title={t('ui.hospital')}
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     required
@@ -692,10 +724,10 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowEditModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button type="submit" disabled={submitting} className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed">
-                {submitting ? 'Saving...' : 'Update'}
+                {submitting ? t('ui.saving') : t('ui.update')}
               </button>
             </div>
           </form>
@@ -703,19 +735,19 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
       </div>
 
       {/* Delete Modal */}
-      <div className={`fixed inset-0 z-50 ${showDeleteModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+      <div className={`fixed inset-0 z-50 ${showDeleteModal ? 'flex' : 'hidden'} items-center justify-center bg-black/50 backdrop-blur-sm p-4`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Delete Supplier</h3>
-            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
             <p>Are you sure you want to delete <strong>{selectedSupplier?.name}</strong>? This action cannot be undone.</p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">Delete</button>
+            <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button onClick={() => setShowDeleteModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
+              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">{t('ui.delete')}</button>
             </div>
           </div>
         </div>

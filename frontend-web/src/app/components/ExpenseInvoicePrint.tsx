@@ -22,7 +22,7 @@ export function ExpenseInvoicePrint({
 }: ExpenseInvoicePrintProps) {
   const voucherNo = String(expense.sequenceId);
   
-  const [receiptSize, setReceiptSize] = React.useState<'a4' | '80mm' | '76mm' | '58mm'>(() => {
+  const [receiptSize, setReceiptSize] = React.useState<'a4' | 'a5' | '80mm' | '76mm' | '58mm'>(() => {
     return (localStorage.getItem('expense_receipt_size') as any) || 'a4';
   });
 
@@ -285,6 +285,7 @@ export function ExpenseInvoicePrint({
               className="mr-2 text-sm border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white py-1.5 px-3"
             >
               <option value="a4">A4 Size</option>
+              <option value="a5">A5 Size</option>
               <option value="80mm">80mm Thermal</option>
               <option value="76mm">76mm Thermal</option>
               <option value="58mm">58mm Thermal</option>

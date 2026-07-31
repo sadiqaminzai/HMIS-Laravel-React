@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Search, Key, Eye, Trash2, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
@@ -21,6 +22,7 @@ interface Permission {
 }
 
 export function PermissionManagement({ hospital, userRole }: PermissionManagementProps) {
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canAdd = hasPermission('add_permissions') || hasPermission('manage_permissions');
   const canEdit = hasPermission('edit_permissions') || hasPermission('manage_permissions');
@@ -302,9 +304,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 onClick={handleAdd}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
               >
-                <Plus className="w-3.5 h-3.5" />
-                Add Permission
-              </button>
+                <Plus className="w-3.5 h-3.5" />{t('ui.addPermission')}</button>
             )}
           </div>
         )}
@@ -351,10 +351,10 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">Permission</th>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">Description</th>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">Status</th>
-                    <th className="text-right py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">{t('table.permission')}</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">{t('table.description')}</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">{t('table.status')}</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-gray-700 dark:text-gray-300">{t('table.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -388,7 +388,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                           <button
                             onClick={() => handleView(permission)}
                             className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                            title="View"
+                            title={t('ui.view')}
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -397,7 +397,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                               onClick={() => handleEdit(permission)}
                               disabled={submitting}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Edit"
+                              title={t('ui.edit')}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
@@ -406,7 +406,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                             <button
                               onClick={() => handleDelete(permission)}
                               className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                              title="Delete"
+                              title={t('ui.delete')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -431,18 +431,14 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       )}
@@ -477,7 +473,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.category')}</label>
                   <input
                     type="text"
                     value={formData.category}
@@ -489,7 +485,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 </div>
               </div>
               <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -500,14 +496,14 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.status')}</label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                   className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="active">{t('ui.active')}</option>
+                  <option value="inactive">{t('ui.inactive')}</option>
                 </select>
               </div>
               <div className="flex gap-2 pt-2">
@@ -515,15 +511,11 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                   type="button"
                   onClick={() => setShowAddModal(false)}
                   className="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Add Permission
-                </button>
+                >{t('ui.addPermission')}</button>
               </div>
             </form>
           </div>
@@ -553,15 +545,15 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
               
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Category</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('ui.category')}</label>
                   <span className="text-xs text-gray-900 dark:text-white">{selectedPermission.category}</span>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('ui.description')}</label>
                   <p className="text-xs text-gray-900 dark:text-white">{selectedPermission.description}</p>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('ui.status')}</label>
                   <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
                     selectedPermission.status === 'active'
                       ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
@@ -575,9 +567,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
               <button
                 onClick={() => setShowViewModal(false)}
                 className="w-full px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-              >
-                Close
-              </button>
+              >{t('ui.close')}</button>
             </div>
           </div>
         </div>
@@ -606,7 +596,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.category')}</label>
                   <input
                     type="text"
                     value={formData.category}
@@ -617,7 +607,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 </div>
               </div>
               <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -627,14 +617,14 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 />
               </div>
               <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.status')}</label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                   className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="active">{t('ui.active')}</option>
+                  <option value="inactive">{t('ui.inactive')}</option>
                 </select>
               </div>
               <div className="flex gap-2 pt-2">
@@ -642,15 +632,11 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                   type="button"
                   onClick={() => setShowEditModal(false)}
                   className="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Save Changes
-                </button>
+                >{t('ui.saveChanges')}</button>
               </div>
             </form>
           </div>
@@ -675,15 +661,11 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 <button
                   onClick={() => setShowDeleteModal(false)}
                   className="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   onClick={handleConfirmDelete}
                   className="flex-1 px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  Delete
-                </button>
+                >{t('ui.delete')}</button>
               </div>
             </div>
           </div>

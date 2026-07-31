@@ -106,9 +106,7 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
             disabled={loading}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
           >
-            <RefreshCcw className="w-3.5 h-3.5" />
-            Refresh
-          </button>
+            <RefreshCcw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
           
           {canReconcile && (
             <button
@@ -128,15 +126,15 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
           <table className="w-full text-left text-xs whitespace-nowrap">
             <thead className="bg-gray-50/50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-gray-500 sticky top-0">
               <tr>
-                <th className="px-4 py-3 font-medium">Medicine</th>
-                <th className="px-4 py-3 font-medium">Batch</th>
-                <th className="px-4 py-3 font-medium">Expiry Date</th>
-                <th className="px-4 py-3 font-medium">System Qty</th>
-                <th className="px-4 py-3 font-medium">System Bonus</th>
-                <th className="px-4 py-3 font-medium">System Total</th>
-                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">Physical Qty</th>
-                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">Physical Bonus</th>
-                <th className="px-4 py-3 font-medium text-right">Variance</th>
+                <th className="px-4 py-3 font-medium">{t('table.medicine')}</th>
+                <th className="px-4 py-3 font-medium">{t('table.batch')}</th>
+                <th className="px-4 py-3 font-medium">{t('table.expiry')}</th>
+                <th className="px-4 py-3 font-medium">{t('table.systemQty')}</th>
+                <th className="px-4 py-3 font-medium">{t('table.systemBonus')}</th>
+                <th className="px-4 py-3 font-medium">{t('table.systemTotal')}</th>
+                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalQty')}</th>
+                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalBonus')}</th>
+                <th className="px-4 py-3 font-medium text-right">{t('table.variance')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">

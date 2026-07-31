@@ -331,7 +331,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -341,7 +341,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -454,7 +454,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                         <button
                           onClick={() => handleViewTest(test)}
                           className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
-                          title="View Details"
+                          title={t('ui.viewDetails')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -462,7 +462,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           <button
                             onClick={() => handleEditTest(test)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
@@ -471,7 +471,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                           <button
                             onClick={() => handleDeleteTest(test.id)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -501,7 +501,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                       <p className="text-sm font-medium">
                         {currentLanguage === 'en' ? 'No tests found' : currentLanguage === 'ps' ? 'تست ونه موندل شو' : currentLanguage === 'fa' ? 'آزمایشی یافت نشد' : 'لم يتم العثور'}
                       </p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -520,18 +520,14 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -793,7 +789,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
-                title="Close"
+                title={t('ui.close')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -910,16 +906,18 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
 
             {/* Footer */}
             <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  handleEditTest(selectedTest);
-                }}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                {currentLanguage === 'en' ? 'Edit' : 'ویرایش'}
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => {
+                    setIsViewModalOpen(false);
+                    handleEditTest(selectedTest);
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  {currentLanguage === 'en' ? 'Edit' : 'ویرایش'}
+                </button>
+              )}
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"

@@ -28,7 +28,6 @@ class Appointment extends Model
         'notes',
         'original_fee_amount',
         'discount_enabled',
-        'discount_type_id',
         'discount_amount',
         'total_amount',
         'currency',

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Mail, Eye, Trash2, MessageSquare, Phone, Calendar, CheckCircle2, XCircle, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../api/axios';
@@ -16,6 +17,7 @@ interface ContactMessage {
 }
 
 export function ContactMessages() {
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canView = hasPermission('view_contact_messages') || hasPermission('manage_contact_messages');
   const canEdit = hasPermission('edit_contact_messages') || hasPermission('manage_contact_messages');
@@ -139,7 +141,7 @@ export function ContactMessages() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Contact Messages</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('ui.contactMessages')}</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">Manage messages from the contact form</p>
         </div>
         
@@ -254,16 +256,12 @@ export function ContactMessages() {
                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={currentPage === 1}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >
-                Prev
-              </button>
+              >{t('ui.prev')}</button>
               <button
                 onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         </div>
@@ -288,7 +286,7 @@ export function ContactMessages() {
                     <button
                       onClick={() => handleDelete(selectedMessage.id)}
                       className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                      title="Delete"
+                      title={t('ui.delete')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -299,25 +297,19 @@ export function ContactMessages() {
               <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
                 {/* Status */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.status')}</label>
                   {getStatusBadge(selectedMessage.status)}
                 </div>
 
                 {/* Name */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Name
-                  </label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.name')}</label>
                   <p className="text-sm text-gray-900 dark:text-white">{selectedMessage.name}</p>
                 </div>
 
                 {/* Email */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email
-                  </label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.email')}</label>
                   <a
                     href={`mailto:${selectedMessage.email}`}
                     className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
@@ -330,9 +322,7 @@ export function ContactMessages() {
                 {/* Phone */}
                 {selectedMessage.phone && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone
-                    </label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.phone')}</label>
                     <a
                       href={`tel:${selectedMessage.phone}`}
                       className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"

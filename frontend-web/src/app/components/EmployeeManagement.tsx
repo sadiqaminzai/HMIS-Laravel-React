@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Search, X, Upload } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { useEmployees } from '../context/EmployeeContext';
@@ -15,6 +16,7 @@ interface EmployeeManagementProps {
 }
 
 export function EmployeeManagement({ hospital, userRole }: EmployeeManagementProps) {
+  const { t } = useTranslation();
   const { employees, addEmployee, updateEmployee, deleteEmployee, loading } = useEmployees();
   const { departments } = useDepartments();
   const { designations } = useDesignations();
@@ -272,15 +274,15 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
           <table className="w-full text-left text-sm min-w-[980px]">
             <thead className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 font-semibold sticky top-0 backdrop-blur-sm z-10">
               <tr>
-                <th className="px-3 py-2.5 text-xs font-medium">Code</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Name</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Department</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Designation</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Joining Date</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Shift</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Salary</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Status</th>
-                <th className="px-3 py-2.5 text-xs font-medium text-center">Actions</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.code')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.name')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.department')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.designation')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.joiningDate')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.shift')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.salary')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.status')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -307,14 +309,14 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                       <button
                         onClick={() => openEdit(employee.id)}
                         className="p-2.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-blue-600 hover:bg-blue-100"
-                        title="Edit"
+                        title={t('ui.edit')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => onDelete(employee.id)}
                         className="p-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-red-600 hover:bg-red-100"
-                        title="Delete"
+                        title={t('ui.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -340,16 +342,12 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={currentPage === 1}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
+              >{t('ui.previous')}</button>
               <button
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         )}
@@ -360,12 +358,12 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
           <form onSubmit={onSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center justify-between rounded-t-lg sticky top-0 z-10">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {editingId ? 'Edit Employee' : 'Add New Employee'}
+                {editingId ? t('ui.editEmployee') : 'Add New Employee'}
                 {userRole === 'super_admin' && (
                   <span className="ml-2 text-sm font-medium text-gray-500 dark:text-gray-400">- {currentHospital.name}</span>
                 )}
               </h2>
-              <button type="button" onClick={() => setShowModal(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors" title="Close">
+              <button type="button" onClick={() => setShowModal(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors" title={t('ui.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -375,7 +373,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">Hospital Assignment</h3>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Hospital</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.hospital')}</label>
                     <div className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/60 px-3.5 py-2 text-sm text-gray-700 dark:text-gray-200">
                       {currentHospital.name}
                     </div>
@@ -385,7 +383,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
 
               {/* Personal Information */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">Personal Information</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">{t('ui.personalInformation')}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">First Name</label>
@@ -412,21 +410,21 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Gender</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.gender')}</label>
                     <select
                       value={formData.gender}
                       onChange={(e) => setFormData((prev) => ({ ...prev, gender: e.target.value as 'male' | 'female' | 'other' }))}
-                      title="Gender"
+                      title={t('ui.gender')}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                     >
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
+                      <option value="male">{t('ui.male')}</option>
+                      <option value="female">{t('ui.female')}</option>
+                      <option value="other">{t('ui.other')}</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Date of Birth</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.dateOfBirth')}</label>
                     <input
                       type="date"
                       value={formData.dateOfBirth}
@@ -443,11 +441,11 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">Employment Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Department</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.department')}</label>
                     <select
                       value={formData.departmentId}
                       onChange={(e) => setFormData((prev) => ({ ...prev, departmentId: e.target.value }))}
-                      title="Department"
+                      title={t('ui.department')}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                     >
                       <option value="">Select Department</option>
@@ -475,11 +473,11 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Shift</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.shift')}</label>
                     <select
                       value={formData.shiftId}
                       onChange={(e) => setFormData((prev) => ({ ...prev, shiftId: e.target.value }))}
-                      title="Shift"
+                      title={t('ui.shift')}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                     >
                       <option value="">Select Shift</option>
@@ -533,15 +531,15 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Status</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.status')}</label>
                     <select
                       value={formData.status}
                       onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as 'active' | 'inactive' | 'terminated' }))}
                       title="Employee status"
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                     >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="active">{t('ui.active')}</option>
+                      <option value="inactive">{t('ui.inactive')}</option>
                       <option value="terminated">Terminated</option>
                     </select>
                   </div>
@@ -550,10 +548,10 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
 
               {/* Contact Information */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">Contact Information</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">{t('ui.contactInformation')}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Phone</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.phone')}</label>
                     <input
                       value={formData.phone}
                       onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
@@ -563,7 +561,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.email')}</label>
                     <input
                       type="email"
                       value={formData.email}
@@ -578,7 +576,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                     <input
                       value={formData.emergencyContactName}
                       onChange={(e) => setFormData((prev) => ({ ...prev, emergencyContactName: e.target.value }))}
-                      placeholder="Name"
+                      placeholder={t('ui.name')}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
                     />
                   </div>
@@ -588,7 +586,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                     <input
                       value={formData.emergencyContactPhone}
                       onChange={(e) => setFormData((prev) => ({ ...prev, emergencyContactPhone: e.target.value }))}
-                      placeholder="Phone"
+                      placeholder={t('ui.phone')}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
                     />
                   </div>
@@ -611,7 +609,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2">Documents</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Profile Image</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.profileImage')}</label>
                     <label className="w-full flex items-center justify-end gap-3 px-3.5 py-2.5 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors bg-white dark:bg-gray-800">
                       <Upload className="w-4 h-4 text-gray-500" />
                       <span className="text-sm text-gray-600 dark:text-gray-300 truncate font-medium">
@@ -640,9 +638,7 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 type="button" 
                 onClick={() => setShowModal(false)} 
                 className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button 
                 type="submit" 
                 disabled={submitting} 
@@ -651,10 +647,10 @@ export function EmployeeManagement({ hospital, userRole }: EmployeeManagementPro
                 {submitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Saving...
+                    {t('ui.saving')}
                   </>
                 ) : (
-                  editingId ? 'Save Changes' : 'Create Employee'
+                  editingId ? t('ui.saveChanges') : 'Create Employee'
                 )}
               </button>
             </div>

@@ -26,6 +26,13 @@ class Transaction extends Model
         'total_tax',
         'paid_amount',
         'due_amount',
+        'payment_status',
+        'payment_method',
+        'payment_reference',
+        'payment_due_date',
+        'last_payment_at',
+        'finance_note',
+        'settled_by',
         'verification_token',
         'created_by',
         'updated_by',
@@ -37,7 +44,34 @@ class Transaction extends Model
         'total_tax' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
+        'payment_due_date' => 'date',
+        'last_payment_at' => 'datetime',
     ];
+
+    /** Document types that the Finance module reports on. */
+    public const TYPES = ['sales', 'purchase', 'sales_return', 'purchase_return'];
+
+    /**
+     * Recalculate due amount and payment status from the recorded totals.
+     *
+     * Kept on the model so both the operational and financial sides stay
+     * consistent regardless of which one last touched the record.
+     */
+    public function syncPaymentState(): void
+    {
+        $total = round((float) $this->grand_total, 2);
+        $paid = round((float) $this->paid_amount, 2);
+
+        $this->due_amount = max(0, round($total - $paid, 2));
+
+        if ($paid <= 0 && $total > 0) {
+            $this->payment_status = 'pending';
+        } elseif ($this->due_amount > 0) {
+            $this->payment_status = 'partial';
+        } else {
+            $this->payment_status = 'paid';
+        }
+    }
 
     protected static function booted()
     {

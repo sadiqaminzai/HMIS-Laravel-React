@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { useShifts } from '../context/ShiftContext';
@@ -12,6 +13,7 @@ interface ShiftManagementProps {
 }
 
 export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
+  const { t } = useTranslation();
   const { shifts, addShift, updateShift, deleteShift, loading } = useShifts();
   const { hasPermission } = useAuth();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital } = useHospitalFilter(hospital, userRole);
@@ -213,13 +215,13 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
           <table className="w-full text-left text-sm min-w-[900px]">
             <thead className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 font-semibold sticky top-0 backdrop-blur-sm z-10">
               <tr>
-                <th className="px-3 py-2.5 text-xs font-medium">Name</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Code</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Start</th>
-                <th className="px-3 py-2.5 text-xs font-medium">End</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Grace</th>
-                <th className="px-3 py-2.5 text-xs font-medium">Status</th>
-                <th className="px-3 py-2.5 text-xs font-medium text-center">Actions</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.name')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.code')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.start')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.end')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.grace')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium">{t('table.status')}</th>
+                <th className="px-3 py-2.5 text-xs font-medium text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -242,14 +244,14 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
                       <button
                         onClick={() => openEdit(shift.id)}
                         className="p-2.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-blue-600 hover:bg-blue-100"
-                        title="Edit"
+                        title={t('ui.edit')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => onDelete(shift.id)}
                         className="p-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-red-600 hover:bg-red-100"
-                        title="Delete"
+                        title={t('ui.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -275,16 +277,12 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={currentPage === 1}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
+              >{t('ui.previous')}</button>
               <button
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         )}
@@ -300,7 +298,7 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
                   <span className="ml-2 text-sm font-medium text-gray-500 dark:text-gray-400">- {currentHospital.name}</span>
                 )}
               </h2>
-              <button type="button" onClick={() => setShowModal(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors" title="Close">
+              <button type="button" onClick={() => setShowModal(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors" title={t('ui.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -308,7 +306,7 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
             <div className="p-3 space-y-2">
               {userRole === 'super_admin' && (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Hospital</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.hospital')}</label>
                   <div className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/60 px-3.5 py-2 text-sm text-gray-700 dark:text-gray-200">
                     {currentHospital.name}
                   </div>
@@ -330,7 +328,7 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Code</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.code')}</label>
                     <input
                       value={formData.code}
                       onChange={(e) => setFormData((prev) => ({ ...prev, code: e.target.value }))}
@@ -376,20 +374,20 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Status</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.status')}</label>
                     <select
                       value={formData.status}
                       onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as 'active' | 'inactive' }))}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
                       title="Shift status"
                     >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="active">{t('ui.active')}</option>
+                      <option value="inactive">{t('ui.inactive')}</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Description</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('ui.description')}</label>
                     <textarea
                       rows={2}
                       value={formData.description}
@@ -403,9 +401,7 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
             </div>
 
             <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
-              <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">
-                Cancel
-              </button>
+              <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button
                 type="submit"
                 disabled={submitting}

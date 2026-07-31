@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Expense, ExpenseCategory, Hospital, UserRole } from '../types';
 import { useExpenses } from '../context/ExpenseContext';
@@ -23,6 +24,7 @@ interface ExpenseManagementProps {
 }
 
 export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps) {
+  const { t } = useTranslation();
   const { expenses, addExpense, updateExpense, deleteExpense } = useExpenses();
   const { categories } = useExpenseCategories();
   const { hospitals } = useHospitals();
@@ -208,7 +210,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
     <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Expenses</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('ui.expenses')}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Track hospital expenses and manage approvals.</p>
         </div>
         <button
@@ -242,12 +244,12 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
           <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
             <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
               <tr>
-                <th className="px-4 py-2">ID / Date</th>
-                <th className="px-4 py-2">Title / Category</th>
-                <th className="px-4 py-2">Amount</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2 text-center">Docs</th>
-                <th className="px-4 py-2 text-center">Actions</th>
+                <th className="px-4 py-2">{t('table.idDate')}</th>
+                <th className="px-4 py-2">{t('table.titleCategory')}</th>
+                <th className="px-4 py-2">{t('table.amount')}</th>
+                <th className="px-4 py-2">{t('table.status')}</th>
+                <th className="px-4 py-2 text-center">{t('table.docs')}</th>
+                <th className="px-4 py-2 text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -304,14 +306,14 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                         <button 
                             onClick={() => handleOpenModal(expense)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                         >
                             <Pencil className="w-4 h-4" />
                         </button>
                         <button 
                             onClick={() => setExpenseToDelete(expense)}
                             className="p-1.5 text-rose-600 hover:bg-rose-50 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                         >
                             <Trash2 className="w-4 h-4" />
                         </button>
@@ -319,7 +321,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                             <button 
                                 onClick={() => updateStatus(expense, 'approved')}
                                 className="p-1.5 text-emerald-600 hover:bg-emerald-50 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-md transition-colors"
-                                title="Approve"
+                                title={t('ui.approve')}
                             >
                                 <Check className="w-4 h-4" />
                             </button>
@@ -328,7 +330,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                             <button 
                                 onClick={() => updateStatus(expense, 'rejected')}
                                 className="p-1.5 text-red-600 hover:bg-red-50 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-md transition-colors"
-                                title="Reject"
+                                title={t('ui.reject')}
                             >
                                 <XCircle className="w-4 h-4" />
                             </button>
@@ -346,7 +348,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                         </div>
                         <p className="text-sm font-medium">No expenses found</p>
                         <p className="text-xs mt-0.5">
-                          {searchTerm ? 'Try adjusting your search terms' : 'Record a new expense to get started'}
+                          {searchTerm ? t('ui.tryAdjustingYourSearchTerms') : 'Record a new expense to get started'}
                         </p>
                     </div>
                   </td>
@@ -366,8 +368,8 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                title="Previous Page"
-                aria-label="Previous Page"
+                title={t('ui.previousPage')}
+                aria-label={t('ui.previousPage')}
                 className="p-1 px-2 rounded hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
               >
                 <ChevronLeft className="w-3 h-3" />
@@ -375,8 +377,8 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                title="Next Page"
-                aria-label="Next Page"
+                title={t('ui.nextPage')}
+                aria-label={t('ui.nextPage')}
                 className="p-1 px-2 rounded hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
               >
                 <ChevronRight className="w-3 h-3" />
@@ -396,7 +398,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               </h2>
               <button 
                 onClick={handleCloseModal}
-                title="Close"
+                title={t('ui.close')}
                 aria-label="Close modal"
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               >
@@ -409,12 +411,12 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               
               {userRole === 'super_admin' && (
                 <div className="col-span-12 md:col-span-3">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Hospital <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span></label>
                   <select
                     value={form.hospitalId}
                     onChange={(e) => setForm((prev) => ({ ...prev, hospitalId: e.target.value, expenseCategoryId: '' }))}
-                    title="Select Hospital"
-                    aria-label="Select Hospital"
+                    title={t('ui.selectHospital')}
+                    aria-label={t('ui.selectHospital')}
                     className="w-full px-2.5 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                   >
                     {hospitals.map((h) => (
@@ -425,7 +427,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               )}
               
               <div className={`col-span-12 ${userRole === 'super_admin' ? 'md:col-span-3' : 'md:col-span-4'}`}>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Date <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.date')}<span className="text-red-500">*</span></label>
                 <input
                   type="date"
                   required
@@ -438,16 +440,16 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               </div>
 
               <div className={`col-span-12 ${userRole === 'super_admin' ? 'md:col-span-3' : 'md:col-span-4'}`}>
-                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Category <span className="text-red-500">*</span></label>
+                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.category')}<span className="text-red-500">*</span></label>
                 <select
                   required
-                  title="Select Category"
-                  aria-label="Select Category"
+                  title={t('ui.selectCategory')}
+                  aria-label={t('ui.selectCategory')}
                   value={form.expenseCategoryId}
                   onChange={(e) => setForm((prev) => ({ ...prev, expenseCategoryId: e.target.value }))}
                   className="w-full px-2.5 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                 >
-                  <option value="">Select Category</option>
+                  <option value="">{t('ui.selectCategory')}</option>
                   {categoriesForHospital.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -455,7 +457,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               </div>
 
                <div className={`col-span-12 ${userRole === 'super_admin' ? 'md:col-span-3' : 'md:col-span-4'}`}>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Amount <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.amount')}<span className="text-red-500">*</span></label>
                 <div className="relative">
                     <span className="absolute left-2.5 top-1.5 text-gray-500 text-xs">$</span>
                     <input
@@ -486,7 +488,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               </div>
 
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Payment Method</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentMethod')}</label>
                 <input
                   list="paymentMethods"
                   value={form.paymentMethod}
@@ -513,7 +515,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               </div>
 
               <div className="col-span-12 md:col-span-6">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">Notes</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.notes')}</label>
                 <textarea
                   rows={2}
                   value={form.notes}
@@ -553,15 +555,13 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
                   type="button"
                   onClick={handleCloseModal}
                   className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
-                  {isSubmitting ? (editing ? 'Updating...' : 'Saving...') : (editing ? 'Update Expense' : 'Save Expense')}
+                  {isSubmitting ? (editing ? 'Updating...' : t('ui.saving')) : (editing ? 'Update Expense' : 'Save Expense')}
                 </button>
               </div>
             </form>
@@ -587,8 +587,8 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               <button
                 onClick={() => setExpenseToDelete(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                title="Close"
-                aria-label="Close"
+                title={t('ui.close')}
+                aria-label={t('ui.close')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -605,15 +605,11 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
               <button
                 onClick={() => setExpenseToDelete(null)}
                 className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={confirmDeleteExpense}
                 className="px-3 py-1.5 text-xs font-medium rounded-md bg-rose-600 text-white hover:bg-rose-700"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>

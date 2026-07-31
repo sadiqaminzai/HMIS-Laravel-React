@@ -286,9 +286,7 @@ export function ChangePassword({ isOpen, onClose }: ChangePasswordProps) {
             type="button"
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('ui.cancel')}</button>
           <button
             onClick={handleSubmit}
             disabled={loading || !formData.currentPassword || !formData.newPassword || !formData.confirmPassword}

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\PermissionRegistrar;
@@ -19,14 +20,42 @@ class AuthController extends Controller
         $user = User::with('hospital')->where('email', $credentials['email'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            AuditLogger::log([
+                'user' => $user,
+                'hospital_id' => $user->hospital_id ?? null,
+                'module' => 'Authentication',
+                'action' => 'login_failed',
+                'record_id' => $user->id ?? null,
+                'record_label' => $credentials['email'],
+                'description' => 'Failed login attempt for '.$credentials['email'],
+            ]);
+
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
         if (! $user->is_active) {
+            AuditLogger::log([
+                'user' => $user,
+                'module' => 'Authentication',
+                'action' => 'login_failed',
+                'record_id' => $user->id,
+                'record_label' => $user->email,
+                'description' => 'Login blocked: account is inactive.',
+            ]);
+
             return response()->json(['message' => 'Account is inactive. Contact an administrator.'], 403);
         }
 
         if ($user->hospital && $user->hospital->subscription_status !== 'active') {
+            AuditLogger::log([
+                'user' => $user,
+                'module' => 'Authentication',
+                'action' => 'login_failed',
+                'record_id' => $user->id,
+                'record_label' => $user->email,
+                'description' => 'Login blocked: hospital subscription is not active.',
+            ]);
+
             return response()->json(['message' => 'Hospital subscription is not active.'], 403);
         }
 
@@ -39,6 +68,15 @@ class AuthController extends Controller
         $token = $user->createToken('auth_token', $abilities)->plainTextToken;
 
         $user->forceFill(['last_login_at' => now()])->save();
+
+        AuditLogger::log([
+            'user' => $user,
+            'module' => 'Authentication',
+            'action' => 'login',
+            'record_id' => $user->id,
+            'record_label' => $user->email,
+            'description' => 'User signed in.',
+        ]);
 
         return response()->json([
             'token' => $token,
@@ -56,8 +94,19 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        if ($request->user()->currentAccessToken()) {
-            $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+
+        AuditLogger::log([
+            'user' => $user,
+            'module' => 'Authentication',
+            'action' => 'logout',
+            'record_id' => $user->id,
+            'record_label' => $user->email,
+            'description' => 'User signed out.',
+        ]);
+
+        if ($user->currentAccessToken()) {
+            $user->currentAccessToken()->delete();
         }
 
         return response()->json(['message' => 'Logged out']);

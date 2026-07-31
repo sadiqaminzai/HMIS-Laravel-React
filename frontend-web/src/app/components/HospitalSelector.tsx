@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Building2 } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { useHospitals } from '../context/HospitalContext';
@@ -14,6 +15,7 @@ export function HospitalSelector({
   selectedHospitalId, 
   onHospitalChange 
 }: HospitalSelectorProps) {
+  const { t } = useTranslation();
   const { hospitals } = useHospitals();
 
   // Only show for super_admin
@@ -24,9 +26,7 @@ export function HospitalSelector({
   return (
     <div className="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
       <Building2 className="w-4 h-4 text-purple-500 flex-shrink-0" />
-      <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-        Select Hospital
-      </label>
+      <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{t('ui.selectHospital')}</label>
       <select
         value={selectedHospitalId}
         onChange={(e) => onHospitalChange(e.target.value)}

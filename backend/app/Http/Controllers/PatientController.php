@@ -22,17 +22,26 @@ class PatientController extends Controller
 
         // Doctor scope: patients are linked to doctors via appointments.
         if ($request->user()->role === 'doctor') {
-            // Doctors are users now; fallback to legacy doctor_id if present.
-            $doctorId = (int) ($request->user()->doctor_id ?? $request->user()->id ?? 0);
+            // `appointments.doctor_id` holds a users.id since the
+            // *_doctor_fk_to_users migrations, but rows created before that
+            // still hold the legacy doctors.id. Match either so a doctor sees
+            // their patients regardless of when the appointment was booked.
+            // Preferring doctor_id here was a bug: it resolved to the legacy
+            // profile id, matched nothing, and left the patient picker empty.
+            $doctorIds = array_values(array_unique(array_filter([
+                (int) $request->user()->id,
+                (int) ($request->user()->doctor_id ?? 0),
+            ])));
+
             $allowedStatuses = ['scheduled', 'completed', 'cancelled', 'no_show'];
             $status = $request->filled('appointment_status') ? (string) $request->input('appointment_status') : null;
             $status = $status !== null ? strtolower(trim($status)) : null;
 
-            if ($doctorId > 0) {
-                $query->whereIn('id', function ($q) use ($doctorId, $status, $allowedStatuses) {
+            if (!empty($doctorIds)) {
+                $query->whereIn('id', function ($q) use ($doctorIds, $status, $allowedStatuses) {
                     $q->select('patient_id')
                         ->from('appointments')
-                        ->where('doctor_id', $doctorId)
+                        ->whereIn('doctor_id', $doctorIds)
                         ->whereNotNull('patient_id')
                         ->distinct();
 

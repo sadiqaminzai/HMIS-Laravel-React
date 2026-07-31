@@ -14,7 +14,6 @@ import {
   Package,
   Factory,
   Pill,
-  Truck,
   Receipt,
   Box,
   ClipboardList,
@@ -36,7 +35,10 @@ import {
   LogOut,
   Hospital,
   Database,
-  Briefcase
+  Briefcase,
+  ScanLine,
+  ShieldCheck,
+  BadgeDollarSign
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
@@ -73,7 +75,7 @@ const menuItems: MenuItem[] = [
     id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_reception_menu', 'view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts'],
+    anyPermissions: ['view_reception_menu'],
     subItems: [
       {
         id: '/doctors',
@@ -94,34 +96,17 @@ const menuItems: MenuItem[] = [
         anyPermissions: ['view_appointments', 'manage_appointments', 'schedule_appointments']
       },
       {
-        id: '/discount-types',
-        translationKey: 'nav.discountTypes',
-        icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts']
-      },
-      {
-        id: '/discount-catalog',
-        translationKey: 'nav.discountCatalog',
-        icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_discounts', 'add_discounts', 'edit_discounts', 'delete_discounts', 'manage_discounts']
-      },
-      {
-        id: '/rooms',
-        translationKey: 'nav.rooms',
+        // Rooms and room bookings live here as tabs.
+        id: '/room-management',
+        translationKey: 'nav.roomManagement',
         icon: <BedDouble className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_rooms', 'manage_rooms']
-      },
-      {
-        id: '/room-bookings',
-        translationKey: 'nav.roomBookings',
-        icon: <BedDouble className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_room_bookings', 'manage_room_bookings']
+        anyPermissions: ['view_rooms', 'manage_rooms', 'view_room_bookings', 'manage_room_bookings']
       },
       {
         id: '/surgeries',
         translationKey: 'nav.surgeries',
         icon: <Scissors className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_surgery_types', 'manage_surgery_types', 'view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries', 'view_discharge_summaries', 'manage_discharge_summaries']
+        anyPermissions: ['view_surgery_types', 'manage_surgery_types', 'view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries']
       }
     ]
   },
@@ -146,34 +131,45 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
+    id: 'radiology', // Group ID
+    translationKey: 'nav.radiology',
+    icon: <ScanLine className="w-3.5 h-3.5" />,
+    anyPermissions: [
+      'view_radiology_menu',
+      'view_ultrasound_exams', 'add_ultrasound_exams', 'edit_ultrasound_exams', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
+      'view_ultrasound_types', 'manage_ultrasound_types'
+    ],
+    subItems: [
+      {
+        // Exams and report templates live here as tabs.
+        id: '/radiology/ultrasound',
+        translationKey: 'nav.ultrasound',
+        icon: <ScanLine className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_ultrasound_exams', 'add_ultrasound_exams', 'edit_ultrasound_exams', 'delete_ultrasound_exams',
+          'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams',
+          'view_ultrasound_types', 'manage_ultrasound_types'
+        ]
+      }
+    ]
+  },
+  {
     id: 'pharmacy', // Group ID
     translationKey: 'nav.pharmacy',
     icon: <Package className="w-3.5 h-3.5" />,
     anyPermissions: ['view_pharmacy_menu'],
     subItems: [
       {
-        id: '/manufacturers',
-        translationKey: 'nav.manufacturers',
+        // Medicines, types, manufacturers and suppliers live here as tabs.
+        id: '/pharmacy-master',
+        translationKey: 'nav.masterData',
         icon: <Factory className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_manufacturers', 'manage_manufacturers']
-      },
-      {
-        id: '/medicine-types',
-        translationKey: 'nav.medicineTypes',
-        icon: <Pill className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_medicine_types', 'manage_medicine_types']
-      },
-      {
-        id: '/medicines',
-        translationKey: 'nav.medicines',
-        icon: <Pill className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_medicines', 'manage_medicines', 'dispense_medicines']
-      },
-      {
-        id: '/suppliers',
-        translationKey: 'nav.suppliers',
-        icon: <Truck className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_suppliers', 'manage_suppliers']
+        anyPermissions: [
+          'view_manufacturers', 'manage_manufacturers',
+          'view_medicine_types', 'manage_medicine_types',
+          'view_medicines', 'manage_medicines', 'dispense_medicines',
+          'view_suppliers', 'manage_suppliers'
+        ]
       },
       {
         id: '/transactions',
@@ -182,16 +178,24 @@ const menuItems: MenuItem[] = [
         anyPermissions: ['view_transactions', 'manage_transactions']
       },
       {
-        id: '/stocks',
-        translationKey: 'nav.stocks',
+        // Stocks and stock adjustments live here as tabs.
+        id: '/stock-control',
+        translationKey: 'nav.stockControl',
         icon: <Box className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_stocks', 'manage_stocks']
+        anyPermissions: ['view_stocks', 'manage_stocks', 'edit_stocks']
       },
       {
-        id: '/stock-adjustments',
-        translationKey: 'nav.stockAdjustments',
-        icon: <Sliders className="w-3.5 h-3.5" />,
-        anyPermissions: ['edit_stocks', 'manage_stocks']
+        // Financial control (paid / pending) over the documents the rest of the
+        // Pharmacy menu creates. Access is further split per document type.
+        id: '/pharmacy-finance',
+        translationKey: 'nav.finance',
+        icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_finance_menu',
+          'view_finance_sales', 'view_finance_purchases',
+          'view_finance_sales_returns', 'view_finance_purchase_returns',
+          'record_finance_payments', 'edit_finance_payment_status', 'manage_finance'
+        ]
       }
     ]
   },
@@ -202,16 +206,12 @@ const menuItems: MenuItem[] = [
     anyPermissions: ['view_prescriptions_menu'],
     subItems: [
       {
-        id: '/prescriptions/create',
-        translationKey: 'nav.createNew',
-        icon: <FilePlus className="w-3.5 h-3.5" />,
-        anyPermissions: ['create_prescription', 'add_prescriptions', 'edit_prescriptions', 'manage_prescriptions']
-      },
-      {
+        // The list page owns creation via its "+ Add Prescription" button,
+        // matching the CRUD pattern used by every other module.
         id: '/prescriptions',
-        translationKey: 'nav.viewAll',
+        translationKey: 'nav.prescriptions',
         icon: <List className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_prescriptions', 'manage_prescriptions']
+        anyPermissions: ['view_prescriptions', 'manage_prescriptions', 'create_prescription', 'add_prescriptions']
       },
       {
         id: '/settings/treatment-sets',
@@ -380,7 +380,6 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
-  const isRTL = ['ps', 'fa', 'ar'].some((code) => String(i18n.language || '').toLowerCase().startsWith(code));
 
   const canSeeSettings = [
     'view_users',
@@ -416,6 +415,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     'delete_backups',
     'export_backups',
     'manage_backups',
+    'view_audit_logs',
+    'manage_audit_logs',
   ].some((p) => hasPermission(p));
 
   const canSeeUsers = hasPermission('view_users') || hasPermission('add_users') || hasPermission('edit_users') || hasPermission('delete_users') || hasPermission('manage_users');
@@ -424,6 +425,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const canSeeHospitalSettings = hasPermission('view_hospital_settings') || hasPermission('add_hospital_settings') || hasPermission('edit_hospital_settings') || hasPermission('delete_hospital_settings') || hasPermission('manage_hospital_settings');
   const canSeeBackups = hasPermission('view_backups') || hasPermission('add_backups') || hasPermission('edit_backups') || hasPermission('delete_backups') || hasPermission('export_backups') || hasPermission('manage_backups') || canSeeHospitalSettings;
   const canSeeContactMessages = hasPermission('view_contact_messages') || hasPermission('edit_contact_messages') || hasPermission('delete_contact_messages') || hasPermission('manage_contact_messages');
+  // Audit Log is hidden entirely unless the user holds the dedicated permission.
+  const canSeeAuditLog = hasPermission('view_audit_logs') || hasPermission('manage_audit_logs');
   
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
@@ -463,15 +466,21 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     
     // Auto-collapse logic based on path groups
     // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
-    const isPharmacySubItem = ['/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stocks', '/stock-adjustments'].includes(path);
+    const isPharmacySubItem = ['/pharmacy-master', '/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stock-control', '/stocks', '/stock-adjustments', '/pharmacy-finance'].includes(path);
     if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
     }
     
     // If navigating to a non-prescription page and prescription menu is expanded, collapse it
-    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions', '/settings/treatment-sets'].includes(path);
+    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions', '/settings/treatment-sets', '/settings/prescription-diagnoses'].includes(path);
     if (!isPrescriptionSubItem && path !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'prescription-menu'));
+    }
+
+    // If navigating away from radiology and its menu is expanded, collapse it
+    const isRadiologySubItem = ['/radiology/ultrasound'].includes(path);
+    if (!isRadiologySubItem && path !== 'radiology' && expandedMenus.includes('radiology')) {
+      setExpandedMenus(prev => prev.filter(id => id !== 'radiology'));
     }
     
     // If navigating to a non-laboratory page and laboratory menu is expanded, collapse it
@@ -481,7 +490,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     }
     
     // If navigating to a non-reception page and reception menu is expanded, collapse it
-    const isReceptionSubItem = ['/doctors', '/patients', '/appointments', '/discount-types', '/discount-catalog', '/rooms', '/room-bookings', '/surgeries'].includes(path);
+    const isReceptionSubItem = ['/doctors', '/patients', '/appointments', '/room-management', '/rooms', '/room-bookings', '/surgeries'].includes(path);
     if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
     }
@@ -526,14 +535,14 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
         <div key={item.id}>
           <button
             onClick={() => isCollapsed ? undefined : toggleMenu(item.id)} // Group headers usually don't navigate when collapsed unless logic added
-            className={`w-full flex items-center ${isRTL ? 'flex-row-reverse' : ''} ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
               isActive
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
             title={isCollapsed ? t(item.translationKey) : ''}
           >
-            <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''} ${isCollapsed ? '' : 'gap-2'}`}>
+            <div className={`flex items-center ${isCollapsed ? '' : 'gap-2'}`}>
               {item.icon}
               {!isCollapsed && <span>{t(item.translationKey)}</span>}
             </div>
@@ -542,12 +551,12 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
             )}
           </button>
           {!isCollapsed && isExpanded && (
-            <div className={`mt-0.5 space-y-0.5 ${isRTL ? 'mr-4 border-r-2 pr-2' : 'ml-4 border-l-2 pl-2'} border-gray-200 dark:border-gray-700`}>
+            <div className="mt-0.5 space-y-0.5 ms-4 border-s-2 ps-2 border-gray-200 dark:border-gray-700">
               {item.subItems?.filter(isItemVisible).map((subItem) => (
                 <button
                   key={subItem.id}
                   onClick={() => handleNavigate(subItem.id)}
-                  className={`w-full flex items-center ${isRTL ? 'flex-row-reverse' : ''} gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
                     currentPath === subItem.id
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -567,7 +576,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
       <button
         key={item.id}
         onClick={() => handleNavigate(item.id)}
-        className={`w-full flex items-center ${isRTL ? 'flex-row-reverse' : ''} ${isCollapsed ? 'justify-center' : 'gap-2'} ${isSubItem ? (isRTL ? 'pr-6' : 'pl-6') : ''} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
+        className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-2'} ${isSubItem ? 'ps-6' : ''} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
           currentPath === item.id
             ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -581,11 +590,11 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   };
 
   return (
-    <aside className={`no-print ${isCollapsed ? 'w-14' : 'w-48'} bg-white dark:bg-gray-800 ${isRTL ? 'border-l border-r-0' : 'border-r'} border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 flex-shrink-0 ${isRTL ? 'text-right' : ''}`}>
+    <aside className={`no-print ${isCollapsed ? 'w-14' : 'w-48'} bg-white dark:bg-gray-800 border-e border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 flex-shrink-0`}>
       {/* Logo */}
-      <div className={`p-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between relative ${isRTL ? 'flex-row-reverse' : ''}`}>
+      <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between relative">
         {!isCollapsed && (
-          <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''} gap-2`}>
+          <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-blue-700 rounded-md flex items-center justify-center flex-shrink-0">
               <Hospital className="w-4 h-4 text-white" />
             </div>
@@ -602,21 +611,14 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`${isCollapsed ? (isRTL ? 'absolute -left-3 top-1/2 -translate-y-1/2' : 'absolute -right-3 top-1/2 -translate-y-1/2') : ''} p-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-md z-50 flex-shrink-0`}
+          className={`${isCollapsed ? 'absolute -end-3 top-1/2 -translate-y-1/2' : ''} p-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-md z-50 flex-shrink-0`}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
+          {/* The chevron points away from the content in both directions. */}
           {isCollapsed ? (
-            isRTL ? (
-              <ChevronLeft className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-            ) : (
-              <ChevronRight className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-            )
+            <ChevronRight className="w-3 h-3 text-gray-600 dark:text-gray-400 rtl:rotate-180" />
           ) : (
-            isRTL ? (
-              <ChevronRight className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-            ) : (
-              <ChevronLeft className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-            )
+            <ChevronLeft className="w-3 h-3 text-gray-600 dark:text-gray-400 rtl:rotate-180" />
           )}
         </button>
       </div>
@@ -647,14 +649,14 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
               value={i18n.language}
               onChange={(e) => i18n.changeLanguage(e.target.value)}
               aria-label="Language"
-              className="w-full px-2.5 py-1.5 pr-7 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-md transition-colors cursor-pointer appearance-none text-xs"
+              className="w-full px-2.5 py-1.5 pe-7 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-md transition-colors cursor-pointer appearance-none text-xs"
             >
               <option value="en">🇬🇧 English</option>
               <option value="ps">🇦🇫 پښتو</option>
               <option value="fa">🇦🇫 دری</option>
               <option value="ar">🇸🇦 العربية</option>
             </select>
-            <Globe className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <Globe className="absolute end-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500 pointer-events-none" />
           </div>
         ) : (
           <div className="relative group">
@@ -665,28 +667,28 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
               <Globe className="w-3.5 h-3.5" />
             </button>
             {/* Collapsed language selector dropdown */}
-            <div className="absolute left-full ml-2 bottom-0 hidden group-hover:block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 min-w-[140px]">
+            <div className="absolute start-full ms-2 bottom-0 hidden group-hover:block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 min-w-[140px]">
               <button
                 onClick={() => i18n.changeLanguage('en')}
-                className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'en' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                className={`w-full px-3 py-2 text-start text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'en' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
               >
                 🇬🇧 English
               </button>
               <button
                 onClick={() => i18n.changeLanguage('ps')}
-                className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'ps' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                className={`w-full px-3 py-2 text-start text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'ps' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
               >
                 🇦🇫 پښتو
               </button>
               <button
                 onClick={() => i18n.changeLanguage('fa')}
-                className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'fa' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                className={`w-full px-3 py-2 text-start text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'fa' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
               >
                 🇦🇫 دری
               </button>
               <button
                 onClick={() => i18n.changeLanguage('ar')}
-                className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'ar' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                className={`w-full px-3 py-2 text-start text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${i18n.language === 'ar' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
               >
                 🇸🇦 العربية
               </button>
@@ -712,7 +714,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                 }
               }}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-2.5 py-1.5 rounded-md transition-colors text-xs ${
-                ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings/backups', '/settings', '/contact-messages'].includes(currentPath)
+                ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/general', '/settings/backups', '/settings/audit-log', '/settings', '/contact-messages'].includes(currentPath)
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
@@ -738,7 +740,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <Sliders className="w-3.5 h-3.5" />
-                    <span>General</span>
+                    <span>{t('nav.settingsGeneral')}</span>
                   </button>
                 )}
                 {canSeeBackups && (
@@ -751,7 +753,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <Database className="w-3.5 h-3.5" />
-                    <span>Backups</span>
+                    <span>{t('nav.settingsBackups')}</span>
                   </button>
                 )}
                 {canSeeContactMessages && (
@@ -764,7 +766,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Contact Messages</span>
+                    <span>{t('nav.contactMessages')}</span>
                   </button>
                 )}
                 {canSeeUsers && (
@@ -777,7 +779,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <UserCog className="w-3.5 h-3.5" />
-                    <span>Users</span>
+                    <span>{t('nav.users')}</span>
                   </button>
                 )}
                 {canSeeRoles && (
@@ -790,7 +792,20 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <Shield className="w-3.5 h-3.5" />
-                    <span>Roles</span>
+                    <span>{t('nav.roles')}</span>
+                  </button>
+                )}
+                {canSeeAuditLog && (
+                  <button
+                    onClick={() => handleNavigate('/settings/audit-log')}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors text-xs ${
+                      currentPath === '/settings/audit-log'
+                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>{t('nav.auditLog')}</span>
                   </button>
                 )}
                 {canSeePermissions && (
@@ -803,7 +818,7 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
                     }`}
                   >
                     <Key className="w-3.5 h-3.5" />
-                    <span>Permissions</span>
+                    <span>{t('nav.permissions')}</span>
                   </button>
                 )}
               </div>

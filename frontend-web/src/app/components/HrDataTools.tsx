@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download, Upload } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import api from '../../api/axios';
@@ -23,6 +24,7 @@ const moduleLabels: Record<string, string> = {
 };
 
 export function HrDataTools({ hospital, userRole }: HrDataToolsProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
   const [modules, setModules] = useState<string[]>([]);
   const [selectedModule, setSelectedModule] = useState('employees');
@@ -122,7 +124,7 @@ export function HrDataTools({ hospital, userRole }: HrDataToolsProps) {
 
       <div className="flex flex-col md:flex-row gap-3">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Module</label>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.module')}</label>
           <select
             value={selectedModule}
             onChange={(e) => setSelectedModule(e.target.value)}
@@ -136,7 +138,7 @@ export function HrDataTools({ hospital, userRole }: HrDataToolsProps) {
         </div>
 
         <div className="md:w-[280px]">
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Hospital</label>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.hospital')}</label>
           <HospitalSelector
             userRole={userRole}
             selectedHospitalId={selectedHospitalId}
@@ -157,7 +159,7 @@ export function HrDataTools({ hospital, userRole }: HrDataToolsProps) {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm disabled:opacity-60"
           >
             <Download className="w-4 h-4" />
-            {busyAction === 'export' ? 'Exporting...' : 'Export CSV'}
+            {busyAction === 'export' ? 'Exporting...' : t('ui.exportCsv')}
           </button>
 
           <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm cursor-pointer">

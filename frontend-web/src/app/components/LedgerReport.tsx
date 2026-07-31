@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BarChart3, CircleDollarSign, Download, HandCoins, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportLedger, getLedgerSummary, LedgerEntryApi, listLedger } from '../../api/ledger';
@@ -17,6 +18,7 @@ const money = (value: number | string) => {
 };
 
 export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<LedgerEntryApi[]>([]);
   const [loading, setLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -165,7 +167,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
         </div>
         <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-900/20 p-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-red-700 dark:text-red-300">Salary</p>
+            <p className="text-xs font-medium text-red-700 dark:text-red-300">{t('ui.salary')}</p>
             <HandCoins className="w-4 h-4 text-red-600" />
           </div>
           <p className="mt-2 text-xl font-semibold text-red-800 dark:text-red-200">{money(summary.salary_total ?? 0)}</p>
@@ -189,7 +191,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
       <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 items-end">
           <div className="xl:col-span-2">
-            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Search</label>
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">{t('ui.search')}</label>
             <div className="mt-1 flex gap-2">
               <input
                 value={search}
@@ -202,14 +204,12 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
                 onClick={applySearch}
                 className="h-10 px-3 rounded-md bg-blue-600 text-white text-sm inline-flex items-center gap-1"
               >
-                <Search className="w-4 h-4" />
-                Search
-              </button>
+                <Search className="w-4 h-4" />{t('ui.search')}</button>
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Module</label>
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">{t('ui.module')}</label>
             <select
               title="Module filter"
               value={moduleFilter}
@@ -219,14 +219,14 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
               }}
               className="mt-1 h-10 w-full px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
             >
-              <option value="">All</option>
+              <option value="">{t('ui.all')}</option>
               <option value="appointments">Appointments</option>
               <option value="laboratory">Laboratory</option>
               <option value="room_booking">Room Booking</option>
-              <option value="surgery">Surgery</option>
-              <option value="pharmacy">Pharmacy</option>
-              <option value="expenses">Expenses</option>
-              <option value="salary">Salary</option>
+              <option value="surgery">{t('ui.surgery')}</option>
+              <option value="pharmacy">{t('ui.pharmacy')}</option>
+              <option value="expenses">{t('ui.expenses')}</option>
+              <option value="salary">{t('ui.salary')}</option>
               <option value="other_income">Other Income</option>
             </select>
           </div>
@@ -242,7 +242,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
               }}
               className="mt-1 h-10 w-full px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
             >
-              <option value="">All</option>
+              <option value="">{t('ui.all')}</option>
               <option value="income">Income</option>
               <option value="expense">Expense</option>
               <option value="adjustment">Adjustment</option>
@@ -250,7 +250,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Status</label>
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">{t('ui.status')}</label>
             <select
               title="Status filter"
               value={statusFilter}
@@ -260,12 +260,12 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
               }}
               className="mt-1 h-10 w-full px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
             >
-              <option value="">All</option>
-              <option value="paid">Paid</option>
-              <option value="pending">Pending</option>
+              <option value="">{t('ui.all')}</option>
+              <option value="paid">{t('ui.paid')}</option>
+              <option value="pending">{t('ui.pending')}</option>
               <option value="partial">Partial</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
+              <option value="approved">{t('ui.approved')}</option>
+              <option value="rejected">{t('ui.rejected')}</option>
               <option value="voided">Voided</option>
             </select>
           </div>
@@ -310,7 +310,7 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
             className="h-9 px-3 rounded-md bg-emerald-600 text-white text-xs inline-flex items-center gap-1 disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            {exporting ? 'Exporting...' : 'Export CSV'}
+            {exporting ? 'Exporting...' : t('ui.exportCsv')}
           </button>
         </div>
       </div>
@@ -320,14 +320,14 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
               <tr>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Title</th>
-                <th className="px-3 py-2">Module</th>
-                <th className="px-3 py-2">Direction</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Net</th>
-                <th className="px-3 py-2 text-right">Paid</th>
-                <th className="px-3 py-2 text-right">Due</th>
+                <th className="px-3 py-2">{t('table.date')}</th>
+                <th className="px-3 py-2">{t('table.title')}</th>
+                <th className="px-3 py-2">{t('table.module')}</th>
+                <th className="px-3 py-2">{t('table.direction')}</th>
+                <th className="px-3 py-2">{t('table.status')}</th>
+                <th className="px-3 py-2 text-right">{t('table.net')}</th>
+                <th className="px-3 py-2 text-right">{t('table.paid')}</th>
+                <th className="px-3 py-2 text-right">{t('table.due')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -378,17 +378,13 @@ export function LedgerReport({ hospital, userRole }: LedgerReportProps) {
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Previous
-            </button>
+            >{t('ui.previous')}</button>
             <button
               type="button"
               disabled={page >= lastPage}
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
               className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>

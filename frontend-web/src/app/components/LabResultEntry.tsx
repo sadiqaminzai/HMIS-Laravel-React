@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileText, X, Search, Clock, AlertTriangle, User, Calendar, Beaker, Stethoscope, CheckCircle2, Plus, Trash2, Printer, Eye } from 'lucide-react';
 import { Hospital, LabTest, UserRole } from '../types';
 import { Toast } from './Toast';
@@ -129,6 +130,7 @@ const generateMockLabTests = (hospitalId: string, assignedTo: string): LabTest[]
 ];
 
 export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultEntryProps) {
+  const { t } = useTranslation();
   const [labTests, setLabTests] = useState<LabTest[]>(generateMockLabTests(hospital.id, currentUserId || 'LT001'));
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTest, setSelectedTest] = useState<LabTest | null>(null);
@@ -282,12 +284,12 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
             <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
               <tr>
                 <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Test #</th>
-                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Patient</th>
-                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Test Name</th>
-                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Doctor</th>
-                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Priority</th>
-                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Sample Time</th>
-                <th className="text-right py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">Action</th>
+                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.patient')}</th>
+                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.testName')}</th>
+                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.doctor')}</th>
+                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.priority')}</th>
+                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.sampleTime')}</th>
+                <th className="text-right py-2 px-3 text-xs font-semibold text-gray-900 dark:text-white">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -385,11 +387,11 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
                   <div>
                     <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-1.5">
                       <User className="w-3.5 h-3.5" />
-                      Patient
+                      {t('ui.patient')}
                     </div>
                     <div className="text-sm font-semibold text-gray-900 dark:text-white">{selectedTest.patientName}</div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                      {selectedTest.patientAge}Y • {selectedTest.patientGender === 'male' ? 'Male' : 'Female'}
+                      {selectedTest.patientAge}Y • {selectedTest.patientGender === 'male' ? t('ui.male') : t('ui.female')}
                     </div>
                   </div>
                   <div>
@@ -464,16 +466,16 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
                             Test Name <span className="text-red-500">*</span>
                           </th>
                           <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600">
-                            Normal Range
+                            {t('table.normalRange')}
                           </th>
                           <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600">
                             Result <span className="text-red-500">*</span>
                           </th>
                           <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600">
-                            Remarks
+                            {t('table.remarks')}
                           </th>
                           <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 w-16">
-                            Action
+                            {t('table.actions')}
                           </th>
                         </tr>
                       </thead>
@@ -565,9 +567,7 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
                 <button
                   onClick={() => setShowResultModal(false)}
                   className="px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   onClick={handleSubmitResult}
                   className="px-5 py-2.5 text-sm bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
@@ -626,9 +626,7 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
               <button
                 onClick={() => setShowSuccessModal(false)}
                 className="flex-1 px-4 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors font-medium"
-              >
-                Close
-              </button>
+              >{t('ui.close')}</button>
             </div>
           </div>
         </div>

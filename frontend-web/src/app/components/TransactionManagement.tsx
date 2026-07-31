@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Hospital, Patient, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -10,10 +11,63 @@ import { useSuppliers } from '../context/SupplierContext';
 import { usePatients } from '../context/PatientContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
-import { useSettings } from '../context/SettingsContext';
+import { useSettings, type PrintModule, type PrintPaperSize } from '../context/SettingsContext';
 import api from '../../api/axios';
 import { formatOnlyDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
+
+/** Maps an invoice to its configurable print module (Settings > Print Paper Size). */
+const printModuleFor = (trx: Pick<Transaction, 'trxType'>): PrintModule => {
+  switch (String(trx?.trxType || '').toLowerCase()) {
+    case 'purchase': return 'pharmacy_purchase_invoice';
+    case 'purchase_return': return 'pharmacy_purchase_return_invoice';
+    case 'sales_return': return 'pharmacy_sales_return_invoice';
+    default: return 'pharmacy_sales_invoice';
+  }
+};
+
+type SortKey = 'serial' | 'party' | 'grandTotal' | 'paid' | 'due' | 'date';
+
+/** Header cell with the up/down sort affordance on every sortable column. */
+function SortableTh({
+  label,
+  sortKey,
+  sortState,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sortState: { key: SortKey; dir: 'asc' | 'desc' };
+  onSort: (key: SortKey) => void;
+}) {
+  const isActive = sortState.key === sortKey;
+  return (
+    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${label}`}
+        aria-sort={isActive ? (sortState.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        className="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+      >
+        {label}
+        {isActive
+          ? (sortState.dir === 'asc'
+              ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+              : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />)
+          : <ArrowUpDown className="w-3 h-3 text-gray-400" />}
+      </button>
+    </th>
+  );
+}
+
+/** One tab per invoice type. "Return In" is a sales return, "Return Out" a purchase return. */
+const INVOICE_TABS: { id: Transaction['trxType']; label: string; docTitle: string; icon: typeof TrendingUp }[] = [
+  { id: 'sales', label: 'Sales Invoice', docTitle: 'Sales Invoice', icon: TrendingUp },
+  { id: 'sales_return', label: 'Return In', docTitle: 'Sales Return Invoice', icon: Undo2 },
+  { id: 'purchase', label: 'Purchase Invoice', docTitle: 'Purchase Invoice', icon: ShoppingCart },
+  { id: 'purchase_return', label: 'Return Out', docTitle: 'Purchase Return Invoice', icon: RotateCcw },
+];
 
 let cachedPdfTools: {
   jsPDF: any;
@@ -80,6 +134,7 @@ const buildInitialFormData = (hospitalId: string) => ({
 });
 
 export function TransactionManagement({ hospital, userRole = 'admin' }: TransactionManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { transactions, addTransaction, updateTransaction, deleteTransaction, loading } = useTransactions();
   const { medicines, refresh: refreshMedicines } = useMedicines();
@@ -88,7 +143,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { patients } = usePatients();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy } = useSettings();
+  const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy, getPrintPaperSize } = useSettings();
   const canAdd = hasPermission('add_transactions') || hasPermission('manage_transactions');
   const canEdit = hasPermission('edit_transactions') || hasPermission('manage_transactions');
   const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
@@ -96,7 +151,16 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const canPrint = hasPermission('print_transactions') || hasPermission('manage_transactions');
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [trxTypeFilter, setTrxTypeFilter] = useState<'all' | Transaction['trxType']>('all');
+  // Sales invoices are the day-to-day default tab.
+  const [trxTypeFilter, setTrxTypeFilter] = useState<Transaction['trxType']>('sales');
+  // Newest invoices first by default.
+  const [sortState, setSortState] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
+
+  const toggleSort = (key: SortKey) => {
+    setSortState((prev) => prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: key === 'date' ? 'desc' : 'asc' });
+  };
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [medicineSearch, setMedicineSearch] = useState('');
@@ -108,7 +172,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [printTemplate, setPrintTemplate] = useState<'sale' | 'purchase' | 'supplier'>('sale');
-  const [receiptSize, setReceiptSize] = useState<'a4' | '58mm' | '76mm' | '80mm'>('a4');
+  // Seeded from the hospital-wide print setting (Settings > General > Print Settings)
+  // and re-synced whenever that setting loads, so a mini-printer hospital never
+  // silently prints A4. Users can still override per preview.
+  const [receiptSize, setReceiptSize] = useState<PrintPaperSize>('a4');
   const [submitting, setSubmitting] = useState(false);
   const [remoteMedicines, setRemoteMedicines] = useState<typeof medicines>([]);
   const [remoteSuppliers, setRemoteSuppliers] = useState<typeof suppliers>([]);
@@ -217,7 +284,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
-  const handlePrintInvoice = async (transaction: Transaction | null = selectedTransaction, forceA4 = false) => {
+  const handlePrintInvoice = async (
+    transaction: Transaction | null = selectedTransaction,
+    forceA4 = false,
+    sizeOverride?: PrintPaperSize,
+  ) => {
     if (!transaction) return;
     const trx = transaction;
 
@@ -228,7 +299,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     setPrintTemplate(resolvedTemplate);
 
-    const targetSize: 'a4' | '58mm' | '76mm' | '80mm' = forceA4 ? 'a4' : receiptSize;
+    // Resolve the paper size from the invoice actually being printed. Using the
+    // `receiptSize` state here made a direct row-print use whatever invoice was
+    // last previewed (or the sales default), so a Purchase Invoice configured as
+    // A4 printed on the mini-printer layout until the preview had been opened.
+    const targetSize: PrintPaperSize = forceA4
+      ? 'a4'
+      : (sizeOverride ?? getPrintPaperSize(trx.hospitalId || currentHospital.id, printModuleFor(trx)));
     const printWindow = window.open('', '_blank', 'width=1200,height=920');
     if (!printWindow) {
       toast.error('Unable to open print preview. Please allow popups for this site.');
@@ -346,7 +423,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     let html = '';
 
-    if (targetSize === 'a4') {
+    // A5 shares the full-page invoice layout with A4, only the sheet differs.
+    const isFullPage = targetSize === 'a4' || targetSize === 'a5';
+
+    if (isFullPage) {
       html = `
         <!doctype html>
         <html>
@@ -354,7 +434,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <meta charset="utf-8" />
             <title>${escapeHtml(invoiceHeading)}</title>
             <style>
-              @page { size: A4; margin: 15mm; }
+              @page { size: ${targetSize === 'a5' ? 'A5' : 'A4'}; margin: ${targetSize === 'a5' ? '8mm' : '15mm'}; }
               * { box-sizing: border-box; }
               body {
                 margin: 0;
@@ -364,6 +444,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
               }
+              /* A5 keeps every column of the A4 invoice but is scaled to the
+                 narrower sheet (132mm printable vs 180mm on A4). */
+              ${targetSize === 'a5' ? `
+              @media print {
+                .invoice { zoom: 0.73; }
+              }
+              ` : ''}
               .screen-note {
                 display: flex;
                 align-items: center;
@@ -659,11 +746,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <tr>
                     <th style="width:30%">Product</th>
                     ${showBatchColumn ? '<th style="width:8%" class="text-center">Batch</th>' : ''}
-                    ${showExpiryDateColumn ? '<th style="width:9%" class="text-center">Exp</th>' : ''}
+                    ${showExpiryDateColumn ? '<th style="width:9%" class="text-center">Expiry</th>' : ''}
                     <th style="width:6%" class="text-center">Qty</th>
-                    ${showBonusColumn ? '<th style="width:6%" class="text-center">Bon</th>' : ''}
+                    ${showBonusColumn ? '<th style="width:6%" class="text-center">Bonus</th>' : ''}
                     <th style="width:9%" class="text-center">Price</th>
-                    <th style="width:7%" class="text-center">Disc</th>
+                    <th style="width:7%" class="text-center">Discount</th>
                     <th style="width:7%" class="text-center">Tax</th>
                     <th style="width:9%" class="text-center">Net Price</th>
                     <th style="width:9%" class="text-right">Amount</th>
@@ -869,6 +956,30 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const getTransactionPatientPhone = (transaction: Transaction) =>
     patients.find((patient) => String(patient.id) === String(transaction.patientId))?.phone || '';
 
+  // Purchases/purchase returns are against a supplier, sales/sales returns a patient.
+  const isSupplierSide = (trx: Transaction) =>
+    trx.trxType === 'purchase' || trx.trxType === 'purchase_return';
+
+  const getPartyName = (trx: Transaction) => {
+    if (isSupplierSide(trx)) {
+      return suppliers.find((s) => String(s.id) === String(trx.supplierId))?.name
+        || trx.supplierName || '—';
+    }
+    return patients.find((p) => String(p.id) === String(trx.patientId))?.name
+      || trx.patientName || '—';
+  };
+
+  const getPartyMeta = (trx: Transaction) => {
+    if (isSupplierSide(trx)) {
+      const supplier = suppliers.find((s) => String(s.id) === String(trx.supplierId));
+      return supplier?.phone ? `${supplier.phone}` : '—';
+    }
+    const patient = patients.find((p) => String(p.id) === String(trx.patientId));
+    if (!patient) return '—';
+    return [patient.patientId ? `ID: ${patient.patientId}` : null, patient.phone || null]
+      .filter(Boolean).join(' · ') || '—';
+  };
+
   const getExpiryDisplay = (date: Date | string | undefined, hospitalId: string) => {
     const h = getHospital(hospitalId);
     return formatOnlyDate(date ?? undefined, h?.timezone || 'Asia/Kabul', (h?.calendarType as 'gregorian' | 'shamsi') || 'gregorian');
@@ -892,6 +1003,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       loadHospitalSetting(selectedHospitalId);
     }
   }, [selectedTransaction?.hospitalId, selectedHospitalId, loadHospitalSetting]);
+
+  // Follow the paper size configured for THIS kind of invoice: sales receipts
+  // normally go to the thermal mini printer while purchase invoices go to A4.
+  const activeHospitalIdForPrint = selectedTransaction?.hospitalId || selectedHospitalId || currentHospital.id;
+  const printModuleForType = selectedTransaction
+    ? printModuleFor(selectedTransaction)
+    : printModuleFor({ trxType: trxTypeFilter } as Transaction);
+  const configuredPaperSize = getPrintPaperSize(activeHospitalIdForPrint, printModuleForType);
+  useEffect(() => {
+    setReceiptSize(configuredPaperSize);
+  }, [configuredPaperSize, activeHospitalIdForPrint, printModuleForType]);
 
   const getNearestExpiryForMedicine = (medicineId: string) => {
     if (!medicineId) return undefined;
@@ -961,7 +1083,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const exportToExcel = async () => {
     const { XLSX } = await loadXlsxTools();
 
-    const workSheet = XLSX.utils.json_to_sheet(filteredTransactions.map((t) => ({
+    const workSheet = XLSX.utils.json_to_sheet(sortedTransactions.map((t) => ({
       ID: t.serialNo ?? t.id,
       Type: t.trxType,
       GrandTotal: t.grandTotal,
@@ -997,7 +1119,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     autoTable(doc, {
       head: [['ID', 'Type', 'Grand Total', 'Paid', 'Due', 'Created']],
-      body: filteredTransactions.map((t) => [
+      body: sortedTransactions.map((t) => [
         `#${t.serialNo ?? t.id}`,
         t.trxType,
         t.grandTotal,
@@ -1024,16 +1146,40 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         getPatientDisplay(t.patientId).toLowerCase().includes(term) ||
         patientPhone.includes(term) ||
         (t.details || []).some((d) => (d.medicineName || getMedicineName(d.medicineId)).toLowerCase().includes(term));
-      const matchesType = trxTypeFilter === 'all' || t.trxType === trxTypeFilter;
+      const matchesType = t.trxType === trxTypeFilter;
       return matchesTerm && matchesType;
     });
   }, [scopedTransactions, searchTerm, trxTypeFilter, medicines, patients]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / itemsPerPage));
+  const sortedTransactions = useMemo(() => {
+    const dir = sortState.dir === 'asc' ? 1 : -1;
+    const valueOf = (t: Transaction): string | number => {
+      switch (sortState.key) {
+        case 'serial': return Number(t.serialNo ?? t.id ?? 0);
+        case 'party': return getPartyName(t).toLowerCase();
+        case 'grandTotal': return Number(t.grandTotal ?? 0);
+        case 'paid': return Number(t.paidAmount ?? 0);
+        case 'due': return Number(t.dueAmount ?? 0);
+        case 'date':
+        default: return t.createdAt ? new Date(t.createdAt).getTime() : 0;
+      }
+    };
+
+    return [...filteredTransactions].sort((a, b) => {
+      const av = valueOf(a);
+      const bv = valueOf(b);
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av).localeCompare(String(bv)) * dir;
+      }
+      return (av - bv) * dir;
+    });
+  }, [filteredTransactions, sortState, patients, suppliers]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / itemsPerPage));
   const paginatedTransactions = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredTransactions, currentPage]);
+    return sortedTransactions.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedTransactions, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1094,7 +1240,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           (p.phone || '').toLowerCase().includes(term) ||
           (p.address || '').toLowerCase().includes(term);
       })
-      .sort((a, b) => (b.createdAt && a.createdAt ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : 0))
+      // Newest patients first; fall back to id when createdAt is missing so the
+      // order is never arbitrary.
+      .sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (bt !== at) return bt - at;
+        return Number(b.id ?? 0) - Number(a.id ?? 0);
+      })
       .slice(0, 30);
   };
 
@@ -1291,7 +1444,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const targetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
       ? selectedHospitalId
       : currentHospital.id;
-    setFormData(buildInitialFormData(targetHospitalId));
+    // New invoices open as the type the user is currently viewing.
+    setFormData({ ...buildInitialFormData(targetHospitalId), trxType: trxTypeFilter });
     setSupplierSearch('');
     setPatientSearch('');
     setOpenSupplierDropdown(false);
@@ -1532,7 +1686,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   const totalPreview = calculateTotals(formData.items);
   const totalsSummary = calculateTotalsSummary(formData.items);
-  const isCompactReceipt = receiptSize !== 'a4';
+  // A4 and A5 both use the full detailed layout; only thermal rolls are compact.
+  const isCompactReceipt = receiptSize !== 'a4' && receiptSize !== 'a5';
   const invoiceNo = useMemo(() => {
     if (showEditModal && selectedTransaction?.serialNo) return selectedTransaction.serialNo;
     const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
@@ -1592,12 +1747,55 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const patientOptions = getPatientOptions();
   const supplierOptions = getSupplierOptions();
 
+  const isPurchaseSideForm = formData.trxType === 'purchase' || formData.trxType === 'purchase_return';
+
+  // Stock availability is only meaningful for the types that draw down stock.
+  const showAvailableStock = ['sales', 'purchase_return'].includes(formData.trxType);
+
+  // Summed once in the footer instead of a badge under every Qty field.
+  // Deduped by medicine+batch so the same stock is not counted twice.
+  const availableStockTotal = (() => {
+    const seen = new Set<string>();
+    return formData.items.reduce((sum, item) => {
+      if (!item.medicineId) return sum;
+      const key = `${item.medicineId}::${item.batchNo || ''}`;
+      if (seen.has(key)) return sum;
+      seen.add(key);
+      return sum + getAvailableStock(item.medicineId, item.batchNo || undefined, formData.hospitalId);
+    }, 0);
+  })();
+
+  // Name/ID are already visible in the selector above, so this panel only adds
+  // the details the selector does not show.
+  const selectedPartyDetails = (() => {
+    if (isPurchaseSideForm) {
+      const supplier = suppliers.find((s) => String(s.id) === String(formData.supplierId));
+      if (!supplier) return null;
+      return [
+        { label: t('ui.phone'), value: supplier.phone || '—' },
+        { label: t('ui.address'), value: supplier.address || '—' },
+      ];
+    }
+    const patient = patients.find((p) => String(p.id) === String(formData.patientId));
+    if (!patient) return null;
+    const gender = patient.gender
+      ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)
+      : '—';
+    return [
+      { label: t('ui.gender'), value: gender },
+      { label: t('ui.age'), value: patient.age ? String(patient.age) : '—' },
+      { label: t('ui.phone'), value: patient.phone || '—' },
+    ];
+  })();
+
+  const invoiceTypeLabel = INVOICE_TABS.find((t) => t.id === formData.trxType)?.docTitle || 'Invoice';
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Transaction Management</h1>
-          <p className="text-xs text-gray-600 dark:text-gray-400">Track purchase and sales transactions for {isAllHospitals ? 'All Hospitals' : currentHospital.name}</p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('ui.invoices')}</h1>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Manage sales, purchase and return invoices for {isAllHospitals ? 'All Hospitals' : currentHospital.name}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -1612,53 +1810,72 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
           </div>
-          <select
-            className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
-            title="Filter by type"
-            value={trxTypeFilter}
-            onChange={(e) => setTrxTypeFilter(e.target.value as any)}
-          >
-            <option value="all">All Types</option>
-            <option value="purchase">Purchase</option>
-            <option value="sales">Sales</option>
-            <option value="purchase_return">Purchase Return</option>
-            <option value="sales_return">Sales Return</option>
-          </select>
           {canExport && (
-            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToExcel')}>
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
             </button>
           )}
           {canExport && (
-            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToPdf')}>
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
           )}
           {canAdd && (
             <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
 
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
 
+      {/* One tab per invoice type; the list below shows only that type. */}
+      <div className="border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+        <nav className="-mb-px flex gap-4 min-w-max" aria-label="Invoice types">
+          {INVOICE_TABS.map((tab) => {
+            const isActive = trxTypeFilter === tab.id;
+            const count = scopedTransactions.filter((t) => t.trxType === tab.id).length;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setTrxTypeFilter(tab.id)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`group inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-1 py-2.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <tab.icon className={`w-3.5 h-3.5 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                {tab.label}
+                <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  isActive
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
         <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">ID</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Type</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Grand Total</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Paid</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Due</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Created</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <SortableTh label="S.No" sortKey="serial" sortState={sortState} onSort={toggleSort} />
+                <SortableTh label="Party" sortKey="party" sortState={sortState} onSort={toggleSort} />
+                <SortableTh label={t('ui.grandTotal')} sortKey="grandTotal" sortState={sortState} onSort={toggleSort} />
+                <SortableTh label={t('ui.paid')} sortKey="paid" sortState={sortState} onSort={toggleSort} />
+                <SortableTh label={t('ui.due')} sortKey="due" sortState={sortState} onSort={toggleSort} />
+                <SortableTh label="Inv Date" sortKey="date" sortState={sortState} onSort={toggleSort} />
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1667,15 +1884,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <tr key={trx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">#{trx.serialNo ?? trx.id}</td>
                     <td className="px-4 py-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${['purchase', 'purchase_return'].includes(trx.trxType)
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
-                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
-                      }`}>
-                        {trx.trxType === 'purchase' && 'Purchase'}
-                        {trx.trxType === 'sales' && 'Sales'}
-                        {trx.trxType === 'purchase_return' && 'Purchase Return'}
-                        {trx.trxType === 'sales_return' && 'Sales Return'}
-                      </span>
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{getPartyName(trx)}</span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{getPartyMeta(trx)}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.grandTotal}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.paidAmount}</td>
@@ -1689,21 +1901,21 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               void handlePrintInvoice(trx);
                             }}
                             className="p-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-200"
-                            title="Print"
+                            title={t('ui.print')}
                           >
                             <Printer className="w-4 h-4" />
                           </button>
                         )}
-                        <button onClick={() => handleView(trx)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title="View">
+                        <button onClick={() => handleView(trx)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title={t('ui.view')}>
                           <Eye className="w-4 h-4" />
                         </button>
                         {canEdit && (
-                          <button onClick={() => handleEdit(trx)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title="Edit">
+                          <button onClick={() => handleEdit(trx)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title={t('ui.edit')}>
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
                         {canDelete && (
-                          <button onClick={() => handleDelete(trx)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Delete">
+                          <button onClick={() => handleDelete(trx)} className="p-1.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title={t('ui.delete')}>
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -1730,17 +1942,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -1755,9 +1963,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 className="px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
                 title="Print size"
                 value={receiptSize}
-                onChange={(e) => setReceiptSize(e.target.value as 'a4' | '58mm' | '76mm' | '80mm')}
+                onChange={(e) => setReceiptSize(e.target.value as PrintPaperSize)}
               >
                 <option value="a4">A4 Invoice</option>
+                <option value="a5">A5 Invoice</option>
                 <option value="58mm">58mm Receipt</option>
                 <option value="76mm">76mm Receipt</option>
                 <option value="80mm">80mm Receipt</option>
@@ -1765,12 +1974,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               {canPrint && (
                 <button
                   onClick={() => {
-                    void handlePrintInvoice(selectedTransaction);
+                    // In the preview the user may override the size via the dropdown.
+                    void handlePrintInvoice(selectedTransaction, false, receiptSize);
                   }}
                   className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  Print Invoice
-                </button>
+                >{t('ui.printInvoice')}</button>
               )}
               {selectedTransaction && (canEdit || canDelete) && (
                 <>
@@ -1781,9 +1989,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         handleEdit(selectedTransaction);
                       }}
                       className="px-3 py-1.5 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-                    >
-                      Edit
-                    </button>
+                    >{t('ui.edit')}</button>
                   )}
                   {canDelete && (
                     <button
@@ -1792,13 +1998,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         handleDelete(selectedTransaction);
                       }}
                       className="px-3 py-1.5 text-xs rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200"
-                    >
-                      Delete
-                    </button>
+                    >{t('ui.delete')}</button>
                   )}
                 </>
               )}
-              <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+              <button onClick={() => setShowViewModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1870,18 +2074,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <img
                         src={getHospital(selectedTransaction.hospitalId)?.logo}
                         alt="Hospital Logo"
-                        className={`${receiptSize === 'a4' ? 'w-24 h-24' : 'w-10 h-10'} object-contain`}
+                        className={`${!isCompactReceipt ? 'w-24 h-24' : 'w-10 h-10'} object-contain`}
                       />
                     )}
                     <div>
-                      <h1 className={`${receiptSize === 'a4' ? 'text-2xl' : 'text-base'} font-bold text-gray-900 uppercase tracking-wider`}>
+                      <h1 className={`${!isCompactReceipt ? 'text-2xl' : 'text-base'} font-bold text-gray-900 uppercase tracking-wider`}>
                         {getHospitalName(selectedTransaction.hospitalId)}
                       </h1>
-                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Healthcare Services & Solutions</p>
-                      <p className={`${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Code: {getHospital(selectedTransaction.hospitalId)?.code || '—'}</p>
+                      <p className={`${!isCompactReceipt ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Healthcare Services & Solutions</p>
+                      <p className={`${!isCompactReceipt ? 'text-sm' : 'text-[10px]'} text-gray-600`}>Code: {getHospital(selectedTransaction.hospitalId)?.code || '—'}</p>
                     </div>
                   </div>
-                  <div className={`text-right w-1/2 ${receiptSize === 'a4' ? 'text-sm' : 'text-[10px]'}`}>
+                  <div className={`text-right w-1/2 ${!isCompactReceipt ? 'text-sm' : 'text-[10px]'}`}>
                     <h2 className="text-2xl font-bold text-gray-800 uppercase mb-2">
                        {printTemplate === 'sale' ? 'Sale Invoice' : printTemplate === 'purchase' ? 'Purchase Invoice' : 'Supplier Invoice'}
                     </h2>
@@ -1904,7 +2108,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       ) : (
                          <div>
                             <p className="font-bold text-gray-900 text-lg">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
-                            <p className="text-sm text-gray-600 mt-1">Supplier</p>
+                            <p className="text-sm text-gray-600 mt-1">{t('ui.supplier')}</p>
                          </div>
                       )}
                     </div>
@@ -1927,21 +2131,21 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 {isCompactReceipt && (
                   <div className="grid grid-cols-2 gap-2 text-[10px] border border-gray-300 rounded-md p-2">
                     <div>
-                      <p className="text-gray-500">Type</p>
+                      <p className="text-gray-500">{t('ui.type')}</p>
                       <p className="font-semibold text-gray-900 capitalize">{selectedTransaction.trxType.replace('_', ' ')}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Invoice</p>
+                      <p className="text-gray-500">{t('ui.invoice')}</p>
                       <p className="font-semibold text-gray-900">{selectedTransaction.serialNo ?? '—'}</p>
                     </div>
                     {printTemplate === 'sale' ? (
                       <div className="col-span-2">
-                        <p className="text-gray-500">Customer</p>
+                        <p className="text-gray-500">{t('ui.customer')}</p>
                         <p className="font-semibold text-gray-900 break-words">{getPatientDisplay(selectedTransaction.patientId) || 'Walk-in'}</p>
                       </div>
                     ) : (
                       <div className="col-span-2">
-                        <p className="text-gray-500">Supplier</p>
+                        <p className="text-gray-500">{t('ui.supplier')}</p>
                         <p className="font-semibold text-gray-900 break-words">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
                       </div>
                     )}
@@ -1955,23 +2159,23 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       {isCompactReceipt ? (
                         <tr>
                           <th className="px-1 py-1 w-4 text-center">#</th>
-                          <th className="px-1 py-1">Item</th>
-                          <th className="px-1 py-1 w-6 text-center">Qty</th>
-                          <th className="px-1 py-1 w-8 text-right">Amt</th>
+                          <th className="px-1 py-1">{t('table.item')}</th>
+                          <th className="px-1 py-1 w-6 text-center">{t('table.qty')}</th>
+                          <th className="px-1 py-1 w-8 text-right">{t('table.amount')}</th>
                         </tr>
                       ) : (
                         <tr>
-                          <th className="px-3 py-2 font-medium">SN</th>
-                          <th className="px-3 py-2 font-medium">Item Description</th>
-                          <th className="px-3 py-2 font-medium text-center">Batch</th>
-                          <th className="px-3 py-2 font-medium text-center">Expiry</th>
-                          <th className="px-3 py-2 font-medium text-center">Qty</th>
-                          <th className="px-3 py-2 font-medium text-center">Bonus</th>
-                          <th className="px-3 py-2 font-medium text-right">Price</th>
+                          <th className="px-3 py-2 font-medium">{t('table.sn')}</th>
+                          <th className="px-3 py-2 font-medium">{t('table.itemDescription')}</th>
+                          <th className="px-3 py-2 font-medium text-center">{t('table.batch')}</th>
+                          <th className="px-3 py-2 font-medium text-center">{t('table.expiry')}</th>
+                          <th className="px-3 py-2 font-medium text-center">{t('table.qty')}</th>
+                          <th className="px-3 py-2 font-medium text-center">{t('table.bonus')}</th>
+                          <th className="px-3 py-2 font-medium text-right">{t('table.price')}</th>
                           {showFormulaColumns && <th className="px-3 py-2 font-medium text-right">Disc %</th>}
                           {showFormulaColumns && <th className="px-3 py-2 font-medium text-right">Tax %</th>}
-                          <th className="px-3 py-2 font-medium text-right">Net Price</th>
-                          <th className="px-3 py-2 font-medium text-right">Amount</th>
+                          <th className="px-3 py-2 font-medium text-right">{t('table.netPrice')}</th>
+                          <th className="px-3 py-2 font-medium text-right">{t('table.amount')}</th>
                         </tr>
                       )}
                     </thead>
@@ -2054,7 +2258,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <div className="border-t border-gray-300 pt-2 text-[10px] space-y-1">
                     {showFormulaColumns && (
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Discount</span>
+                        <span className="text-gray-600">{t('ui.discount')}</span>
                         <span className="font-semibold text-gray-900">{printTotalsSummary.totalDiscount.toFixed(2)}</span>
                       </div>
                     )}
@@ -2069,11 +2273,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       <span className="font-bold text-gray-900">{printNetTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between pb-1">
-                      <span className="text-gray-600">Paid</span>
+                      <span className="text-gray-600">{t('ui.paid')}</span>
                       <span className="font-semibold text-gray-900">{Number(selectedTransaction.paidAmount).toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between font-bold">
-                      <span className="text-gray-600 text-red-600">Due</span>
+                      <span className="text-gray-600 text-red-600">{t('ui.due')}</span>
                       <span className="text-red-600">{Number(selectedTransaction.dueAmount).toFixed(2)}</span>
                     </div>
                   </div>
@@ -2100,26 +2304,26 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400">Hospital</p>
+                    <p className="text-gray-500 dark:text-gray-400">{t('ui.hospital')}</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{getHospitalName(selectedTransaction.hospitalId)}</p>
                   </div>
                   {selectedTransaction.trxType === 'sales' || selectedTransaction.trxType === 'sales_return' ? (
                     <div>
-                      <p className="text-gray-500 dark:text-gray-400">Customer</p>
+                      <p className="text-gray-500 dark:text-gray-400">{t('ui.customer')}</p>
                       <p className="font-semibold text-gray-900 dark:text-white">{getPatientDisplay(selectedTransaction.patientId) || '—'}</p>
                     </div>
                   ) : (
                     <div>
-                      <p className="text-gray-500 dark:text-gray-400">Supplier</p>
+                      <p className="text-gray-500 dark:text-gray-400">{t('ui.supplier')}</p>
                       <p className="font-semibold text-gray-900 dark:text-white">{getSupplierDisplay(selectedTransaction.supplierId) || '—'}</p>
                     </div>
                   )}
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400">Type</p>
+                    <p className="text-gray-500 dark:text-gray-400">{t('ui.type')}</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.trxType}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400">Date</p>
+                    <p className="text-gray-500 dark:text-gray-400">{t('ui.date')}</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleString() : '—'}</p>
                   </div>
                 </div>
@@ -2128,15 +2332,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <table className="w-full text-left text-xs">
                     <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
                       <tr>
-                        <th className="px-3 py-2">Medicine</th>
-                        {activePrintColumns.showBatchColumn && <th className="px-3 py-2">Batch</th>}
-                        {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">Expiry</th>}
-                        <th className="px-3 py-2">Qty</th>
-                        {activePrintColumns.showBonusColumn && <th className="px-3 py-2">Bonus</th>}
-                        <th className="px-3 py-2">Price</th>
-                        {showFormulaColumns && <th className="px-3 py-2">Discount</th>}
-                        {showFormulaColumns && <th className="px-3 py-2">Tax</th>}
-                        <th className="px-3 py-2">Amount</th>
+                        <th className="px-3 py-2">{t('table.medicine')}</th>
+                        {activePrintColumns.showBatchColumn && <th className="px-3 py-2">{t('table.batch')}</th>}
+                        {activePrintColumns.showExpiryDateColumn && <th className="px-3 py-2">{t('table.expiry')}</th>}
+                        <th className="px-3 py-2">{t('table.qty')}</th>
+                        {activePrintColumns.showBonusColumn && <th className="px-3 py-2">{t('table.bonus')}</th>}
+                        <th className="px-3 py-2">{t('table.price')}</th>
+                        {showFormulaColumns && <th className="px-3 py-2">{t('table.discount')}</th>}
+                        {showFormulaColumns && <th className="px-3 py-2">{t('table.tax')}</th>}
+                        <th className="px-3 py-2">{t('table.amount')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -2183,12 +2387,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
               <div className="flex items-center gap-4">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {showAddModal ? 'Add Transaction' : 'Edit Transaction'}
+                  {showAddModal ? `New ${invoiceTypeLabel}` : `Edit ${invoiceTypeLabel}`}
                 </h3>
                   {userRole === 'super_admin' && (
                     <select
                       className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-xs"
-                      title="Hospital"
+                      title={t('ui.hospital')}
                       value={formData.hospitalId}
                       onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                       required
@@ -2203,7 +2407,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               <button
                 onClick={closeTransactionModal}
                 className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-                aria-label="Close"
+                aria-label={t('ui.close')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2374,61 +2578,30 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   </div>
                 )}
 
+                {/* The invoice type comes from the tab, so this space shows who the
+                    invoice is for instead of a redundant type picker. */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-gray-600 dark:text-gray-300">Type</label>
-                  <div className="flex flex-wrap gap-1 text-[10px]">
-                    {[
-                      { value: 'purchase', label: 'Purchase' },
-                      { value: 'sales', label: 'Sales' },
-                      { value: 'purchase_return', label: 'Return Out' },
-                      { value: 'sales_return', label: 'Return In' },
-                    ].map((opt) => (
-                      <label key={opt.value} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] cursor-pointer transition h-8 ${formData.trxType === opt.value ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 dark:bg-gray-800/60 dark:border-gray-700 dark:text-gray-300'}`}>
-                        <input
-                          type="radio"
-                          name="trxType"
-                          value={opt.value}
-                          title={`Transaction type ${opt.label}`}
-                          checked={formData.trxType === opt.value}
-                          className="h-2.5 w-2.5"
-                          onChange={() => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              trxType: opt.value as Transaction['trxType'],
-                              supplierId: ['purchase', 'purchase_return'].includes(opt.value) ? prev.supplierId : '',
-                              patientId: ['sales', 'sales_return'].includes(opt.value) ? prev.patientId : '',
-                              items: prev.items.map((item) => item.medicineId
-                                ? { ...item, price: getMedicinePrice(item.medicineId, opt.value as Transaction['trxType']) }
-                                : item
-                              ),
-                            }));
-                            setSupplierSearch('');
-                            setPatientSearch('');
-                            setOpenSupplierDropdown(false);
-                            setOpenPatientDropdown(false);
-                            setHighlightedSupplierIndex(-1);
-                            setHighlightedPatientIndex(-1);
-                            setLastEditedTotal('auto');
-                          }}
-                        />
-                        <span>{opt.label}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <label className="text-[10px] font-semibold text-gray-600 dark:text-gray-300">
+                    {isPurchaseSideForm ? 'Supplier Details' : t('ui.patientDetails')}
+                  </label>
+                  {selectedPartyDetails ? (
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-1.5 leading-tight">
+                      {selectedPartyDetails.map((detail) => (
+                        <span key={detail.label} className="text-[10px]">
+                          <span className="text-gray-500 dark:text-gray-400">{detail.label}: </span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">{detail.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-1 py-2 text-[10px] italic text-gray-400 dark:text-gray-500">
+                      {isPurchaseSideForm
+                        ? 'Select a supplier to view contact details'
+                        : 'Select a patient to view contact details'}
+                    </p>
+                  )}
                 </div>
 
-                <div className="pb-0.5">
-                   <button
-                    type="button"
-                    onClick={addItemRow}
-                    className="px-2.5 py-1.5 text-xs rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 h-8"
-                    title="Add new item (Ctrl+Enter)"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Item
-                  </button>
-                </div>
-                
                 {userRole === 'super_admin' && (
                   <div className="hidden">
                     {/* Hospital selector moved to header */}
@@ -2458,16 +2631,40 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               </div>
               </div>
 
+              {/* Column titles shown once instead of repeating a label on every item row. */}
+              <div className="hidden lg:grid grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <div className="col-span-3">Medicine</div>
+                <div className="col-span-1">Batch</div>
+                <div className="col-span-1">Expiry</div>
+                <div className="col-span-1">Qty</div>
+                <div className="col-span-1">Bonus</div>
+                <div className="col-span-1">Price</div>
+                <div className="col-span-1">Disc %</div>
+                <div className="col-span-1">Tax %</div>
+                <div className="col-span-1 text-right">Amount</div>
+                <div className="col-span-1 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={addItemRow}
+                    title="Add item (Ctrl+Enter)"
+                    aria-label="Add item"
+                    className="p-1 rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
               <div
-                className={`space-y-2 pr-1 ${openMedicineDropdownIndex !== null ? 'overflow-visible' : 'max-h-64 overflow-y-auto'}`}
+                className={`space-y-1 pr-1 ${openMedicineDropdownIndex !== null ? 'overflow-visible' : 'max-h-64 overflow-y-auto'}`}
               >
                 {formData.items.map((item, index) => {
                   const medicineOptions = getMedicineOptions(index);
 
                   return (
-                  <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-2">
-                    <div className="lg:col-span-3 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Medicine</label>
+                  <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-x-2 gap-y-1 items-center border-b border-gray-100 dark:border-gray-800 lg:border-0 px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                    <div className="lg:col-span-3">
+                      <label className="sr-only">Medicine</label>
                       <div className="relative">
                         <input
                           type="text"
@@ -2563,8 +2760,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         )}
                       </div>
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Batch No</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">Batch No</label>
                       <input
                         className="w-full max-w-[120px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                         title="Batch Number"
@@ -2585,18 +2782,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         required={false}
                       />
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Expiry</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">{t('ui.expiry')}</label>
                       <input
                         type="date"
                         className="w-full max-w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
-                        title="Expiry Date"
+                        title={t('ui.expiryDate')}
                         value={item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : ''}
                         onChange={(e) => handleItemChange(index, { expiryDate: e.target.value ? new Date(e.target.value) : undefined })}
                       />
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Qty</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">{t('ui.qty')}</label>
                       <input
                         type="number"
                         min={1}
@@ -2606,14 +2803,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { qtty: Number(e.target.value) })}
                       />
-                      {['sales', 'purchase_return'].includes(formData.trxType) && item.medicineId && (
-                        <div className="text-[9px] text-gray-500 dark:text-gray-400">
-                          Available: {getAvailableStock(item.medicineId, item.batchNo || undefined, formData.hospitalId)}
-                        </div>
-                      )}
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Bonus</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">Bonus</label>
                       <input
                         type="number"
                         min={0}
@@ -2624,35 +2816,35 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { bonus: Number(e.target.value) })}
                       />
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Price</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">{t('ui.price')}</label>
                       <input
                         type="number"
                         min={0}
                         step={0.01}
                         className="w-full max-w-[100px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
-                        title="Price"
+                        title={t('ui.price')}
                         value={item.price}
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { price: Number(e.target.value) })}
                       />
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Disc %</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">Disc %</label>
                       <input
                         type="number"
                         min={0}
                         max={100}
                         step={0.01}
                         className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
-                        title="Discount"
+                        title={t('ui.discount')}
                         value={item.discount ?? 0}
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => handleItemChange(index, { discount: Number(e.target.value) })}
                       />
                     </div>
-                    <div className="lg:col-span-1 space-y-1">
-                      <label className="text-[10px] font-medium text-gray-600 dark:text-gray-300">Tax %</label>
+                    <div className="lg:col-span-1">
+                      <label className="sr-only">Tax %</label>
                       <input
                         type="number"
                         min={0}
@@ -2665,24 +2857,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { tax: Number(e.target.value) })}
                       />
                     </div>
-                    <div className="lg:col-span-1 flex items-center justify-end gap-1 pt-5 lg:pt-0">
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400">Amount</div>
+                    <div className="lg:col-span-1 flex items-center justify-end gap-1">
+                      <span className="lg:hidden text-[10px] text-gray-500 dark:text-gray-400">{t('ui.amount')}</span>
                       <div className="text-[11px] font-semibold text-gray-900 dark:text-white">{calculateLineAmount(item).toFixed(2)}</div>
                     </div>
-                    <div className="lg:col-span-1 flex items-center justify-end gap-1 pt-5 lg:pt-0">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={addItemRow}
-                          className="p-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200"
-                          title="Add row below"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                        <button type="button" onClick={() => removeItemRow(index)} className="p-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-200" title="Remove row">
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    <div className="lg:col-span-1 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => removeItemRow(index)}
+                        className="p-1 rounded-md text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                        title="Remove item"
+                        aria-label="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );})}
@@ -2693,13 +2881,16 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <ShoppingCart className="w-4 h-4 text-gray-500" />
                   <span className="text-gray-600 dark:text-gray-300">Items: <strong className="text-gray-900 dark:text-white">{itemsCount}</strong></span>
                 </div>
+                {showAvailableStock && (
+                  <span className="text-gray-600 dark:text-gray-300">Available Stock: <strong className="text-gray-900 dark:text-white">{availableStockTotal}</strong></span>
+                )}
                 <span className="text-gray-600 dark:text-gray-300">Grand Total: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Bonus: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalBonus.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Discount: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalDiscount.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Tax: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalTax.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Net: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>
                 <div className="flex items-center gap-2 text-[10px]">
-                  <label className="text-gray-600 dark:text-gray-300">Paid</label>
+                  <label className="text-gray-600 dark:text-gray-300">{t('ui.paid')}</label>
                   <input
                     type="number"
                     min={0}
@@ -2718,15 +2909,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   type="button"
                   onClick={closeTransactionModal}
                   className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Saving...' : showAddModal ? 'Save' : 'Update'}
+                  {submitting ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
                 </button>
               </div>
             </form>
@@ -2739,15 +2928,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Delete Transaction</h3>
-            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+            <button onClick={() => setShowDeleteModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
             <p>Are you sure you want to delete transaction <strong>#{selectedTransaction?.id}</strong>? This action cannot be undone.</p>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">Cancel</button>
-              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">Delete</button>
+              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">{t('ui.cancel')}</button>
+              <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">{t('ui.delete')}</button>
             </div>
           </div>
         </div>

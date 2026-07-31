@@ -25,6 +25,7 @@ class HospitalSetting extends Model
         'print_show_batch_column',
         'print_show_expiry_date_column',
         'print_show_bonus_column',
+        'print_paper_sizes',
         'prescription_logo_width',
         'prescription_logo_height',
         'prescription_signature_width',
@@ -41,6 +42,7 @@ class HospitalSetting extends Model
         'print_show_batch_column' => 'boolean',
         'print_show_expiry_date_column' => 'boolean',
         'print_show_bonus_column' => 'boolean',
+        'print_paper_sizes' => 'array',
         'prescription_logo_width' => 'integer',
         'prescription_logo_height' => 'integer',
         'prescription_signature_width' => 'integer',
@@ -49,6 +51,30 @@ class HospitalSetting extends Model
         'show_out_of_stock_medicines_to_pharmacy' => 'boolean',
         'show_prescription_list_meta' => 'boolean',
     ];
+
+    /**
+     * Stored per-module paper sizes merged over the defaults in config/print.php,
+     * with unknown modules dropped and invalid sizes falling back to the default.
+     * Always returns an entry for every configurable module.
+     *
+     * @return array<string, string>
+     */
+    public function resolvedPrintPaperSizes(): array
+    {
+        $defaults = (array) config('print.modules', []);
+        $allowedSizes = (array) config('print.sizes', []);
+        $stored = is_array($this->print_paper_sizes) ? $this->print_paper_sizes : [];
+
+        $resolved = [];
+        foreach ($defaults as $module => $default) {
+            $candidate = $stored[$module] ?? null;
+            $resolved[$module] = in_array($candidate, $allowedSizes, true)
+                ? (string) $candidate
+                : (string) $default;
+        }
+
+        return $resolved;
+    }
 
     public function hospital()
     {

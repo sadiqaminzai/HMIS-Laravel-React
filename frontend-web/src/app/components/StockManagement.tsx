@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, FileSpreadsheet, FileText, Search, X } from 'lucide-react';
 import { Hospital, Stock, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -18,6 +19,7 @@ interface StockManagementProps {
 }
 
 export function StockManagement({ hospital, userRole = 'admin' }: StockManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { stocks, loading } = useStocks();
   const { medicines } = useMedicines();
@@ -225,22 +227,20 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             className="w-32 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
           />
           {canExport && (
-            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title="Export to Excel">
+            <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToExcel')}>
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
             </button>
           )}
           {canExport && (
-            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title="Export to PDF">
+            <button onClick={exportToPDF} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm" title={t('ui.exportToPdf')}>
               <FileText className="w-3.5 h-3.5" />
               PDF
             </button>
           )}
 
           {canPrint && (
-            <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">
-              Print
-            </button>
+            <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 transition-colors text-xs font-medium shadow-sm" title="Print View">{t('ui.print')}</button>
           )}
         </div>
       </div>
@@ -252,12 +252,12 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Medicine</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Batch</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Stock Qty</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Bonus Qty</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Total Qty</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Hospital</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.medicine')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.batch')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.stockQty')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.bonusQty')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.totalQty')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.hospital')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -302,18 +302,14 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -328,11 +324,9 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                 <button
                   onClick={() => setTimeout(() => window.print(), 100)}
                   className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-                >
-                  Print
-                </button>
+                >{t('ui.print')}</button>
               )}
-              <button onClick={() => setShowPrintModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+              <button onClick={() => setShowPrintModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -383,12 +377,12 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
                 <table className="w-full text-left text-xs">
                   <thead className="bg-gray-100 text-gray-700">
                     <tr>
-                      <th className="px-3 py-2">Medicine</th>
-                      <th className="px-3 py-2">Batch</th>
-                      <th className="px-3 py-2">Stock Qty</th>
-                      <th className="px-3 py-2">Bonus Qty</th>
-                      <th className="px-3 py-2">Total Qty</th>
-                      <th className="px-3 py-2">Hospital</th>
+                      <th className="px-3 py-2">{t('table.medicine')}</th>
+                      <th className="px-3 py-2">{t('table.batch')}</th>
+                      <th className="px-3 py-2">{t('table.stockQty')}</th>
+                      <th className="px-3 py-2">{t('table.bonusQty')}</th>
+                      <th className="px-3 py-2">{t('table.totalQty')}</th>
+                      <th className="px-3 py-2">{t('table.hospital')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -432,18 +426,14 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
               <button
                 onClick={loadReconciliation}
                 className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-              >
-                Refresh
-              </button>
+              >{t('ui.refresh')}</button>
               {canReconcile && (
                 <button
                   onClick={saveReconciliation}
                   className="px-2 py-1 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
-                >
-                  Save
-                </button>
+                >{t('ui.save')}</button>
               )}
-              <button onClick={() => setShowReconcileModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close">
+              <button onClick={() => setShowReconcileModal(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t('ui.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -452,15 +442,15 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 sticky top-0">
                 <tr>
-                  <th className="px-3 py-2">Medicine</th>
-                  <th className="px-3 py-2">Batch</th>
-                  <th className="px-3 py-2">Expiry</th>
-                  <th className="px-3 py-2">System Qty</th>
-                  <th className="px-3 py-2">System Bonus</th>
-                  <th className="px-3 py-2">System Total</th>
-                  <th className="px-3 py-2">Physical Qty</th>
-                  <th className="px-3 py-2">Physical Bonus</th>
-                  <th className="px-3 py-2">Variance</th>
+                  <th className="px-3 py-2">{t('table.medicine')}</th>
+                  <th className="px-3 py-2">{t('table.batch')}</th>
+                  <th className="px-3 py-2">{t('table.expiry')}</th>
+                  <th className="px-3 py-2">{t('table.systemQty')}</th>
+                  <th className="px-3 py-2">{t('table.systemBonus')}</th>
+                  <th className="px-3 py-2">{t('table.systemTotal')}</th>
+                  <th className="px-3 py-2">{t('table.physicalQty')}</th>
+                  <th className="px-3 py-2">{t('table.physicalBonus')}</th>
+                  <th className="px-3 py-2">{t('table.variance')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">

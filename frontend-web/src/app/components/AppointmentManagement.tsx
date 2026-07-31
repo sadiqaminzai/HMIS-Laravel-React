@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, ToggleRight } from 'lucide-react';
 import { Hospital, Appointment, UserRole, Patient, Doctor } from '../types';
 import { Toast } from './Toast';
@@ -46,6 +47,7 @@ const toDateInputValue = (value?: Date | string | null): string => {
 };
 
 export function AppointmentManagement({ hospital, userRole, currentUser }: AppointmentManagementProps) {
+  const { t } = useTranslation();
   
       const doctorNeedsLinking =
         currentUser?.role === 'doctor' &&
@@ -68,7 +70,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { getDefaultDoctorId } = useSettings();
+  const { getDefaultDoctorId, getPrintPaperSize, loadHospitalSetting } = useSettings();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('appointmentDate');
@@ -275,6 +277,14 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       return;
     }
 
+    // Paper size comes from Settings > General > Print Paper Size (Appointment / OPD Bill).
+    const opdSize = getPrintPaperSize(selectedAppointment.hospitalId || currentHospital.id, 'appointment_receipt');
+    const opdIsA4 = opdSize === 'a4';
+    const opdPageSize = opdIsA4 ? 'A4' : `${opdSize} auto`;
+    const opdBodyWidth = opdIsA4
+      ? 'auto'
+      : opdSize === '58mm' ? '54mm' : opdSize === '76mm' ? '72mm' : '76mm';
+
     const printWindow = window.open('', '_blank', 'width=300,height=600');
     if (!printWindow) {
       setToast({ message: 'Unable to open print window. Please allow pop-ups.', type: 'warning' });
@@ -291,12 +301,12 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       <head>
           <title>OPD Appointment Card</title>
           <style>
-              @page { size: 80mm auto; margin: 0; }
-              body { 
-                  margin: 0; 
-                  padding: 2mm; 
-                  font-family: Arial, sans-serif; 
-                  width: 76mm; 
+              @page { size: ${opdPageSize}; margin: ${opdIsA4 ? '10mm' : '0'}; }
+              body {
+                  margin: 0;
+                  padding: 2mm;
+                  font-family: Arial, sans-serif;
+                  width: ${opdBodyWidth};
                   color: #000; 
                   font-size: 11px; 
                   line-height: 1.3; 
@@ -602,7 +612,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       notes: target.notes,
       originalFeeAmount: target.originalFeeAmount,
       discountEnabled: target.discountEnabled,
-      discountTypeId: target.discountTypeId,
       discountAmount: target.discountAmount,
       totalAmount: target.totalAmount,
       currency: target.currency,
@@ -631,7 +640,6 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       status: apt.status,
       originalFeeAmount: apt.originalFeeAmount,
       discountEnabled: apt.discountEnabled,
-      discountTypeId: apt.discountTypeId,
       discountAmount: apt.discountAmount,
       totalAmount: apt.totalAmount,
       currency: apt.currency,
@@ -702,6 +710,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const canExport = hasPermission('export_appointments') || hasPermission('manage_appointments');
   const canPrint = hasPermission('print_appointments') || hasPermission('manage_appointments');
   const canChangeAnyStatus = hasPermission('update_appointment_status') || hasPermission('manage_appointments');
+  // Fee concessions and payment state are privileged; the backend strips these
+  // values too, so disabling the inputs here is purely a UX affordance.
+  const canApplyDiscount = hasPermission('add_discounts') || hasPermission('edit_discounts') || hasPermission('manage_discounts');
+  const canSetPaymentStatus = hasPermission('manage_appointment_payments') || hasPermission('manage_appointments');
   const canTogglePayment = canEdit || canChangeAnyStatus;
 
   return (
@@ -709,9 +721,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Appointments</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.appointmentsTitle')}</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Manage patient appointments for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
+            {t('modules.appointmentsSubtitle')} {isAllHospitals ? t('modules.allHospitals') : currentHospital.name}
           </p>
         </div>
   
@@ -743,7 +755,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -753,7 +765,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -809,31 +821,31 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 </th>
                 <th onClick={() => handleSort('patientName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Patient
+                    {t('table.patient')}
                     {renderSortIcon('patientName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('doctorName')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Doctor
+                    {t('table.doctor')}
                     {renderSortIcon('doctorName')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('appointmentDate')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Date & Time
+                    {t('table.dateTime')}
                     {renderSortIcon('appointmentDate')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Reason</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Fees</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.reason')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.fees')}</th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -845,7 +857,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         <Calendar className="w-6 h-6 text-gray-400 opacity-50" />
                       </div>
                       <p className="text-sm font-medium">No appointments found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -935,18 +947,14 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                                       setOpenStatusDropdown(null);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Mark Completed
-                                  </button>
+                                  >{t('ui.markCompleted')}</button>
                                   <button
                                     onClick={() => {
                                       handleStatusChange(apt.id, 'cancelled');
                                       setOpenStatusDropdown(null);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
+                                  >{t('ui.cancel')}</button>
                                   <button
                                     onClick={() => {
                                       handleStatusChange(apt.id, 'no_show');
@@ -992,7 +1000,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                           <button
                             onClick={() => openEditModal(apt)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -1004,7 +1012,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                               setShowDeleteModal(true);
                             }}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1029,18 +1037,14 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -1059,7 +1063,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {showAddModal ? 'New Appointment' : 'Edit Appointment'}
+                {showAddModal ? t('ui.newAppointment') : 'Edit Appointment'}
               </h2>
               <button 
                 onClick={() => {
@@ -1067,8 +1071,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   setShowEditModal(false);
                 }} 
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                aria-label="Close"
-                title="Close"
+                aria-label={t('ui.close')}
+                title={t('ui.close')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1077,15 +1081,14 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
-                  <label htmlFor="appointment-hospital" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Hospital <span className="text-red-500">*</span>
+                  <label htmlFor="appointment-hospital" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span>
                   </label>
                   <select
                     id="appointment-hospital"
                     value={formData.hospitalId}
                     onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                    title="Hospital"
+                    title={t('ui.hospital')}
                     required
                   >
                     {hospitals.map(h => (
@@ -1097,23 +1100,23 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="appointment-patient" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Patient <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-patient" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}<span className="text-red-500">*</span></label>
                   <select
                     id="appointment-patient"
                     value={formData.patientId}
                     onChange={(e) => setFormData({ ...formData, patientId: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    title="Patient"
+                    title={t('ui.patient')}
                     required
                   >
-                    <option value="">Select Patient</option>
+                    <option value="">{t('ui.selectPatient')}</option>
                     {hospitalPatients.map(p => (
                       <option key={p.id} value={p.id}>{p.name} ({p.patientId})</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="appointment-doctor" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-doctor" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.doctor')}<span className="text-red-500">*</span></label>
                   <select
                     id="appointment-doctor"
                     value={formData.doctorId}
@@ -1130,10 +1133,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                       });
                     }}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    title="Doctor"
+                    title={t('ui.doctor')}
                     required
                   >
-                    <option value="">Select Doctor</option>
+                    <option value="">{t('ui.selectDoctor')}</option>
                     {hospitalDoctors.map(d => (
                       <option key={d.id} value={d.id}>{formatDoctorOptionLabel(d)}</option>
                     ))}
@@ -1142,7 +1145,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="appointment-date" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="appointment-date" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.date')}<span className="text-red-500">*</span></label>
                   <input
                     id="appointment-date"
                     type="date"
@@ -1218,16 +1221,20 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     step="0.01"
                     value={formData.discountAmount}
                     onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })}
-                    disabled={formData.discountEnabled}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60"
+                    disabled={formData.discountEnabled || !canApplyDiscount}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   />
+                  {!canApplyDiscount && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">{t('ui.noDiscountPermission')}</p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Payment Status</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label>
                   <select
                     value={formData.paymentStatus}
                     onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as NonNullable<Appointment['paymentStatus']> })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    disabled={!canSetPaymentStatus}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     title="Payment status"
                   >
                     <option value="pending">pending</option>
@@ -1235,6 +1242,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     <option value="paid">paid</option>
                     <option value="cancelled">cancelled</option>
                   </select>
+                  {!canSetPaymentStatus && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">{t('ui.noPaymentPermission')}</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5 bg-gray-50 dark:bg-gray-700/30">
@@ -1243,6 +1253,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     type="checkbox"
                     checked={formData.discountEnabled}
                     onChange={(e) => setFormData({ ...formData, discountEnabled: e.target.checked })}
+                    disabled={!canApplyDiscount}
+                    className="disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   Full waiver (100% discount)
                 </label>
@@ -1251,7 +1263,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 </span>
               </div>
               <div>
-                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Notes</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.notes')}</label>
                 <textarea
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -1268,15 +1280,13 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     setShowEditModal(false);
                   }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -1299,15 +1309,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={handleDelete}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>
@@ -1322,8 +1328,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <button
                 onClick={() => setShowPrintModal(false)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                aria-label="Close"
-                title="Close"
+                aria-label={t('ui.close')}
+                title={t('ui.close')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1357,7 +1363,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         </div>
 
                         <div className="col-span-1">
-                           <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">Patient Details</label>
+                           <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">{t('ui.patientDetails')}</label>
                            <div className="font-bold text-sm text-gray-900">{selectedAppointment.patientName}</div>
                            <div className="text-[10px] text-gray-600">{selectedAppointment.patientAge} Yrs / {selectedAppointment.patientGender}</div>
                           <div className="text-[9px] text-gray-400 mt-0.5">ID: {selectedAppointment.patientDisplayId || formatPatientId(selectedAppointment.patientId)}</div>
@@ -1378,7 +1384,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                                <span className="font-semibold text-xs">{(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} {selectedAppointment.currency ?? 'AFN'}</span>
                              </div>
                              <div className="flex justify-between items-center text-gray-700">
-                               <span className="font-bold text-[10px] uppercase">Discount</span>
+                               <span className="font-bold text-[10px] uppercase">{t('ui.discount')}</span>
                                <span className="font-semibold text-xs">{(selectedAppointment.discountAmount ?? 0).toFixed(2)}</span>
                              </div>
                              <div className="flex justify-between items-center border-t border-gray-200 pt-1 mt-1">
@@ -1404,16 +1410,12 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <button 
                 onClick={() => setShowPrintModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Close
-              </button>
+              >{t('ui.close')}</button>
               <button 
                 onClick={handlePrintFeesCard}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2"
               >
-                <Printer className="w-4 h-4" />
-                Print
-              </button>
+                <Printer className="w-4 h-4" />{t('ui.print')}</button>
             </div>
           </div>
         </div>

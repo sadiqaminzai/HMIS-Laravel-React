@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Search, Stethoscope, Eye, Trash2, X, Upload, Image as ImageIcon, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Clock, Check } from 'lucide-react';
 import { Hospital, UserRole, DoctorAvailability, Doctor } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -16,6 +17,7 @@ interface DoctorManagementProps {
 }
 
 export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagementProps) {
+  const { t } = useTranslation();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { hospitals } = useHospitals();
@@ -359,9 +361,9 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Doctor Management</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.doctorsTitle')}</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Manage doctors for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
+            {t('modules.doctorsSubtitle')} {isAllHospitals ? t('modules.allHospitals') : currentHospital.name}
           </p>
         </div>
         
@@ -386,7 +388,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -396,7 +398,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -407,9 +409,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -429,37 +429,37 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               <tr>
                 <th onClick={() => handleSort('name')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Doctor
+                    {t('table.doctor')}
                     {renderSortIcon('name')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('specialization')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Specialization
+                    {t('table.specialization')}
                     {renderSortIcon('specialization')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('registrationNumber')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Registration No.
+                    {t('table.registrationNo')}
                     {renderSortIcon('registrationNumber')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('consultationFee')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Fees
+                    {t('table.fees')}
                     {renderSortIcon('consultationFee')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Contact</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.contact')}</th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Signature</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.signature')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -522,7 +522,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                         <button
                           onClick={() => handleView(doctor)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -530,7 +530,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                           <button
                             onClick={() => handleEdit(doctor)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
@@ -539,7 +539,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                           <button
                             onClick={() => handleDelete(doctor)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -556,7 +556,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                         <Search className="w-6 h-6 text-gray-400" />
                       </div>
                       <p className="text-sm font-medium">No doctors found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -575,18 +575,14 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -597,7 +593,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {showAddModal ? 'Add New Doctor' : 'Edit Doctor Details'}
+                {showAddModal ? t('ui.addNewDoctor') : 'Edit Doctor Details'}
               </h2>
               <button 
                 onClick={() => {
@@ -613,8 +609,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Hospital <span className="text-red-500">*</span>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.hospitalId}
@@ -640,13 +635,11 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                       )}
                     </div>
                     <div className="flex-1">
-                      <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                        Profile Image
-                      </label>
+                      <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.profileImage')}</label>
                       <div className="flex items-center gap-2">
                         <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm font-medium text-[10px]">
                           <Upload className="w-3 h-3" />
-                          Choose
+                          {t('ui.choose')}
                           <input
                             type="file"
                             accept="image/*"
@@ -660,7 +653,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Name <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.name')}<span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formData.name}
@@ -671,7 +664,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Email <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.email')}<span className="text-red-500">*</span></label>
                   <input
                     type="email"
                     value={formData.email}
@@ -682,7 +675,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.phone')}<span className="text-red-500">*</span></label>
                   <input
                     type="tel"
                     value={formData.phone}
@@ -693,7 +686,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Consultation Fee <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.consultationFee')}<span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     min="0"
@@ -705,7 +698,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Specialization <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.specialization')}<span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formData.specialization}
@@ -716,7 +709,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Registration Number <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.registrationNumber')}<span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formData.registrationNumber}
@@ -727,14 +720,14 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Status <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}<span className="text-red-500">*</span></label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                   >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">{t('ui.active')}</option>
+                    <option value="inactive">{t('ui.inactive')}</option>
                   </select>
                 </div>
               </div>
@@ -743,7 +736,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
                 <h3 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" />
-                  Availability Schedule
+                  {t('ui.availabilitySchedule')}
                 </h3>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {formData.availability.map((slot, index) => (
@@ -806,9 +799,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                     )}
                   </div>
                   <div className="flex-1">
-                    <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                      Digital Signature
-                    </label>
+                    <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.digitalSignature')}</label>
                     <div className="flex items-center gap-2">
                       <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm font-medium text-[10px]">
                         <Upload className="w-3 h-3" />
@@ -833,15 +824,13 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                     setShowEditModal(false);
                   }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={formSubmitting}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {formSubmitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
+                  {formSubmitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -908,7 +897,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </div>
               </div>
               <div className="text-right text-gray-500 min-w-[140px]">
-                <p className="text-sm">Report Generated</p>
+                <p className="text-sm">{t('ui.reportGenerated')}</p>
                 <p className="font-bold text-gray-900 text-lg">{new Date().toLocaleDateString()}</p>
               </div>
             </div>
@@ -917,22 +906,20 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-8">
               {/* Contact Info */}
               <div className="border border-gray-300 rounded-xl p-5 md:p-6 bg-gray-50/40 shadow-sm">
-                <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4">
-                  Contact Information
-                </h3>
+                <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4">{t('ui.contactInformation')}</h3>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Phone</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{t('ui.phone')}</label>
                         <p className="text-gray-900 font-semibold text-base">{selectedDoctor.phone}</p>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Email</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{t('ui.email')}</label>
                         <p className="text-gray-900 font-semibold text-sm break-all">{selectedDoctor.email}</p>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Status</label>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{t('ui.status')}</label>
                       <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider border inline-flex items-center gap-1.5 ${
                         selectedDoctor.status === 'active' ? 'text-green-700 border-green-200 bg-green-50' : 'text-red-700 border-red-200 bg-red-50'
                       }`}>
@@ -954,7 +941,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                     <p className="text-gray-900 font-bold text-lg">{selectedDoctor.registrationNumber}</p>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Consultation Fee</label>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{t('ui.consultationFee')}</label>
                     <p className="text-gray-900 font-bold text-lg">{selectedDoctor.consultationFee || 0}</p>
                   </div>
                   <div>
@@ -976,7 +963,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               <div className="border border-gray-300 rounded-xl p-5 md:p-6 bg-gray-50/40 mb-20 shadow-sm">
                 <h3 className="font-bold text-lg text-gray-900 border-b-2 border-gray-100 pb-3 mb-4 flex items-center gap-2">
                   <Clock className="w-5 h-5 text-gray-500" />
-                  Availability Schedule
+                  {t('ui.availabilitySchedule')}
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
                   {selectedDoctor.availability.map((slot: DoctorAvailability) => (
@@ -1017,7 +1004,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   <button
                     onClick={() => setTimeout(() => window.print(), 100)}
                     className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                    title="Print"
+                    title={t('ui.print')}
                   >
                     <Printer className="w-4 h-4" />
                   </button>
@@ -1025,7 +1012,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 <button
                   onClick={() => setShowViewModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1072,19 +1059,19 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Specialization</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.specialization')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedDoctor.specialization}
                       </p>
                     </div>
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.phone')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium font-mono">
                         {selectedDoctor.phone}
                       </p>
                     </div>
                     <div className="md:col-span-2 space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.email')}</label>
                       <p className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer">
                         {selectedDoctor.email}
                       </p>
@@ -1098,7 +1085,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 <div className="md:col-span-2 bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
                   <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
                     <Clock className="w-3.5 h-3.5" />
-                    Availability Schedule
+                    {t('ui.availabilitySchedule')}
                   </h4>
                   <div className="space-y-1.5">
                     {selectedDoctor.availability.map((slot: DoctorAvailability) => (
@@ -1116,9 +1103,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               )}
 
               <div className="bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                 <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                    Digital Signature
-                 </h4>
+                 <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">{t('ui.digitalSignature')}</h4>
                  <div className="flex justify-center p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 border-dashed">
                     {selectedDoctor.signature ? (
                        <img src={selectedDoctor.signature} alt="Signature" className="h-10 object-contain" />
@@ -1130,26 +1115,24 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
 
               {/* Audit Information */}
               <div className="bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                  System Information
-                </h4>
+                <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">{t('ui.systemInformation')}</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created By</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdBy')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.createdBy || 'System'}</p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdAt')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
                       {selectedDoctor.createdAt ? new Date(selectedDoctor.createdAt).toLocaleString() : 'N/A'}
                     </p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedBy')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedDoctor.updatedBy || selectedDoctor.createdBy || 'System'}</p>
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
+                    <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedAt')}</label>
                     <p className="text-xs text-gray-900 dark:text-white font-medium">
                       {selectedDoctor.updatedAt ? new Date(selectedDoctor.updatedAt).toLocaleString() : 'N/A'}
                     </p>
@@ -1162,9 +1145,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               <button
                 onClick={() => setShowViewModal(false)}
                 className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs shadow-sm"
-              >
-                Close Detail View
-              </button>
+              >{t('ui.closeDetailView')}</button>
             </div>
           </div>
         </div>
@@ -1185,15 +1166,11 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={handleConfirmDelete}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>

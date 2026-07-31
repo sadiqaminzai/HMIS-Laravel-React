@@ -1,0 +1,158 @@
+/*
+ * Right-to-left support.
+ *
+ * Layout direction is driven by the `dir` attribute that App.tsx stamps on
+ * <html> whenever the i18n language changes. Tailwind's logical utilities
+ * (ms-/me-/ps-/pe-/border-s/border-e/start-/end-) and flexbox handle most of
+ * the work automatically once `dir="rtl"` is set; the rules below cover the
+ * places that still use physical properties — third-party widgets, absolutely
+ * positioned icons, and native form controls.
+ */
+
+[dir='rtl'] {
+  text-align: right;
+}
+
+/* Keep numbers, codes, dates and other latin-only strings readable. */
+[dir='rtl'] .font-mono,
+[dir='rtl'] input[type='date'],
+[dir='rtl'] input[type='datetime-local'],
+[dir='rtl'] input[type='time'],
+[dir='rtl'] input[type='number'],
+[dir='rtl'] input[type='email'],
+[dir='rtl'] input[type='tel'],
+[dir='rtl'] input[type='url'] {
+  direction: ltr;
+  text-align: right;
+}
+
+/* Tables: headers and cells follow the reading direction. */
+[dir='rtl'] table th,
+[dir='rtl'] table td {
+  text-align: right;
+}
+
+[dir='rtl'] table th.text-center,
+[dir='rtl'] table td.text-center {
+  text-align: center;
+}
+
+[dir='rtl'] table th.text-left,
+[dir='rtl'] table td.text-left {
+  text-align: right;
+}
+
+[dir='rtl'] table th.text-right,
+[dir='rtl'] table td.text-right {
+  text-align: left;
+}
+
+/*
+ * Search / prefix icons are positioned with `left-*` across the app. Mirror
+ * them instead of rewriting every call site, and mirror the matching padding.
+ */
+[dir='rtl'] .relative > .absolute.left-2,
+[dir='rtl'] .relative > .absolute.left-2\.5,
+[dir='rtl'] .relative > .absolute.left-3 {
+  left: auto;
+}
+
+[dir='rtl'] .relative > .absolute.left-2 {
+  right: 0.5rem;
+}
+
+[dir='rtl'] .relative > .absolute.left-2\.5 {
+  right: 0.625rem;
+}
+
+[dir='rtl'] .relative > .absolute.left-3 {
+  right: 0.75rem;
+}
+
+[dir='rtl'] .relative > .absolute.right-2 {
+  right: auto;
+  left: 0.5rem;
+}
+
+[dir='rtl'] .relative > .absolute.right-3 {
+  right: auto;
+  left: 0.75rem;
+}
+
+[dir='rtl'] .pl-8 {
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+}
+
+[dir='rtl'] .pl-10 {
+  padding-left: 1rem;
+  padding-right: 2.5rem;
+}
+
+[dir='rtl'] .pr-7 {
+  padding-right: 0.625rem;
+  padding-left: 1.75rem;
+}
+
+/* Native selects render their arrow on the reading-end side. */
+[dir='rtl'] select {
+  background-position: left 0.5rem center;
+}
+
+/* Radix-based dropdowns, popovers and dialogs. */
+[dir='rtl'] [role='menu'],
+[dir='rtl'] [role='listbox'],
+[dir='rtl'] [role='dialog'] {
+  text-align: right;
+}
+
+/* Sonner toasts stack on the reading-end side. */
+[dir='rtl'] [data-sonner-toaster][data-x-position='right'] {
+  right: auto;
+  left: max(var(--offset), env(safe-area-inset-left));
+}
+
+[dir='rtl'] [data-sonner-toast] {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Quill editor: content and toolbar follow the document direction. */
+[dir='rtl'] .ql-editor {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir='rtl'] .ql-editor.ql-blank::before {
+  left: auto;
+  right: 15px;
+}
+
+[dir='rtl'] .ql-toolbar.ql-snow .ql-formats {
+  margin-right: 0;
+  margin-left: 15px;
+}
+
+[dir='rtl'] .ql-snow .ql-picker-label {
+  padding-left: 2px;
+  padding-right: 8px;
+}
+
+/* Lists indent from the reading-start side. */
+[dir='rtl'] .ql-editor ol,
+[dir='rtl'] .ql-editor ul {
+  padding-left: 0;
+  padding-right: 1.5em;
+}
+
+/*
+ * Printed documents keep their own direction: reports are laid out for the
+ * language they were written in, not the current UI language.
+ */
+@media print {
+  [dir='rtl'] .print-ltr,
+  .print-ltr {
+    direction: ltr;
+    text-align: left;
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Image as ImageIcon, CreditCard, Download, FileImage } from 'lucide-react';
 import { Hospital, UserRole, Patient } from '../types';
 import { usePatients } from '../context/PatientContext';
@@ -41,15 +42,23 @@ interface PatientManagementProps {
 }
 
 export function PatientManagement({ hospital, userRole = 'admin', currentUser }: PatientManagementProps) {
+  const { t } = useTranslation();
   const { hospitals: contextHospitals } = useHospitals();
   const { patients, addPatient, updatePatient, deletePatient } = usePatients();
   const { appointments } = useAppointments();
   const { doctors } = useDoctors();
-  const { getPatientIdConfig, generatePatientId, loadHospitalSetting, getDefaultDoctorId } = useSettings();
+  const { getPatientIdConfig, generatePatientId, loadHospitalSetting, getDefaultDoctorId, getPrintPaperSize } = useSettings();
   const { hasPermission } = useAuth();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  
+
+  // Registration-card paper comes from Settings > General > Print Paper Size.
+  // On A4 the card keeps its card dimensions but the sheet is A4 (Epson card tray).
+  const cardPaperSize = getPrintPaperSize(currentHospital.id, 'patient_card');
+  const cardIsA4 = cardPaperSize === 'a4';
+  const cardPrintWidth = cardPaperSize === '58mm' ? '58mm' : cardPaperSize === '76mm' ? '76mm' : '80mm';
+
+
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -517,9 +526,9 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Patient Management</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.patientsTitle')}</h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Manage patient records for {isAllHospitals ? 'All Hospitals' : currentHospital.name}
+            {t('modules.patientsSubtitle')} {isAllHospitals ? t('modules.allHospitals') : currentHospital.name}
           </p>
         </div>
         
@@ -544,7 +553,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -554,7 +563,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -565,9 +574,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -599,31 +606,31 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               <tr>
                 <th onClick={() => handleSort('patientId')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    ID
+                    {t('table.id')}
                     {renderSortIcon('patientId')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('name')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Name
+                    {t('table.name')}
                     {renderSortIcon('name')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('age')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Age
+                    {t('table.age')}
                     {renderSortIcon('age')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('gender')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Gender
+                    {t('table.gender')}
                     {renderSortIcon('gender')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Phone</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">Last Appointment Doctor</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.phone')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.lastAppointmentDoctor')}</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -635,7 +642,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         <Users className="w-6 h-6 text-gray-400 opacity-50" />
                       </div>
                       <p className="text-sm font-medium">No patients found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -691,7 +698,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         <button
                           onClick={() => handleView(patient)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -699,7 +706,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                           <button
                             onClick={() => handleEdit(patient)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
@@ -708,7 +715,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                           <button
                             onClick={() => handleDelete(patient)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -732,18 +739,14 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -754,7 +757,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                {showAddModal ? 'Add New Patient' : 'Edit Patient Details'}
+                {showAddModal ? t('ui.addNewPatient') : t('ui.editPatientDetails')}
               </h2>
               <button 
                 onClick={() => {
@@ -770,8 +773,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Hospital <span className="text-red-500">*</span>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.hospitalId}
@@ -796,13 +798,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     )}
                 </div>
                 <div className="flex-1">
-                    <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                    Patient Photo
-                    </label>
+                    <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patientPhoto')}</label>
                     <div className="flex items-center gap-2">
                     <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm font-medium text-[10px]">
                         <Upload className="w-3 h-3" />
-                        Choose
+                        {t('ui.choose')}
                         <input
                         type="file"
                         accept="image/*"
@@ -816,7 +816,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Full Name <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.fullName')}<span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formData.name}
@@ -827,7 +827,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Age <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.age')}<span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     value={formData.age}
@@ -840,20 +840,20 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Gender <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.gender')}<span className="text-red-500">*</span></label>
                   <select
                     value={formData.gender}
                     onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
                     required
                   >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
+                    <option value="male">{t('ui.male')}</option>
+                    <option value="female">{t('ui.female')}</option>
+                    <option value="other">{t('ui.other')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.phone')}<span className="text-red-500">*</span></label>
                   <input
                     type="tel"
                     value={formData.phone}
@@ -865,7 +865,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Address</label>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.address')}</label>
                 <textarea
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -882,15 +882,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     setShowEditModal(false);
                   }}
                   className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                >
-                  Cancel
-                </button>
+                >{t('ui.cancel')}</button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Saving...' : showAddModal ? 'Create' : 'Save'}
+                  {submitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -980,11 +978,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     <p className="text-[8px] font-bold text-gray-900">{selectedPatient.age}Y / {selectedPatient.gender?.charAt(0).toUpperCase()}</p>
                   </div>
                   <div className="col-span-2">
-                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Phone</p>
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">{t('ui.phone')}</p>
                     <p className="text-[8px] font-semibold text-gray-900 truncate">{selectedPatient.phone || '-'}</p>
                   </div>
                   <div className="col-span-2">
-                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Address</p>
+                    <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">{t('ui.address')}</p>
                     <p className="text-[7px] text-gray-700 leading-tight line-clamp-2">{selectedPatient.address || '-'}</p>
                   </div>
                 </div>
@@ -1007,20 +1005,20 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 flex items-center justify-between rounded-t-lg shadow-md z-10">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                Patient Details
+                {t('ui.patientDetails')}
               </h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setTimeout(() => window.print(), 100)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Print"
+                  title={t('ui.print')}
                 >
                   <Printer className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setShowViewModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1075,24 +1073,22 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               {/* Details Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2 bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                    Personal Information
-                  </h4>
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">{t('ui.personalInformation')}</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Age</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.age')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedPatient.age} Years
                       </p>
                     </div>
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.phone')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium font-mono">
                         {selectedPatient.phone}
                       </p>
                     </div>
                     <div className="md:col-span-2 space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Address</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.address')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedPatient.address}
                       </p>
@@ -1102,26 +1098,24 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
 
                 {/* Audit Information */}
                 <div className="md:col-span-2 bg-white dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600 shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">
-                    System Information
-                  </h4>
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 pb-1.5">{t('ui.systemInformation')}</h4>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created By</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdBy')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedPatient.createdBy || '-'}</p>
                     </div>
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdAt')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedPatient.createdAt ? formatDate(selectedPatient.createdAt, currentHospital.timezone, currentHospital.calendarType) : '-'}
                       </p>
                     </div>
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedBy')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedPatient.updatedBy || '-'}</p>
                     </div>
                     <div className="space-y-0.5">
-                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
+                      <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedAt')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
                         {selectedPatient.updatedAt ? formatDate(selectedPatient.updatedAt, currentHospital.timezone, currentHospital.calendarType) : '-'}
                       </p>
@@ -1135,9 +1129,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               <button
                 onClick={() => setShowViewModal(false)}
                 className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs shadow-sm"
-              >
-                Close Detail View
-              </button>
+              >{t('ui.closeDetailView')}</button>
             </div>
           </div>
         </div>
@@ -1150,7 +1142,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             {`
               @media print {
                 html, body {
-                  width: 80mm !important;
+                  width: ${cardIsA4 ? '210mm' : cardPrintWidth} !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background-color: white !important;
@@ -1219,7 +1211,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   height: 14mm !important;
                 }
                 @page {
-                  size: 80mm 60mm;
+                  size: ${cardIsA4 ? 'A4' : `${cardPrintWidth} 60mm`};
                   margin: 0;
                 }
               }
@@ -1236,14 +1228,14 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 <button
                   onClick={() => setTimeout(() => window.print(), 100)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Print"
+                  title={t('ui.print')}
                 >
                   <Printer className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setShowIdCardModal(false)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1333,9 +1325,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     onClick={() => setTimeout(() => window.print(), 100)}
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center gap-1.5 text-xs"
                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Print
-                 </button>
+                    <Printer className="w-3.5 h-3.5" />{t('ui.print')}</button>
                </div>
             </div>
           </div>
@@ -1357,15 +1347,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Cancel
-              </button>
+              >{t('ui.cancel')}</button>
               <button
                 onClick={confirmDelete}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                Delete
-              </button>
+              >{t('ui.delete')}</button>
             </div>
           </div>
         </div>

@@ -22,6 +22,33 @@ class LabOrderController extends Controller
     }
 
     /**
+     * Whether the user may see lab orders that are not fully paid.
+     *
+     * Deliberately NOT implied by manage_lab_orders: lab technicians hold that
+     * permission but should only work on orders the patient has already paid for.
+     */
+    private function canViewUnpaidLabOrders($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ((string) $user->role === 'super_admin') {
+            return true;
+        }
+
+        // Doctors are already scoped to the orders they themselves requested, so they
+        // keep seeing their own pending/unpaid requests.
+        if ((string) $user->role === 'doctor') {
+            return true;
+        }
+
+        $names = method_exists($user, 'permissionNames') ? $user->permissionNames() : [];
+
+        return in_array('view_unpaid_lab_orders', $names, true);
+    }
+
+    /**
      * List lab orders with filters
      */
     public function index(Request $request)
@@ -52,6 +79,13 @@ class LabOrderController extends Controller
         // Payment status filter
         if ($request->has('payment_status')) {
             $query->where('payment_status', $request->get('payment_status'));
+        }
+
+        // Users without `view_unpaid_lab_orders` (typically lab technicians) may only
+        // see orders whose payment is complete. Applied after the caller's own
+        // payment_status filter so it cannot be widened from the query string.
+        if (!$this->canViewUnpaidLabOrders($user)) {
+            $query->where('payment_status', 'paid');
         }
 
         // Doctor filter
@@ -286,6 +320,11 @@ class LabOrderController extends Controller
             if ($user->hospital_id && (int) $labOrder->hospital_id !== (int) $user->hospital_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
+        }
+
+        // Mirror the index() restriction so an unpaid order cannot be fetched by id.
+        if ((string) $labOrder->payment_status !== 'paid' && !$this->canViewUnpaidLabOrders($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $loaded = $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']);

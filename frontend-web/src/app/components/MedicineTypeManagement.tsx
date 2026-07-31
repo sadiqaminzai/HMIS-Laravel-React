@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Eye, Edit, Trash2, X, Pill, Search, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, Upload, Download } from 'lucide-react';
 import { Hospital, MedicineType, UserRole } from '../types';
 import { toast } from 'sonner';
@@ -16,6 +17,7 @@ interface MedicineTypeManagementProps {
 }
 
 export function MedicineTypeManagement({ hospital, userRole = 'admin' }: MedicineTypeManagementProps) {
+  const { t } = useTranslation();
   // Hospital filtering for super_admin with "All Hospitals" support
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { medicineTypes, addMedicineType, updateMedicineType, deleteMedicineType, loading } = useMedicineTypes();
@@ -290,7 +292,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
     // Create table
     autoTable(doc, {
-      head: [['Name', 'Description', 'Status']],
+      head: [['Name', t('ui.description'), 'Status']],
       body: sortedMedicineTypes.map(mt => [
         mt.name,
         mt.description || '-',
@@ -422,7 +424,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             <button
               onClick={exportToExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to Excel"
+              title={t('ui.exportToExcel')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Excel
@@ -432,7 +434,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             <button
               onClick={exportToPDF}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-              title="Export to PDF"
+              title={t('ui.exportToPdf')}
             >
               <FileText className="w-3.5 h-3.5" />
               PDF
@@ -443,19 +445,15 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
               <button
                 onClick={downloadImportTemplate}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium shadow-sm"
-                title="Download import template"
+                title={t('ui.downloadImportTemplate')}
               >
-                <Download className="w-3.5 h-3.5" />
-                Template
-              </button>
+                <Download className="w-3.5 h-3.5" />{t('ui.template')}</button>
               <button
                 onClick={() => importInputRef.current?.click()}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors text-xs font-medium shadow-sm"
                 title="Import medicine types"
               >
-                <Upload className="w-3.5 h-3.5" />
-                Import
-              </button>
+                <Upload className="w-3.5 h-3.5" />{t('ui.import')}</button>
               <input
                 ref={importInputRef}
                 type="file"
@@ -470,9 +468,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
+              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
           )}
         </div>
       </div>
@@ -492,23 +488,23 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
               <tr>
                 <th onClick={() => handleSort('name')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Name
+                    {t('table.name')}
                     {renderSortIcon('name')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('description')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Description
+                    {t('table.description')}
                     {renderSortIcon('description')}
                   </div>
                 </th>
                 <th onClick={() => handleSort('status')} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <div className="flex items-center gap-1.5">
-                    Status
+                    {t('table.status')}
                     {renderSortIcon('status')}
                   </div>
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">Actions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -540,7 +536,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                         <button
                           onClick={() => handleView(medicineType)}
                           className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                          title="View"
+                          title={t('ui.view')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -548,7 +544,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                           <button
                             onClick={() => handleEdit(medicineType)}
                             className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                            title="Edit"
+                            title={t('ui.edit')}
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -557,7 +553,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                           <button
                             onClick={() => handleDelete(medicineType)}
                             className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                            title="Delete"
+                            title={t('ui.delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -574,7 +570,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                         <Search className="w-6 h-6 text-gray-400" />
                       </div>
                       <p className="text-sm font-medium">No medicine types found</p>
-                      <p className="text-xs mt-1">Try adjusting your search terms</p>
+                      <p className="text-xs mt-1">{t('ui.tryAdjustingYourSearchTerms')}</p>
                     </div>
                   </td>
                 </tr>
@@ -593,18 +589,14 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>Page {currentPage} of {totalPages}</span>
             <button
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       </div>
@@ -627,7 +619,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                       <button
                         onClick={() => setTimeout(() => window.print(), 100)}
                         className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                        title="Print"
+                        title={t('ui.print')}
                       >
                         <Printer className="w-4 h-4" />
                       </button>
@@ -635,7 +627,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     <button
                       onClick={() => setShowModal(false)}
                       className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                      title="Close"
+                      title={t('ui.close')}
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -691,15 +683,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                       </div>
                     </div>
                     <div className="text-right text-gray-500">
-                      <p className="text-sm">Report Generated</p>
+                      <p className="text-sm">{t('ui.reportGenerated')}</p>
                       <p className="font-bold text-gray-900 text-lg">{new Date().toLocaleDateString()}</p>
                     </div>
                   </div>
 
                   <div className="border border-gray-300 rounded-lg p-6 bg-gray-50/50">
-                    <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">
-                      Description
-                    </h3>
+                    <h3 className="font-bold text-lg text-gray-900 border-b border-gray-300 pb-3 mb-4">{t('ui.description')}</h3>
                     <p className="text-gray-900 text-base leading-relaxed">
                       {selectedMedicineType.description || 'No description provided.'}
                     </p>
@@ -730,7 +720,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                   </div>
                   
                   <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-0.5">Description</label>
+                    <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-0.5">{t('ui.description')}</label>
                     <p className="text-xs text-gray-900 dark:text-white leading-relaxed">
                       {selectedMedicineType.description || 'No description provided.'}
                     </p>
@@ -738,26 +728,24 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
                   {/* Audit Information */}
                   <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                    <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-200 dark:border-gray-600 pb-1.5">
-                      System Information
-                    </h4>
+                    <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2 border-b border-gray-200 dark:border-gray-600 pb-1.5">{t('ui.systemInformation')}</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div className="space-y-0.5">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created By</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdBy')}</label>
                         <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedMedicineType.createdBy || '-'}</p>
                       </div>
                       <div className="space-y-0.5">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.createdAt')}</label>
                         <p className="text-xs text-gray-900 dark:text-white font-medium">
                           {selectedMedicineType.createdAt ? new Date(selectedMedicineType.createdAt).toLocaleString() : '-'}
                         </p>
                       </div>
                       <div className="space-y-0.5">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated By</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedBy')}</label>
                         <p className="text-xs text-gray-900 dark:text-white font-medium">{selectedMedicineType.updatedBy || '-'}</p>
                       </div>
                       <div className="space-y-0.5">
-                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated At</label>
+                        <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.updatedAt')}</label>
                         <p className="text-xs text-gray-900 dark:text-white font-medium">
                           {selectedMedicineType.updatedAt ? new Date(selectedMedicineType.updatedAt).toLocaleString() : '-'}
                         </p>
@@ -769,9 +757,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     <button
                         onClick={() => setShowModal(false)}
                         className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs shadow-sm"
-                    >
-                        Close
-                    </button>
+                    >{t('ui.close')}</button>
                   </div>
                 </div>
                </>
@@ -788,7 +774,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                 <button
                   onClick={() => setShowModal(false)}
                   className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                  title="Close"
+                  title={t('ui.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -808,15 +794,11 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                   <button
                     onClick={() => setShowModal(false)}
                     className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-xs font-medium"
-                  >
-                    Cancel
-                  </button>
+                  >{t('ui.cancel')}</button>
                   <button
                     onClick={confirmDelete}
                     className="flex-1 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-xs font-medium shadow-sm"
-                  >
-                    Delete
-                  </button>
+                  >{t('ui.delete')}</button>
                 </div>
               </div>
             )}
@@ -827,14 +809,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                 {/* Hospital Selection for Super Admin */}
                 {userRole === 'super_admin' && (
                   <div>
-                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                      Hospital <span className="text-red-500">*</span>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.hospital')}<span className="text-red-500">*</span>
                     </label>
                     <select
                       value={formData.hospitalId}
                       onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
                       className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                      title="Hospital"
+                      title={t('ui.hospital')}
                       required
                     >
                       {hospitals.map(h => (
@@ -845,8 +826,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                 )}
 
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Name <span className="text-red-500">*</span>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.name')}<span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -858,29 +838,26 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Description
-                  </label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.description')}</label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
-                    title="Description"
+                    title={t('ui.description')}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                    Status <span className="text-red-500">*</span>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}<span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
-                    title="Status"
+                    title={t('ui.status')}
                   >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">{t('ui.active')}</option>
+                    <option value="inactive">{t('ui.inactive')}</option>
                   </select>
                 </div>
                 <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
@@ -888,15 +865,13 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                     type="button"
                     onClick={() => setShowModal(false)}
                     className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
-                  >
-                    Cancel
-                  </button>
+                  >{t('ui.cancel')}</button>
                   <button
                     type="submit"
                     disabled={submitting}
                     className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {submitting ? 'Saving...' : modalMode === 'add' ? 'Add' : 'Save'}
+                    {submitting ? 'Saving...' : modalMode === 'add' ? t('ui.add') : t('ui.save')}
                   </button>
                 </div>
               </form>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Database, Download, Trash2, RefreshCw, HardDrive, Settings, Save, Clock, Archive } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from '../utils/toast';
@@ -25,6 +26,7 @@ interface BackupManagementProps {
 }
 
 export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagementProps) {
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canViewBackups = hasPermission('view_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
   const canAddBackups = hasPermission('add_backups') || hasPermission('manage_backups') || hasPermission('manage_hospital_settings');
@@ -212,7 +214,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
               <Database className="w-3.5 h-3.5" />
-              {creating ? 'Creating...' : 'Create'}
+              {creating ? 'Creating...' : t('ui.create')}
             </button>
           )}
         </div>
@@ -267,9 +269,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                     disabled={savingSettings}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 dark:bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors disabled:opacity-50"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    Save
-                  </button>
+                    <Save className="w-3.5 h-3.5" />{t('ui.save')}</button>
                </div>
              )}
           </div>
@@ -281,10 +281,10 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
         <table className="w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10">
             <tr>
-              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">File Name</th>
-              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Date</th>
-              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Size</th>
-              <th className="px-4 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Actions</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{t('table.fileName')}</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{t('table.date')}</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{t('table.size')}</th>
+              <th className="px-4 py-2 text-right font-medium text-gray-500 dark:text-gray-400">{t('table.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -326,7 +326,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
                         <button
                           onClick={() => handleDelete(backup.name)}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                          title="Delete"
+                          title={t('ui.delete')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -357,9 +357,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Prev
-            </button>
+            >{t('ui.prev')}</button>
             <span>
               Page {currentPage} of {totalPages}
             </span>
@@ -367,9 +365,7 @@ export function BackupManagement({ hospital, userRole = 'admin' }: BackupManagem
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Next
-            </button>
+            >{t('ui.next')}</button>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download, Pencil, Plus, Save, Search, Trash2, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ReactQuill from 'react-quill-new';
@@ -52,6 +53,7 @@ const mapDiagnosis = (record: any): PrescriptionDiagnosisTemplate => ({
 });
 
 export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }: PrescriptionDiagnosisManagementProps) {
+  const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
   const { hasPermission } = useAuth();
 
@@ -362,9 +364,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
             onClick={handleDownloadTemplate}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-xs font-medium"
           >
-            <Download className="w-3.5 h-3.5" />
-            Template
-          </button>
+            <Download className="w-3.5 h-3.5" />{t('ui.template')}</button>
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors text-xs font-medium"
@@ -375,7 +375,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
           {canManage && (
             <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium cursor-pointer ${importing ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-orange-600 text-white hover:bg-orange-700'}`}>
               <Upload className="w-3.5 h-3.5" />
-              {importing ? 'Importing...' : 'Import'}
+              {importing ? 'Importing...' : t('ui.import')}
               <input
                 key={importKey}
                 type="file"
@@ -418,8 +418,8 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
               className="w-full px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
             >
               <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="active">{t('ui.active')}</option>
+              <option value="inactive">{t('ui.inactive')}</option>
             </select>
           </div>
 
@@ -427,9 +427,9 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 z-10">
                 <tr>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase">Diagnosis</th>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase">Status</th>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase text-right">Actions</th>
+                  <th className="px-3 py-2 text-xs font-semibold uppercase">{t('table.diagnosis')}</th>
+                  <th className="px-3 py-2 text-xs font-semibold uppercase">{t('table.status')}</th>
+                  <th className="px-3 py-2 text-xs font-semibold uppercase text-right">{t('table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -486,18 +486,14 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={currentPage === 1}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
-              >
-                Prev
-              </button>
+              >{t('ui.prev')}</button>
               <span>Page {currentPage} / {totalPages}</span>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
-              >
-                Next
-              </button>
+              >{t('ui.next')}</button>
             </div>
           </div>
         </div>
@@ -523,7 +519,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.description')}</label>
             <ReactQuill
               value={description}
               onChange={setDescription}
@@ -541,7 +537,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.status')}</label>
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as 'active' | 'inactive')}
@@ -549,8 +545,8 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
               className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={!canManage}
             >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="active">{t('ui.active')}</option>
+              <option value="inactive">{t('ui.inactive')}</option>
             </select>
           </div>
 
@@ -562,7 +558,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs font-medium"
             >
               <Save className="w-3.5 h-3.5" />
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Save'}
+              {saving ? 'Saving...' : editingId ? t('ui.update') : t('ui.save')}
             </button>
             <button
               type="button"

@@ -93,6 +93,7 @@ class AppointmentController extends Controller
 
         $this->syncDoctorHospital($data);
         $this->syncPatientSnapshot($data);
+        $this->enforceFeePermissions($data);
         $this->applyFeeDiscountRules($data);
 
         $data['appointment_number'] = $data['appointment_number'] ?? null;
@@ -123,6 +124,7 @@ class AppointmentController extends Controller
 
         $this->syncDoctorHospital($data, $appointment);
         $this->syncPatientSnapshot($data);
+        $this->enforceFeePermissions($data, $appointment);
         $this->applyFeeDiscountRules($data);
 
         if (empty($data['appointment_number'])) {
@@ -179,15 +181,36 @@ class AppointmentController extends Controller
             'notes' => ['nullable', 'string'],
             'original_fee_amount' => ['nullable', 'numeric', 'min:0'],
             'discount_enabled' => ['nullable', 'boolean'],
-            'discount_type_id' => [
-                'nullable',
-                Rule::exists('discount_types', 'id')->where(fn ($q) => $hospitalId ? $q->where('hospital_id', $hospitalId) : $q),
-            ],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'total_amount' => ['nullable', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'max:10'],
             'payment_status' => ['nullable', 'in:pending,paid,partial,cancelled'],
         ]);
+    }
+
+    /**
+     * Discounting and payment state are privileged: a receptionist may book an
+     * appointment without being able to waive the fee or mark it paid.
+     *
+     * Disabling the inputs in the UI is a convenience only — this strips the
+     * values server-side so a crafted request cannot bypass it.
+     */
+    private function enforceFeePermissions(array &$data, ?Appointment $existing = null): void
+    {
+        $user = request()->user();
+
+        $canDiscount = $user->hasAnyPermission(['add_discounts', 'edit_discounts', 'manage_discounts']);
+        $canSetPayment = $user->hasAnyPermission(['manage_appointment_payments', 'manage_appointments']);
+
+        if (! $canDiscount) {
+            // Keep whatever was already stored; never accept a new discount.
+            $data['discount_enabled'] = (bool) ($existing->discount_enabled ?? false);
+            $data['discount_amount'] = (float) ($existing->discount_amount ?? 0);
+        }
+
+        if (! $canSetPayment) {
+            $data['payment_status'] = $existing->payment_status ?? 'pending';
+        }
     }
 
     private function applyFeeDiscountRules(array &$data): void

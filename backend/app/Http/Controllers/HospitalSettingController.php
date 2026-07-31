@@ -13,7 +13,19 @@ class HospitalSettingController extends Controller
     {
         $this->authorizeHospital($request->user(), $hospital);
         $setting = $this->getOrCreateSetting($hospital->id);
-        return response()->json($setting);
+        return response()->json($this->presentSetting($setting));
+    }
+
+    /**
+     * Always hand the client a complete paper-size map so it never has to know
+     * the defaults, plus the list of sizes it may offer.
+     */
+    private function presentSetting(HospitalSetting $setting): array
+    {
+        return array_merge($setting->toArray(), [
+            'print_paper_sizes' => $setting->resolvedPrintPaperSizes(),
+            'print_paper_size_options' => (array) config('print.sizes', []),
+        ]);
     }
 
     public function update(Request $request, Hospital $hospital)
@@ -35,6 +47,8 @@ class HospitalSettingController extends Controller
             'print_show_batch_column' => ['boolean'],
             'print_show_expiry_date_column' => ['boolean'],
             'print_show_bonus_column' => ['boolean'],
+            'print_paper_sizes' => ['sometimes', 'array'],
+            'print_paper_sizes.*' => [Rule::in((array) config('print.sizes', []))],
             'prescription_logo_width' => ['integer', 'min:40', 'max:800'],
             'prescription_logo_height' => ['integer', 'min:40', 'max:800'],
             'prescription_signature_width' => ['integer', 'min:40', 'max:800'],
@@ -45,9 +59,46 @@ class HospitalSettingController extends Controller
         ]);
 
         $setting = $this->getOrCreateSetting($hospital->id);
+
+        // Per-module paper sizes are gated separately, so a user may hold general
+        // settings access without being able to change what the printers produce.
+        if (array_key_exists('print_paper_sizes', $data)) {
+            $allowedModules = array_keys((array) config('print.modules', []));
+            $incoming = array_intersect_key($data['print_paper_sizes'], array_flip($allowedModules));
+
+            $current = $setting->resolvedPrintPaperSizes();
+            $changed = array_keys(array_filter(
+                $incoming,
+                fn ($size, $module) => (string) $size !== (string) ($current[$module] ?? ''),
+                ARRAY_FILTER_USE_BOTH
+            ));
+
+            if (!empty($changed) && !$this->canManagePrintSettings($request->user())) {
+                abort(403, 'Not allowed to change print paper sizes');
+            }
+
+            // Merge so a partial payload never clears the other modules.
+            $data['print_paper_sizes'] = array_merge($current, $incoming);
+        }
+
         $setting->update($data);
 
-        return response()->json($setting->fresh());
+        return response()->json($this->presentSetting($setting->fresh()));
+    }
+
+    private function canManagePrintSettings($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->role === 'super_admin') {
+            return true;
+        }
+
+        $names = method_exists($user, 'permissionNames') ? $user->permissionNames() : [];
+
+        return in_array('manage_print_settings', $names, true);
     }
 
     private function authorizeHospital($user, Hospital $hospital, bool $write = false): void

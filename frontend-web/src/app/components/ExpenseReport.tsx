@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Expense, Hospital, UserRole } from '../types';
 import { useExpenses } from '../context/ExpenseContext';
@@ -9,6 +10,7 @@ interface ExpenseReportProps {
 }
 
 export function ExpenseReport({ hospital }: ExpenseReportProps) {
+  const { t } = useTranslation();
   const { expenses } = useExpenses();
   const [statusFilter, setStatusFilter] = useState<'all' | Expense['status']>('all');
   const [startDate, setStartDate] = useState<string>('');
@@ -40,21 +42,21 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-col md:flex-row gap-4 items-end">
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.status')}</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              title="Status"
+              title={t('ui.status')}
               className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
+              <option value="all">{t('ui.all')}</option>
+              <option value="pending">{t('ui.pending')}</option>
+              <option value="approved">{t('ui.approved')}</option>
+              <option value="rejected">{t('ui.rejected')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.startDate')}</label>
             <input
               type="date"
               value={startDate}
@@ -64,7 +66,7 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ui.endDate')}</label>
             <input
               type="date"
               value={endDate}
@@ -85,12 +87,12 @@ export function ExpenseReport({ hospital }: ExpenseReportProps) {
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300">
               <tr>
-                <th className="px-3 py-2">ID</th>
-                <th className="px-3 py-2">Title</th>
-                <th className="px-3 py-2">Category</th>
-                <th className="px-3 py-2">Amount</th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">{t('table.id')}</th>
+                <th className="px-3 py-2">{t('table.title')}</th>
+                <th className="px-3 py-2">{t('table.category')}</th>
+                <th className="px-3 py-2">{t('table.amount')}</th>
+                <th className="px-3 py-2">{t('table.date')}</th>
+                <th className="px-3 py-2">{t('table.status')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">

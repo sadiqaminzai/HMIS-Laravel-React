@@ -23,6 +23,98 @@ export interface PrescriptionPrintAssetSettings {
   signatureHeight: number;
 }
 
+export type PrintPaperSize = 'a4' | 'a5' | '80mm' | '76mm' | '58mm';
+
+export const PRINT_PAPER_SIZES: PrintPaperSize[] = ['a4', 'a5', '80mm', '76mm', '58mm'];
+
+export const PRINT_PAPER_SIZE_LABELS: Record<PrintPaperSize, string> = {
+  a4: 'A4 (Full Page)',
+  a5: 'A5 (Half Page)',
+  '80mm': '80mm Thermal (Mini Printer)',
+  '76mm': '76mm Thermal (Mini Printer)',
+  '58mm': '58mm Thermal (Mini Printer)',
+};
+
+/**
+ * Every printable document is configured separately: counter receipts usually go to
+ * a thermal mini printer while purchase invoices, lab reports and discharge
+ * summaries go to A4. Keys must match config/print.php on the backend.
+ */
+export type PrintModule =
+  | 'pharmacy_sales_invoice'
+  | 'pharmacy_purchase_invoice'
+  | 'pharmacy_sales_return_invoice'
+  | 'pharmacy_purchase_return_invoice'
+  | 'patient_card'
+  | 'appointment_receipt'
+  | 'lab_invoice'
+  | 'lab_report'
+  | 'surgery_receipt'
+  | 'surgery_discharge_summary'
+  | 'room_booking_receipt'
+  | 'expense_receipt'
+  | 'other_income_receipt'
+  | 'prescription';
+
+export const PRINT_MODULE_GROUPS: { group: string; modules: { key: PrintModule; label: string }[] }[] = [
+  {
+    group: 'Pharmacy',
+    modules: [
+      { key: 'pharmacy_sales_invoice', label: 'Sales Invoice' },
+      { key: 'pharmacy_purchase_invoice', label: 'Purchase Invoice' },
+      { key: 'pharmacy_sales_return_invoice', label: 'Return In (Sales Return)' },
+      { key: 'pharmacy_purchase_return_invoice', label: 'Return Out (Purchase Return)' },
+    ],
+  },
+  {
+    group: 'Reception',
+    modules: [
+      { key: 'patient_card', label: 'Patient Registration Card' },
+      { key: 'appointment_receipt', label: 'Appointment / OPD Bill' },
+      { key: 'room_booking_receipt', label: 'Room Booking Receipt' },
+    ],
+  },
+  {
+    group: 'Laboratory',
+    modules: [
+      { key: 'lab_invoice', label: 'Lab Invoice / Receipt' },
+      { key: 'lab_report', label: 'Lab Test Report' },
+    ],
+  },
+  {
+    group: 'Surgery',
+    modules: [
+      { key: 'surgery_receipt', label: 'Surgery Receipt' },
+      { key: 'surgery_discharge_summary', label: 'Discharge Summary' },
+    ],
+  },
+  {
+    group: 'Finance & Prescriptions',
+    modules: [
+      { key: 'expense_receipt', label: 'Expense Receipt' },
+      { key: 'other_income_receipt', label: 'Other Income Receipt' },
+      { key: 'prescription', label: 'Prescription' },
+    ],
+  },
+];
+
+export const DEFAULT_PRINT_PAPER_SIZES: Record<PrintModule, PrintPaperSize> = {
+  pharmacy_sales_invoice: '80mm',
+  pharmacy_purchase_invoice: 'a4',
+  pharmacy_sales_return_invoice: '80mm',
+  pharmacy_purchase_return_invoice: 'a4',
+  patient_card: 'a4',
+  appointment_receipt: '80mm',
+  lab_invoice: '80mm',
+  lab_report: 'a4',
+  surgery_receipt: '80mm',
+  surgery_discharge_summary: 'a4',
+  room_booking_receipt: '80mm',
+  expense_receipt: 'a4',
+  other_income_receipt: 'a4',
+  prescription: 'a4',
+};
+
 export interface HospitalSetting {
   hospitalId: string;
   defaultDoctorId?: string;
@@ -34,6 +126,8 @@ export interface HospitalSetting {
   showOutOfStockMedicines: boolean;
   showOutOfStockMedicinesForPharmacy: boolean;
   showPrescriptionListMeta: boolean;
+  /** Paper size configured per printable document for this hospital. */
+  printPaperSizes: Record<PrintModule, PrintPaperSize>;
 }
 
 interface Settings {
@@ -55,6 +149,8 @@ interface SettingsContextType {
   getShowOutOfStockMedicines: (hospitalId: string) => boolean;
   getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
   getShowPrescriptionListMeta: (hospitalId: string) => boolean;
+  getPrintPaperSize: (hospitalId: string, module: PrintModule) => PrintPaperSize;
+  getPrintPaperSizes: (hospitalId: string) => Record<PrintModule, PrintPaperSize>;
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
@@ -87,6 +183,18 @@ const defaultSettings: Settings = {
   defaultToWalkIn: false
 };
 
+const normalizePaperSizes = (raw: unknown): Record<PrintModule, PrintPaperSize> => {
+  const stored = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  const resolved = { ...DEFAULT_PRINT_PAPER_SIZES };
+
+  (Object.keys(DEFAULT_PRINT_PAPER_SIZES) as PrintModule[]).forEach((module) => {
+    const candidate = String(stored[module] ?? '').toLowerCase() as PrintPaperSize;
+    if (PRINT_PAPER_SIZES.includes(candidate)) resolved[module] = candidate;
+  });
+
+  return resolved;
+};
+
 const toPositiveInt = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -106,6 +214,8 @@ const SettingsContext = createContext<SettingsContextType>({
   getShowOutOfStockMedicines: () => false,
   getShowOutOfStockMedicinesForPharmacy: () => false,
   getShowPrescriptionListMeta: () => true,
+  getPrintPaperSize: (_hospitalId: string, module: PrintModule) => DEFAULT_PRINT_PAPER_SIZES[module],
+  getPrintPaperSizes: () => ({ ...DEFAULT_PRINT_PAPER_SIZES }),
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -197,6 +307,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (payload.showPrescriptionListMeta !== undefined) {
       body.show_prescription_list_meta = payload.showPrescriptionListMeta;
     }
+    if (payload.printPaperSizes !== undefined) {
+      body.print_paper_sizes = payload.printPaperSizes;
+    }
 
     const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
     setSettingsByHospital((prev) => ({
@@ -231,6 +344,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
       showPrescriptionListMeta: Boolean(raw.show_prescription_list_meta ?? true),
+      printPaperSizes: normalizePaperSizes(raw.print_paper_sizes),
     };
   };
 
@@ -246,6 +360,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       showOutOfStockMedicines: false,
       showOutOfStockMedicinesForPharmacy: false,
       showPrescriptionListMeta: true,
+      printPaperSizes: { ...DEFAULT_PRINT_PAPER_SIZES },
     };
   };
 
@@ -285,6 +400,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).showPrescriptionListMeta;
   };
 
+  const getPrintPaperSize = (hospitalId: string, module: PrintModule): PrintPaperSize => {
+    return getHospitalSetting(hospitalId).printPaperSizes[module] ?? DEFAULT_PRINT_PAPER_SIZES[module];
+  };
+
+  const getPrintPaperSizes = (hospitalId: string): Record<PrintModule, PrintPaperSize> => {
+    return getHospitalSetting(hospitalId).printPaperSizes;
+  };
+
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
     const config = getPatientIdConfig(hospitalId);
     const number = (config.startNumber + currentCount).toString().padStart(config.digits, '0');
@@ -304,6 +427,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getShowOutOfStockMedicines,
       getShowOutOfStockMedicinesForPharmacy,
       getShowPrescriptionListMeta,
+      getPrintPaperSize,
+      getPrintPaperSizes,
       generatePatientId,
       loadHospitalSetting,
       saveHospitalSetting

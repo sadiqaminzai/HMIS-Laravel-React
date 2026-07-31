@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Save } from 'lucide-react';
 import { LabTest, TestTemplate, TestResult } from '../types';
 
@@ -10,6 +11,7 @@ interface LabResultEntryNewProps {
 }
 
 export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: LabResultEntryNewProps) {
+  const { t } = useTranslation();
   const [results, setResults] = useState<TestResult[]>([]);
   const [remarks, setRemarks] = useState('');
 
@@ -114,11 +116,11 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
                   <table className="w-full">
                     <thead className="bg-gray-50 dark:bg-gray-700/50">
                       <tr>
-                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[25%]">Parameter</th>
-                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[10%]">Unit</th>
-                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[20%]">Normal Range</th>
+                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[25%]">{t('table.parameter')}</th>
+                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[10%]">{t('table.unit')}</th>
+                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[20%]">{t('table.normalRange')}</th>
                         <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[15%]">Result *</th>
-                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[30%]">Remarks</th>
+                        <th className="text-left py-1.5 px-2 text-xs font-semibold text-gray-900 dark:text-white w-[30%]">{t('table.remarks')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -185,9 +187,7 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
           <button
             onClick={onClose}
             className="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-          >
-            Cancel
-          </button>
+          >{t('ui.cancel')}</button>
           <button
             onClick={handleSubmit}
             className="flex-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center justify-center gap-1.5"
