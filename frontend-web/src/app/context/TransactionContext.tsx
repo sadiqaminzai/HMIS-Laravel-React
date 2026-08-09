@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Transaction, TransactionDetail } from '../types';
 import api from '../../api/axios';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 
@@ -79,8 +80,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
     setLoading(true);
     try {
-      const { data } = await api.get('/transactions', { params: { per_page: 200 } });
-      const records: any[] = data.data ?? data;
+      const records = await fetchAllPages<any>('/transactions');
       setTransactions(records.map(mapTransaction));
     } catch (err: any) {
       const status = err?.response?.status;

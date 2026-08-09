@@ -64,8 +64,12 @@ class PatientController extends Controller
             });
         }
 
-        $perPage = max(1, min($request->integer('per_page', 25), 200));
-        $patients = $query->orderBy('name')->paginate($perPage);
+        // Pagination is retained so no single query/response is huge; clients that
+        // need the full list page through it. The ceiling is only a memory guard.
+        $perPage = max(1, min($request->integer('per_page', 25), 1000));
+        // id tiebreaker: ordering by name alone is non-deterministic for duplicate
+        // names, which can drop or repeat rows across page boundaries.
+        $patients = $query->orderBy('name')->orderBy('id')->paginate($perPage);
         $patients->setCollection(
             $patients->getCollection()->map(fn ($patient) => $this->withMediaUrls($patient))
         );

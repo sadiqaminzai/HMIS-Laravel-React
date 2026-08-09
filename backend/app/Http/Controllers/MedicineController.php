@@ -52,10 +52,14 @@ class MedicineController extends Controller
             });
         }
 
-        $perPage = max(1, min($request->integer('per_page', 25), 200));
+        // The old hard cap of 200 silently truncated large catalogues. Pagination is
+        // kept (the ['hospital_id','brand_name'] index makes it cheap and avoids a
+        // filesort), and clients that need the full list page through it. The
+        // remaining ceiling is only a memory guard against an absurd per_page.
+        $perPage = max(1, min($request->integer('per_page', 25), 1000));
 
         return response()->json(
-            $query->orderBy('brand_name')->paginate($perPage)
+            $query->orderBy('brand_name')->orderBy('id')->paginate($perPage)
         );
     }
 

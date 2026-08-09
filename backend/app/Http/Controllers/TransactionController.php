@@ -36,9 +36,12 @@ class TransactionController extends Controller
             $query->where('trx_type', $request->string('trx_type'));
         }
 
-        $perPage = max(1, min($request->integer('per_page', 25), 200));
+        // Pagination is retained so no single query/response is huge; clients that
+        // need the full list page through it. The ceiling is only a memory guard.
+        $perPage = max(1, min($request->integer('per_page', 25), 1000));
 
-        return response()->json($query->orderByDesc('created_at')->paginate($perPage));
+        // id tiebreaker keeps paging stable when rows share a created_at timestamp.
+        return response()->json($query->orderByDesc('created_at')->orderByDesc('id')->paginate($perPage));
     }
 
     public function store(Request $request)

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Medicine } from '../types';
 import api from '../../api/axios';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 
@@ -58,8 +59,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true);
     try {
-      const { data } = await api.get('/medicines', { params: { per_page: 200 } });
-      const records: any[] = data.data ?? data;
+      const records = await fetchAllPages<any>('/medicines');
       setMedicines(records.map(mapMedicine));
     } catch (err: any) {
       const status = err?.response?.status;
