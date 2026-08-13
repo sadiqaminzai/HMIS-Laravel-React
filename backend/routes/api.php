@@ -142,6 +142,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Medicines
 	Route::get('medicines', [MedicineController::class, 'index'])->middleware('permission_or_doctor:view_medicines,manage_medicines,create_prescription,manage_prescriptions');
+	// Registered before /medicines/{medicine} so 'barcode-lookup' is not
+	// swallowed by the wildcard route.
+	Route::get('medicines/barcode-lookup', [MedicineController::class, 'findByBarcode'])->middleware('permission_or_doctor:view_medicines,manage_medicines,dispense_medicines');
+	Route::post('medicines/{medicine}/generate-barcode', [MedicineController::class, 'generateBarcode'])->middleware('permission:edit_medicines,manage_medicines');
 	Route::get('medicines/{medicine}', [MedicineController::class, 'show'])->middleware('permission_or_doctor:view_medicines,manage_medicines,create_prescription,manage_prescriptions');
 	Route::post('medicines', [MedicineController::class, 'store'])->middleware('permission:add_medicines,manage_medicines');
 	Route::match(['PUT', 'PATCH'], 'medicines/{medicine}', [MedicineController::class, 'update'])->middleware('permission:edit_medicines,manage_medicines');

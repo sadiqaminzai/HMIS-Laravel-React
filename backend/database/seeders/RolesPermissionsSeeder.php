@@ -147,6 +147,9 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'manage_discounts', 'display_name' => 'Manage Discounts', 'category' => 'Finance'],
             // Controls who may change the hospital-wide print paper size.
             ['name' => 'manage_print_settings', 'display_name' => 'Manage Print Settings', 'category' => 'Settings'],
+            ['name' => 'manage_pharmacy_settings', 'display_name' => 'Manage Pharmacy Settings', 'category' => 'Settings'],
+            ['name' => 'pharmacy_walk_in_sales', 'display_name' => 'Pharmacy Walk-in Sales', 'category' => 'Pharmacy'],
+            ['name' => 'manage_medicine_barcodes', 'display_name' => 'Manage Medicine Barcodes', 'category' => 'Pharmacy'],
             ['name' => 'manage_rooms', 'display_name' => 'Manage Rooms', 'category' => 'Room Management'],
             ['name' => 'view_rooms', 'display_name' => 'View Rooms', 'category' => 'Room Management'],
             ['name' => 'manage_room_bookings', 'display_name' => 'Manage Room Bookings', 'category' => 'Room Management'],

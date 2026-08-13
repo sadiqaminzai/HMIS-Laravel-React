@@ -8,6 +8,7 @@ use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Transaction;
+use App\Models\WalkInPatient;
 use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,7 @@ class TransactionController extends Controller
     {
         $user = $request->user();
 
-        $query = Transaction::query()->with(['details.medicine', 'supplier', 'patient']);
+        $query = Transaction::query()->with(['details.medicine', 'supplier', 'patient', 'walkInPatient']);
 
         if ($user->role !== 'super_admin') {
             $query->where('hospital_id', $user->hospital_id ?? 0);
@@ -54,11 +55,13 @@ class TransactionController extends Controller
             $data['hospital_id'] = $request->user()->hospital_id;
         }
 
+        $this->resolveWalkInCustomer($data, (int) $data['hospital_id'], $request->user()->name ?? null);
         $this->ensurePartyConsistency($data);
         $this->fillPartyNames($data);
 
         $transaction = DB::transaction(function () use ($data, $request) {
-            $items = $data['items'] ?? [];
+            // Convert pack lines into base pieces before anything touches stock.
+            $items = $this->withSaleUnits($data['items'] ?? []);
             unset($data['items']);
 
             $this->ensureStockAvailable(
@@ -98,7 +101,7 @@ class TransactionController extends Controller
                 );
             }
 
-            $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $transaction->load(['details.medicine', 'supplier', 'patient', 'walkInPatient']);
             $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
 
             return $transaction;
@@ -111,7 +114,7 @@ class TransactionController extends Controller
     {
         $this->authorizeScope($request->user(), $transaction);
 
-        return response()->json($transaction->load(['details.medicine', 'supplier', 'patient']));
+        return response()->json($transaction->load(['details.medicine', 'supplier', 'patient', 'walkInPatient']));
     }
 
     public function update(Request $request, Transaction $transaction)
@@ -125,13 +128,15 @@ class TransactionController extends Controller
             $data['hospital_id'] = $transaction->hospital_id;
         }
 
+        $this->resolveWalkInCustomer($data, (int) $data['hospital_id'], $request->user()->name ?? null);
         $this->ensurePartyConsistency($data);
         $this->fillPartyNames($data);
 
         $actor = $request->user()->name ?? null;
 
         $transaction = DB::transaction(function () use ($data, $transaction, $request, $actor) {
-            $items = $data['items'] ?? [];
+            // Convert pack lines into base pieces before anything touches stock.
+            $items = $this->withSaleUnits($data['items'] ?? []);
             unset($data['items']);
 
             $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
@@ -152,6 +157,13 @@ class TransactionController extends Controller
                     'batch_no' => $detail->batch_no,
                     'qtty' => $detail->qtty,
                     'bonus' => $detail->bonus,
+                    // Stock moves in PIECES, so a reversal has to give back the
+                    // same base quantity that was taken. Omitting these made
+                    // applyStockChange fall back to the pack count -- a 10-pack
+                    // line of 60 added 600 pieces but only ever removed 10,
+                    // leaving 590 phantom pieces behind on every edit.
+                    'base_qtty' => $detail->base_qtty,
+                    'base_bonus' => $detail->base_bonus,
                     'price' => $detail->price,
                     'expiry_date' => $detail->expiry_date,
                 ];
@@ -212,7 +224,7 @@ class TransactionController extends Controller
                 }
             }
 
-            $transaction->load(['details.medicine', 'supplier', 'patient']);
+            $transaction->load(['details.medicine', 'supplier', 'patient', 'walkInPatient']);
             $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
 
             return $transaction;
@@ -239,6 +251,9 @@ class TransactionController extends Controller
                         'batch_no' => $detail->batch_no,
                         'qtty' => $detail->qtty,
                         'bonus' => $detail->bonus,
+                        // Same reason as in update(): give back base pieces, not packs.
+                        'base_qtty' => $detail->base_qtty,
+                        'base_bonus' => $detail->base_bonus,
                         'price' => $detail->price,
                         'expiry_date' => $detail->expiry_date,
                     ],
@@ -269,11 +284,29 @@ class TransactionController extends Controller
                 'nullable',
                 'exists:suppliers,id',
             ],
+            // A sale needs a party, but that party may be a registered hospital
+            // patient OR a walk-in customer (retail pharmacy). patient_id is only
+            // required when the sale is NOT flagged as walk-in.
             'patient_id' => [
-                Rule::requiredIf(fn () => in_array($request->input('trx_type'), ['sales', 'sales_return'], true)),
+                Rule::requiredIf(fn () => in_array($request->input('trx_type'), ['sales', 'sales_return'], true)
+                    && !$request->boolean('is_walk_in')),
                 'nullable',
                 'exists:patients,id',
             ],
+            'is_walk_in' => ['nullable', 'boolean'],
+            'walk_in_patient_id' => ['nullable', 'exists:walk_in_patients,id'],
+            // Free-text details for a walk-in customer. Only the name is required,
+            // and only when a walk-in sale is not reusing an existing walk-in record.
+            'walk_in_customer.name' => [
+                Rule::requiredIf(fn () => $request->boolean('is_walk_in')
+                    && in_array($request->input('trx_type'), ['sales', 'sales_return'], true)
+                    && !$request->filled('walk_in_patient_id')),
+                'nullable', 'string', 'max:255',
+            ],
+            'walk_in_customer.phone' => ['nullable', 'string', 'max:30'],
+            'walk_in_customer.address' => ['nullable', 'string', 'max:255'],
+            'walk_in_customer.age' => ['nullable', 'integer', 'min:0', 'max:150'],
+            'walk_in_customer.gender' => ['nullable', 'in:male,female,other'],
             'grand_total' => ['nullable', 'numeric', 'min:0'],
             'total_discount' => ['nullable', 'numeric', 'min:0'],
             'total_tax' => ['nullable', 'numeric', 'min:0'],
@@ -286,11 +319,61 @@ class TransactionController extends Controller
             'items.*.batch_no' => ['nullable', 'string', 'max:255'],
             'items.*.expiry_date' => ['nullable', 'date'],
             'items.*.qtty' => ['required', 'integer', 'min:1'],
+            'items.*.sale_unit' => ['nullable', 'in:piece,strip,pack'],
             'items.*.bonus' => ['nullable', 'integer', 'min:0'],
             'items.*.price' => ['required', 'numeric', 'min:0'],
             'items.*.discount' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.tax' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
+    }
+
+    /**
+     * Augment each line with its base (piece) quantities.
+     *
+     * Inventory -- stocks, medicines.stock, stock_movements -- is always held in
+     * pieces. Quantities are converted once here so the rest of the pipeline is
+     * untouched, and the pack size is snapshotted onto the line so that editing a
+     * medicine's pack size later never rewrites past invoices.
+     */
+    private function withSaleUnits(array $items): array
+    {
+        $medicineIds = array_values(array_unique(array_filter(array_map(
+            fn ($item) => (int) ($item['medicine_id'] ?? 0),
+            $items
+        ))));
+
+        // Both tiers are needed: a strip line converts by pieces_per_strip, a pack
+        // line by the full pack_size.
+        $packaging = Medicine::query()
+            ->whereIn('id', $medicineIds)
+            ->get(['id', 'pack_size', 'pieces_per_strip'])
+            ->keyBy('id');
+
+        return array_map(function (array $item) use ($packaging) {
+            $medicineId = (int) ($item['medicine_id'] ?? 0);
+            $requested = (string) ($item['sale_unit'] ?? 'piece');
+            $saleUnit = in_array($requested, ['piece', 'strip', 'pack'], true) ? $requested : 'piece';
+
+            $medicine = $packaging->get($medicineId);
+            $packSize = max(1, (int) ($medicine->pack_size ?? 1));
+            $perStrip = max(1, (int) ($medicine->pieces_per_strip ?? 1));
+
+            // A piece line always converts 1:1, whatever the packaging is.
+            $factor = match ($saleUnit) {
+                'pack' => $packSize,
+                'strip' => $perStrip,
+                default => 1,
+            };
+
+            $item['sale_unit'] = $saleUnit;
+            // Snapshot the pieces-per-unit actually used, so later packaging edits
+            // never rewrite the history of this line.
+            $item['pack_size_snapshot'] = $factor;
+            $item['base_qtty'] = (int) ($item['qtty'] ?? 0) * $factor;
+            $item['base_bonus'] = (int) ($item['bonus'] ?? 0) * $factor;
+
+            return $item;
+        }, $items);
     }
 
     private function ensureStockAvailable(int $hospitalId, string $trxType, array $items, bool $lockRows = false): void
@@ -306,7 +389,9 @@ class TransactionController extends Controller
                 continue;
             }
             $batchNo = $item['batch_no'] ?? null;
-            $required = (int) ($item['qtty'] ?? 0) + (int) ($item['bonus'] ?? 0);
+            // Base (piece) quantities: a pack line reserves pack_size pieces.
+            $required = (int) ($item['base_qtty'] ?? $item['qtty'] ?? 0)
+                + (int) ($item['base_bonus'] ?? $item['bonus'] ?? 0);
             if ($required <= 0) {
                 continue;
             }
@@ -372,6 +457,10 @@ class TransactionController extends Controller
             'expiry_date' => $item['expiry_date'] ?? null,
             'qtty' => $qtty,
             'bonus' => (int) ($item['bonus'] ?? 0),
+            'sale_unit' => in_array(($item['sale_unit'] ?? 'piece'), ['piece', 'strip', 'pack'], true) ? $item['sale_unit'] : 'piece',
+            'pack_size_snapshot' => max(1, (int) ($item['pack_size_snapshot'] ?? 1)),
+            'base_qtty' => (int) ($item['base_qtty'] ?? $qtty),
+            'base_bonus' => (int) ($item['base_bonus'] ?? ($item['bonus'] ?? 0)),
             'price' => $price,
             'discount' => $discount,
             'tax' => $tax,
@@ -432,13 +521,64 @@ class TransactionController extends Controller
             $patient = Patient::find((int) $data['patient_id']);
             $data['patient_name'] = $patient?->name;
         }
+
+        // Walk-in sale: the customer name is snapshot onto the transaction the same
+        // way a registered patient's name is, so receipts and lists render
+        // identically for both kinds of sale.
+        if (!empty($data['walk_in_patient_id'])) {
+            $walkIn = WalkInPatient::find((int) $data['walk_in_patient_id']);
+            $data['patient_name'] = $walkIn?->name;
+        }
+    }
+
+    /**
+     * Turn the free-text walk-in customer details into a WalkInPatient record and
+     * put its id on the transaction. Reuses the model already shared by
+     * prescriptions and lab orders rather than introducing a pharmacy-only customer.
+     */
+    private function resolveWalkInCustomer(array &$data, int $hospitalId, ?string $actor): void
+    {
+        $isWalkIn = (bool) ($data['is_walk_in'] ?? false);
+        $customer = $data['walk_in_customer'] ?? null;
+        unset($data['walk_in_customer']);
+
+        if (!$isWalkIn) {
+            $data['is_walk_in'] = false;
+            $data['walk_in_patient_id'] = null;
+            return;
+        }
+
+        // A walk-in sale never carries a registered patient.
+        $data['is_walk_in'] = true;
+        $data['patient_id'] = null;
+
+        if (!empty($data['walk_in_patient_id'])) {
+            $existing = WalkInPatient::find((int) $data['walk_in_patient_id']);
+            if (!$existing || (int) $existing->hospital_id !== $hospitalId) {
+                abort(422, 'Walk-in customer does not belong to the selected hospital');
+            }
+            return;
+        }
+
+        $walkIn = WalkInPatient::create([
+            'hospital_id' => $hospitalId,
+            'name' => trim((string) ($customer['name'] ?? '')) ?: 'Walk-in Customer',
+            'age' => (int) ($customer['age'] ?? 0),
+            'gender' => $customer['gender'] ?? null,
+            'phone' => $customer['phone'] ?? null,
+            'address' => $customer['address'] ?? null,
+            'created_by' => $actor,
+        ]);
+
+        $data['walk_in_patient_id'] = $walkIn->id;
     }
 
     private function applyStockChange(int $hospitalId, array $item, string $trxType, bool $reverse = false, ?int $trxId = null, ?string $actor = null): void
     {
         $medicineId = (int) ($item['medicine_id'] ?? 0);
-        $qtty = (int) ($item['qtty'] ?? 0);
-        $bonus = (int) ($item['bonus'] ?? 0);
+        // Always move base pieces through inventory, never pack counts.
+        $qtty = (int) ($item['base_qtty'] ?? $item['qtty'] ?? 0);
+        $bonus = (int) ($item['base_bonus'] ?? $item['bonus'] ?? 0);
         $price = (float) ($item['price'] ?? 0);
         $expiryDate = $item['expiry_date'] ?? null;
 

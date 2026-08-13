@@ -9,6 +9,7 @@ use App\Models\LabOrder;
 use App\Models\LedgerEntry;
 use App\Models\Manufacturer;
 use App\Models\Medicine;
+use App\Models\TransactionDetail;
 use App\Models\MedicineType;
 use App\Models\Patient;
 use App\Models\PatientSurgery;
@@ -266,13 +267,63 @@ class DashboardController extends Controller
             ->whereNull('voided_at')
             ->whereBetween('posted_at', [$financialStart, $financialEnd]);
 
+        // Stock is held in PIECES while cost_price is quoted per PACK, so the two
+        // cannot be multiplied directly: 10 boxes of 60 tablets at 165/box is
+        // worth 1,650, not 600 x 165 = 99,000.
+        //
+        // The per-piece cost comes from the purchases that actually delivered the
+        // stock -- SUM(packs x pack price) / SUM(pieces received) -- rather than
+        // from the medicine's current pack_size. Packaging is editable, and using
+        // today's pack_size to value goods received under a different one makes
+        // the stock figure move every time someone corrects a pack size. This is
+        // the same reason transaction lines snapshot pack_size_snapshot.
+        //
+        // Medicines with no purchase history (opening balances, manual entry)
+        // fall back to the current cost_price converted per piece.
+        $unitCosts = TransactionDetail::query()
+            ->join('transactions', 'transactions.id', '=', 'transaction_details.trx_id')
+            ->where('transactions.trx_type', 'purchase')
+            ->when($hospitalId, fn ($q) => $q->where('transactions.hospital_id', $hospitalId))
+            ->groupBy('transaction_details.medicine_id')
+            ->selectRaw('transaction_details.medicine_id')
+            // Weighted average cost per piece = what the supplier actually
+            // billed, divided by every piece that arrived.
+            //
+            // `amount` is used rather than qtty x price because it is net of the
+            // line discount, and base_bonus is included in the divisor because
+            // free goods occupy stock without adding cost -- they lower the
+            // average, which is what "cost of what we hold" means. Valuing them
+            // at list price would report stock worth more than was ever paid.
+            ->selectRaw('SUM(transaction_details.amount)'
+                . ' / NULLIF(SUM(transaction_details.base_qtty + transaction_details.base_bonus), 0)'
+                . ' as unit_cost');
+
         $totalStockCostAmount = round((float) Medicine::query()
-            ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
-            ->selectRaw('COALESCE(SUM(COALESCE(stock, 0) * COALESCE(cost_price, 0)), 0) as total_stock_cost_amount')
+            ->when($hospitalId, fn ($q) => $q->where('medicines.hospital_id', $hospitalId))
+            ->leftJoinSub($unitCosts, 'uc', 'uc.medicine_id', '=', 'medicines.id')
+            ->selectRaw(
+                'COALESCE(SUM(COALESCE(medicines.stock, 0) * COALESCE(uc.unit_cost,'
+                . ' COALESCE(medicines.cost_price, 0) / GREATEST(COALESCE(medicines.pack_size, 1), 1))), 0)'
+                . ' as total_stock_cost_amount'
+            )
             ->value('total_stock_cost_amount'), 2);
 
+        // Returning goods to a supplier brings cash in, but it is not trading
+        // income -- it is inventory going back out. Excluded here and netted
+        // against inventory below, so income means "what we actually earned".
         $totalIncome = round((float) (clone $dailyLedgerQuery)
             ->where('entry_direction', 'income')
+            ->where(function ($query) {
+                $query->whereNull('module')
+                    ->orWhere('module', '!=', 'pharmacy')
+                    ->orWhere('category', '!=', 'purchase_return');
+            })
+            ->sum('net_amount'), 2);
+
+        $purchaseReturns = round((float) (clone $dailyLedgerQuery)
+            ->where('entry_direction', 'income')
+            ->where('module', 'pharmacy')
+            ->where('category', 'purchase_return')
             ->sum('net_amount'), 2);
 
         $totalSalary = round((float) (clone $dailyLedgerQuery)
@@ -280,11 +331,32 @@ class DashboardController extends Controller
             ->where('module', 'salary')
             ->sum('net_amount'), 2);
 
+        // Buying stock is not an expense -- it exchanges cash for an asset that
+        // is already reported as Available Stock. Counting it here made a
+        // restocking pharmacy look catastrophically unprofitable and double
+        // counted the same money (once as a loss, once as inventory).
+        //
+        // It is still shown, on its own tile, because the cash really did leave.
+        // A sales return is also cash out that adds stock back, so it belongs
+        // with inventory rather than with rent and utilities.
+        $inventoryPurchases = round((float) (clone $dailyLedgerQuery)
+            ->where('entry_direction', 'expense')
+            ->where('module', 'pharmacy')
+            ->whereIn('category', ['purchase', 'sales_return'])
+            ->sum('net_amount') - $purchaseReturns, 2);
+
+        // Operating expenses: what the hospital actually consumes -- rent,
+        // utilities, supplies. Salary is reported separately.
         $totalExpenses = round((float) (clone $dailyLedgerQuery)
             ->where('entry_direction', 'expense')
             ->where(function ($query) {
                 $query->whereNull('module')
                     ->orWhere('module', '!=', 'salary');
+            })
+            ->where(function ($query) {
+                $query->whereNull('module')
+                    ->orWhere('module', '!=', 'pharmacy')
+                    ->orWhereNotIn('category', ['purchase', 'sales_return']);
             })
             ->sum('net_amount'), 2);
 
@@ -324,9 +396,14 @@ class DashboardController extends Controller
             'total_other_income' => $totalOtherIncome,
             'total_income' => $totalIncome,
             'total_expenses' => $totalExpenses,
+            'total_inventory_purchases' => $inventoryPurchases,
             'total_salary' => $totalSalary,
             'total_expenses_with_salary' => $totalExpensesWithSalary,
+            // Trading result: income less what was consumed. Stock bought but not
+            // yet sold is excluded -- it has not been used up, it is on the shelf.
             'total_revenue' => round($totalIncome - $totalExpensesWithSalary, 2),
+            // Kept so the cash position is still available to anyone who needs it.
+            'total_cash_flow' => round($totalIncome - $totalExpensesWithSalary - $inventoryPurchases, 2),
         ];
 
         return response()->json([

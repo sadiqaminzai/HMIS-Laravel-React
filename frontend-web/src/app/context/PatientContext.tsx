@@ -28,7 +28,9 @@ const mapPatient = (p: any): Patient => ({
   status: (p.status ?? 'active') as Patient['status'],
   image: p.image_url ?? p.image_path ?? '',
   createdAt: p.created_at ? new Date(p.created_at) : new Date(),
+  createdBy: p.created_by ?? undefined,
   updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+  updatedBy: p.updated_by ?? undefined,
   verificationToken: p.verification_token ?? undefined,
 });
 

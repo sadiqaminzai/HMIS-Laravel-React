@@ -32,6 +32,8 @@ class Appointment extends Model
         'total_amount',
         'currency',
         'payment_status',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

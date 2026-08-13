@@ -4,6 +4,7 @@ import { Plus, Pencil, Search, Users, Eye, Trash2, X, Upload, Printer, FileText,
 import { Hospital, UserRole, Patient } from '../types';
 import { usePatients } from '../context/PatientContext';
 import { toast } from 'sonner';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useHospitals } from '../context/HospitalContext';
@@ -69,7 +70,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientImageError, setPatientImageError] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  // Ref-backed so a double-click on a slow save cannot register twice.
+  const { submitting, guard } = useSubmitGuard();
 
   React.useEffect(() => {
     setPatientImageError(false);
@@ -439,14 +441,13 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     }
   };
 
-  const handleSubmitAdd = async (e: React.FormEvent) => {
+  const handleSubmitAdd = guard(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) {
       toast.warning('You are not authorized to register patients');
       return;
     }
     const newPatientId = formData.patientId || getNextPatientId(String(formData.hospitalId));
-    setSubmitting(true);
     try {
       await addPatient({
         hospitalId: formData.hospitalId,
@@ -471,18 +472,15 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       if (validation?.patient_id) {
         setFormData((prev) => ({ ...prev, patientId: getNextPatientId(String(prev.hospitalId)) }));
       }
-    } finally {
-      setSubmitting(false);
     }
-  };
+  });
 
-  const handleSubmitEdit = async (e: React.FormEvent) => {
+  const handleSubmitEdit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatient || !canEdit) {
       toast.warning('You are not authorized to manage patients');
       return;
     }
-    setSubmitting(true);
     try {
       await updatePatient({
         id: selectedPatient.id,
@@ -501,10 +499,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       setImagePreview(null);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update patient');
-    } finally {
-      setSubmitting(false);
     }
-  };
+  });
 
   const confirmDelete = async () => {
     if (!selectedPatient || !canDelete) {
@@ -1190,8 +1186,12 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   top: 0 !important;
                   margin: 0 !important;
                   padding: 0 !important;
-                  width: 76mm !important;
-                  height: 54mm !important;
+                  /* Follows the configured roll width instead of a hardcoded
+                     76mm, which overflowed a 58mm roll and left a margin on an
+                     80mm one. 4mm is taken off for the printer's dead zone. */
+                  width: calc(${cardIsA4 ? '86mm' : cardPrintWidth} - 4mm) !important;
+                  height: auto !important;
+                  min-height: 0 !important;
                   background: white !important;
                   box-shadow: none !important;
                   border: none !important;
@@ -1207,12 +1207,20 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   box-shadow: none !important;
                 }
                 #patient-id-card-print .qr-code {
-                  width: 14mm !important;
-                  height: 14mm !important;
+                  width: ${cardPrintWidth === '58mm' ? '12mm' : '16mm'} !important;
+                  height: ${cardPrintWidth === '58mm' ? '12mm' : '16mm'} !important;
+                }
+                /* A monochrome thermal head cannot render a photo usefully --
+                   it comes out as a black smear -- so it is dropped and the
+                   space given to the details that identify the patient. */
+                #patient-id-card-print .patient-card-photo {
+                  display: ${cardIsA4 ? 'block' : 'none'} !important;
                 }
                 @page {
-                  size: ${cardIsA4 ? 'A4' : `${cardPrintWidth} 60mm`};
-                  margin: 0;
+                  /* auto height: a thermal roll is continuous, so a fixed 60mm
+                     page fed blank paper after every card. */
+                  size: ${cardIsA4 ? 'A4' : `${cardPrintWidth} auto`};
+                  margin: 2mm;
                 }
               }
             `}

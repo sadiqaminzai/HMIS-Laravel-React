@@ -18,6 +18,8 @@ class WalkInPatient extends Model
         'name',
         'age',
         'gender',
+        'phone',
+        'address',
         'created_by',
     ];
 

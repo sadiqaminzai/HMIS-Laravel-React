@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Printer, Phone, Mail, MapPin } from 'lucide-react';
 import { Hospital, LabTest, TestTemplate, Patient, Doctor } from '../types';
 import { formatDate } from '../utils/date';
+import { useSettings } from '../context/SettingsContext';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 
@@ -24,6 +25,15 @@ export function LabInvoicePrint({
   onClose,
   onPrint
 }: LabInvoicePrintProps) {
+  /**
+   * The lab receipt is handed to the patient at the counter, so it follows the
+   * hospital's configured paper size (Settings > Print) like every other
+   * counter document. It used to be hardcoded to A4, which meant a thermal
+   * printer received a full-page layout and produced an unreadable slip.
+   */
+  const { getPrintPaperSize } = useSettings();
+  const paperSize = getPrintPaperSize(hospital.id, 'lab_invoice');
+  const isThermal = paperSize !== 'a4' && paperSize !== 'a5';
   
   // Calculate financials
   const invoiceItems = labTest.selectedTests.map(testId => {
@@ -88,14 +98,16 @@ export function LabInvoicePrint({
               position: absolute;
               left: 0;
               top: 0;
-              width: 100%;
+              width: ${isThermal ? paperSize : '100%'};
+              min-height: 0 !important;
+              max-width: none !important;
               margin: 0;
-              padding: 20px;
+              padding: ${isThermal ? '3mm 2.5mm' : '20px'};
               background: white;
               display: block !important;
             }
             @page {
-              size: auto;
+              size: ${isThermal ? `${paperSize} auto` : paperSize === 'a5' ? 'A5' : 'A4'};
               margin: 0;
             }
           }
@@ -133,6 +145,74 @@ export function LabInvoicePrint({
 
         {/* Printable Content */}
         <div className="overflow-y-auto flex-1 bg-gray-100 dark:bg-gray-900 p-6">
+        {isThermal ? (
+          /*
+            Thermal receipt. A roll is 58-80mm wide, so the two-column A4 layout
+            below cannot be reused: everything is a single stacked column, the
+            figures are monospaced so they line up, and colour is dropped because
+            thermal printers are monochrome.
+          */
+          <div
+            id="lab-invoice-content"
+            className="bg-white mx-auto p-3 shadow-sm text-black font-mono"
+            style={{ width: paperSize, fontSize: paperSize === '58mm' ? '9px' : '10px' }}
+          >
+            <div className="text-center">
+              <div className="font-bold uppercase leading-tight" style={{ fontSize: '1.25em' }}>{hospital.name}</div>
+              {hospital.phone && <div style={{ fontSize: '0.9em' }}>{hospital.phone}</div>}
+              {hospital.address && <div style={{ fontSize: '0.85em' }}>{hospital.address}</div>}
+            </div>
+
+            <div className="text-center font-bold tracking-widest border-y border-black my-1.5 py-0.5">
+              LAB INVOICE
+            </div>
+
+            <div className="flex justify-between"><span>Invoice #</span><span className="font-bold">{labTest.testNumber}</span></div>
+            <div className="flex justify-between"><span>Date</span><span className="font-bold">{formatDate(new Date(), hospital.timezone, hospital.calendarType)}</span></div>
+            <div className="flex justify-between"><span>Patient</span><span className="font-bold text-right">{labTest.patientName}</span></div>
+            <div className="flex justify-between"><span>ID</span><span className="font-bold">{labTest.patientDisplayId || labTest.patientId}</span></div>
+            <div className="flex justify-between"><span>Age / Sex</span><span className="font-bold">{labTest.patientAge} / {labTest.patientGender}</span></div>
+            <div className="flex justify-between"><span>Doctor</span><span className="font-bold text-right">{labTest.doctorName}</span></div>
+
+            <div className="border-t border-black mt-1.5 pt-0.5" />
+            <div className="flex justify-between font-bold uppercase" style={{ fontSize: '0.85em' }}>
+              <span>Test</span><span>Amount</span>
+            </div>
+            <div className="border-t border-dashed border-black my-0.5" />
+
+            {/* Name on its own line so a long test name is never truncated. */}
+            {invoiceItems.map((item, idx) => (
+              <div key={idx} className="my-1">
+                <div className="font-bold leading-tight break-words">{idx + 1}. {item.name}</div>
+                <div className="flex justify-between">
+                  <span>{item.code}</span>
+                  <span className="font-bold">{item.price.toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+
+            <div className="border-t border-black mt-1 pt-0.5" />
+            <div className="flex justify-between"><span>Subtotal</span><span>{subtotal.toFixed(2)}</span></div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between"><span>Discount</span><span>-{discountAmount.toFixed(2)}</span></div>
+            )}
+            {tax > 0 && (
+              <div className="flex justify-between"><span>Tax</span><span>{tax.toFixed(2)}</span></div>
+            )}
+            <div className="flex justify-between font-bold border-y border-black my-1 py-0.5" style={{ fontSize: '1.2em' }}>
+              <span>TOTAL</span><span>{total.toFixed(2)}</span>
+            </div>
+
+            <div className="text-center font-bold border border-black py-0.5 my-1 tracking-widest">
+              {labTest.status === 'unpaid' ? 'UNPAID' : 'PAID'}
+            </div>
+
+            <div className="text-center mt-1.5" style={{ fontSize: '0.85em' }}>
+              Please keep this receipt to collect your report.
+            </div>
+            <div className="text-center" style={{ fontSize: '0.8em' }}>Thank you</div>
+          </div>
+        ) : (
           <div id="lab-invoice-content" className="bg-white mx-auto max-w-[210mm] min-h-[297mm] p-8 shadow-sm text-gray-900">
             {/* Header */}
             <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-8">
@@ -253,6 +333,7 @@ export function LabInvoicePrint({
               <p className="mt-4">Thank you for your business!</p>
             </div>
           </div>
+        )}
         </div>
       </div>
     </div>

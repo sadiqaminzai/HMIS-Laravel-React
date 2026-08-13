@@ -11,7 +11,13 @@ import {
   Pill,
   Printer,
   Receipt,
+  Search,
   Users,
+  Eye,
+  X,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { differenceInCalendarDays, endOfDay, format, startOfDay } from 'date-fns';
 import { Hospital, UserRole } from '../types';
@@ -20,6 +26,7 @@ import { usePatients } from '../context/PatientContext';
 import { useTransactions } from '../context/TransactionContext';
 import { useStocks } from '../context/StockContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings, REPORT_INCOME_MODULES } from '../context/SettingsContext';
 import api from '../../api/axios';
 import { LedgerEntryApi, listLedger } from '../../api/ledger';
 import { listPatientSurgeries } from '../../api/surgeries';
@@ -260,6 +267,50 @@ const REPORT_OPTIONS: Record<ReportModule, Array<{ key: ReportType; label: strin
   ],
 };
 
+/**
+ * Sub-sections within a tab. The flat grid of a dozen identical buttons gave no
+ * clue which report did what; grouping them under headings makes the tab
+ * scannable and puts the financial reports together.
+ */
+/**
+ * The income streams the Overall Financial Report always reports on, in the
+ * order the hospital reads them. Keys are the `module` value on ledger entries.
+ */
+const FINANCIAL_MODULE_ORDER: Array<{ key: string; label: string }> = [
+  { key: 'pharmacy', label: 'Medicine Sale' },
+  { key: 'appointments', label: 'Appointment Fees' },
+  { key: 'laboratory', label: 'Laboratory Fees' },
+  { key: 'radiology', label: 'Ultrasound Fees' },
+  { key: 'surgery', label: 'Surgery Fees' },
+  { key: 'room_booking', label: 'Room Booking Fees' },
+];
+
+const REPORT_GROUPS: Record<ReportModule, Array<{ group: string; keys: ReportType[] }>> = {
+  overall: [
+    { group: 'Financial Summary', keys: ['overall_financial', 'fees_detailed'] },
+    { group: 'By Person', keys: ['doctor_detailed', 'patient_detailed'] },
+  ],
+  reception: [
+    {
+      group: 'Income',
+      keys: ['reception_fees_overall', 'reception_fees_doctor_wise', 'reception_lab_orders',
+             'reception_prescription_sales', 'reception_surgery_operations', 'reception_other_income'],
+    },
+    { group: 'Outgoing', keys: ['reception_expenses'] },
+    { group: 'Daily Close', keys: ['reception_overall_clearance'] },
+  ],
+  pharmacy: [
+    { group: 'Inventory', keys: ['pharmacy_available_stock', 'pharmacy_expiry'] },
+    { group: 'Purchasing', keys: ['pharmacy_purchase', 'pharmacy_purchase_return_out'] },
+    { group: 'Sales', keys: ['pharmacy_sales', 'pharmacy_sales_return_in', 'pharmacy_customer_wise'] },
+    { group: 'Summary', keys: ['pharmacy_summary'] },
+  ],
+  lab: [
+    { group: 'Orders', keys: ['lab_orders_date_wise', 'lab_samples'] },
+    { group: 'By Person', keys: ['lab_doctor_wise'] },
+  ],
+};
+
 const emptySource: ReportSourceState = {
   appointments: [],
   prescriptions: [],
@@ -291,15 +342,32 @@ const inDateRange = (value: Date | null, start: Date, end: Date): boolean => {
   return value.getTime() >= start.getTime() && value.getTime() <= end.getTime();
 };
 
+/**
+ * A ledger entry that moves inventory rather than consuming it.
+ *
+ * Purchases and sales returns take cash out and put goods on the shelf; the
+ * expense is recognised when those goods are sold, not when they are bought.
+ * Kept out of every expense/outgoing total and reported separately.
+ */
+const isInventoryMovement = (entry: { direction: string; module: string; category?: string }): boolean => {
+  if (entry.direction !== 'expense') return false;
+  if (String(entry.module || '').toLowerCase() !== 'pharmacy') return false;
+  return ['purchase', 'sales_return'].includes(String(entry.category || '').toLowerCase());
+};
+
+/** Columns that settle an account rather than describe a fee category. */
+const SETTLEMENT_KEYS = ['totalFees', 'total', 'paid', 'due', 'net'];
+
 const normalizeModuleName = (value: string): string => {
   const raw = String(value || 'other').toLowerCase();
-  if (raw === 'appointments') return 'Appointments';
-  if (raw === 'laboratory') return 'Laboratory';
-  if (raw === 'pharmacy') return 'Pharmacy';
-  if (raw === 'room_booking') return 'Room Booking';
-  if (raw === 'surgery') return 'Surgery';
+  // Must match FINANCIAL_MODULE_ORDER exactly: the report seeds its rows by
+  // label, so a mismatch here would leave a module permanently on zero while
+  // its money quietly appeared under a second, differently-named row.
+  const income = FINANCIAL_MODULE_ORDER.find((m) => m.key === raw);
+  if (income) return income.label;
   if (raw === 'expenses') return 'Expenses';
   if (raw === 'other_income') return 'Other Income';
+  if (raw === 'salary') return 'Salary';
   return raw.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 };
 
@@ -513,6 +581,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
   const { transactions: contextTransactions } = useTransactions();
   const { stocks: contextStocks } = useStocks();
   const { hasPermission } = useAuth();
+  const { getReportModuleOwners } = useSettings();
 
   const role = String(userRole || '').toLowerCase();
   const isAdmin = role === 'admin' || role === 'super_admin';
@@ -580,6 +649,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
   const [selectedDoctorId, setSelectedDoctorId] = useState('all');
   const [stockGrouping, setStockGrouping] = useState<StockGrouping>('company');
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [tableSearch, setTableSearch] = useState('');
+  const [sortKey, setSortKey] = useState<string>('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [detailRow, setDetailRow] = useState<Record<string, any> | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<ReportSourceState>(emptySource);
@@ -758,12 +831,43 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       .filter((item) => inDateRange(item.date, rangeStart, rangeEnd));
   }, [source.otherIncomes, rangeEnd, rangeStart]);
 
+  /**
+   * Income modules assigned to the desk whose tab is open, from
+   * Settings > General > Report Ownership.
+   *
+   * A hospital where the pharmacist reconciles medicine sales and reception
+   * reconciles everything else must not show the same money on both tabs, or
+   * the two officers report overlapping totals to the administrator.
+   *
+   * Outgoing entries (expenses, salary) and modules not in the configurable
+   * list are left alone -- only income ownership is being split here.
+   */
+  const ownedIncomeModules = useMemo(() => {
+    const owners = getReportModuleOwners(hospital.id);
+    const desk = reportModule === 'lab' ? 'laboratory' : reportModule;
+    return new Set(
+      REPORT_INCOME_MODULES
+        .filter(({ key }) => owners[key] === desk)
+        .map(({ key }) => key)
+    );
+  }, [getReportModuleOwners, hospital.id, reportModule]);
+
   const normalizedLedger = useMemo(() => {
+    const configurable = new Set(REPORT_INCOME_MODULES.map((m) => m.key));
+
     return source.ledger
       .map(normalizeLedger)
       .filter((item) => item.status.toLowerCase() !== 'voided')
-      .filter((item) => inDateRange(item.date, rangeStart, rangeEnd));
-  }, [source.ledger, rangeEnd, rangeStart]);
+      .filter((item) => inDateRange(item.date, rangeStart, rangeEnd))
+      .filter((item) => {
+        // The Overall tab is the administrator's consolidated view and must
+        // keep everything, whoever reconciles it.
+        if (reportModule === 'overall') return true;
+        const raw = String(item.module || '').toLowerCase();
+        if (item.direction !== 'income' || !configurable.has(raw as any)) return true;
+        return ownedIncomeModules.has(raw as any);
+      });
+  }, [source.ledger, rangeEnd, rangeStart, reportModule, ownedIncomeModules]);
 
   const normalizedMedicines = useMemo(() => {
     return source.medicines.map(normalizeMedicine);
@@ -842,7 +946,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
     switch (reportType) {
       case 'overall_financial': {
-        const byModule = new Map<string, { module: string; entries: number; incoming: number; outgoing: number; paid: number; due: number }>();
+        const byModule = new Map<string, { module: string; entries: number; incoming: number; outgoing: number; inventory: number; paid: number; due: number }>();
+
+        // Seeded so every income stream is listed even when it earned nothing
+        // this period. A module missing from the table reads as "not tracked";
+        // a module showing 0.00 reads as "tracked, no activity" -- which is the
+        // question the administrator is actually asking.
+        FINANCIAL_MODULE_ORDER.forEach(({ label }) => {
+          byModule.set(label, { module: label, entries: 0, incoming: 0, outgoing: 0, inventory: 0, paid: 0, due: 0 });
+        });
 
         ledgerActive.forEach((entry) => {
           const key = normalizeModuleName(entry.module);
@@ -852,6 +964,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
               entries: 0,
               incoming: 0,
               outgoing: 0,
+              inventory: 0,
               paid: 0,
               due: 0,
             });
@@ -864,39 +977,58 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
           if (entry.direction === 'income') {
             bucket.incoming += entry.netAmount;
+          } else if (isInventoryMovement(entry)) {
+            // Reported in its own column so the cash movement stays visible
+            // without being counted as money the hospital has spent.
+            bucket.inventory += entry.netAmount;
           } else if (entry.direction === 'expense') {
             bucket.outgoing += entry.netAmount;
           }
         });
 
+        // The six income streams first, in a fixed order the client reads top
+        // to bottom; anything else (expenses, salary, other income) follows.
+        const fixedOrder = FINANCIAL_MODULE_ORDER.map((m) => m.label);
         const rows = Array.from(byModule.values())
           .map((item) => ({
             ...item,
             net: item.incoming - item.outgoing,
           }))
-          .sort((a, b) => b.net - a.net);
+          .sort((a, b) => {
+            const aIndex = fixedOrder.indexOf(a.module);
+            const bIndex = fixedOrder.indexOf(b.module);
+            if (aIndex !== -1 || bIndex !== -1) {
+              if (aIndex === -1) return 1;
+              if (bIndex === -1) return -1;
+              return aIndex - bIndex;
+            }
+            return b.net - a.net;
+          });
 
         const totalIncoming = rows.reduce((sum, row) => sum + row.incoming, 0);
         const totalOutgoing = rows.reduce((sum, row) => sum + row.outgoing, 0);
+        const totalInventory = rows.reduce((sum, row) => sum + row.inventory, 0);
         const totalDue = rows.reduce((sum, row) => sum + row.due, 0);
 
         return {
           title: 'Overall Financial Report',
-          subtitle: 'All financial parts consolidated by module.',
+          subtitle: 'Every income stream consolidated, including modules with no activity this period.',
           columns: [
             { key: 'module', label: t('ui.module') },
             { key: 'entries', label: t('ui.entries'), kind: 'number' },
             { key: 'incoming', label: t('ui.incoming'), kind: 'currency' },
             { key: 'outgoing', label: t('ui.outgoing'), kind: 'currency' },
+            { key: 'inventory', label: 'Stock Purchased', kind: 'currency' },
             { key: 'net', label: t('ui.net'), kind: 'currency' },
             { key: 'paid', label: t('ui.paid'), kind: 'currency' },
             { key: 'due', label: t('ui.due'), kind: 'currency' },
           ],
           rows,
           summary: [
-            { label: 'Modules', value: String(rows.length) },
+            { label: 'Income Modules', value: String(FINANCIAL_MODULE_ORDER.length) },
             { label: t('ui.incoming'), value: formatCurrency(totalIncoming), tone: 'positive' },
             { label: t('ui.outgoing'), value: formatCurrency(totalOutgoing), tone: 'negative' },
+            { label: 'Stock Purchased', value: formatCurrency(totalInventory) },
             { label: t('ui.net'), value: formatCurrency(totalIncoming - totalOutgoing), tone: totalIncoming - totalOutgoing >= 0 ? 'positive' : 'negative' },
             { label: t('ui.due'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
           ],
@@ -1010,6 +1142,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           labFees: number;
           medicineSales: number;
           surgeryFees: number;
+          ultrasoundFees: number;
+          roomBookingFees: number;
           paid: number;
           due: number;
         }>();
@@ -1024,6 +1158,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             labFees: 0,
             medicineSales: 0,
             surgeryFees: 0,
+            ultrasoundFees: 0,
+            roomBookingFees: 0,
             paid: 0,
             due: 0,
           });
@@ -1040,6 +1176,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
               labFees: 0,
               medicineSales: 0,
               surgeryFees: 0,
+              ultrasoundFees: 0,
+              roomBookingFees: 0,
               paid: 0,
               due: 0,
             });
@@ -1089,6 +1227,14 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           .filter((entry) => entry.patientId)
           .forEach((entry) => {
             const row = ensurePatient(String(entry.patientId), entry.patientName || 'Unknown Patient');
+            // Radiology and room bookings have no dedicated source array here,
+            // but both post to the ledger against a patient, so the fees are
+            // read from there rather than left out of the patient's total.
+            const module = String(entry.module || '').toLowerCase();
+            if (entry.direction === 'income') {
+              if (module === 'radiology') row.ultrasoundFees += entry.netAmount;
+              if (module === 'room_booking') row.roomBookingFees += entry.netAmount;
+            }
             row.paid += entry.paidAmount;
             row.due += entry.dueAmount;
           });
@@ -1096,7 +1242,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         const rows = Array.from(patientMap.values())
           .map((item) => ({
             ...item,
-            totalFees: item.appointmentFees + item.labFees + item.medicineSales + item.surgeryFees,
+            totalFees: item.appointmentFees + item.labFees + item.medicineSales
+              + item.surgeryFees + item.ultrasoundFees + item.roomBookingFees,
           }))
           .sort((a, b) => b.totalFees - a.totalFees);
 
@@ -1116,6 +1263,8 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             { key: 'labFees', label: 'Lab Fees', kind: 'currency' },
             { key: 'medicineSales', label: 'Medicine Sold', kind: 'currency' },
             { key: 'surgeryFees', label: t('ui.surgeryFees'), kind: 'currency' },
+            { key: 'ultrasoundFees', label: 'Ultrasound Fees', kind: 'currency' },
+            { key: 'roomBookingFees', label: 'Room Booking', kind: 'currency' },
             { key: 'totalFees', label: t('ui.totalFees'), kind: 'currency' },
             { key: 'paid', label: t('ui.paid'), kind: 'currency' },
             { key: 'due', label: t('ui.due'), kind: 'currency' },
@@ -2081,25 +2230,69 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     return buildReport.columns.filter((column) => column.kind === 'currency' || column.kind === 'number');
   }, [buildReport.columns]);
 
+  /**
+   * Search and sort applied to whatever the active report produced.
+   *
+   * Done generically on the built rows rather than inside each report, so every
+   * report gets the same behaviour and a new report cannot forget to support it.
+   */
+  const visibleRows = useMemo(() => {
+    const needle = tableSearch.trim().toLowerCase();
+
+    let rows = buildReport.rows;
+    if (needle) {
+      rows = rows.filter((row) =>
+        buildReport.columns.some((column) =>
+          String(row[column.key] ?? '').toLowerCase().includes(needle)
+        )
+      );
+    }
+
+    if (!sortKey) return rows;
+
+    const column = buildReport.columns.find((c) => c.key === sortKey);
+    const numeric = column?.kind === 'currency' || column?.kind === 'number';
+
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      const result = numeric
+        ? (Number(av) || 0) - (Number(bv) || 0)
+        // numeric:true so "Patient 10" sorts after "Patient 2", not before it.
+        : String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true });
+      return sortDir === 'asc' ? result : -result;
+    });
+  }, [buildReport.rows, buildReport.columns, tableSearch, sortKey, sortDir]);
+
+  const toggleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setCurrentPage(1);
+  };
+
   const reportColumnTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     numericTotalColumns.forEach((column) => {
       totals[column.key] = 0;
     });
 
-    buildReport.rows.forEach((row) => {
+    visibleRows.forEach((row) => {
       numericTotalColumns.forEach((column) => {
         totals[column.key] += toNumber(row[column.key]);
       });
     });
 
     return totals;
-  }, [buildReport.rows, numericTotalColumns]);
+  }, [visibleRows, numericTotalColumns]);
 
-  const hasReportTotals = buildReport.rows.length > 0 && numericTotalColumns.length > 0;
+  const hasReportTotals = visibleRows.length > 0 && numericTotalColumns.length > 0;
 
   const pagination = useMemo(() => {
-    const totalRows = buildReport.rows.length;
+    const totalRows = visibleRows.length;
     const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
     const normalizedCurrentPage = Math.min(currentPage, totalPages);
     const startIndex = (normalizedCurrentPage - 1) * rowsPerPage;
@@ -2111,9 +2304,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       currentPage: normalizedCurrentPage,
       startIndex,
       endIndex,
-      rows: buildReport.rows.slice(startIndex, endIndex),
+      rows: visibleRows.slice(startIndex, endIndex),
     };
-  }, [buildReport.rows, currentPage, rowsPerPage]);
+  }, [visibleRows, currentPage, rowsPerPage]);
 
   useEffect(() => {
     if (currentPage !== pagination.currentPage) {
@@ -2128,11 +2321,38 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
   const reportOptions = REPORT_OPTIONS[reportModule] ?? [];
 
+  /**
+   * The tab's reports arranged into named sections. Anything not listed in
+   * REPORT_GROUPS still appears under "Other", so adding a report can never
+   * make it silently invisible.
+   */
+  const groupedReportOptions = useMemo(() => {
+    const groups = REPORT_GROUPS[reportModule] ?? [];
+    const byKey = new Map(reportOptions.map((o) => [o.key, o]));
+    const used = new Set<ReportType>();
+
+    const sections = groups.map(({ group, keys }) => {
+      const options = keys
+        .map((key) => {
+          const option = byKey.get(key);
+          if (option) used.add(key);
+          return option;
+        })
+        .filter((o): o is { key: ReportType; label: string } => Boolean(o));
+      return { group, options };
+    }).filter((section) => section.options.length > 0);
+
+    const leftovers = reportOptions.filter((o) => !used.has(o.key));
+    if (leftovers.length) sections.push({ group: 'Other', options: leftovers });
+
+    return sections;
+  }, [reportModule, reportOptions]);
+
   const exportToExcel = async () => {
     if (!buildReport.columns.length) return;
     const { XLSX } = await loadXlsxTools();
 
-    const rows = buildReport.rows.map((row, index) => {
+    const rows = visibleRows.map((row, index) => {
       const exportRow: Record<string, any> = {};
       exportRow['S/N'] = String(index + 1);
       buildReport.columns.forEach((column) => {
@@ -2176,7 +2396,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     const header = ['S/N', ...buildReport.columns.map((column) => column.label)].map(escapeCsvValue).join(',');
     lines.push(header);
 
-    buildReport.rows.forEach((row, index) => {
+    visibleRows.forEach((row, index) => {
       const rowValues = [
         String(index + 1),
         ...buildReport.columns.map((column) => formatCellValue(row[column.key], column, true)),
@@ -2229,7 +2449,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     doc.text(`From ${startDate} to ${endDate}`, 14, 33);
 
     const pdfHead = [['S/N', ...buildReport.columns.map((column) => column.label)]];
-    const pdfBody = buildReport.rows.map((row, index) => [
+    const pdfBody = visibleRows.map((row, index) => [
       String(index + 1),
       ...buildReport.columns.map((column) => formatCellValue(row[column.key], column, true)),
     ]);
@@ -2282,7 +2502,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       }),
     ].join('');
 
-    const rows = buildReport.rows
+    const rows = visibleRows
       .map(
         (row, index) =>
           `<tr><td class="num">${index + 1}</td>${buildReport.columns
@@ -2311,28 +2531,65 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         <head>
           <title>${escapeHtml(buildReport.title)}</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 18px; color: #111827; }
-            h1 { margin: 0; font-size: 20px; }
-            .sub { margin-top: 6px; font-size: 12px; color: #4b5563; }
-            .summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
-            .summary-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px; font-size: 12px; background: #f9fafb; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { border: 1px solid #e5e7eb; padding: 6px; text-align: left; vertical-align: top; }
-            th { background: #f3f4f6; }
-            .num { text-align: right; }
-            .totals-row td { font-weight: 700; background: #f8fafc; }
+            @page { size: A4 landscape; margin: 12mm 10mm 14mm; }
+            body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111827; }
+
+            .head { border-bottom: 2px solid #111827; padding-bottom: 6px; margin-bottom: 8px; }
+            h1 { margin: 0; font-size: 16px; }
+            .sub { font-size: 10px; color: #4b5563; }
+            .meta { display: flex; justify-content: space-between; align-items: flex-end; }
+
+            .summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+            .summary-item { border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 10px; background: #f9fafb; }
+
+            table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            th, td { border: 1px solid #d1d5db; padding: 4px 5px; text-align: left; vertical-align: top; }
+            th { background: #f3f4f6; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+            .num { text-align: right; font-variant-numeric: tabular-nums; }
+            tbody tr:nth-child(even) td { background: #fbfbfc; }
+
+            /*
+              Repeat the header and the totals on every printed page. Without
+              these the totals appear once, wherever the rows happen to end, so a
+              multi-page report has pages with no figures to reconcile against.
+            */
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            tr { page-break-inside: avoid; }
+
+            .totals-row td {
+              font-weight: 700;
+              background: #eef2f7;
+              border-top: 2px solid #111827;
+            }
+
+            .foot { margin-top: 8px; font-size: 9px; color: #6b7280;
+                    display: flex; justify-content: space-between; }
           </style>
         </head>
         <body>
-          <h1>${escapeHtml(buildReport.title)}</h1>
-          <div class="sub">Hospital: ${escapeHtml(hospital.name)}</div>
-          <div class="sub">Range: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</div>
+          <div class="head">
+            <div class="meta">
+              <div>
+                <h1>${escapeHtml(buildReport.title)}</h1>
+                <div class="sub">${escapeHtml(buildReport.subtitle)}</div>
+              </div>
+              <div class="sub" style="text-align:right;">
+                <div><strong>${escapeHtml(hospital.name)}</strong></div>
+                <div>${escapeHtml(startDate)} to ${escapeHtml(endDate)}</div>
+              </div>
+            </div>
+          </div>
           <div class="summary">${summaryHtml}</div>
           <table>
             <thead><tr>${headers}</tr></thead>
-            <tbody>${rows || `<tr><td colspan="${buildReport.columns.length + 1}">No rows found.</td></tr>`}</tbody>
             ${totalsRow ? `<tfoot>${totalsRow}</tfoot>` : ''}
+            <tbody>${rows || `<tr><td colspan="${buildReport.columns.length + 1}">No rows found.</td></tr>`}</tbody>
           </table>
+          <div class="foot">
+            <span>Printed ${escapeHtml(new Date().toLocaleString())}</span>
+            <span>${escapeHtml(String(visibleRows.length))} rows</span>
+          </div>
         </body>
       </html>
     `);
@@ -2349,187 +2606,206 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">Reports</h1>
-          <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Generate detailed operational and financial reports for {hospital.name}.</p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Reports</h1>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">Operational and financial reports for {hospital.name}.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Export actions as one quiet segmented control. Four saturated
+            buttons competed with the report itself for attention; these are
+            secondary actions and now read as such. */}
+        <div className="inline-flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden divide-x divide-gray-300 dark:divide-gray-600 bg-white dark:bg-gray-800">
           <button
             type="button"
             onClick={exportToCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-sky-600 text-white text-xs md:text-sm font-medium hover:bg-sky-700"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
             title={t('ui.exportCsv')}
           >
-            <FileDown className="w-4 h-4" />
+            <FileDown className="w-3.5 h-3.5" />
             CSV
           </button>
           <button
             type="button"
             onClick={exportToExcel}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-emerald-600 text-white text-xs md:text-sm font-medium hover:bg-emerald-700"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
             title="Export Excel"
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet className="w-3.5 h-3.5" />
             Excel
           </button>
           <button
             type="button"
             onClick={exportToPdf}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-blue-600 text-white text-xs md:text-sm font-medium hover:bg-blue-700"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
             title="Export PDF"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
             PDF
           </button>
           <button
             type="button"
             onClick={printReport}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-gray-900 text-white text-xs md:text-sm font-medium hover:bg-black"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-white bg-gray-800 hover:bg-gray-900"
             title="Print report"
           >
-            <Printer className="w-4 h-4" />{t('ui.print')}</button>
+            <Printer className="w-3.5 h-3.5" />{t('ui.print')}</button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        {/* Main tabs: an underlined tab bar, so the selected desk is obvious and
+            the sub-reports below clearly belong to it. */}
+        <div className="flex overflow-x-auto scrollbar-none border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
           {availableModules.map((module) => (
             <button
               key={module.key}
               type="button"
               onClick={() => setReportModule(module.key)}
-              className={`px-3 py-2 rounded-md border text-xs md:text-sm font-medium transition-colors ${
+              className={`relative shrink-0 px-4 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
                 reportModule === module.key
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:border-blue-400'
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
             >
               {module.label}
+              {reportModule === module.key && (
+                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+              )}
             </button>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-          {reportOptions.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => setReportType(option.key)}
-              className={`px-3 py-2 rounded-md border text-xs md:text-sm font-medium transition-colors text-left ${
-                reportType === option.key
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:border-blue-400'
-              }`}
-            >
-              {option.label}
-            </button>
+        {/*
+          Sub-reports: a single scrolling row of pills. The stacked grid cost
+          several rows of vertical space before any data was visible; group
+          names are kept as inline separators so the sections are still legible
+          without each one claiming its own heading row.
+        */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none px-3 py-1.5">
+          {groupedReportOptions.map(({ group, options }, groupIndex) => (
+            <React.Fragment key={group}>
+              {groupIndex > 0 && (
+                <span className="shrink-0 h-4 w-px bg-gray-200 dark:bg-gray-600 mx-0.5" aria-hidden="true" />
+              )}
+              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pr-0.5">
+                {group}
+              </span>
+              {options.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setReportType(option.key)}
+                  title={option.label}
+                  className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors ${
+                    reportType === option.key
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-700 dark:hover:text-blue-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </React.Fragment>
           ))}
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 md:p-4">
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200 text-xs md:text-sm font-semibold mb-3">
-          <Filter className="w-4 h-4" />
-          Filters
-        </div>
+      {/* Filters: a single inline strip. The previous card spent a heading row
+          and a label above every control to say what a date input plainly is. */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div>
-            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.startDate')}</label>
-            <div className="relative">
-              <CalendarDays className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                title="Start date"
-                className="w-full pl-8 pr-2 py-2 text-xs md:text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
+          <div className="relative">
+            <CalendarDays className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              title={t('ui.startDate')}
+              aria-label={t('ui.startDate')}
+              className="pl-7 pr-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.endDate')}</label>
-            <div className="relative">
-              <CalendarDays className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                title="End date"
-                className="w-full pl-8 pr-2 py-2 text-xs md:text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
+          <span className="text-xs text-gray-400">to</span>
+
+          <div className="relative">
+            <CalendarDays className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              title={t('ui.endDate')}
+              aria-label={t('ui.endDate')}
+              className="pl-7 pr-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
           </div>
 
           {showDoctorFilter && (
-            <div>
-              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{t('ui.doctor')}</label>
               <select
                 value={selectedDoctorId}
                 onChange={(event) => setSelectedDoctorId(event.target.value)}
-                title="Doctor filter"
-                className="w-full px-2 py-2 text-xs md:text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                title={t('ui.doctor')}
+                aria-label={t('ui.doctor')}
+                className="px-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="all">All Doctors</option>
                 {doctorOptions.map((doctor) => (
                   <option key={doctor.id} value={doctor.id}>{doctor.name}</option>
                 ))}
               </select>
-            </div>
           )}
 
           {showStockGrouping && (
-            <div>
-              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Stock View</label>
               <select
                 value={stockGrouping}
                 onChange={(event) => setStockGrouping(event.target.value as StockGrouping)}
                 title="Stock grouping"
-                className="w-full px-2 py-2 text-xs md:text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                aria-label="Stock grouping"
+                className="px-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="company">Company Wise</option>
                 <option value="product">Product Wise</option>
                 <option value="batch">Batch Wise</option>
               </select>
-            </div>
           )}
 
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={() => {
-                setStartDate(today);
-                setEndDate(today);
-                setSelectedDoctorId('all');
-              }}
-              className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Reset to Today
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setStartDate(today);
+              setEndDate(today);
+              setSelectedDoctorId('all');
+            }}
+            className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+          >
+            Today
+          </button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex items-start gap-2 mb-3">
-          <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-            {reportModule === 'overall' && <BarChart3 className="w-4 h-4" />}
-            {reportModule === 'reception' && <Receipt className="w-4 h-4" />}
-            {reportModule === 'pharmacy' && <Pill className="w-4 h-4" />}
-            {reportModule === 'lab' && <FlaskConical className="w-4 h-4" />}
+      {/* Title and summary share one strip: the title sits beside the figures
+          instead of above them, which removes a whole band of white space. */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="flex items-center gap-2 lg:w-64 shrink-0">
+            <div className="p-1.5 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shrink-0">
+              {reportModule === 'overall' && <BarChart3 className="w-4 h-4" />}
+              {reportModule === 'reception' && <Receipt className="w-4 h-4" />}
+              {reportModule === 'pharmacy' && <Pill className="w-4 h-4" />}
+              {reportModule === 'lab' && <FlaskConical className="w-4 h-4" />}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white leading-tight">{buildReport.title}</h2>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">{buildReport.subtitle}</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base md:text-lg font-semibold text-gray-900 dark:text-white">{buildReport.title}</h2>
-            <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">{buildReport.subtitle}</p>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
           {buildReport.summary.map((item) => (
-            <div key={item.label} className="rounded-lg border border-gray-200 dark:border-gray-700 p-2.5">
-              <p className="text-[11px] text-gray-500 dark:text-gray-400">{item.label}</p>
+            <div key={item.label} className="rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5">
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">{item.label}</p>
               <p
-                className={`text-sm md:text-base font-semibold mt-1 ${
+                className={`text-sm font-semibold leading-tight ${
                   item.tone === 'positive'
                     ? 'text-green-700 dark:text-green-400'
                     : item.tone === 'negative'
@@ -2542,28 +2818,66 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             </div>
           ))}
         </div>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Detailed Report Data</h3>
-          {loading && <span className="text-xs text-gray-500">Refreshing...</span>}
+        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+          {/* Search sits in the table header where the rows it filters are. */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={tableSearch}
+              onChange={(event) => { setTableSearch(event.target.value); setCurrentPage(1); }}
+              placeholder="Search this report..."
+              aria-label="Search report rows"
+              className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            {visibleRows.length}{tableSearch ? ` of ${buildReport.rows.length}` : ''} rows
+          </span>
+          {loading && <span className="text-[11px] text-gray-500 ml-auto">Refreshing...</span>}
         </div>
 
         <div className="overflow-auto">
-          <table className="w-full min-w-[980px] text-left text-xs md:text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-700/40 text-gray-700 dark:text-gray-300">
+          <table className="w-full min-w-[980px] text-left text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-700/40 text-gray-500 dark:text-gray-400">
               <tr>
-                {buildReport.columns.map((column) => (
-                  <th key={column.key} className="px-3 py-2 font-semibold whitespace-nowrap">{column.label}</th>
-                ))}
+                {buildReport.columns.map((column) => {
+                  const rightAligned = column.kind === 'currency' || column.kind === 'number';
+                  const active = sortKey === column.key;
+                  return (
+                    <th
+                      key={column.key}
+                      onClick={() => toggleSort(column.key)}
+                      title={`Sort by ${column.label}`}
+                      className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                        rightAligned ? 'text-right' : ''
+                      }`}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${rightAligned ? 'flex-row-reverse' : ''}`}>
+                        {column.label}
+                        {active
+                          ? (sortDir === 'asc'
+                              ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                              : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />)
+                          : <ArrowUpDown className="w-3 h-3 text-gray-300 dark:text-gray-600" />}
+                      </span>
+                    </th>
+                  );
+                })}
+                {/* Row inspector: the wide financial reports carry more columns
+                    than fit comfortably, so each row can be opened in full. */}
+                <th className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-center whitespace-nowrap">View</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
-              {buildReport.rows.length === 0 ? (
+              {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={Math.max(1, buildReport.columns.length)} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No report rows found for selected criteria.
+                  <td colSpan={Math.max(1, buildReport.columns.length + 1)} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    {tableSearch ? 'No rows match your search.' : 'No report rows found for selected criteria.'}
                   </td>
                 </tr>
               ) : (
@@ -2574,12 +2888,25 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                       return (
                         <td
                           key={column.key}
-                          className={`px-3 py-2 whitespace-nowrap ${rightAligned ? 'text-right font-medium' : ''}`}
+                          className={`px-3 py-1.5 whitespace-nowrap ${
+                            rightAligned ? 'text-right font-medium tabular-nums' : ''
+                          }`}
                         >
                           {formatCellValue(row[column.key], column)}
                         </td>
                       );
                     })}
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setDetailRow(row)}
+                        title="View details"
+                        aria-label="View details"
+                        className="p-1 rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -2598,12 +2925,16 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                     return (
                       <td
                         key={column.key}
-                        className={`px-3 py-2 whitespace-nowrap font-semibold ${rightAligned ? 'text-right' : ''}`}
+                        className={`px-3 py-1.5 whitespace-nowrap font-semibold ${
+                          rightAligned ? 'text-right tabular-nums' : ''
+                        }`}
                       >
                         {value}
                       </td>
                     );
                   })}
+                  {/* Keeps the footer aligned with the added View column. */}
+                  <td className="px-3 py-2" />
                 </tr>
               </tfoot>
             )}
@@ -2669,10 +3000,122 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         </div>
       </div>
 
-      <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-2">
-        <Users className="w-3.5 h-3.5" />
-        Doctor report, patient report, and fee details are now generated from real data with CSV, Excel, PDF, and tuned print support.
-      </div>
+      {/*
+        Row detail card.
+
+        The financial reports carry a dozen columns, so a row read across a wide
+        table is hard to follow. This shows one record as a card: the descriptive
+        fields as a header, the money as a labelled grid, and a highlighted total.
+      */}
+      {detailRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                  {String(detailRow[firstDescriptorColumnKey] ?? buildReport.title)}
+                </h3>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">{buildReport.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailRow(null)}
+                aria-label={t('ui.close')}
+                className="p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-[75vh] overflow-y-auto">
+              {/* Identity fields first: who or what this row is about. */}
+              <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <p className="px-2.5 py-1 bg-gray-50 dark:bg-gray-700/40 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  Details
+                </p>
+                <div className="px-2.5 py-1 grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                  {buildReport.columns
+                    .filter((column) => column.kind !== 'currency')
+                    .map((column) => (
+                      <div key={column.key} className="flex items-baseline justify-between gap-3 py-1 border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">{column.label}</span>
+                        <span className="text-xs font-medium text-gray-900 dark:text-white text-right min-w-0 break-words">
+                          {formatCellValue(detailRow[column.key], column) || '\u2014'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Money, given its own block so the figures read as a statement. */}
+              {buildReport.columns.some((column) => column.kind === 'currency') && (
+                <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <p className="px-2.5 py-1 bg-gray-50 dark:bg-gray-700/40 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    Amounts
+                  </p>
+                  <div className="p-2.5 space-y-2">
+                    {/* Fee categories across one row of tiles, so the six income
+                        streams can be compared at a glance instead of scanned
+                        down a list. */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+                      {buildReport.columns
+                        .filter((column) => column.kind === 'currency' && !SETTLEMENT_KEYS.includes(column.key))
+                        .map((column) => {
+                          const amount = toNumber(detailRow[column.key]);
+                          return (
+                            <div key={column.key} className="rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5">
+                              <p className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-gray-400 leading-tight truncate">
+                                {column.label}
+                              </p>
+                              <p className={`text-xs font-semibold tabular-nums leading-tight ${
+                                amount === 0 ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'
+                              }`}>
+                                {formatCellValue(detailRow[column.key], column)}
+                              </p>
+                            </div>
+                          );
+                        })}
+                    </div>
+
+                    {/* Total, paid and due settle the account -- kept together
+                        on their own row rather than mixed in with the fees. */}
+                    {buildReport.columns.some((column) => SETTLEMENT_KEYS.includes(column.key)) && (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {buildReport.columns
+                          .filter((column) => SETTLEMENT_KEYS.includes(column.key))
+                          .map((column) => {
+                            const amount = toNumber(detailRow[column.key]);
+                            const tone = column.key === 'due' && amount > 0
+                              ? 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200'
+                              : column.key === 'paid'
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-200'
+                                : 'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200';
+                            return (
+                              <div key={column.key} className={`rounded-md border px-2 py-1.5 ${tone}`}>
+                                <p className="text-[9px] uppercase tracking-wide opacity-70 leading-tight">{column.label}</p>
+                                <p className="text-sm font-bold tabular-nums leading-tight">
+                                  {formatCellValue(detailRow[column.key], column)}
+                                </p>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setDetailRow(null)}
+                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+              >{t('ui.close')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

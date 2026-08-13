@@ -12,6 +12,7 @@ use App\Models\PayrollItem;
 use App\Models\PatientSurgery;
 use App\Models\RoomBooking;
 use App\Models\Transaction;
+use App\Models\UltrasoundExam;
 
 class LedgerPostingService
 {
@@ -182,6 +183,56 @@ class LedgerPostingService
     public function voidPatientSurgerySnapshot(PatientSurgery $patientSurgery, ?string $actor = null): void
     {
         $this->voidSnapshot((int) $patientSurgery->hospital_id, 'patient_surgery', (int) $patientSurgery->id, $actor);
+    }
+
+    /**
+     * Radiology / ultrasound income.
+     *
+     * This was never posted, so ultrasound fees were invisible to every
+     * financial report and to the dashboard's Revenue -- money the hospital had
+     * genuinely earned simply did not appear anywhere.
+     *
+     * There is no payment tracking on an exam, only a fee, so it is recorded as
+     * collected once the exam is completed and pending until then.
+     */
+    public function upsertUltrasoundExamSnapshot(UltrasoundExam $exam): LedgerEntry
+    {
+        $netAmount = (float) ($exam->fee ?? 0);
+        $isSettled = in_array((string) $exam->status, ['completed', 'paid'], true);
+
+        return $this->upsertSnapshot(
+            (int) $exam->hospital_id,
+            'ultrasound_exam',
+            (int) $exam->id,
+            [
+                'entry_direction' => 'income',
+                'module' => 'radiology',
+                'category' => 'ultrasound',
+                'title' => 'Ultrasound #' . (string) ($exam->sequence_id ?? $exam->id),
+                'patient_id' => $exam->patient_id ? (int) $exam->patient_id : null,
+                'supplier_id' => null,
+                'amount' => $netAmount,
+                'discount_amount' => 0,
+                'tax_amount' => 0,
+                'net_amount' => $netAmount,
+                'paid_amount' => $isSettled ? $netAmount : 0,
+                'due_amount' => $isSettled ? 0 : $netAmount,
+                'status' => $isSettled ? 'paid' : 'pending',
+                'currency' => 'AFN',
+                'posted_at' => $exam->examined_at ?? $exam->created_at ?? now(),
+                'posted_by' => $exam->updated_by ?? $exam->created_by,
+                'voided_at' => null,
+                'metadata' => [
+                    'ultrasound_type_id' => $exam->ultrasound_type_id,
+                    'doctor_id' => $exam->doctor_id,
+                ],
+            ]
+        );
+    }
+
+    public function voidUltrasoundExamSnapshot(UltrasoundExam $exam, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $exam->hospital_id, 'ultrasound_exam', (int) $exam->id, $actor);
     }
 
     public function upsertTransactionSnapshot(Transaction $transaction): LedgerEntry

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, ToggleRight } from 'lucide-react';
+import { Calendar, Clock, Plus, Edit, Trash2, X, Search, CheckCircle, XCircle, AlertCircle, Printer, FileText, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, ToggleRight, Eye } from 'lucide-react';
 import { Hospital, Appointment, UserRole, Patient, Doctor } from '../types';
 import { Toast } from './Toast';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import { SearchableSelect } from './SearchableSelect';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { formatDate, formatOnlyDate, getISODateInTimeZone, getTimeInTimeZone, getWeekdayFromDateString } from '../utils/date';
@@ -26,6 +28,31 @@ const truncateText = (value: string, maxLength: number): string => {
   if (cleaned.length <= maxLength) return cleaned;
   return `${cleaned.slice(0, maxLength - 3)}...`;
 };
+
+
+/** Grouped block in the details modal. */
+function ViewSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/40 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+        {title}
+      </div>
+      <div className="px-3 py-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4">{children}</div>
+    </div>
+  );
+}
+
+/** Label/value pair; renders a dash rather than nothing when a value is absent. */
+function ViewRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+      <span className="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">{label}</span>
+      <span className="text-xs font-medium text-gray-900 dark:text-white text-right min-w-0 break-words">
+        {value ? value : '—'}
+      </span>
+    </div>
+  );
+}
 
 const formatDoctorOptionLabel = (doctor: Doctor): string => {
   const cleanedName = String(doctor.name || '').replace(/^dr\.?\s*/i, '').trim();
@@ -65,11 +92,14 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  // Ref-backed: two clicks in one frame cannot both pass the check, which
+  // is how duplicate appointments were being created on a slow connection.
+  const { submitting, guard } = useSubmitGuard();
   const { getDefaultDoctorId, getPrintPaperSize, loadHospitalSetting } = useSettings();
   
   // Sorting state
@@ -108,8 +138,28 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   }, []);
 
   // Get hospital-specific patients and doctors (or all if viewing all hospitals)
-  const hospitalPatients = filterByHospital(patients);
+  // Newest patient first: reception almost always books for someone just
+  // registered, so the most recent record should be at the top of the list.
+  const hospitalPatients = [...filterByHospital(patients)].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (aTime !== bTime) return bTime - aTime;
+    // Fall back to id so records with no timestamp still order predictably.
+    return Number(b.id) - Number(a.id);
+  });
   const hospitalDoctors = filterByHospital(doctors);
+
+  const patientOptions = hospitalPatients.map((p) => ({
+    value: p.id,
+    label: p.name,
+    meta: [p.patientId, p.phone].filter(Boolean).join('  \u00b7  '),
+  }));
+
+  const doctorOptions = hospitalDoctors.map((d) => ({
+    value: d.id,
+    label: formatDoctorOptionLabel(d),
+    meta: [d.specialization, d.registrationNumber].filter(Boolean).join('  \u00b7  '),
+  }));
   const patientsById = React.useMemo(() => {
     return new Map(patients.map((patient) => [String(patient.id), patient]));
   }, [patients]);
@@ -477,7 +527,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     return { available: true };
   };
 
-  const handleAdd = () => {
+  const handleAdd = guard(async () => {
     if (!canCreate) {
       setToast({ message: 'You are not authorized to schedule appointments.', type: 'warning' });
       return;
@@ -491,8 +541,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
     const appointmentTime = formData.appointmentTime?.trim() || '';
-    setSubmitting(true);
-    addAppointment({
+    await addAppointment({
       hospitalId: formData.hospitalId,
       patientId: formData.patientId,
       doctorId: formData.doctorId,
@@ -516,12 +565,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       setToast({ message: 'Appointment scheduled successfully.', type: 'success' });
     }).catch((err: any) => {
       setToast({ message: err?.response?.data?.message || 'Failed to schedule appointment.', type: 'danger' });
-    }).finally(() => {
-      setSubmitting(false);
     });
-  };
+  });
 
-  const handleEdit = () => {
+  const handleEdit = guard(async () => {
     if (!selectedAppointment) return;
 
     if (!canEdit) {
@@ -539,8 +586,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     const patient = hospitalPatients.find(p => p.id === formData.patientId);
     const appointmentDate = formData.appointmentDate || today();
     const appointmentTime = formData.appointmentTime?.trim() || '';
-    setSubmitting(true);
-    updateAppointment({
+    await updateAppointment({
       id: selectedAppointment.id,
       hospitalId: formData.hospitalId,
       patientId: formData.patientId,
@@ -566,10 +612,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       setToast({ message: 'Appointment updated successfully.', type: 'success' });
     }).catch((err: any) => {
       setToast({ message: err?.response?.data?.message || 'Failed to update appointment.', type: 'danger' });
-    }).finally(() => {
-      setSubmitting(false);
     });
-  };
+  });
 
   const handleDelete = () => {
     if (!selectedAppointment) return;
@@ -714,6 +758,11 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   // values too, so disabling the inputs here is purely a UX affordance.
   const canApplyDiscount = hasPermission('add_discounts') || hasPermission('edit_discounts') || hasPermission('manage_discounts');
   const canSetPaymentStatus = hasPermission('manage_appointment_payments') || hasPermission('manage_appointments');
+  // Changing the headline fee moves money exactly as a discount does, so it is
+  // gated rather than left open to whoever can book an appointment.
+  const canSetOriginalFee = hasPermission('override_appointment_fee')
+    || hasPermission('manage_appointment_payments')
+    || hasPermission('manage_appointments');
   const canTogglePayment = canEdit || canChangeAnyStatus;
 
   return (
@@ -973,6 +1022,17 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedAppointment(apt);
+                            setShowViewModal(true);
+                          }}
+                          className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-md transition-colors"
+                          title={t('ui.view')}
+                          aria-label={t('ui.view')}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         {canTogglePayment && (
                           <button
                             onClick={() => handlePaymentStatusToggle(apt)}
@@ -1101,46 +1161,39 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="appointment-patient" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}<span className="text-red-500">*</span></label>
-                  <select
+                  <SearchableSelect
                     id="appointment-patient"
                     value={formData.patientId}
-                    onChange={(e) => setFormData({ ...formData, patientId: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    options={patientOptions}
+                    onChange={(patientId) => setFormData({ ...formData, patientId })}
+                    placeholder={t('ui.selectPatient')}
                     title={t('ui.patient')}
                     required
-                  >
-                    <option value="">{t('ui.selectPatient')}</option>
-                    {hospitalPatients.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.patientId})</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label htmlFor="appointment-doctor" className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.doctor')}<span className="text-red-500">*</span></label>
-                  <select
+                  <SearchableSelect
                     id="appointment-doctor"
                     value={formData.doctorId}
-                    onChange={(e) => {
-                      const nextDoctorId = e.target.value;
+                    options={doctorOptions}
+                    onChange={(nextDoctorId) => {
                       const nextDoctor = hospitalDoctors.find((d) => d.id === nextDoctorId);
                       setFormData({
                         ...formData,
                         doctorId: nextDoctorId,
+                        // Prefill the consultation fee, but never overwrite a fee
+                        // the user has already typed.
                         originalFeeAmount:
                           formData.originalFeeAmount === '' || Number(formData.originalFeeAmount) === 0
                             ? String(nextDoctor?.consultationFee ?? 0)
                             : formData.originalFeeAmount,
                       });
                     }}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                    placeholder={t('ui.selectDoctor')}
                     title={t('ui.doctor')}
                     required
-                  >
-                    <option value="">{t('ui.selectDoctor')}</option>
-                    {hospitalDoctors.map(d => (
-                      <option key={d.id} value={d.id}>{formatDoctorOptionLabel(d)}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1201,7 +1254,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Original Fee (AFN)</label>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.originalFee')}</label>
+                  {/* Overriding the consultation fee is a pricing decision, the
+                      same class of action as applying a discount, so it rides
+                      the same permission. Reception keeps the doctor's fee. */}
                   <input
                     title="Original fee"
                     type="number"
@@ -1209,8 +1265,12 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     step="0.01"
                     value={formData.originalFeeAmount}
                     onChange={(e) => setFormData({ ...formData, originalFeeAmount: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    disabled={!canSetOriginalFee}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   />
+                  {!canSetOriginalFee && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">{t('ui.noFeeOverridePermission')}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount Amount</label>
@@ -1290,6 +1350,99 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Appointment Details */}
+      {showViewModal && selectedAppointment && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {t('ui.appointmentDetails')} #{selectedAppointment.appointmentNumber || selectedAppointment.id}
+                </h3>
+              </div>
+              <button
+                onClick={() => { setShowViewModal(false); setSelectedAppointment(null); }}
+                className="p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                aria-label={t('ui.close')}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-[75vh] overflow-y-auto overflow-x-hidden">
+              <ViewSection title={t('ui.patient')}>
+                <ViewRow label={t('ui.name')} value={selectedAppointment.patientName} />
+                <ViewRow label={t('ui.age')} value={`${selectedAppointment.patientAge} / ${selectedAppointment.patientGender}`} />
+                <ViewRow label={t('ui.phone')} value={selectedAppointment.patientPhone} />
+                <ViewRow label={t('ui.patientId')} value={selectedAppointment.patientDisplayId} />
+              </ViewSection>
+
+              <ViewSection title={t('ui.appointment')}>
+                <ViewRow label={t('ui.doctor')} value={selectedAppointment.doctorName} />
+                <ViewRow
+                  label={t('ui.date')}
+                  value={formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)}
+                />
+                <ViewRow label={t('ui.time')} value={selectedAppointment.appointmentTime || '\u2014'} />
+                <ViewRow label={t('ui.reason')} value={selectedAppointment.reason} />
+                <ViewRow label={t('ui.status')} value={selectedAppointment.status.replace('_', ' ')} />
+                <ViewRow label={t('ui.notes')} value={selectedAppointment.notes} />
+              </ViewSection>
+
+              <ViewSection title={t('ui.fees')}>
+                <ViewRow
+                  label={t('ui.originalFee')}
+                  value={`${(selectedAppointment.originalFeeAmount ?? 0).toFixed(2)} ${selectedAppointment.currency ?? 'AFN'}`}
+                />
+                <ViewRow label={t('ui.discount')} value={(selectedAppointment.discountAmount ?? 0).toFixed(2)} />
+                <ViewRow
+                  label={t('ui.total')}
+                  value={(selectedAppointment.totalAmount
+                    ?? Math.max(0, (selectedAppointment.originalFeeAmount ?? 0) - (selectedAppointment.discountAmount ?? 0))
+                  ).toFixed(2)}
+                />
+                <ViewRow label={t('ui.paymentStatus')} value={(selectedAppointment.paymentStatus ?? 'pending').toUpperCase()} />
+              </ViewSection>
+
+              {/* The audit trail: the first thing asked about when a waived fee
+                  or an unexpected booking is queried. */}
+              <ViewSection title={t('ui.systemInformation')}>
+                <ViewRow label={t('ui.createdBy')} value={selectedAppointment.createdBy} />
+                <ViewRow
+                  label={t('ui.createdAt')}
+                  value={selectedAppointment.createdAt
+                    ? formatDate(selectedAppointment.createdAt, currentHospital.timezone, currentHospital.calendarType)
+                    : undefined}
+                />
+                <ViewRow label={t('ui.updatedBy')} value={selectedAppointment.updatedBy} />
+                <ViewRow
+                  label={t('ui.updatedAt')}
+                  value={selectedAppointment.updatedAt
+                    ? formatDate(selectedAppointment.updatedAt, currentHospital.timezone, currentHospital.calendarType)
+                    : undefined}
+                />
+              </ViewSection>
+            </div>
+
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+              {canPrint && (
+                <button
+                  onClick={() => handlePrint(selectedAppointment)}
+                  className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 inline-flex items-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" /> {t('ui.print')}
+                </button>
+              )}
+              <button
+                onClick={() => { setShowViewModal(false); setSelectedAppointment(null); }}
+                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+              >{t('ui.close')}</button>
+            </div>
           </div>
         </div>
       )}

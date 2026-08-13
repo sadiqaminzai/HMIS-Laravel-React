@@ -4,3 +4,15 @@
 @import './print.css';
 @import './quill-custom.css';
 @import './rtl.css';
+/*
+ * Hides the scrollbar on horizontally-scrolling tab strips while keeping the
+ * element scrollable. A visible gutter under a row of tabs reads as chrome,
+ * not content, and steals vertical space the tabs already need.
+ */
+.scrollbar-none {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* legacy Edge */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;                  /* Chromium, Safari */
+}

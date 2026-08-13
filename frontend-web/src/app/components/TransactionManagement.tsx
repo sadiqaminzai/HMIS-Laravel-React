@@ -1,7 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { Hospital, Patient, Transaction, TransactionDetail, UserRole } from '../types';
+import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Hospital, Patient, SaleUnit, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useTransactions } from '../context/TransactionContext';
@@ -11,7 +11,13 @@ import { useSuppliers } from '../context/SupplierContext';
 import { usePatients } from '../context/PatientContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
-import { useSettings, type PrintModule, type PrintPaperSize } from '../context/SettingsContext';
+import {
+  useSettings,
+  INVOICE_FIELD_KEYS,
+  type PrintModule,
+  type PrintPaperSize,
+  type InvoiceType,
+} from '../context/SettingsContext';
 import api from '../../api/axios';
 import { formatOnlyDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
@@ -108,6 +114,21 @@ interface TransactionManagementProps {
   userRole?: UserRole;
 }
 
+/**
+ * The medicine column grows as optional columns are switched off in Settings.
+ * Spelled out literally because Tailwind generates classes by scanning source
+ * text -- a computed `col-span-${n}` would produce no CSS at all.
+ */
+const MEDICINE_HEADER_SPANS = {
+  2: 'col-span-2', 3: 'col-span-3', 4: 'col-span-4',
+  5: 'col-span-5', 6: 'col-span-6', 7: 'col-span-7',
+} as const;
+
+const MEDICINE_ROW_SPANS = {
+  2: 'lg:col-span-2', 3: 'lg:col-span-3', 4: 'lg:col-span-4',
+  5: 'lg:col-span-5', 6: 'lg:col-span-6', 7: 'lg:col-span-7',
+} as const;
+
 const emptyItem = (): TransactionDetail => ({
   id: '',
   trxId: '',
@@ -115,6 +136,7 @@ const emptyItem = (): TransactionDetail => ({
   batchNo: '',
   expiryDate: undefined,
   qtty: 1,
+  saleUnit: 'piece',
   bonus: 0,
   price: 0,
   discount: 0,
@@ -128,6 +150,12 @@ const buildInitialFormData = (hospitalId: string) => ({
   dueAmount: 0,
   supplierId: '',
   patientId: '',
+  // Retail pharmacy: a sale may go to a walk-in customer instead of a
+  // registered hospital patient. Defaults to the existing patient workflow.
+  isWalkIn: false,
+  walkInName: '',
+  walkInPhone: '',
+  walkInAddress: '',
   hospitalId,
   transactionDate: new Date(),
   items: [emptyItem()],
@@ -137,13 +165,34 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { transactions, addTransaction, updateTransaction, deleteTransaction, loading } = useTransactions();
-  const { medicines, refresh: refreshMedicines } = useMedicines();
+  const { medicines, refresh: refreshMedicines, findByBarcode } = useMedicines();
   const { stocks, refresh: refreshStocks } = useStocks();
   const { suppliers } = useSuppliers();
   const { patients } = usePatients();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
-  const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy, getPrintPaperSize } = useSettings();
+  const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy, getPrintPaperSize,
+          getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults,
+          getBarcodeScanningEnabled, getInvoiceFields } = useSettings();
+
+  // Master switch from Settings > Barcodes; hides the scan field entirely.
+  const barcodeScanningEnabled = getBarcodeScanningEnabled(currentHospital.id);
+
+  // Which customer options this sale screen offers = hospital setting AND the
+  // user's own permission. A user without pharmacy_walk_in_sales never sees the
+  // walk-in option, even where the hospital enables it.
+  const pharmacyCustomerMode = getPharmacyCustomerMode(currentHospital.id);
+  const mayUseWalkIn = hasPermission('pharmacy_walk_in_sales') || hasPermission('manage_transactions');
+  const walkInAllowed = pharmacyCustomerMode !== 'patient_only' && mayUseWalkIn;
+  const patientAllowed = pharmacyCustomerMode !== 'walk_in_only';
+  // If the hospital is walk-in only but this user lacks the permission, fall back
+  // to the patient option so the screen is never left with no way to sell.
+  const showCustomerToggle = walkInAllowed && patientAllowed;
+  const defaultIsWalkIn = walkInAllowed
+    && (getPharmacyDefaultCustomer(currentHospital.id) === 'walk_in' || !patientAllowed);
+  // Configured once per hospital; pre-fills a new walk-in sale so a retail
+  // counter is not retyped on every invoice.
+  const walkInDefaults = getPharmacyWalkInDefaults(currentHospital.id);
   const canAdd = hasPermission('add_transactions') || hasPermission('manage_transactions');
   const canEdit = hasPermission('edit_transactions') || hasPermission('manage_transactions');
   const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
@@ -215,7 +264,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const requiredByKey: Record<string, number> = {};
     formData.items.forEach((item) => {
       if (!item.medicineId) return;
-      const required = Number(item.qtty || 0) + Number(item.bonus || 0);
+      // Stock is held in pieces, so a pack line reserves pack_size pieces.
+      const factor = piecesPerUnit(item.medicineId, (item.saleUnit ?? 'piece') as SaleUnit);
+      const required = (Number(item.qtty || 0) + Number(item.bonus || 0)) * factor;
       if (required <= 0) return;
       const key = `${item.medicineId}::${item.batchNo || '__all__'}`;
       requiredByKey[key] = (requiredByKey[key] || 0) + required;
@@ -230,7 +281,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     ) {
       (selectedTransaction.details || []).forEach((detail) => {
         if (!detail.medicineId) return;
-        const required = Number(detail.qtty || 0) + Number(detail.bonus || 0);
+        // Use the pack size recorded at the time of sale, not today's value.
+        const factor = (detail.saleUnit === 'pack') ? Math.max(1, Number(detail.packSizeSnapshot ?? 1)) : 1;
+        const required = (Number(detail.qtty || 0) + Number(detail.bonus || 0)) * factor;
         if (required <= 0) return;
         const key = `${detail.medicineId}::${detail.batchNo || '__all__'}`;
         existingRequiredByKey[key] = (existingRequiredByKey[key] || 0) + required;
@@ -800,125 +853,143 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       const paperWidth = targetSize;
       const baseFont = targetSize === '58mm' ? 8 : targetSize === '76mm' ? 9 : 10;
       
+      // Every receipt line prints on two rows: the full product name, then the
+      // arithmetic beneath it. The old single-row layout truncated names at 25
+      // characters, which on a 58mm roll cut "Capsule Paracetamol 500mg" down to
+      // something the customer could not identify.
       const rowsMarkupThermal = transactionDetails.length
         ? transactionDetails.map((detail, index) => {
             const amount = Number(detail.amount ?? calculateLineAmount(detail));
             const qty = Number(detail.qtty || 0);
             const netPrice = qty > 0 ? amount / qty : Number(detail.price || 0);
             const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
-            const rowClass = index % 2 !== 0 ? 'alt' : '';
+            const unit = detail.saleUnit && detail.saleUnit !== 'piece'
+              ? ` ${detail.saleUnit === 'pack' ? 'Pack' : 'Strip'}`
+              : '';
             return `
-              <tr class="${rowClass}">
-                <td style="text-align:left;">#${String(index + 1).padStart(2, '0')} ${escapeHtml(itemName).substring(0, 25)}</td>
-                <td>${qty}</td>
-                <td>${netPrice.toFixed(2)}</td>
-                <td style="text-align:right;">${amount.toFixed(2)}</td>
-              </tr>
-            `;
+              <div class="line">
+                <div class="line-name">${String(index + 1).padStart(2, '0')}. ${escapeHtml(itemName)}</div>
+                <div class="line-calc">
+                  <span class="calc">${qty}${escapeHtml(unit)} &times; ${netPrice.toFixed(2)}</span>
+                  <span class="amt">${amount.toFixed(2)}</span>
+                </div>
+              </div>`;
           }).join('')
-        : '<tr><td colspan="4" style="text-align: center;">No items</td></tr>';
+        : '<div class="line"><div class="line-name" style="text-align:center;">No items</div></div>';
+
+      // "Invoice" is not specific enough on a return receipt -- the customer and
+      // the auditor both need to see which direction the goods moved.
+      const thermalTitle = trx.trxType === 'sales' ? 'SALES INVOICE'
+        : trx.trxType === 'sales_return' ? 'SALES RETURN'
+        : trx.trxType === 'purchase' ? 'PURCHASE INVOICE'
+        : trx.trxType === 'purchase_return' ? 'PURCHASE RETURN'
+        : 'INVOICE';
+
+      const paidAmount = Number(trx.paidAmount || 0);
+      const dueAmount = Number(trx.dueAmount || 0);
+      const grossTotalThermal = netTotal + totalsSummary.totalDiscount - totalsSummary.totalTax;
 
       html = `
         <!doctype html>
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>${escapeHtml(invoiceHeading)}</title>
+            <title>${escapeHtml(thermalTitle)}</title>
             <style>
               @page { size: ${paperWidth} auto; margin: 0; }
               * { box-sizing: border-box; }
               html, body {
-                margin: 0; padding: 0; width: ${paperWidth}; background: #fff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                margin: 0; padding: 0; width: ${paperWidth}; background: #fff;
+                /* A mono stack keeps every column of figures on the same
+                   baseline grid, which is what makes a receipt readable. */
+                font-family: 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace;
+                color: #000;
                 -webkit-print-color-adjust: exact; print-color-adjust: exact;
               }
-              .screen-note { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #64748b; font-size: 14px; }
+              .screen-note { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #64748b; font-size: 14px; font-family: Arial, sans-serif; }
               @media screen { .receipt { display: none; } .screen-note { display: flex; } }
               @media print { .screen-note { display: none !important; } .receipt { display: block; } }
 
-              .receipt { background-color: #fff; width: ${paperWidth}; padding: 0; margin: 0 auto; position: relative; }
-              .content-wrapper { padding: 4mm 2mm; display: flex; flex-direction: column; gap: 4px; }
-              
-              .header-text { width: 100%; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; }
-              .h-name { font-size: ${baseFont + 2}px; font-weight: 800; color: #000; line-height: 1.2; text-transform: uppercase; margin:0;}
-              .h-contact { font-size: ${baseFont}px; color: #000; margin-top: 2px; }
-              
-              .blue-bar { background-color: #000; color: #fff; padding: 4px 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 4px; margin-bottom: 4px; }
-              .blue-bar h1 { font-size: ${baseFont + 2}px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
-              .blue-bar .meta { font-size: ${baseFont - 1}px; text-align: right; line-height: 1.2; font-weight: bold; }
-              
-              table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-              th { color: #000; font-size: ${baseFont - 1}px; text-transform: uppercase; text-align: center; padding: 2px; border-bottom: 1.5px solid #000; }
-              th:first-child { text-align: left; }
-              th:last-child { text-align: right; }
-              td { font-size: ${baseFont - 1}px; text-align: center; padding: 3px 2px; border-bottom: 1px dashed #ccc; }
-              td:first-child { font-weight: bold; color: #000; }
-              td:last-child { font-weight: bold; color: #000; }
-              tr.alt td { background-color: #fff; }
-              tr td { background-color: #fff; }
+              .receipt { width: ${paperWidth}; padding: 3mm 2.5mm 4mm; margin: 0 auto; }
 
-              .totals-container { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; margin-top: 2px;}
-              .totals { width: 70%; }
-              .total-row { display: flex; justify-content: space-between; font-size: ${baseFont}px; padding: 2px 0; font-weight: bold; color: #000; }
-              .total-row span:first-child { color: #000; text-transform: uppercase; font-size: ${baseFont - 1}px;}
-              .total-row.border-top { border-top: 1px solid #000; margin-top: 2px; padding-top: 2px; }
-              .total-row.border-bottom { border-bottom: 1px solid #000; margin-bottom: 2px; padding-bottom: 2px; }
-              
-              .footer { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; margin-top: 4px; text-align: left; }
-              .footer-cols { width: 100%; font-size: ${baseFont}px; color: #000; line-height: 1.4; text-align: left;}
-              .footer-cols p { margin:0 0 2px 0; }
-              .qr-box { flex-shrink: 0; padding-right: 10px; padding-bottom: 4px; }
-              .qr-code { width: 50px; height: 50px; border: 1px solid #000; padding: 2px; background: #fff;}
+              /* ---- header ---- */
+              .head { text-align: center; }
+              .h-name { font-size: ${baseFont + 3}px; font-weight: 700; line-height: 1.15; text-transform: uppercase; }
+              .h-sub { font-size: ${baseFont - 1}px; line-height: 1.35; margin-top: 1px; word-break: break-word; }
+
+              .title { text-align: center; font-size: ${baseFont + 1}px; font-weight: 700; letter-spacing: 1px;
+                       border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 2px 0; margin: 3px 0; }
+
+              /* ---- meta: label left, value right ---- */
+              .meta-row { display: flex; justify-content: space-between; gap: 6px; font-size: ${baseFont - 1}px; line-height: 1.45; }
+              .meta-row span:last-child { text-align: right; font-weight: 700; word-break: break-word; }
+
+              .rule { border-top: 1px dashed #000; margin: 3px 0; }
+              .rule-solid { border-top: 1px solid #000; margin: 3px 0; }
+
+              /* ---- items ---- */
+              .cols { display: flex; justify-content: space-between; font-size: ${baseFont - 2}px;
+                      font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+              .line { margin: 3px 0; }
+              .line-name { font-size: ${baseFont - 1}px; font-weight: 700; line-height: 1.25; word-break: break-word; }
+              .line-calc { display: flex; justify-content: space-between; font-size: ${baseFont - 1}px; line-height: 1.3; }
+              .line-calc .calc { color: #333; }
+              .line-calc .amt { font-weight: 700; }
+
+              /* ---- totals ---- */
+              .tot-row { display: flex; justify-content: space-between; font-size: ${baseFont - 1}px; line-height: 1.5; }
+              .tot-row.grand { font-size: ${baseFont + 2}px; font-weight: 700; border-top: 1px solid #000;
+                               border-bottom: 1px solid #000; padding: 2px 0; margin: 2px 0; }
+              .tot-row.due { font-weight: 700; }
+
+              /* ---- footer ---- */
+              .qr-wrap { text-align: center; margin-top: 5px; }
+              .qr-code { width: 68px; height: 68px; }
+              .qr-cap { font-size: ${baseFont - 2}px; margin-top: 1px; }
+              .thanks { text-align: center; font-size: ${baseFont - 1}px; font-weight: 700; margin-top: 4px; }
+              .addr { text-align: center; font-size: ${baseFont - 2}px; line-height: 1.35; margin-top: 2px; word-break: break-word; }
+              .brand { text-align: center; font-size: ${baseFont - 3}px; margin-top: 4px; }
             </style>
           </head>
           <body>
             <div class="screen-note">Preparing print preview...</div>
             <div class="receipt">
-              <div class="content-wrapper">
-                <div class="header-text">
-                  <div class="h-name">${escapeHtml(hospitalName)}</div>
-                  <div class="h-contact">${escapeHtml(hospitalContact)}</div>
-                </div>
 
-                <div class="blue-bar">
-                  <h1>Invoice</h1>
-                  <div class="meta">
-                    <div>#${escapeHtml(String(trx.serialNo ?? '-'))}</div>
-                    <div>Date: ${escapeHtml(invoiceDate)}</div>
-                  </div>
-                </div>
-
-                <table>
-                  <thead>
-                    <tr>
-                      <th>DESCRIPTION</th>
-                      <th>QTY</th>
-                      <th>PRICE</th>
-                      <th>TOTAL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${rowsMarkupThermal}
-                  </tbody>
-                </table>
-
-                <div class="totals-container">
-                  <div class="qr-box">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationUrl || qrPayload)}" class="qr-code" />
-                  </div>
-                  <div class="totals">
-                    <div class="total-row border-top"><span>Subtotal</span> <span>${netTotal.toFixed(2)}</span></div>
-                    <div class="total-row"><span>Tax</span> <span>${totalsSummary.totalTax.toFixed(2)}</span></div>
-                    <div class="total-row border-bottom"><span>Discount</span> <span>${totalsSummary.totalDiscount.toFixed(2)}</span></div>
-                    <div class="total-row" style="font-size: ${baseFont + 1}px;"><span>Total</span> <span>${netTotal.toFixed(2)}</span></div>
-                  </div>
-                </div>
-
-                <div class="footer">
-                   <div class="footer-cols">
-                     <p><strong>Address:</strong> ${escapeHtml(hospitalAddress || hospitalContact)}</p>
-                   </div>
-                </div>
+              <div class="head">
+                <div class="h-name">${escapeHtml(hospitalName)}</div>
+                ${hospitalContact ? `<div class="h-sub">${escapeHtml(hospitalContact)}</div>` : ''}
               </div>
+
+              <div class="title">${escapeHtml(thermalTitle)}</div>
+
+              <div class="meta-row"><span>Invoice #</span><span>${escapeHtml(String(trx.serialNo ?? '-'))}</span></div>
+              <div class="meta-row"><span>Date</span><span>${escapeHtml(invoiceDate)}</span></div>
+              <div class="meta-row"><span>${resolvedTemplate === 'sale' ? 'Customer' : 'Supplier'}</span><span>${escapeHtml(billedToName)}</span></div>
+              ${billedToPhone ? `<div class="meta-row"><span>Phone</span><span>${escapeHtml(billedToPhone)}</span></div>` : ''}
+
+              <div class="rule-solid"></div>
+              <div class="cols"><span>Item / Qty &times; Rate</span><span>Amount</span></div>
+              <div class="rule"></div>
+
+              ${rowsMarkupThermal}
+
+              <div class="rule-solid"></div>
+
+              <div class="tot-row"><span>Subtotal</span><span>${grossTotalThermal.toFixed(2)}</span></div>
+              ${totalsSummary.totalDiscount > 0 ? `<div class="tot-row"><span>Discount</span><span>-${totalsSummary.totalDiscount.toFixed(2)}</span></div>` : ''}
+              ${totalsSummary.totalTax > 0 ? `<div class="tot-row"><span>Tax</span><span>+${totalsSummary.totalTax.toFixed(2)}</span></div>` : ''}
+              <div class="tot-row grand"><span>TOTAL</span><span>${netTotal.toFixed(2)}</span></div>
+              <div class="tot-row"><span>Paid</span><span>${paidAmount.toFixed(2)}</span></div>
+              ${dueAmount > 0 ? `<div class="tot-row due"><span>Balance Due</span><span>${dueAmount.toFixed(2)}</span></div>` : ''}
+
+              <div class="qr-wrap">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationUrl || qrPayload)}" class="qr-code" />
+                <div class="qr-cap">Scan to verify this invoice</div>
+              </div>
+
+              <div class="thanks">Thank you &mdash; get well soon</div>
+              ${hospitalAddress ? `<div class="addr">${escapeHtml(hospitalAddress)}</div>` : ''}
+              <div class="brand">Powered by SoftCare IT Solutions</div>
             </div>
             <script>
               window.onload = function () {
@@ -1074,10 +1145,88 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     return sortedByBatchNumber[0];
   };
-  const getMedicinePrice = (id: string, type: Transaction['trxType']) => {
+  const getMedicineById = (id?: string) => medicines.find((m) => m.id === id);
+  const getPackSize = (id?: string) => Math.max(1, Number(getMedicineById(id)?.packSize ?? 1));
+
+  /** Pieces contained in one unit -- the single conversion rule, mirroring the API. */
+  const piecesPerUnit = (id: string | undefined, unit: SaleUnit) => {
+    const med = getMedicineById(id);
+    if (!med) return 1;
+    if (unit === 'pack') return Math.max(1, Number(med.packSize ?? 1));
+    if (unit === 'strip') return Math.max(1, Number(med.piecesPerStrip ?? 1));
+    return 1;
+  };
+
+  const unitLabelFor = (id: string | undefined, unit: SaleUnit) => {
+    const med = getMedicineById(id);
+    if (unit === 'pack') return med?.packLabel || t('ui.pack');
+    if (unit === 'strip') return med?.stripLabel || t('ui.strip');
+    return med?.type || t('ui.piece');
+  };
+
+  /** Units the pharmacist configured this product to be sold in. */
+  const sellableUnitsFor = (id?: string): SaleUnit[] => {
+    const units = getMedicineById(id)?.sellableUnits;
+    return units && units.length ? units : ['piece'];
+  };
+
+  const getPackLabel = (id?: string) => unitLabelFor(id, 'pack');
+
+  /**
+   * Unit-aware price. A pack line uses the medicine's Retail Price (MRP) when set,
+   * otherwise the piece price multiplied by the pack size, so the two units always
+   * reconcile (7 pieces at 1.00 == 1 pack at 7.00).
+   */
+  /** Currency is always two decimals -- anything finer cannot be tendered. */
+  const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
+  const getMedicinePrice = (id: string, type: Transaction['trxType'], saleUnit: SaleUnit = 'piece') => {
     const med = medicines.find((m) => m.id === id);
     if (!med) return 0;
-    return type === 'purchase' || type === 'purchase_return' ? (med.costPrice ?? 0) : (med.salePrice ?? 0);
+    const isPurchase = type === 'purchase' || type === 'purchase_return';
+
+    // Cost Price and Sale Price are entered for a FULL PACK (the unit suppliers
+    // trade in), so the smaller tiers are divisions of it -- not multiples.
+    // For an unpackaged product packSize is 1, so this is a no-op and the price
+    // keeps its old per-piece meaning.
+    //
+    // Retail Price (MRP) is deliberately NOT used here: it is the price printed
+    // on the carton, kept for reference only. Billing always uses Sale Price for
+    // sales/sales returns and Cost Price for purchases/purchase returns.
+    const packQty = Math.max(1, piecesPerUnit(id, 'pack'));
+    const stripsPerPack = Math.max(1, Math.round(packQty / Math.max(1, piecesPerUnit(id, 'strip'))));
+    const packPriceBase = isPurchase ? (med.costPrice ?? 0) : (med.salePrice ?? 0);
+
+    // Dividing a pack price by an odd tier count produces values like
+    // 64.285714285, which a step=0.01 input rejects outright. Money is rounded
+    // to two decimals at the point it becomes a price.
+    if (saleUnit === 'pack') return round2(packPriceBase);
+    if (saleUnit === 'strip') return round2(packPriceBase / stripsPerPack);
+    return round2(packPriceBase / packQty);
+  };
+
+  /** "14 Pieces (2 Boxes)" / "11 Pieces (1 Box + 4)" */
+  const describeStock = (pieces: number, medicineId?: string) => {
+    const packSize = getPackSize(medicineId);
+    const perStrip = piecesPerUnit(medicineId, 'strip');
+    if (packSize <= 1 && perStrip <= 1) return `${pieces}`;
+
+    const parts: string[] = [];
+    let rest = pieces;
+
+    if (packSize > 1) {
+      const packs = Math.floor(rest / packSize);
+      rest = rest % packSize;
+      if (packs > 0) parts.push(`${packs} ${unitLabelFor(medicineId, 'pack')}`);
+    }
+    if (perStrip > 1) {
+      const strips = Math.floor(rest / perStrip);
+      rest = rest % perStrip;
+      if (strips > 0) parts.push(`${strips} ${unitLabelFor(medicineId, 'strip')}`);
+    }
+    if (rest > 0) parts.push(`${rest}`);
+
+    return parts.length ? `${pieces} (${parts.join(' + ')})` : `${pieces}`;
   };
 
   const exportToExcel = async () => {
@@ -1445,7 +1594,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       ? selectedHospitalId
       : currentHospital.id;
     // New invoices open as the type the user is currently viewing.
-    setFormData({ ...buildInitialFormData(targetHospitalId), trxType: trxTypeFilter });
+    setFormData({
+      ...buildInitialFormData(targetHospitalId),
+      trxType: trxTypeFilter,
+      isWalkIn: defaultIsWalkIn,
+      walkInName: walkInDefaults.name,
+      walkInPhone: walkInDefaults.phone,
+      walkInAddress: walkInDefaults.address,
+    });
     setSupplierSearch('');
     setPatientSearch('');
     setOpenSupplierDropdown(false);
@@ -1498,6 +1654,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       dueAmount: trx.dueAmount,
       supplierId: trx.supplierId || '',
       patientId: trx.patientId || '',
+      // Preserve how the sale was originally made; the name is already snapshot
+      // on the transaction so an edit never loses the walk-in customer.
+      isWalkIn: Boolean(trx.isWalkIn),
+      walkInName: trx.isWalkIn ? (trx.patientName || '') : '',
+      walkInPhone: '',
+      walkInAddress: '',
       hospitalId: trx.hospitalId,
       transactionDate: trx.createdAt ? new Date(trx.createdAt) : new Date(),
       items: (trx.details || []).map((d) => ({
@@ -1545,8 +1707,81 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setFormData((prev) => ({ ...prev, paidAmount: nextPaid, dueAmount: nextDue }));
   };
 
+
+  const [scanValue, setScanValue] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * An invoice is rarely one line, so the caret has to return to the scan box
+   * after every item. Clicking a quantity or price field moves focus away by
+   * design -- refocusing is therefore only done right after a scan resolves.
+   */
+  const refocusScanner = () => {
+    requestAnimationFrame(() => {
+      const el = scanInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+  };
+
+  /**
+   * USB barcode scanners behave like a keyboard and end with Enter. Resolve the
+   * code to a medicine and add it to the sale; scanning the same product again
+   * increments the existing line instead of creating a duplicate row.
+   */
+  const handleScan = async (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code) return;
+    setScanning(true);
+    try {
+      const med = await findByBarcode(code, formData.hospitalId);
+      if (!med) {
+        toast.error(t('ui.barcodeNotFound', { code }));
+        return;
+      }
+
+      setFormData((prev) => {
+        const items = [...prev.items];
+        // Match an existing line for the same medicine in the same unit.
+        const idx = items.findIndex((it) => it.medicineId === med.id);
+        if (idx >= 0) {
+          items[idx] = { ...items[idx], qtty: Number(items[idx].qtty || 0) + 1 };
+          return { ...prev, items };
+        }
+
+        const allowedUnits = med.sellableUnits && med.sellableUnits.length ? med.sellableUnits : ['piece'];
+        const unit: SaleUnit = (allowedUnits.includes(med.defaultSaleUnit as SaleUnit)
+          ? med.defaultSaleUnit
+          : allowedUnits[0]) as SaleUnit;
+        const price = getMedicinePrice(med.id, prev.trxType, unit);
+        const line = { ...emptyItem(), medicineId: med.id, qtty: 1, saleUnit: unit, price };
+
+        // Replace a blank first row rather than leaving it empty.
+        const blank = items.findIndex((it) => !it.medicineId);
+        if (blank >= 0) items[blank] = line; else items.push(line);
+        return { ...prev, items };
+      });
+
+      toast.success(med.brandName);
+    } finally {
+      setScanning(false);
+      setScanValue('');
+      refocusScanner();
+    }
+  };
+
   const handleMedicineChange = (index: number, medicineId: string) => {
-    const price = getMedicinePrice(medicineId, formData.trxType);
+    // Adopt the medicine's configured default unit (Box for packaged products),
+    // falling back to the line's current unit when that is also permitted.
+    const allowed = sellableUnitsFor(medicineId);
+    const currentUnit = (formData.items[index]?.saleUnit ?? 'piece') as SaleUnit;
+    const configuredDefault = (getMedicineById(medicineId)?.defaultSaleUnit ?? 'piece') as SaleUnit;
+    const effectiveUnit: SaleUnit = allowed.includes(configuredDefault)
+      ? configuredDefault
+      : (allowed.includes(currentUnit) ? currentUnit : allowed[0]);
+    const price = getMedicinePrice(medicineId, formData.trxType, effectiveUnit);
     let expiryDate = formData.items[index]?.expiryDate;
     const batchNo = formData.items[index]?.batchNo || '';
     let nextBatchNo = batchNo;
@@ -1596,9 +1831,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       toast.error('Please select a supplier');
       return;
     }
-    if ((formData.trxType === 'sales' || formData.trxType === 'sales_return') && !formData.patientId) {
-      toast.error('Please select a patient');
-      return;
+    // A sale needs a party: either a registered patient or a named walk-in customer.
+    if (formData.trxType === 'sales' || formData.trxType === 'sales_return') {
+      if (formData.isWalkIn) {
+        if (!formData.walkInName.trim()) {
+          toast.error(t('ui.walkInNameRequired'));
+          return;
+        }
+      } else if (!formData.patientId) {
+        toast.error('Please select a patient');
+        return;
+      }
     }
     if (!validateSalesStock()) {
       return;
@@ -1611,7 +1854,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       await addTransaction({
         hospitalId: formData.hospitalId,
         supplierId: formData.supplierId || undefined,
-        patientId: formData.patientId || undefined,
+        patientId: formData.isWalkIn ? undefined : (formData.patientId || undefined),
+        isWalkIn: formData.isWalkIn,
+        walkInCustomer: formData.isWalkIn
+          ? {
+              name: formData.walkInName.trim(),
+              phone: formData.walkInPhone.trim() || undefined,
+              address: formData.walkInAddress.trim() || undefined,
+            }
+          : undefined,
         trxType: formData.trxType,
         paidAmount,
         grandTotal,
@@ -1639,9 +1890,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       toast.error('Please select a supplier');
       return;
     }
-    if ((formData.trxType === 'sales' || formData.trxType === 'sales_return') && !formData.patientId) {
-      toast.error('Please select a patient');
-      return;
+    // A sale needs a party: either a registered patient or a named walk-in customer.
+    if (formData.trxType === 'sales' || formData.trxType === 'sales_return') {
+      if (formData.isWalkIn) {
+        if (!formData.walkInName.trim()) {
+          toast.error(t('ui.walkInNameRequired'));
+          return;
+        }
+      } else if (!formData.patientId) {
+        toast.error('Please select a patient');
+        return;
+      }
     }
     if (!validateSalesStock()) {
       return;
@@ -1655,7 +1914,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         id: selectedTransaction.id,
         hospitalId: formData.hospitalId,
         supplierId: formData.supplierId || undefined,
-        patientId: formData.patientId || undefined,
+        patientId: formData.isWalkIn ? undefined : (formData.patientId || undefined),
+        isWalkIn: formData.isWalkIn,
+        walkInCustomer: formData.isWalkIn
+          ? {
+              name: formData.walkInName.trim(),
+              phone: formData.walkInPhone.trim() || undefined,
+              address: formData.walkInAddress.trim() || undefined,
+            }
+          : undefined,
         trxType: formData.trxType,
         paidAmount,
         grandTotal,
@@ -1752,6 +2019,26 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   // Stock availability is only meaningful for the types that draw down stock.
   const showAvailableStock = ['sales', 'purchase_return'].includes(formData.trxType);
 
+  /**
+   * Optional columns for this invoice type, from Settings > Pharmacy > Invoice
+   * Fields. A counter sale normally hides batch and expiry because FIFO already
+   * picks the nearest-expiry lot; a purchase shows everything.
+   *
+   * Hiding a column is presentation only -- handleMedicineChange still resolves
+   * the batch and expiry and they are still saved, so stock stays accurate.
+   */
+  const visibleFields = getInvoiceFields(formData.hospitalId || currentHospital.id, formData.trxType as InvoiceType);
+
+  // The row is a 12-column grid. Five cells are always present (sale unit, qty,
+  // price, amount, delete), so the medicine cell absorbs whatever the hidden
+  // optional columns free up instead of leaving a gap.
+  // Written out in full rather than interpolated: Tailwind scans source text for
+  // class names, so a template literal would never be generated.
+  const optionalColumnCount = INVOICE_FIELD_KEYS.filter((key) => visibleFields[key]).length;
+  const medicineSpan = Math.min(7, Math.max(2, 12 - 5 - optionalColumnCount)) as 2 | 3 | 4 | 5 | 6 | 7;
+  const medicineColSpan = MEDICINE_HEADER_SPANS[medicineSpan];
+  const medicineColSpanRow = MEDICINE_ROW_SPANS[medicineSpan];
+
   // Summed once in the footer instead of a badge under every Qty field.
   // Deduped by medicine+batch so the same stock is not counted twice.
   const availableStockTotal = (() => {
@@ -1763,6 +2050,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       seen.add(key);
       return sum + getAvailableStock(item.medicineId, item.batchNo || undefined, formData.hospitalId);
     }, 0);
+  })();
+
+  // Shown as "14 (2 Box)" when the lines share one packable medicine.
+  const availableStockLabel = (() => {
+    const ids = Array.from(new Set(formData.items.map((i) => i.medicineId).filter(Boolean)));
+    if (ids.length === 1) return describeStock(availableStockTotal, ids[0]);
+    return String(availableStockTotal);
   })();
 
   // Name/ID are already visible in the selector above, so this panel only adds
@@ -2415,7 +2709,77 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <form className="p-4 space-y-4 max-h-[75vh] overflow-y-auto" onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}>
               <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm">
                 <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-                {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && (
+                {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && showCustomerToggle && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">{t('ui.customerType')}</label>
+                    <div className="flex items-center gap-1">
+                      {([[false, t('ui.registeredPatient')], [true, t('ui.walkInCustomer')]] as const).map(([val, label]) => (
+                        <button
+                          key={String(val)}
+                          type="button"
+                          onClick={() => setFormData((prev) => ({
+                            ...prev,
+                            isWalkIn: val as boolean,
+                            // Clear the other party so a sale never carries both.
+                            patientId: val ? '' : prev.patientId,
+                            walkInName: val ? prev.walkInName : '',
+                            walkInPhone: val ? prev.walkInPhone : '',
+                            walkInAddress: val ? prev.walkInAddress : '',
+                          }))}
+                          className={`px-2.5 py-1.5 rounded-md border text-[10px] font-medium transition-colors h-8 ${
+                            formData.isWalkIn === val
+                              ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200'
+                              : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 dark:bg-gray-800/60 dark:border-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && formData.isWalkIn && (
+                  <>
+                    <div className="space-y-1 min-w-[150px] max-w-[190px]">
+                      <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">
+                        {t('ui.customerName')} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.walkInName}
+                        onChange={(e) => setFormData({ ...formData, walkInName: e.target.value })}
+                        placeholder={t('ui.customerName')}
+                        title={t('ui.customerName')}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                      />
+                    </div>
+                    <div className="space-y-1 min-w-[130px] max-w-[160px]">
+                      <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">{t('ui.phone')}</label>
+                      <input
+                        type="text"
+                        value={formData.walkInPhone}
+                        onChange={(e) => setFormData({ ...formData, walkInPhone: e.target.value })}
+                        placeholder={t('ui.phone')}
+                        title={t('ui.phone')}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                      />
+                    </div>
+                    <div className="space-y-1 min-w-[130px] max-w-[190px]">
+                      <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">{t('ui.address')}</label>
+                      <input
+                        type="text"
+                        value={formData.walkInAddress}
+                        onChange={(e) => setFormData({ ...formData, walkInAddress: e.target.value })}
+                        placeholder={t('ui.address')}
+                        title={t('ui.address')}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && !formData.isWalkIn && (
                   <div className="space-y-1 min-w-[180px] max-w-[220px]">
                     <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">Find Patient</label>
                     <div className="relative">
@@ -2579,7 +2943,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 )}
 
                 {/* The invoice type comes from the tab, so this space shows who the
-                    invoice is for instead of a redundant type picker. */}
+                    invoice is for instead of a redundant type picker. Hidden for
+                    walk-in sales, where the customer fields already capture it. */}
+                {!formData.isWalkIn && (
                 <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-gray-600 dark:text-gray-300">
                     {isPurchaseSideForm ? 'Supplier Details' : t('ui.patientDetails')}
@@ -2601,6 +2967,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     </p>
                   )}
                 </div>
+                )}
 
                 {userRole === 'super_admin' && (
                   <div className="hidden">
@@ -2631,16 +2998,51 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               </div>
               </div>
 
+              {/* USB scanners type here and submit with Enter. Available on every
+                  invoice type -- purchases are received by scanning too. */}
+              {barcodeScanningEnabled && (
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="relative flex-1 max-w-xs">
+                    <Barcode className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      ref={scanInputRef}
+                      // Focused on open so a scan is captured immediately.
+                      autoFocus
+                      value={scanValue}
+                      // readOnly rather than disabled: a disabled input is blurred
+                      // by the browser, which would drop focus on every scan.
+                      readOnly={scanning}
+                      onChange={(e) => setScanValue(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleScan(scanValue);
+                        }
+                      }}
+                      placeholder={t('ui.scanBarcode')}
+                      aria-label={t('ui.scanBarcode')}
+                      className="w-full pl-8 pr-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('ui.barcodeScanHint')}</span>
+                </div>
+              )}
+
               {/* Column titles shown once instead of repeating a label on every item row. */}
               <div className="hidden lg:grid grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <div className="col-span-3">Medicine</div>
-                <div className="col-span-1">Batch</div>
-                <div className="col-span-1">Expiry</div>
+                <div className={medicineColSpan}>Medicine</div>
+                {/* Sale Unit sits directly after the product: it changes the price,
+                    so it belongs with the thing it prices. */}
+                <div className="col-span-1">{t('ui.saleUnit')}</div>
+                {visibleFields.batch && <div className="col-span-1">Batch</div>}
+                {visibleFields.expiry && <div className="col-span-1">Expiry</div>}
                 <div className="col-span-1">Qty</div>
-                <div className="col-span-1">Bonus</div>
+                {visibleFields.bonus && <div className="col-span-1">Bonus</div>}
                 <div className="col-span-1">Price</div>
-                <div className="col-span-1">Disc %</div>
-                <div className="col-span-1">Tax %</div>
+                {visibleFields.discount && <div className="col-span-1">Disc %</div>}
+                {visibleFields.tax && <div className="col-span-1">Tax %</div>}
                 <div className="col-span-1 text-right">Amount</div>
                 <div className="col-span-1 flex items-center justify-end">
                   <button
@@ -2663,7 +3065,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
                   return (
                   <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-x-2 gap-y-1 items-center border-b border-gray-100 dark:border-gray-800 lg:border-0 px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                    <div className="lg:col-span-3">
+                    <div className={medicineColSpanRow}>
                       <label className="sr-only">Medicine</label>
                       <div className="relative">
                         <input
@@ -2761,6 +3163,34 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       </div>
                     </div>
                     <div className="lg:col-span-1">
+                      <label className="sr-only">{t('ui.saleUnit')}</label>
+                      <select
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-1 text-[11px] h-8 disabled:opacity-60"
+                        title={t('ui.saleUnit')}
+                        // Only meaningful when more than one unit is sellable.
+                        disabled={sellableUnitsFor(item.medicineId).length <= 1}
+                        value={item.saleUnit ?? 'piece'}
+                        onChange={(e) => {
+                          // Strip is a real tier, not a synonym for piece -- coercing
+                          // it here would silently price a strip as a single tablet.
+                          const raw = e.target.value;
+                          const saleUnit: SaleUnit = raw === 'pack' || raw === 'strip' ? raw : 'piece';
+                          // Switching unit re-prices the line so piece and pack always reconcile.
+                          handleItemChange(index, {
+                            saleUnit,
+                            price: item.medicineId
+                              ? getMedicinePrice(item.medicineId, formData.trxType, saleUnit)
+                              : item.price,
+                          });
+                        }}
+                      >
+                        {sellableUnitsFor(item.medicineId).map((u) => (
+                          <option key={u} value={u}>{unitLabelFor(item.medicineId, u)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {visibleFields.batch && (
+                    <div className="lg:col-span-1">
                       <label className="sr-only">Batch No</label>
                       <input
                         className="w-full max-w-[120px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
@@ -2782,6 +3212,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         required={false}
                       />
                     </div>
+                    )}
+                    {visibleFields.expiry && (
                     <div className="lg:col-span-1">
                       <label className="sr-only">{t('ui.expiry')}</label>
                       <input
@@ -2792,6 +3224,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { expiryDate: e.target.value ? new Date(e.target.value) : undefined })}
                       />
                     </div>
+                    )}
                     <div className="lg:col-span-1">
                       <label className="sr-only">{t('ui.qty')}</label>
                       <input
@@ -2804,6 +3237,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { qtty: Number(e.target.value) })}
                       />
                     </div>
+                    {visibleFields.bonus && (
                     <div className="lg:col-span-1">
                       <label className="sr-only">Bonus</label>
                       <input
@@ -2816,6 +3250,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { bonus: Number(e.target.value) })}
                       />
                     </div>
+                    )}
                     <div className="lg:col-span-1">
                       <label className="sr-only">{t('ui.price')}</label>
                       <input
@@ -2826,9 +3261,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         title={t('ui.price')}
                         value={item.price}
                         onFocus={(e) => e.currentTarget.select()}
-                        onChange={(e) => handleItemChange(index, { price: Number(e.target.value) })}
+                        onChange={(e) => handleItemChange(index, { price: round2(Number(e.target.value)) })}
                       />
                     </div>
+                    {visibleFields.discount && (
                     <div className="lg:col-span-1">
                       <label className="sr-only">Disc %</label>
                       <input
@@ -2843,6 +3279,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { discount: Number(e.target.value) })}
                       />
                     </div>
+                    )}
+                    {visibleFields.tax && (
                     <div className="lg:col-span-1">
                       <label className="sr-only">Tax %</label>
                       <input
@@ -2857,6 +3295,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         onChange={(e) => handleItemChange(index, { tax: Number(e.target.value) })}
                       />
                     </div>
+                    )}
                     <div className="lg:col-span-1 flex items-center justify-end gap-1">
                       <span className="lg:hidden text-[10px] text-gray-500 dark:text-gray-400">{t('ui.amount')}</span>
                       <div className="text-[11px] font-semibold text-gray-900 dark:text-white">{calculateLineAmount(item).toFixed(2)}</div>
@@ -2882,7 +3321,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <span className="text-gray-600 dark:text-gray-300">Items: <strong className="text-gray-900 dark:text-white">{itemsCount}</strong></span>
                 </div>
                 {showAvailableStock && (
-                  <span className="text-gray-600 dark:text-gray-300">Available Stock: <strong className="text-gray-900 dark:text-white">{availableStockTotal}</strong></span>
+                  <span className="text-gray-600 dark:text-gray-300">Available Stock: <strong className="text-gray-900 dark:text-white">{availableStockLabel}</strong></span>
                 )}
                 <span className="text-gray-600 dark:text-gray-300">Grand Total: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>
                 <span className="text-gray-600 dark:text-gray-300">Bonus: <strong className="text-gray-900 dark:text-white">{totalsSummary.totalBonus.toFixed(2)}</strong></span>

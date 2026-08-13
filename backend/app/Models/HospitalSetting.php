@@ -26,6 +26,18 @@ class HospitalSetting extends Model
         'print_show_expiry_date_column',
         'print_show_bonus_column',
         'print_paper_sizes',
+        'invoice_fields',
+        'report_module_owners',
+        'pharmacy_customer_mode',
+        'pharmacy_default_customer',
+        'pharmacy_walk_in_default_name',
+        'pharmacy_walk_in_default_phone',
+        'pharmacy_walk_in_default_address',
+        'pharmacy_default_barcode_type',
+        'pharmacy_default_sale_unit',
+        'barcode_scanning_enabled',
+        'barcode_label_width_mm',
+        'barcode_label_height_mm',
         'prescription_logo_width',
         'prescription_logo_height',
         'prescription_signature_width',
@@ -42,7 +54,10 @@ class HospitalSetting extends Model
         'print_show_batch_column' => 'boolean',
         'print_show_expiry_date_column' => 'boolean',
         'print_show_bonus_column' => 'boolean',
+        'barcode_scanning_enabled' => 'boolean',
         'print_paper_sizes' => 'array',
+        'invoice_fields' => 'array',
+        'report_module_owners' => 'array',
         'prescription_logo_width' => 'integer',
         'prescription_logo_height' => 'integer',
         'prescription_signature_width' => 'integer',
@@ -69,6 +84,58 @@ class HospitalSetting extends Model
         foreach ($defaults as $module => $default) {
             $candidate = $stored[$module] ?? null;
             $resolved[$module] = in_array($candidate, $allowedSizes, true)
+                ? (string) $candidate
+                : (string) $default;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Stored per-invoice-type column visibility merged over the defaults in
+     * config/invoice_fields.php. Unknown invoice types and unknown fields are
+     * dropped, and every configurable type always comes back complete so the
+     * client never has to know the defaults.
+     *
+     * @return array<string, array<string, bool>>
+     */
+    public function resolvedInvoiceFields(): array
+    {
+        $defaults = (array) config('invoice_fields.types', []);
+        $allowedFields = (array) config('invoice_fields.fields', []);
+        $stored = is_array($this->invoice_fields) ? $this->invoice_fields : [];
+
+        $resolved = [];
+        foreach ($defaults as $type => $typeDefaults) {
+            $storedType = is_array($stored[$type] ?? null) ? $stored[$type] : [];
+            foreach ($allowedFields as $field) {
+                $resolved[$type][$field] = array_key_exists($field, $storedType)
+                    ? (bool) filter_var($storedType[$field], FILTER_VALIDATE_BOOLEAN)
+                    : (bool) ($typeDefaults[$field] ?? false);
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Stored income-module ownership merged over the defaults in
+     * config/report_ownership.php. Unknown modules and unknown desks are
+     * dropped, and every configurable module always comes back, so the client
+     * never has to know the defaults.
+     *
+     * @return array<string, string>
+     */
+    public function resolvedReportModuleOwners(): array
+    {
+        $defaults = (array) config('report_ownership.owners', []);
+        $allowedDesks = array_keys((array) config('report_ownership.desks', []));
+        $stored = is_array($this->report_module_owners) ? $this->report_module_owners : [];
+
+        $resolved = [];
+        foreach ($defaults as $module => $default) {
+            $candidate = $stored[$module] ?? null;
+            $resolved[$module] = in_array($candidate, $allowedDesks, true)
                 ? (string) $candidate
                 : (string) $default;
         }

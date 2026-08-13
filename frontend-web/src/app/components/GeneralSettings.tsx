@@ -1,14 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3 } from 'lucide-react';
 import {
   useSettings,
   PRINT_PAPER_SIZES,
   PRINT_PAPER_SIZE_LABELS,
   PRINT_MODULE_GROUPS,
   DEFAULT_PRINT_PAPER_SIZES,
+  DEFAULT_INVOICE_FIELDS,
+  INVOICE_FIELD_KEYS,
+  INVOICE_FIELD_LABELS,
+  INVOICE_TYPE_LABELS,
+  REPORT_DESKS,
+  REPORT_INCOME_MODULES,
+  DEFAULT_REPORT_MODULE_OWNERS,
   type PrintPaperSize,
   type PrintModule,
+  type PharmacyCustomerMode,
+  type PharmacyDefaultCustomer,
+  type BarcodeType,
+  type DefaultSaleUnit,
+  type InvoiceFieldSettings,
+  type InvoiceFieldKey,
+  type InvoiceType,
+  type ReportModuleOwners,
+  type ReportIncomeModule,
+  type ReportDesk,
 } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useHospitals } from '../context/HospitalContext';
@@ -40,9 +57,12 @@ const timezones = [
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults, getDefaultBarcodeType, getDefaultSaleUnit, getBarcodeLabel, getBarcodeScanningEnabled, getAllInvoiceFields, getReportModuleOwners, generatePatientId } = useSettings();
   const { hasPermission } = useAuth();
   const canManagePrintSettings = hasPermission('manage_print_settings');
+  // Which columns an invoice offers is pharmacy behaviour, so it shares the
+  // pharmacy gate rather than the print one.
+  const canManagePharmacySettings = hasPermission('manage_pharmacy_settings');
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -73,6 +93,16 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     showBonusColumn: true,
   });
 
+  const [pharmacyCustomerMode, setPharmacyCustomerModeState] = useState<PharmacyCustomerMode>('both');
+  const [pharmacyDefaultCustomer, setPharmacyDefaultCustomerState] = useState<PharmacyDefaultCustomer>('patient');
+  const [walkInDefaults, setWalkInDefaults] = useState({ name: '', phone: '', address: '' });
+  const [defaultBarcodeType, setDefaultBarcodeType] = useState<BarcodeType>('manual');
+  const [defaultSaleUnit, setDefaultSaleUnit] = useState<DefaultSaleUnit>('pack');
+  const [barcodeLabel, setBarcodeLabel] = useState({ widthMm: 50, heightMm: 25 });
+  const [barcodeScanningEnabled, setBarcodeScanningEnabled] = useState(true);
+  const [invoiceFields, setInvoiceFields] = useState<InvoiceFieldSettings>({ ...DEFAULT_INVOICE_FIELDS });
+  const [reportOwners, setReportOwners] = useState<ReportModuleOwners>({ ...DEFAULT_REPORT_MODULE_OWNERS });
+
   const [printPaperSizes, setPrintPaperSizes] = useState<Record<PrintModule, PrintPaperSize>>({
     ...DEFAULT_PRINT_PAPER_SIZES,
   });
@@ -102,6 +132,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       const printConfig = getPrintColumnSettings(selectedHospital.id);
       setPrintColumns(printConfig);
       setPrintPaperSizes(getPrintPaperSizes(selectedHospital.id));
+      setPharmacyCustomerModeState(getPharmacyCustomerMode(selectedHospital.id));
+      setPharmacyDefaultCustomerState(getPharmacyDefaultCustomer(selectedHospital.id));
+      setWalkInDefaults(getPharmacyWalkInDefaults(selectedHospital.id));
+      setDefaultBarcodeType(getDefaultBarcodeType(selectedHospital.id));
+      setDefaultSaleUnit(getDefaultSaleUnit(selectedHospital.id));
+      setBarcodeLabel(getBarcodeLabel(selectedHospital.id));
+      setBarcodeScanningEnabled(getBarcodeScanningEnabled(selectedHospital.id));
+      setInvoiceFields(getAllInvoiceFields(selectedHospital.id));
+      setReportOwners(getReportModuleOwners(selectedHospital.id));
       const prescriptionPrintConfig = getPrescriptionPrintAssetSettings(selectedHospital.id);
       setPrescriptionPrintAssetSettings(prescriptionPrintConfig);
 
@@ -136,6 +175,42 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     saveHospitalSetting(selectedHospital.id, { printPaperSizes })
       .then(() => toast.success('Print paper sizes saved successfully'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save print paper sizes'));
+  };
+
+  const handleSavePharmacyCustomer = () => {
+    saveHospitalSetting(selectedHospital.id, {
+      pharmacyCustomerMode,
+      pharmacyDefaultCustomer,
+      pharmacyWalkInDefaults: walkInDefaults,
+      defaultSaleUnit,
+    })
+      .then(() => toast.success('Pharmacy customer settings saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save pharmacy customer settings'));
+  };
+
+  const handleSaveInvoiceFields = () => {
+    saveHospitalSetting(selectedHospital.id, { invoiceFields })
+      .then(() => toast.success('Invoice field settings saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save invoice field settings'));
+  };
+
+  const toggleInvoiceField = (type: InvoiceType, field: InvoiceFieldKey) => {
+    setInvoiceFields((prev) => ({
+      ...prev,
+      [type]: { ...prev[type], [field]: !prev[type][field] },
+    }));
+  };
+
+  const handleSaveReportOwners = () => {
+    saveHospitalSetting(selectedHospital.id, { reportModuleOwners: reportOwners })
+      .then(() => toast.success('Report ownership saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save report ownership'));
+  };
+
+  const handleSaveBarcodeSettings = () => {
+    saveHospitalSetting(selectedHospital.id, { defaultBarcodeType, barcodeLabel, barcodeScanningEnabled })
+      .then(() => toast.success('Barcode settings saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save barcode settings'));
   };
 
   const handleSaveTimezone = () => {
@@ -687,6 +762,226 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
           </div>
         </div>
 
+        {/* Pharmacy - who a sale can be made to */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Package className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Pharmacy Customers</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Choose who pharmacy sales can be made to. A hospital deployment normally
+            uses registered patients, a retail pharmacy uses walk-in customers, and
+            both can be offered together. Users additionally need the
+            &quot;Pharmacy Walk-in Sales&quot; permission to see the walk-in option.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                Customer options
+              </label>
+              <select
+                value={pharmacyCustomerMode}
+                title="Pharmacy customer options"
+                onChange={(e) => {
+                  const mode = e.target.value as PharmacyCustomerMode;
+                  setPharmacyCustomerModeState(mode);
+                  // Keep the default consistent with the chosen mode.
+                  if (mode === 'patient_only') setPharmacyDefaultCustomerState('patient');
+                  if (mode === 'walk_in_only') setPharmacyDefaultCustomerState('walk_in');
+                }}
+                className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+              >
+                <option value="both">Registered patients and walk-in customers</option>
+                <option value="patient_only">Registered patients only</option>
+                <option value="walk_in_only">Walk-in customers only (retail pharmacy)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                Default when opening a new sale
+              </label>
+              <select
+                value={pharmacyDefaultCustomer}
+                title="Default pharmacy customer"
+                disabled={pharmacyCustomerMode !== 'both'}
+                onChange={(e) => setPharmacyDefaultCustomerState(e.target.value as PharmacyDefaultCustomer)}
+                className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs disabled:opacity-60"
+              >
+                <option value="patient">Registered Patient</option>
+                <option value="walk_in">Walk-in Customer</option>
+              </select>
+              {pharmacyCustomerMode !== 'both' && (
+                <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                  Fixed by the selected customer option.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+              Default selling unit for new medicines
+            </label>
+            <select
+              value={defaultSaleUnit}
+              title="Default selling unit for new medicines"
+              onChange={(e) => setDefaultSaleUnit(e.target.value as DefaultSaleUnit)}
+              className="w-full md:w-1/2 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+            >
+              <option value="pack">Pack / Box</option>
+              <option value="strip">Strip</option>
+              <option value="piece">Piece</option>
+            </select>
+            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+              Applied when a new medicine's packaging makes that unit available. A product
+              with no strip or box still sells by the piece.
+            </p>
+          </div>
+
+          {pharmacyCustomerMode !== 'patient_only' && (
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                Default walk-in customer
+              </p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-2">
+                Pre-filled on every new walk-in sale so the counter does not retype it.
+                Staff can still change it on an individual invoice. Leave blank to start empty.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Customer Name</label>
+                  <input
+                    type="text"
+                    value={walkInDefaults.name}
+                    onChange={(e) => setWalkInDefaults({ ...walkInDefaults, name: e.target.value })}
+                    placeholder="e.g. Walk-in Customer"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone</label>
+                  <input
+                    type="text"
+                    value={walkInDefaults.phone}
+                    onChange={(e) => setWalkInDefaults({ ...walkInDefaults, phone: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Address</label>
+                  <input
+                    type="text"
+                    value={walkInDefaults.address}
+                    onChange={(e) => setWalkInDefaults({ ...walkInDefaults, address: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={handleSavePharmacyCustomer}
+            className="mt-3 w-full px-3 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors font-medium text-xs"
+          >
+            Save Pharmacy Customer Settings
+          </button>
+        </div>
+
+        {/* Barcode defaults and label size */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <ScanLine className="w-4 h-4 text-purple-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Barcodes</h2>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Choose the barcode type new medicines start on, and the label size used by
+            your barcode printer. Manual is typed in, Manufacturer is scanned from the
+            packaging, and System Generated is created by ShifaaScript.
+          </p>
+
+          <label className="flex items-center justify-between gap-3 mb-3 cursor-pointer select-none">
+            <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
+              Enable barcode / QR scanning
+              <span className="block text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                Turns the barcode section on the product form and the scan field on every
+                invoice on or off. Stored barcodes are kept either way.
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={barcodeScanningEnabled}
+              aria-label="Enable barcode scanning"
+              onClick={() => setBarcodeScanningEnabled(!barcodeScanningEnabled)}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                barcodeScanningEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                barcodeScanningEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </label>
+
+          <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 ${barcodeScanningEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                Default barcode type
+              </label>
+              <select
+                value={defaultBarcodeType}
+                title="Default barcode type"
+                onChange={(e) => setDefaultBarcodeType(e.target.value as BarcodeType)}
+                className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+              >
+                <option value="manual">Manual (typed)</option>
+                <option value="manufacturer">Manufacturer (scanned)</option>
+                <option value="system">System Generated</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                Label width (mm)
+              </label>
+              <input
+                type="number"
+                min={20}
+                max={210}
+                title="Label width in millimetres"
+                value={barcodeLabel.widthMm}
+                onChange={(e) => setBarcodeLabel({ ...barcodeLabel, widthMm: Number(e.target.value) })}
+                className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                Label height (mm)
+              </label>
+              <input
+                type="number"
+                min={10}
+                max={297}
+                title="Label height in millimetres"
+                value={barcodeLabel.heightMm}
+                onChange={(e) => setBarcodeLabel({ ...barcodeLabel, heightMm: Number(e.target.value) })}
+                className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleSaveBarcodeSettings}
+            className="mt-3 w-full px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium text-xs"
+          >
+            Save Barcode Settings
+          </button>
+        </div>
+
         {/* Print Settings - Paper Size per Module */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
@@ -744,6 +1039,125 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               className="mt-3 w-full px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
             >
               Save Paper Sizes
+            </button>
+          )}
+        </div>
+
+        {/* Report Ownership - which desk reports each income module */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-orange-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Report Ownership</h2>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 leading-snug">
+            Choose which desk reports each stream of income. Most hospitals run one
+            finance officer at reception who reconciles everything; others let the
+            pharmacy keep its own sales, or the lab its own orders. A module&rsquo;s
+            money appears under the Reports tab chosen here &mdash; users still need
+            that tab&rsquo;s own permission to open it.
+          </p>
+
+          <div className="space-y-1.5">
+            {REPORT_INCOME_MODULES.map(({ key, label }) => (
+              <div key={key} className="grid grid-cols-2 gap-2 items-center">
+                <label htmlFor={`report-owner-${key}`} className="text-xs text-gray-700 dark:text-gray-300">
+                  {label}
+                </label>
+                <select
+                  id={`report-owner-${key}`}
+                  value={reportOwners[key as ReportIncomeModule]}
+                  onChange={(e) => setReportOwners({
+                    ...reportOwners,
+                    [key]: e.target.value as ReportDesk,
+                  })}
+                  className="w-full px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  {REPORT_DESKS.map((desk) => (
+                    <option key={desk.key} value={desk.key}>{desk.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={handleSaveReportOwners}
+            className="mt-3 w-full px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            Save Report Ownership
+          </button>
+        </div>
+
+        {/* Invoice Fields - per transaction type */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Columns3 className="w-4 h-4 text-cyan-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Invoice Fields</h2>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 leading-snug">
+            Choose which optional columns each invoice type shows. A counter sale
+            normally does not need Batch or Expiry &mdash; the system already picks the
+            nearest-expiry lot automatically (FIFO) &mdash; while a purchase records
+            everything the supplier delivered. Hiding a column only removes the input;
+            batch and expiry are still tracked behind the scenes.
+          </p>
+
+          {!canManagePharmacySettings && (
+            <p className="mb-3 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 text-[11px] text-amber-700 dark:text-amber-300">
+              You do not have permission to change invoice fields. Values below are read-only.
+            </p>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-1.5 pr-2 font-semibold text-gray-600 dark:text-gray-300">Invoice Type</th>
+                  {INVOICE_FIELD_KEYS.map((field) => (
+                    <th key={field} className="py-1.5 px-1 font-semibold text-gray-600 dark:text-gray-300 text-center whitespace-nowrap">
+                      {INVOICE_FIELD_LABELS[field]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {INVOICE_TYPE_LABELS.map(({ key, label, hint }) => (
+                  <tr key={key} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                    <td className="py-1.5 pr-2 align-top">
+                      <div className="font-medium text-gray-900 dark:text-white">{label}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">{hint}</div>
+                    </td>
+                    {INVOICE_FIELD_KEYS.map((field) => (
+                      <td key={field} className="py-1.5 px-1 text-center align-middle">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={invoiceFields[key][field]}
+                          aria-label={`${label} \u2013 ${INVOICE_FIELD_LABELS[field]}`}
+                          disabled={!canManagePharmacySettings}
+                          onClick={() => toggleInvoiceField(key, field)}
+                          className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                            invoiceFields[key][field] ? 'bg-cyan-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        >
+                          <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                            invoiceFields[key][field] ? 'translate-x-4.5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {canManagePharmacySettings && (
+            <button
+              onClick={handleSaveInvoiceFields}
+              className="mt-3 w-full px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              Save Invoice Fields
             </button>
           )}
         </div>

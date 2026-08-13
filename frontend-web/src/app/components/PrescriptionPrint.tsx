@@ -494,56 +494,65 @@ export function PrescriptionPrint({
           {/* Hospital Header */}
           {renderHospitalHeader('mb-2')}
 
-          {/* Info Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mt-2 mb-6 sm:mb-8">
+          {/*
+            Info Cards Grid
+
+            Label and value share a line rather than stacking. The stacked
+            version cost two lines per field and pushed long prescriptions onto
+            a second sheet; inline rows cut this block to roughly half the
+            height while keeping every field.
+          */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-1 mb-3">
             {/* Patient Info */}
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Patient Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm rx-info-grid">
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Name</span>
-                  <span className="font-semibold text-gray-900">{patient.name}</span>
+            <div className="bg-gray-50 border border-gray-200 rounded-md px-2.5 py-1.5">
+              <h3 className="text-[10px] font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-1 mb-1">Patient Information</h3>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Name</span>
+                  <span className="font-semibold text-gray-900 truncate">{patient.name}</span>
                 </div>
                 {showPrescriptionListMeta && (
-                  <div>
-                    <span className="block text-xs font-bold text-blue-900">Patient ID</span>
-                    <span className="font-mono text-gray-900">{patient.patientId}</span>
+                  <div className="flex items-baseline gap-1 min-w-0">
+                    <span className="font-bold text-blue-900 shrink-0">ID</span>
+                    <span className="font-mono text-gray-900 truncate">{patient.patientId}</span>
                   </div>
                 )}
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Age / Gender</span>
-                  <span className="text-gray-900">{patient.age} Y / {patient.gender}</span>
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Age / Sex</span>
+                  <span className="text-gray-900 truncate">{patient.age} Y / {patient.gender}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Date</span>
-                  <span className="text-gray-900">{formatDate(prescriptionDate, hospital.timezone, hospital.calendarType)}</span>
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Date</span>
+                  <span className="text-gray-900 truncate">{formatDate(prescriptionDate, hospital.timezone, hospital.calendarType)}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Next Visit</span>
-                  <span className="text-gray-900">{nextVisit ? formatDate(nextVisit, hospital.timezone, hospital.calendarType) : '-'}</span>
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Next Visit</span>
+                  <span className="text-gray-900 truncate">{nextVisit ? formatDate(nextVisit, hospital.timezone, hospital.calendarType) : '-'}</span>
                 </div>
               </div>
             </div>
 
             {/* Doctor Info */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
-              <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-2 mb-3">Doctor Information</h3>
-              <div className="grid grid-cols-2 gap-y-2 text-sm rx-info-grid">
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Doctor Name</span>
-                  <span className="font-semibold text-gray-900">{doctor.name}</span>
+            <div className="bg-blue-50 border border-blue-100 rounded-md px-2.5 py-1.5">
+              <h3 className="text-[10px] font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-1 mb-1">Doctor Information</h3>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Doctor</span>
+                  <span className="font-semibold text-gray-900 truncate">{doctor.name}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Registration No.</span>
-                  <span className="text-gray-900">{doctor.registrationNumber || '-'}</span>
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Reg. No</span>
+                  <span className="text-gray-900 truncate">{doctor.registrationNumber || '-'}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Specialization</span>
-                  <span className="text-gray-900">{doctor.specialization}</span>
+                {/* Specialization can run long (multi-line qualifications), so it
+                    spans both columns and clamps instead of stretching the card. */}
+                <div className="col-span-2 flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Specialization</span>
+                  <span className="text-gray-900 truncate">{doctor.specialization}</span>
                 </div>
-                <div>
-                  <span className="block text-xs font-bold text-blue-900">Prescription #</span>
-                  <span className="font-mono font-bold text-gray-900">{prescriptionNumber}</span>
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="font-bold text-blue-900 shrink-0">Rx #</span>
+                  <span className="font-mono font-bold text-gray-900 truncate">{prescriptionNumber}</span>
                 </div>
               </div>
             </div>

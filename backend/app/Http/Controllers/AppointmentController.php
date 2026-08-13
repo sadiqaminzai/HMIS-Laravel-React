@@ -97,6 +97,9 @@ class AppointmentController extends Controller
         $this->applyFeeDiscountRules($data);
 
         $data['appointment_number'] = $data['appointment_number'] ?? null;
+        // Stamped server-side so the client cannot claim to be someone else.
+        $data['created_by'] = $request->user()?->name;
+        $data['updated_by'] = $request->user()?->name;
 
         $appointment = Appointment::create($data);
         $this->ledgerPostingService->upsertAppointmentSnapshot($appointment);
@@ -130,6 +133,8 @@ class AppointmentController extends Controller
         if (empty($data['appointment_number'])) {
             unset($data['appointment_number']);
         }
+
+        $data['updated_by'] = $request->user()?->name;
 
         $appointment->update($data);
 
@@ -201,6 +206,16 @@ class AppointmentController extends Controller
 
         $canDiscount = $user->hasAnyPermission(['add_discounts', 'edit_discounts', 'manage_discounts']);
         $canSetPayment = $user->hasAnyPermission(['manage_appointment_payments', 'manage_appointments']);
+        $canSetFee = $user->hasAnyPermission(['override_appointment_fee', 'manage_appointment_payments', 'manage_appointments']);
+
+        // Disabling the input is only a hint; without this a crafted request
+        // could still set any consultation fee it liked. Fall back to the
+        // stored fee on edit, or the doctor's own fee on create.
+        if (! $canSetFee) {
+            $data['original_fee_amount'] = $existing !== null
+                ? (float) $existing->original_fee_amount
+                : (float) ($this->resolveDoctorUser((int) ($data['doctor_id'] ?? 0))?->consultation_fee ?? 0);
+        }
 
         if (! $canDiscount) {
             // Keep whatever was already stored; never accept a new discount.

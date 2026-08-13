@@ -49,7 +49,9 @@ const mapAppointment = (a: any): Appointment => ({
   currency: a.currency ?? 'AFN',
   paymentStatus: (a.payment_status ?? 'pending') as Appointment['paymentStatus'],
   createdAt: a.created_at ? new Date(a.created_at) : new Date(),
+  createdBy: a.created_by ?? '',
   updatedAt: a.updated_at ? new Date(a.updated_at) : undefined,
+  updatedBy: a.updated_by ?? undefined,
 });
 
 export function AppointmentProvider({ children }: { children: React.ReactNode }) {

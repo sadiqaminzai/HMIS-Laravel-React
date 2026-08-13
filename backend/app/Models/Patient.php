@@ -26,6 +26,8 @@ class Patient extends Model
         'status',
         'image_path',
         'verification_token',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

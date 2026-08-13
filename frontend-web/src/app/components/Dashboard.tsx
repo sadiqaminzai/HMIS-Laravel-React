@@ -42,6 +42,50 @@ import {
   Pie,
   Cell
 } from 'recharts';
+import { AppFooter } from './AppFooter';
+
+/** Rendered instead of the ISO code, which reads as noise to local staff. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  AFN: '\u060B',
+  USD: '$',
+  EUR: '\u20AC',
+  PKR: '\u20A8',
+};
+
+/**
+ * Every dashboard panel is switched independently, because the dashboard is the
+ * one screen that aggregates figures from every module -- revenue, payroll,
+ * stock value -- and a role rarely needs all of them.
+ *
+ * Keys must match the `view_dashboard_<key>` permissions seeded by
+ * LabPrintPermissionsSeeder.
+ */
+const DASHBOARD_PANELS = [
+  'available_stock', 'medicine_sale', 'appointment_fees', 'lab_orders_amount',
+  'surgery_fees', 'room_booking_fees', 'expenses', 'inventory_purchases',
+  'other_income', 'salary', 'revenue_total',
+  'count_hospitals', 'count_doctors', 'count_patients', 'count_prescriptions',
+  'count_medicines', 'count_test_templates', 'count_lab_tests',
+  'count_appointments', 'count_rooms', 'count_surgeries',
+  'chart_monthly', 'chart_appointment_status', 'chart_test_status',
+  'chart_medicine_stock',
+  'recent_patients', 'recent_prescriptions', 'recent_lab_orders',
+] as const;
+
+export type DashboardPanel = typeof DASHBOARD_PANELS[number];
+
+/**
+ * Panels whose permission already existed and was already assigned to roles in
+ * production, under the old "permission OR module access" semantics.
+ *
+ * They are deliberately excluded from the opt-in check below: a hospital that
+ * had only ever granted `view_dashboard_revenue_total` must not suddenly find
+ * every count card, chart and list hidden the moment this build ships.
+ */
+const LEGACY_DASHBOARD_PANELS: ReadonlySet<string> = new Set([
+  'available_stock', 'medicine_sale', 'appointment_fees',
+  'lab_orders_amount', 'expenses', 'revenue_total',
+]);
 
 interface DashboardProps {
   role: UserRole;
@@ -94,6 +138,8 @@ interface DashboardSummary {
     total_other_income?: number;
     total_income: number;
     total_expenses: number;
+    total_inventory_purchases?: number;
+    total_cash_flow?: number;
     total_salary?: number;
     total_expenses_with_salary?: number;
     total_revenue?: number;
@@ -170,25 +216,55 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     total_other_income: 0,
     total_income: 0,
     total_expenses: 0,
+    total_inventory_purchases: 0,
+    total_cash_flow: 0,
     total_salary: 0,
     total_expenses_with_salary: 0,
     total_revenue: 0,
   };
   const netIncome = dailyFinancials.total_income - dailyFinancials.total_expenses - (dailyFinancials.total_salary ?? 0);
 
+  /**
+   * Intl renders AFN as the literal string "AFN", which is what made every tile
+   * read "AFN 51,269.52". Afghan users expect the afghani sign, so the symbol is
+   * placed manually and Intl is used only for digit grouping.
+   */
   const formatMoney = (amount: number) => {
-    try {
-      return new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: dailyFinancials.currency || 'AFN',
-        maximumFractionDigits: 2,
-      }).format(amount);
-    } catch {
-      return `${(dailyFinancials.currency || 'AFN').toUpperCase()} ${amount.toFixed(2)}`;
-    }
+    const symbol = CURRENCY_SYMBOLS[(dailyFinancials.currency || 'AFN').toUpperCase()]
+      ?? (dailyFinancials.currency || 'AFN').toUpperCase();
+    const digits = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Math.abs(amount));
+    return `${amount < 0 ? '-' : ''}${symbol} ${digits}`;
   };
 
   const canViewAny = (...permissions: string[]) => permissions.some((permission) => hasPermission(permission));
+
+  /**
+   * True once the administrator has configured ANY dashboard permission for
+   * this user. Until then the dashboard falls back to the module permissions it
+   * used before, so upgrading an existing hospital does not blank everyone's
+   * home screen. After the first dashboard permission is granted, these
+   * permissions become the sole authority.
+   */
+  const dashboardPermissionsConfigured = useMemo(
+    () => DASHBOARD_PANELS
+      .filter((panel) => !LEGACY_DASHBOARD_PANELS.has(panel))
+      .some((panel) => hasPermission(`view_dashboard_${panel}`)),
+    [hasPermission]
+  );
+
+  /**
+   * @param panel     the dashboard panel key
+   * @param fallbacks module permissions consulted only before any dashboard
+   *                  permission has been assigned
+   */
+  const showPanel = (panel: DashboardPanel, ...fallbacks: string[]) => {
+    if (role === 'super_admin') return true;
+    if (dashboardPermissionsConfigured) return hasPermission(`view_dashboard_${panel}`);
+    return fallbacks.length === 0 || canViewAny(...fallbacks);
+  };
 
   const rbacMetrics = useMemo(() => {
     const canViewMedicines = hasPermission('view_dashboard_available_stock')
@@ -241,7 +317,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Current stock value at cost price',
         icon: <Pill className="w-4 h-4" />,
         color: 'bg-pink-500',
-        visible: canViewMedicines,
+        visible: showPanel('available_stock', 'view_medicines', 'manage_medicines', 'dispense_medicines'),
       },
       {
         key: 'medicine_sale',
@@ -250,7 +326,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Total medicine invoices for selected period',
         icon: <Package className="w-4 h-4" />,
         color: 'bg-blue-500',
-        visible: canViewTransactions,
+        visible: showPanel('medicine_sale', 'view_transactions', 'manage_transactions'),
       },
       {
         key: 'appointment_fees',
@@ -259,7 +335,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'All doctor appointments for selected period',
         icon: <Calendar className="w-4 h-4" />,
         color: 'bg-teal-500',
-        visible: canViewAppointments,
+        visible: showPanel('appointment_fees', 'view_appointments', 'manage_appointments'),
       },
       {
         key: 'lab_orders_amount',
@@ -268,7 +344,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Lab order amount for selected period',
         icon: <TestTube className="w-4 h-4" />,
         color: 'bg-indigo-500',
-        visible: canViewLabOrders,
+        visible: showPanel('lab_orders_amount', 'view_lab_orders', 'manage_lab_orders', 'manage_lab_payments'),
       },
       {
         key: 'surgery_fees',
@@ -277,7 +353,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Total surgery fees for selected period',
         icon: <HeartPulse className="w-4 h-4" />,
         color: 'bg-orange-500',
-        visible: canViewSurgeries,
+        visible: showPanel('surgery_fees', 'view_surgeries', 'manage_surgeries', 'manage_patient_surgeries'),
       },
       {
         key: 'room_booking_fees',
@@ -286,16 +362,27 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Total room booking fees for selected period',
         icon: <Bed className="w-4 h-4" />,
         color: 'bg-cyan-500',
-        visible: canViewRoomBookings,
+        visible: showPanel('room_booking_fees', 'view_room_bookings', 'manage_room_bookings'),
       },
       {
         key: 'expenses',
         label: t('ui.expenses'),
         value: formatMoney(dailyFinancials.total_expenses),
-        helper: 'Total non-salary expenses for selected period',
+        helper: 'Operating expenses only — rent, utilities, supplies',
         icon: <TrendingDown className="w-4 h-4" />,
         color: 'bg-rose-500',
-        visible: canViewExpenses,
+        visible: showPanel('expenses', 'view_expenses', 'manage_expenses'),
+      },
+      {
+        key: 'inventory_purchases',
+        label: 'Inventory Purchases',
+        value: formatMoney(dailyFinancials.total_inventory_purchases ?? 0),
+        // Deliberately NOT part of Revenue: this money became stock, it was not
+        // consumed. Reported so the cash movement stays visible.
+        helper: 'Stock bought this period — an asset, not an expense',
+        icon: <Package className="w-4 h-4" />,
+        color: 'bg-violet-500',
+        visible: showPanel('inventory_purchases', 'view_transactions', 'manage_transactions'),
       },
       {
         key: 'other_income',
@@ -304,7 +391,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Additional hospital income for selected period',
         icon: <TrendingUp className="w-4 h-4" />,
         color: 'bg-emerald-600',
-        visible: canViewOtherIncomes,
+        visible: showPanel('other_income', 'view_other_incomes', 'manage_other_incomes'),
       },
       {
         key: 'salary',
@@ -313,22 +400,23 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         helper: 'Total payroll salary for selected period',
         icon: <ClipboardList className="w-4 h-4" />,
         color: 'bg-red-500',
-        visible: canViewSalary,
+        visible: showPanel('salary', 'view_payroll_batches', 'manage_payroll_batches', 'view_payroll_items', 'manage_payroll_items'),
       },
       {
         key: 'revenue_total',
         label: 'Revenue Total',
         value: formatMoney(dailyFinancials.total_revenue ?? netIncome),
-        helper: 'Total income minus expenses and salary',
+        helper: 'Income less operating expenses and salary (excludes stock purchases)',
         icon: <TrendingUp className="w-4 h-4" />,
         color: 'bg-emerald-500',
-        visible: canViewRevenue,
+        visible: showPanel('revenue_total', 'view_transactions', 'manage_transactions'),
       },
     ];
   }, [
     dailyFinancials.total_revenue,
     dailyFinancials.total_stock_cost_amount,
     dailyFinancials.total_expenses,
+    dailyFinancials.total_inventory_purchases,
     dailyFinancials.total_salary,
     dailyFinancials.total_fees,
     dailyFinancials.total_income,
@@ -481,101 +569,91 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards Row 1 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_hospitals', 'manage_hospitals') && (
+        {showPanel('count_hospitals', 'view_hospitals', 'manage_hospitals') && (
           <StatCard
             label="Total Hospitals"
             value={counts.hospitals.toString()}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
-        {canViewAny('view_doctors', 'manage_doctors') && (
+        {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
             label="Total Doctors"
             value={counts.doctors.toString()}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '5', isPositive: true }}
           />
         )}
-        {canViewAny('view_patients', 'manage_patients') && (
+        {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
             label="Total Patients"
             value={counts.patients.toString()}
             icon={<Users className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '12', isPositive: true }}
           />
         )}
-        {canViewAny('view_prescriptions', 'manage_prescriptions') && (
+        {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
             label="Total Prescriptions"
             value={counts.prescriptions.toString()}
             icon={<FileText className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '8', isPositive: true }}
           />
         )}
       </div>
 
       {/* Stats Cards Row 2 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
+        {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
             label="Total Medicines"
             value={counts.medicines.toString()}
             icon={<Pill className="w-4 h-4" />}
             color="bg-pink-500"
-            trend={{ value: '10', isPositive: true }}
           />
         )}
-        {canViewAny('view_test_templates', 'manage_test_templates') && (
+        {showPanel('count_test_templates', 'view_test_templates', 'manage_test_templates') && (
           <StatCard
             label="Test Templates"
             value={counts.test_templates.toString()}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-indigo-500"
-            trend={{ value: '3', isPositive: true }}
           />
         )}
-        {canViewAny('view_lab_orders', 'manage_lab_orders') && (
+        {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
             label="Lab Tests (Today)"
             value={counts.lab_orders_today.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-cyan-500"
-            trend={{ value: '6', isPositive: true }}
           />
         )}
-        {canViewAny('view_appointments', 'manage_appointments') && (
+        {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
             label="Appointments"
             value={counts.appointments_today.toString()}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-teal-500"
-            trend={{ value: '15', isPositive: true }}
           />
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_rooms', 'manage_rooms') && (
+        {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
             label="Total Rooms"
             value={counts.rooms.toString()}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-sky-500"
-            trend={{ value: '4', isPositive: true }}
           />
         )}
-        {canViewAny('view_rooms', 'manage_rooms') && (
+        {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
             label="Active Rooms"
             value={counts.active_rooms.toString()}
             icon={<CheckCircle className="w-4 h-4" />}
             color="bg-emerald-500"
-            trend={{ value: '3', isPositive: true }}
           />
         )}
         {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
@@ -584,7 +662,6 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.surgeries.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
-            trend={{ value: '5', isPositive: true }}
           />
         )}
         {canViewAny('view_room_bookings', 'manage_room_bookings') && (
@@ -593,7 +670,6 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.room_bookings_today.toString()}
             icon={<Package className="w-4 h-4" />}
             color="bg-indigo-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
       </div>
@@ -601,6 +677,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Monthly Trends */}
+        {showPanel('chart_monthly') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Monthly Trends</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -622,6 +699,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
 
         {/* Hospital Status */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
@@ -650,7 +728,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       </div>
 
       {/* Activity Table */}
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
@@ -666,52 +744,47 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_doctors', 'manage_doctors') && (
+        {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
             label="Total Doctors"
             value={counts.doctors.toString()}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
-        {canViewAny('view_patients', 'manage_patients') && (
+        {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
             label="Total Patients"
             value={counts.patients.toString()}
             icon={<Users className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '15', isPositive: true }}
           />
         )}
-        {canViewAny('view_prescriptions', 'manage_prescriptions') && (
+        {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
             label="Prescriptions"
             value={counts.prescriptions.toString()}
             icon={<FileText className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '8', isPositive: true }}
           />
         )}
-        {canViewAny('view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
+        {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
             label={t('ui.medicines')}
             value={counts.medicines.toString()}
             icon={<Pill className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '3', isPositive: false }}
           />
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_rooms', 'manage_rooms') && (
+        {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
             label="Total Rooms"
             value={counts.rooms.toString()}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-sky-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
         {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
@@ -720,7 +793,6 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.surgeries.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
         {canViewAny('view_room_bookings', 'manage_room_bookings') && (
@@ -729,7 +801,6 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.room_bookings_today.toString()}
             icon={<Package className="w-4 h-4" />}
             color="bg-indigo-500"
-            trend={{ value: '1', isPositive: true }}
           />
         )}
         {canViewAny('view_patient_surgeries', 'manage_patient_surgeries') && (
@@ -738,13 +809,13 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.patient_surgeries_today.toString()}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-teal-500"
-            trend={{ value: '1', isPositive: true }}
           />
         )}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {showPanel('chart_monthly') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Monthly Activity</h3>
           <div className="h-56">
@@ -768,7 +839,9 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             </ResponsiveContainer>
           </div>
         </div>
+        )}
 
+        {showPanel('chart_appointment_status') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Appointment Status</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -805,9 +878,10 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             ))}
           </div>
         </div>
+        )}
       </div>
 
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
@@ -858,40 +932,36 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_patients', 'manage_patients') && (
+        {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
             label="Total Patients"
             value={counts.patients.toString()}
             icon={<Users className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '12', isPositive: true }}
           />
         )}
-        {canViewAny('view_appointments', 'manage_appointments') && (
+        {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
             label="Appointments Today"
             value={counts.appointments_today.toString()}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '3', isPositive: true }}
           />
         )}
-        {canViewAny('view_prescriptions', 'manage_prescriptions') && (
+        {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
             label="Prescriptions"
             value={counts.prescriptions.toString()}
             icon={<ClipboardList className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '5', isPositive: true }}
           />
         )}
-        {canViewAny('view_lab_orders', 'manage_lab_orders') && (
+        {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
             label="Lab Tests Ordered"
             value={counts.lab_orders_today.toString()}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
       </div>
@@ -941,7 +1011,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
@@ -957,40 +1027,36 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_patients', 'manage_patients') && (
+        {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
             label="Total Patients"
             value={counts.patients.toString()}
             icon={<Users className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '15', isPositive: true }}
           />
         )}
-        {canViewAny('view_appointments', 'manage_appointments') && (
+        {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
             label="Today's Appointments"
             value={counts.appointments_today.toString()}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '4', isPositive: true }}
           />
         )}
-        {canViewAny('view_appointments', 'manage_appointments') && (
+        {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
             label="Scheduled"
             value={scheduledCount.toString()}
             icon={<Clock className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '8', isPositive: true }}
           />
         )}
-        {canViewAny('view_doctors', 'manage_doctors') && (
+        {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
             label="Available Doctors"
             value={counts.active_doctors.toString()}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '0', isPositive: true }}
           />
         )}
       </div>
@@ -1071,6 +1137,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           </ResponsiveContainer>
         </div>
 
+        {showPanel('chart_appointment_status') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Appointment Status</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -1107,9 +1174,10 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             ))}
           </div>
         </div>
+        )}
       </div>
 
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
@@ -1124,22 +1192,20 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
+        {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
             label="Total Medicines"
             value={counts.medicines.toString()}
             icon={<Pill className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '5', isPositive: true }}
           />
         )}
-        {canViewAny('view_prescriptions', 'manage_prescriptions') && (
+        {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
             label="Prescriptions"
             value={counts.prescriptions.toString()}
             icon={<FileText className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '8', isPositive: true }}
           />
         )}
         {canViewAny('view_stocks', 'manage_stocks', 'view_stock_reconciliation', 'manage_stock_reconciliation') && (
@@ -1148,7 +1214,6 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={lowStockCount.toString()}
             icon={<AlertCircle className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '3', isPositive: false }}
           />
         )}
         {canViewAny('view_manufacturers', 'manage_manufacturers') && (
@@ -1157,13 +1222,13 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.manufacturers.toString()}
             icon={<Package className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '1', isPositive: true }}
           />
         )}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {showPanel('chart_monthly') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Monthly Prescriptions</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -1183,7 +1248,9 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
 
+        {showPanel('chart_medicine_stock') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Stock Status</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -1220,6 +1287,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             ))}
           </div>
         </div>
+        )}
       </div>
 
       {/* Low Stock Alert */}
@@ -1233,7 +1301,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
@@ -1249,46 +1317,43 @@ export function Dashboard({ role, hospital }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {canViewAny('view_lab_orders', 'manage_lab_orders') && (
+        {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
             label="Pending Tests"
             value={pendingLabCount.toString()}
             icon={<Clock className="w-4 h-4" />}
             color="bg-orange-500"
-            trend={{ value: '5', isPositive: false }}
           />
         )}
-        {canViewAny('view_lab_orders', 'manage_lab_orders') && (
+        {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
             label="In Progress"
             value={inProgressLabCount.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-blue-500"
-            trend={{ value: '3', isPositive: true }}
           />
         )}
-        {canViewAny('view_lab_orders', 'manage_lab_orders') && (
+        {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
             label="Completed Today"
             value={completedLabCount.toString()}
             icon={<CheckCircle className="w-4 h-4" />}
             color="bg-green-500"
-            trend={{ value: '12', isPositive: true }}
           />
         )}
-        {canViewAny('view_test_templates', 'manage_test_templates') && (
+        {showPanel('count_test_templates', 'view_test_templates', 'manage_test_templates') && (
           <StatCard
             label="Test Templates"
             value={counts.test_templates.toString()}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-purple-500"
-            trend={{ value: '2', isPositive: true }}
           />
         )}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {showPanel('chart_test_status') && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Test Status Overview</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -1325,6 +1390,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             ))}
           </div>
         </div>
+        )}
 
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <h3 className="text-xs font-semibold text-gray-900 dark:text-white mb-3">Monthly Test Volume</h3>
@@ -1358,27 +1424,38 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         </div>
       </div>
 
-      <RecentActivity recent={recentData} role={role} />
+      <RecentActivity recent={recentData} role={role} showPanel={showPanel} />
     </div>
   );
 
   // Render based on role
-  switch (role) {
-    case 'super_admin':
-      return <SuperAdminDashboard />;
-    case 'admin':
-      return <AdminDashboard />;
-    case 'doctor':
-      return <DoctorDashboard />;
-    case 'receptionist':
-      return <ReceptionistDashboard />;
-    case 'pharmacist':
-      return <PharmacistDashboard />;
-    case 'lab_technician':
-      return <LabTechnicianDashboard />;
-    default:
-      return <AdminDashboard />;
-  }
+  const roleDashboard = (() => {
+    switch (role) {
+      case 'super_admin':
+        return <SuperAdminDashboard />;
+      case 'admin':
+        return <AdminDashboard />;
+      case 'doctor':
+        return <DoctorDashboard />;
+      case 'receptionist':
+        return <ReceptionistDashboard />;
+      case 'pharmacist':
+        return <PharmacistDashboard />;
+      case 'lab_technician':
+        return <LabTechnicianDashboard />;
+      default:
+        return <AdminDashboard />;
+    }
+  })();
+
+  // Wrapped once here so the vendor/support footer appears for every role
+  // without touching each dashboard body.
+  return (
+    <>
+      {roleDashboard}
+      <AppFooter />
+    </>
+  );
 }
 
 // Stat Card Component
@@ -1424,10 +1501,13 @@ function StatCard({ label, value, icon, color, trend }: StatCardProps) {
 interface RecentActivityProps {
   recent: DashboardSummary['recent'];
   role: UserRole;
+  /** Panel gate from the parent; these lists carry patient-identifying data. */
+  showPanel: (panel: DashboardPanel, ...fallbacks: string[]) => boolean;
 }
 
-function RecentActivity({ recent, role }: RecentActivityProps) {
+function RecentActivity({ recent, role, showPanel }: RecentActivityProps) {
   if (role === 'pharmacist') {
+    if (!showPanel('recent_prescriptions', 'view_prescriptions', 'manage_prescriptions')) return null;
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <h2 className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Recent Prescriptions</h2>
@@ -1454,6 +1534,7 @@ function RecentActivity({ recent, role }: RecentActivityProps) {
   }
 
   if (role === 'lab_technician') {
+    if (!showPanel('recent_lab_orders', 'view_lab_orders', 'manage_lab_orders')) return null;
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <h2 className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Recent Lab Tests</h2>
@@ -1514,6 +1595,8 @@ function RecentActivity({ recent, role }: RecentActivityProps) {
       </div>
     );
   }
+
+  if (!showPanel('recent_patients', 'view_patients', 'manage_patients')) return null;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">

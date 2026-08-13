@@ -23,6 +23,13 @@ export interface PrescriptionPrintAssetSettings {
   signatureHeight: number;
 }
 
+/** Which customer options the pharmacy sale screen offers for this hospital. */
+export type PharmacyCustomerMode = 'patient_only' | 'walk_in_only' | 'both';
+export type PharmacyDefaultCustomer = 'patient' | 'walk_in';
+export type BarcodeType = 'manual' | 'manufacturer' | 'system';
+/** Preferred selling unit for NEW medicines. */
+export type DefaultSaleUnit = 'piece' | 'strip' | 'pack';
+
 export type PrintPaperSize = 'a4' | 'a5' | '80mm' | '76mm' | '58mm';
 
 export const PRINT_PAPER_SIZES: PrintPaperSize[] = ['a4', 'a5', '80mm', '76mm', '58mm'];
@@ -115,6 +122,79 @@ export const DEFAULT_PRINT_PAPER_SIZES: Record<PrintModule, PrintPaperSize> = {
   prescription: 'a4',
 };
 
+/**
+ * Optional columns on the pharmacy invoice entry form. Hiding one only removes
+ * the input -- batch and expiry are still resolved by FIFO and stored, so stock
+ * tracking is unaffected.
+ */
+export type InvoiceFieldKey = 'batch' | 'expiry' | 'bonus' | 'discount' | 'tax';
+export type InvoiceType = 'sales' | 'sales_return' | 'purchase' | 'purchase_return';
+
+export const INVOICE_FIELD_KEYS: InvoiceFieldKey[] = ['batch', 'expiry', 'bonus', 'discount', 'tax'];
+
+export const INVOICE_FIELD_LABELS: Record<InvoiceFieldKey, string> = {
+  batch: 'Batch',
+  expiry: 'Expiry',
+  bonus: 'Bonus',
+  discount: 'Discount %',
+  tax: 'Tax %',
+};
+
+export const INVOICE_TYPE_LABELS: { key: InvoiceType; label: string; hint: string }[] = [
+  { key: 'sales', label: 'Sales Invoice', hint: 'Counter sale \u2014 batch and expiry are picked automatically by FIFO' },
+  { key: 'sales_return', label: 'Return In (Sales Return)', hint: 'Returned goods must go back to the right lot' },
+  { key: 'purchase', label: 'Purchase Invoice', hint: 'Goods received from a supplier' },
+  { key: 'purchase_return', label: 'Return Out (Purchase Return)', hint: 'Mirrors the purchase it reverses' },
+];
+
+export type InvoiceFieldSettings = Record<InvoiceType, Record<InvoiceFieldKey, boolean>>;
+
+/** Must match config/invoice_fields.php on the backend. */
+export const DEFAULT_INVOICE_FIELDS: InvoiceFieldSettings = {
+  sales: { batch: false, expiry: false, bonus: false, discount: true, tax: false },
+  sales_return: { batch: true, expiry: true, bonus: false, discount: true, tax: false },
+  purchase: { batch: true, expiry: true, bonus: true, discount: true, tax: true },
+  purchase_return: { batch: true, expiry: true, bonus: true, discount: true, tax: true },
+};
+
+/**
+ * Which reporting desk owns each income module. Hospitals split financial
+ * responsibility differently -- one officer for everything, or the pharmacy
+ * keeping its own sales -- so this is configured rather than hard-coded.
+ * Keys match the `module` value on ledger entries.
+ */
+export type ReportDesk = 'reception' | 'pharmacy' | 'laboratory' | 'radiology';
+export type ReportIncomeModule =
+  | 'pharmacy' | 'appointments' | 'laboratory' | 'radiology' | 'surgery' | 'room_booking';
+
+export const REPORT_DESKS: { key: ReportDesk; label: string }[] = [
+  { key: 'reception', label: 'Reception / Finance' },
+  { key: 'pharmacy', label: 'Pharmacy' },
+  { key: 'laboratory', label: 'Laboratory' },
+  { key: 'radiology', label: 'Radiology' },
+];
+
+export const REPORT_INCOME_MODULES: { key: ReportIncomeModule; label: string }[] = [
+  { key: 'pharmacy', label: 'Medicine Sale' },
+  { key: 'appointments', label: 'Appointment Fees' },
+  { key: 'laboratory', label: 'Laboratory Fees' },
+  { key: 'radiology', label: 'Ultrasound / Radiology Fees' },
+  { key: 'surgery', label: 'Surgery Fees' },
+  { key: 'room_booking', label: 'Room Booking Fees' },
+];
+
+export type ReportModuleOwners = Record<ReportIncomeModule, ReportDesk>;
+
+/** Must match config/report_ownership.php on the backend. */
+export const DEFAULT_REPORT_MODULE_OWNERS: ReportModuleOwners = {
+  pharmacy: 'pharmacy',
+  appointments: 'reception',
+  laboratory: 'reception',
+  radiology: 'reception',
+  surgery: 'reception',
+  room_booking: 'reception',
+};
+
 export interface HospitalSetting {
   hospitalId: string;
   defaultDoctorId?: string;
@@ -128,6 +208,21 @@ export interface HospitalSetting {
   showPrescriptionListMeta: boolean;
   /** Paper size configured per printable document for this hospital. */
   printPaperSizes: Record<PrintModule, PrintPaperSize>;
+  /** Optional invoice columns configured per transaction type. */
+  invoiceFields: InvoiceFieldSettings;
+  /** Which reports desk each income module's money is reported under. */
+  reportModuleOwners: ReportModuleOwners;
+  /** Whether pharmacy sales accept registered patients, walk-ins, or both. */
+  pharmacyCustomerMode: PharmacyCustomerMode;
+  pharmacyDefaultCustomer: PharmacyDefaultCustomer;
+  /** Pre-filled on every new walk-in sale so the counter is not retyped daily. */
+  pharmacyWalkInDefaults: { name: string; phone: string; address: string };
+  /** Barcode type a new medicine starts on, and the label size for the barcode printer. */
+  defaultBarcodeType: BarcodeType;
+  defaultSaleUnit: DefaultSaleUnit;
+  /** Master switch for barcode/QR scanning across products and invoices. */
+  barcodeScanningEnabled: boolean;
+  barcodeLabel: { widthMm: number; heightMm: number };
 }
 
 interface Settings {
@@ -151,6 +246,16 @@ interface SettingsContextType {
   getShowPrescriptionListMeta: (hospitalId: string) => boolean;
   getPrintPaperSize: (hospitalId: string, module: PrintModule) => PrintPaperSize;
   getPrintPaperSizes: (hospitalId: string) => Record<PrintModule, PrintPaperSize>;
+  getInvoiceFields: (hospitalId: string, type: InvoiceType) => Record<InvoiceFieldKey, boolean>;
+  getAllInvoiceFields: (hospitalId: string) => InvoiceFieldSettings;
+  getReportModuleOwners: (hospitalId: string) => ReportModuleOwners;
+  getPharmacyCustomerMode: (hospitalId: string) => PharmacyCustomerMode;
+  getPharmacyDefaultCustomer: (hospitalId: string) => PharmacyDefaultCustomer;
+  getPharmacyWalkInDefaults: (hospitalId: string) => { name: string; phone: string; address: string };
+  getDefaultBarcodeType: (hospitalId: string) => BarcodeType;
+  getDefaultSaleUnit: (hospitalId: string) => DefaultSaleUnit;
+  getBarcodeScanningEnabled: (hospitalId: string) => boolean;
+  getBarcodeLabel: (hospitalId: string) => { widthMm: number; heightMm: number };
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
@@ -195,6 +300,34 @@ const normalizePaperSizes = (raw: unknown): Record<PrintModule, PrintPaperSize> 
   return resolved;
 };
 
+const normalizeInvoiceFields = (raw: unknown): InvoiceFieldSettings => {
+  const stored = (raw && typeof raw === 'object') ? raw as Record<string, any> : {};
+  const resolved = {} as InvoiceFieldSettings;
+
+  (Object.keys(DEFAULT_INVOICE_FIELDS) as InvoiceType[]).forEach((type) => {
+    const storedType = (stored[type] && typeof stored[type] === 'object') ? stored[type] : {};
+    resolved[type] = { ...DEFAULT_INVOICE_FIELDS[type] };
+    INVOICE_FIELD_KEYS.forEach((field) => {
+      if (storedType[field] !== undefined) resolved[type][field] = Boolean(storedType[field]);
+    });
+  });
+
+  return resolved;
+};
+
+const normalizeReportOwners = (raw: unknown): ReportModuleOwners => {
+  const stored = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  const allowed = REPORT_DESKS.map((d) => d.key);
+  const resolved = { ...DEFAULT_REPORT_MODULE_OWNERS };
+
+  (Object.keys(DEFAULT_REPORT_MODULE_OWNERS) as ReportIncomeModule[]).forEach((module) => {
+    const candidate = String(stored[module] ?? '') as ReportDesk;
+    if (allowed.includes(candidate)) resolved[module] = candidate;
+  });
+
+  return resolved;
+};
+
 const toPositiveInt = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -216,6 +349,16 @@ const SettingsContext = createContext<SettingsContextType>({
   getShowPrescriptionListMeta: () => true,
   getPrintPaperSize: (_hospitalId: string, module: PrintModule) => DEFAULT_PRINT_PAPER_SIZES[module],
   getPrintPaperSizes: () => ({ ...DEFAULT_PRINT_PAPER_SIZES }),
+  getInvoiceFields: (_hospitalId: string, type: InvoiceType) => ({ ...DEFAULT_INVOICE_FIELDS[type] }),
+  getAllInvoiceFields: () => ({ ...DEFAULT_INVOICE_FIELDS }),
+  getReportModuleOwners: () => ({ ...DEFAULT_REPORT_MODULE_OWNERS }),
+  getPharmacyCustomerMode: () => 'both' as PharmacyCustomerMode,
+  getPharmacyDefaultCustomer: () => 'patient' as PharmacyDefaultCustomer,
+  getPharmacyWalkInDefaults: () => ({ name: '', phone: '', address: '' }),
+  getDefaultBarcodeType: () => 'manual' as BarcodeType,
+  getDefaultSaleUnit: () => 'pack' as DefaultSaleUnit,
+  getBarcodeScanningEnabled: () => true,
+  getBarcodeLabel: () => ({ widthMm: 50, heightMm: 25 }),
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -307,8 +450,38 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (payload.showPrescriptionListMeta !== undefined) {
       body.show_prescription_list_meta = payload.showPrescriptionListMeta;
     }
+    if (payload.pharmacyCustomerMode !== undefined) {
+      body.pharmacy_customer_mode = payload.pharmacyCustomerMode;
+    }
+    if (payload.pharmacyDefaultCustomer !== undefined) {
+      body.pharmacy_default_customer = payload.pharmacyDefaultCustomer;
+    }
+    if (payload.pharmacyWalkInDefaults !== undefined) {
+      body.pharmacy_walk_in_default_name = payload.pharmacyWalkInDefaults.name;
+      body.pharmacy_walk_in_default_phone = payload.pharmacyWalkInDefaults.phone;
+      body.pharmacy_walk_in_default_address = payload.pharmacyWalkInDefaults.address;
+    }
+    if (payload.defaultBarcodeType !== undefined) {
+      body.pharmacy_default_barcode_type = payload.defaultBarcodeType;
+    }
+    if (payload.defaultSaleUnit !== undefined) {
+      body.pharmacy_default_sale_unit = payload.defaultSaleUnit;
+    }
+    if (payload.barcodeScanningEnabled !== undefined) {
+      body.barcode_scanning_enabled = payload.barcodeScanningEnabled;
+    }
+    if (payload.barcodeLabel !== undefined) {
+      body.barcode_label_width_mm = payload.barcodeLabel.widthMm;
+      body.barcode_label_height_mm = payload.barcodeLabel.heightMm;
+    }
     if (payload.printPaperSizes !== undefined) {
       body.print_paper_sizes = payload.printPaperSizes;
+    }
+    if (payload.invoiceFields !== undefined) {
+      body.invoice_fields = payload.invoiceFields;
+    }
+    if (payload.reportModuleOwners !== undefined) {
+      body.report_module_owners = payload.reportModuleOwners;
     }
 
     const { data } = await api.put(`/hospital-settings/${hospitalId}`, body);
@@ -345,6 +518,27 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
       showPrescriptionListMeta: Boolean(raw.show_prescription_list_meta ?? true),
       printPaperSizes: normalizePaperSizes(raw.print_paper_sizes),
+      invoiceFields: normalizeInvoiceFields(raw.invoice_fields),
+      reportModuleOwners: normalizeReportOwners(raw.report_module_owners),
+      pharmacyCustomerMode: (['patient_only','walk_in_only','both'].includes(String(raw.pharmacy_customer_mode))
+        ? raw.pharmacy_customer_mode : 'both') as PharmacyCustomerMode,
+      pharmacyDefaultCustomer: (['patient','walk_in'].includes(String(raw.pharmacy_default_customer))
+        ? raw.pharmacy_default_customer : 'patient') as PharmacyDefaultCustomer,
+      pharmacyWalkInDefaults: {
+        name: raw.pharmacy_walk_in_default_name ?? '',
+        phone: raw.pharmacy_walk_in_default_phone ?? '',
+        address: raw.pharmacy_walk_in_default_address ?? '',
+      },
+      defaultBarcodeType: (['manual','manufacturer','system'].includes(String(raw.pharmacy_default_barcode_type))
+        ? raw.pharmacy_default_barcode_type : 'manual') as BarcodeType,
+      defaultSaleUnit: (['piece','strip','pack'].includes(String(raw.pharmacy_default_sale_unit))
+        ? raw.pharmacy_default_sale_unit : 'pack') as DefaultSaleUnit,
+      barcodeScanningEnabled: raw.barcode_scanning_enabled !== undefined
+        ? Boolean(raw.barcode_scanning_enabled) : true,
+      barcodeLabel: {
+        widthMm: toPositiveInt(raw.barcode_label_width_mm, 50),
+        heightMm: toPositiveInt(raw.barcode_label_height_mm, 25),
+      },
     };
   };
 
@@ -361,6 +555,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       showOutOfStockMedicinesForPharmacy: false,
       showPrescriptionListMeta: true,
       printPaperSizes: { ...DEFAULT_PRINT_PAPER_SIZES },
+      invoiceFields: normalizeInvoiceFields(undefined),
+      reportModuleOwners: normalizeReportOwners(undefined),
+      pharmacyCustomerMode: 'both',
+      pharmacyDefaultCustomer: 'patient',
+      pharmacyWalkInDefaults: { name: '', phone: '', address: '' },
+      defaultBarcodeType: 'manual',
+      defaultSaleUnit: 'pack',
+      barcodeScanningEnabled: true,
+      barcodeLabel: { widthMm: 50, heightMm: 25 },
     };
   };
 
@@ -408,6 +611,47 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).printPaperSizes;
   };
 
+  const getInvoiceFields = (hospitalId: string, type: InvoiceType) => {
+    const stored = getHospitalSetting(hospitalId).invoiceFields;
+    return { ...DEFAULT_INVOICE_FIELDS[type], ...(stored?.[type] ?? {}) };
+  };
+
+  const getAllInvoiceFields = (hospitalId: string): InvoiceFieldSettings => {
+    return getHospitalSetting(hospitalId).invoiceFields ?? { ...DEFAULT_INVOICE_FIELDS };
+  };
+
+  const getReportModuleOwners = (hospitalId: string): ReportModuleOwners => {
+    return getHospitalSetting(hospitalId).reportModuleOwners ?? { ...DEFAULT_REPORT_MODULE_OWNERS };
+  };
+
+  const getPharmacyCustomerMode = (hospitalId: string): PharmacyCustomerMode => {
+    return getHospitalSetting(hospitalId).pharmacyCustomerMode ?? 'both';
+  };
+
+  const getPharmacyDefaultCustomer = (hospitalId: string): PharmacyDefaultCustomer => {
+    return getHospitalSetting(hospitalId).pharmacyDefaultCustomer ?? 'patient';
+  };
+
+  const getPharmacyWalkInDefaults = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).pharmacyWalkInDefaults ?? { name: '', phone: '', address: '' };
+  };
+
+  const getDefaultBarcodeType = (hospitalId: string): BarcodeType => {
+    return getHospitalSetting(hospitalId).defaultBarcodeType ?? 'manual';
+  };
+
+  const getDefaultSaleUnit = (hospitalId: string): DefaultSaleUnit => {
+    return getHospitalSetting(hospitalId).defaultSaleUnit ?? 'pack';
+  };
+
+  const getBarcodeScanningEnabled = (hospitalId: string): boolean => {
+    return getHospitalSetting(hospitalId).barcodeScanningEnabled !== false;
+  };
+
+  const getBarcodeLabel = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).barcodeLabel ?? { widthMm: 50, heightMm: 25 };
+  };
+
   const generatePatientId = (hospitalId: string, currentCount: number): string => {
     const config = getPatientIdConfig(hospitalId);
     const number = (config.startNumber + currentCount).toString().padStart(config.digits, '0');
@@ -429,6 +673,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getShowPrescriptionListMeta,
       getPrintPaperSize,
       getPrintPaperSizes,
+      getPharmacyCustomerMode,
+      getPharmacyDefaultCustomer,
+      getPharmacyWalkInDefaults,
+      getDefaultBarcodeType,
+      getDefaultSaleUnit,
+      getBarcodeScanningEnabled,
+      getBarcodeLabel,
+      getInvoiceFields,
+      getAllInvoiceFields,
+      getReportModuleOwners,
       generatePatientId,
       loadHospitalSetting,
       saveHospitalSetting

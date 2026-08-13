@@ -93,6 +93,10 @@ class PatientController extends Controller
         $data = $this->validatePayload($request, null, (int) $hospitalId);
         $data['hospital_id'] = $hospitalId;
         $data['patient_id'] = null;
+        // Attribution is stamped server-side so the client cannot claim to be
+        // someone else.
+        $data['created_by'] = $actor?->name;
+        $data['updated_by'] = $actor?->name;
 
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('patients/images', 'public');
@@ -116,6 +120,7 @@ class PatientController extends Controller
         $this->authorizeScope($request->user(), $patient);
 
         $data = $this->validatePayload($request, $patient->id, (int) $patient->hospital_id);
+        $data['updated_by'] = $request->user()?->name;
 
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('patients/images', 'public');

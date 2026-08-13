@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import { toPng } from 'html-to-image';
 import autoTable from 'jspdf-autotable';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { fetchLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
 import { fetchTestTemplates } from '../../api/testTemplates';
 import { usePatients } from '../context/PatientContext';
@@ -482,7 +483,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     doc.save('LabTests_Report.pdf');
   };
 
-  const handleAdd = async () => {
+  const { submitting, guard } = useSubmitGuard();
+
+  const handleAdd = guard(async () => {
     if (!formData.patientId || formData.selectedTests.length === 0) {
       setToast({ message: 'Please select patient and at least one test.', type: 'warning' });
       return;
@@ -517,7 +520,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       console.error(err);
       setToast({ message: 'Failed to create lab order', type: 'danger' });
     }
-  };
+  });
 
   const openEditModal = (test: LabTest) => {
     const grossAmount = Number(test.totalAmount || 0) + Number(test.discountAmount || 0);
@@ -1534,9 +1537,10 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 >{t('ui.cancel')}</button>
                 <button
                   onClick={showEditModal ? handleEdit : handleAdd}
-                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showEditModal ? 'Save Order' : 'Create Order'}
+                  {submitting ? 'Saving...' : showEditModal ? 'Save Order' : 'Create Order'}
                 </button>
               </div>
             </div>

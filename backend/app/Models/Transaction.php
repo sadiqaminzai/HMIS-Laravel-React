@@ -19,6 +19,8 @@ class Transaction extends Model
         'supplier_id',
         'supplier_name',
         'patient_id',
+        'is_walk_in',
+        'walk_in_patient_id',
         'patient_name',
         'trx_type',
         'grand_total',
@@ -39,6 +41,7 @@ class Transaction extends Model
     ];
 
     protected $casts = [
+        'is_walk_in' => 'boolean',
         'grand_total' => 'decimal:2',
         'total_discount' => 'decimal:2',
         'total_tax' => 'decimal:2',
@@ -100,5 +103,10 @@ class Transaction extends Model
     public function details()
     {
         return $this->hasMany(TransactionDetail::class, 'trx_id');
+    }
+
+    public function walkInPatient()
+    {
+        return $this->belongsTo(WalkInPatient::class, 'walk_in_patient_id');
     }
 }

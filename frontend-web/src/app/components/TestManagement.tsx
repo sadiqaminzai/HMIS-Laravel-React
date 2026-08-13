@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  fetchTestTemplates,
+  fetchAllTestTemplates,
   createTestTemplate,
   updateTestTemplate,
   deleteTestTemplate,
@@ -44,7 +44,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sorting state
-  const [sortField, setSortField] = useState<string>('testName');
+  const [sortField, setSortField] = useState<string>('testCode');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Load tests from API
@@ -52,8 +52,10 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     setIsLoading(true);
     try {
       const hospitalFilter = isAllHospitals ? undefined : selectedHospitalId;
-      const result = await fetchTestTemplates(hospitalFilter, searchTerm || undefined);
-      setTests(result.data);
+      // Walk the whole paginator: a single 50-row page silently hid every test
+      // beyond the 50th on hospitals with a large catalogue.
+      const result = await fetchAllTestTemplates(hospitalFilter, searchTerm || undefined);
+      setTests(result);
     } catch (error) {
       console.error('Failed to load tests:', error);
       toast.error(currentLanguage === 'en' ? 'Failed to load tests' : 'خطا در بارگذاری آزمایشات');
@@ -202,14 +204,13 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     const aValue = a[sortField]?.toString().toLowerCase() || '';
     const bValue = b[sortField]?.toString().toLowerCase() || '';
     
-    if (sortDirection === 'asc') {
-      return aValue.localeCompare(bValue);
-    } else {
-      return bValue.localeCompare(aValue);
-    }
+    // numeric:true so codes sort 9, 12, 101 rather than 101, 12, 9 -- the
+    // catalogue mixes zero-padded ("040") and bare ("9") codes.
+    const collate = (x: string, y: string) => x.localeCompare(y, undefined, { numeric: true });
+    return sortDirection === 'asc' ? collate(aValue, bValue) : collate(bValue, aValue);
   });
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 20;
   const totalPages = Math.max(1, Math.ceil(sortedTests.length / itemsPerPage));
 
   const paginatedTests = useMemo(() => {

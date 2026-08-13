@@ -23,6 +23,9 @@ const mapDetail = (d: any): TransactionDetail => ({
   batchNo: d.batch_no ?? undefined,
   expiryDate: d.expiry_date ? new Date(d.expiry_date) : undefined,
   qtty: Number(d.qtty ?? 0),
+  saleUnit: (d.sale_unit === 'pack' ? 'pack' : 'piece') as 'piece' | 'pack',
+  packSizeSnapshot: Number(d.pack_size_snapshot ?? 1),
+  baseQtty: Number(d.base_qtty ?? d.qtty ?? 0),
   bonus: d.bonus !== undefined && d.bonus !== null ? Number(d.bonus) : undefined,
   price: Number(d.price ?? 0),
   discount: d.discount !== undefined && d.discount !== null ? Number(d.discount) : undefined,
@@ -39,6 +42,8 @@ const mapTransaction = (t: any): Transaction => ({
   supplierName: t.supplier_name ?? undefined,
   patientId: t.patient_id !== undefined && t.patient_id !== null ? String(t.patient_id) : undefined,
   patientName: t.patient_name ?? undefined,
+  isWalkIn: Boolean(t.is_walk_in ?? false),
+  walkInPatientId: t.walk_in_patient_id !== undefined && t.walk_in_patient_id !== null ? String(t.walk_in_patient_id) : undefined,
   trxType: (t.trx_type ?? 'purchase') as Transaction['trxType'],
   grandTotal: Number(t.grand_total ?? 0),
   totalDiscount: Number(t.total_discount ?? 0),
@@ -106,6 +111,8 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     if (payload.hospitalId) body.hospital_id = payload.hospitalId;
     if (payload.supplierId !== undefined) body.supplier_id = payload.supplierId || null;
     if (payload.patientId !== undefined) body.patient_id = payload.patientId || null;
+    if (payload.isWalkIn !== undefined) body.is_walk_in = payload.isWalkIn;
+    if (payload.walkInCustomer !== undefined) body.walk_in_customer = payload.walkInCustomer;
     if (payload.trxType) body.trx_type = payload.trxType;
     if (payload.grandTotal !== undefined) body.grand_total = payload.grandTotal;
     if (payload.totalDiscount !== undefined) body.total_discount = payload.totalDiscount;
@@ -120,6 +127,8 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
         batch_no: d.batchNo ?? null,
         expiry_date: d.expiryDate ? d.expiryDate.toISOString().slice(0, 10) : null,
         qtty: d.qtty,
+        // Backend converts pack -> pieces and snapshots the pack size.
+        sale_unit: d.saleUnit === 'pack' ? 'pack' : 'piece',
         bonus: d.bonus ?? 0,
         price: d.price,
         discount: d.discount ?? 0,

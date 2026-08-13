@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\UltrasoundExam;
 use App\Models\UltrasoundType;
+use App\Services\LedgerPostingService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,10 @@ use Illuminate\Validation\ValidationException;
 class UltrasoundExamController extends Controller
 {
     private const RELATIONS = ['patient', 'doctor', 'ultrasoundType'];
+
+    public function __construct(private LedgerPostingService $ledgerPostingService)
+    {
+    }
 
     public function index(Request $request)
     {
@@ -97,6 +102,10 @@ class UltrasoundExamController extends Controller
             ]);
         });
 
+        // Ultrasound fees are real income; without this they never reach the
+        // ledger and are missing from every financial report.
+        $this->ledgerPostingService->upsertUltrasoundExamSnapshot($exam);
+
         return response()->json($exam->load(self::RELATIONS), 201);
     }
 
@@ -119,6 +128,7 @@ class UltrasoundExamController extends Controller
         unset($data['sequence_id']);
 
         $ultrasoundExam->update($data);
+        $this->ledgerPostingService->upsertUltrasoundExamSnapshot($ultrasoundExam->fresh());
 
         return response()->json($ultrasoundExam->fresh()->load(self::RELATIONS));
     }
@@ -127,6 +137,7 @@ class UltrasoundExamController extends Controller
     {
         $this->authorizeScope($request->user(), $ultrasoundExam);
 
+        $this->ledgerPostingService->voidUltrasoundExamSnapshot($ultrasoundExam, $request->user()->name ?? null);
         $ultrasoundExam->delete();
 
         return response()->json(['message' => 'Ultrasound exam deleted']);

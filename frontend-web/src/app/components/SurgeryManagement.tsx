@@ -175,11 +175,10 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     notes: '',
     isActive: true,
   });
-    const [receiptSize, setReceiptSize] = useState<'a4' | 'a5' | '58mm' | '76mm' | '80mm'>(() => {
-      const saved = localStorage.getItem('surgery_receipt_size');
-      if (saved === '58mm' || saved === '76mm' || saved === '80mm' || saved === 'a4') return saved;
-      return '80mm';
-    });
+    // Seeded from the hospital's configured size rather than localStorage: a
+    // value cached in one browser used to override the hospital-wide setting,
+    // so the same receipt printed differently on different machines.
+    const [receiptSize, setReceiptSize] = useState<'a4' | 'a5' | '58mm' | '76mm' | '80mm'>('80mm');
 
   // Follow the hospital-wide paper size (Settings > General > Print Settings).
   const configuredPaperSize = getPrintPaperSize(currentHospital.id, 'surgery_receipt');
@@ -235,10 +234,6 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       dischargeSummary: '',
     }));
   };
-
-    useEffect(() => {
-      localStorage.setItem('surgery_receipt_size', receiptSize);
-    }, [receiptSize]);
 
     const printSurgeryReceipt = (item: PatientSurgeryItem, size: 'a4' | 'a5' | '58mm' | '76mm' | '80mm' = receiptSize) => {
       const isCompactReceipt = size !== 'a4' && size !== 'a5';

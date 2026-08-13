@@ -91,6 +91,8 @@ export interface MedicineType {
   updatedBy?: string;
 }
 
+export type SaleUnit = 'piece' | 'strip' | 'pack';
+
 export interface Medicine {
   id: string;
   hospitalId: string;
@@ -100,9 +102,29 @@ export interface Medicine {
   manufacturerId: string;
   medicineTypeId: string;
   type?: string; // human readable medicine type name (e.g., Tablet)
-  stock?: number;
+  stock?: number;            // always in base units (pieces)
   costPrice?: number;
-  salePrice?: number;
+  salePrice?: number;        // price per piece
+  /** TOTAL pieces per pack. Derived: piecesPerStrip * stripsPerPack. Read-only. */
+  packSize?: number;
+  /** Pieces in one strip (Risek: 7 capsules, Neurobion: 5 ampoules). */
+  piecesPerStrip?: number;
+  /** Strips in one pack/box (Risek: 2, Neurobion: 10). */
+  stripsPerPack?: number;
+  stripPrice?: number;
+  stripLabel?: string;
+  /** Units this product may be sold in, e.g. ['strip','pack']. */
+  sellableUnits?: SaleUnit[];
+  defaultSaleUnit?: SaleUnit;
+  /** Retail Price (MRP) -- the printed price of one pack.
+   *  Falls back to salePrice * packSize when unset. */
+  packPrice?: number;
+  /** Pack unit label, e.g. "Box" / "Strip". The piece unit is the medicine's
+   *  Type (Capsule, Tablet...) and is not duplicated here. */
+  packLabel?: string;
+  /** Scannable code. Optional -- medicines stay searchable by name without one. */
+  barcode?: string;
+  barcodeType?: 'manual' | 'manufacturer' | 'system';
   status: 'active' | 'inactive';
   createdAt?: Date;
   createdBy?: string;
@@ -190,9 +212,13 @@ export interface TransactionDetail {
   medicineId: string;
   batchNo?: string;
   expiryDate?: Date;
-  qtty: number;
+  qtty: number;              // quantity in the chosen sale unit
+  /** Inventory always moves in pieces; this is only the unit the line was entered in. */
+  saleUnit?: SaleUnit;
+  packSizeSnapshot?: number;
+  baseQtty?: number;
   bonus?: number;
-  price: number;
+  price: number;             // price per sale unit
   discount?: number;
   tax?: number;
   amount?: number;
@@ -207,6 +233,10 @@ export interface Transaction {
   supplierName?: string;
   patientId?: string;
   patientName?: string;
+  /** Retail pharmacy: sale made to a walk-in customer rather than a registered patient. */
+  isWalkIn?: boolean;
+  walkInPatientId?: string;
+  walkInCustomer?: { name: string; phone?: string; address?: string };
   patientPhone?: string;
   trxType: 'purchase' | 'sales' | 'purchase_return' | 'sales_return';
   grandTotal: number;

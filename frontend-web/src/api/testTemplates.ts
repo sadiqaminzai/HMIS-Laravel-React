@@ -118,6 +118,33 @@ export async function fetchTestTemplates(
   };
 }
 
+/**
+ * Every test template for a hospital, walking the paginator rather than keeping
+ * only the first page.
+ *
+ * A lab catalogue routinely runs past a hundred entries, and the single 50-row
+ * request this replaces silently dropped the rest -- the tests were registered
+ * but simply never appeared in the list.
+ */
+export async function fetchAllTestTemplates(
+  hospitalId?: string | number,
+  search?: string
+): Promise<TestTemplate[]> {
+  const records: TestTemplate[] = [];
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const { data, lastPage: pages } = await fetchTestTemplates(hospitalId, search, page, 200);
+    if (data.length === 0) break; // a malformed paginator must not loop forever
+    records.push(...data);
+    lastPage = pages;
+    page += 1;
+  } while (page <= lastPage && page <= 100);
+
+  return records;
+}
+
 export async function fetchTestTemplate(id: string | number): Promise<TestTemplate> {
   const response = await api.get<{ data: TestTemplateResponse }>(
     `/test-templates/${id}`
