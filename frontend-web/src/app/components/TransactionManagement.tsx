@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Check, Loader2 } from 'lucide-react';
 import { Hospital, Patient, SaleUnit, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -1051,9 +1051,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       .filter(Boolean).join(' · ') || '—';
   };
 
-  const getExpiryDisplay = (date: Date | string | undefined, hospitalId: string) => {
-    const h = getHospital(hospitalId);
-    return formatOnlyDate(date ?? undefined, h?.timezone || 'Asia/Kabul', (h?.calendarType as 'gregorian' | 'shamsi') || 'gregorian');
+  /**
+   * Expiry is shown as MM/YYYY everywhere -- on screen and in print.
+   *
+   * A full "31 August 2027" is both wider than the column and more precise than
+   * the carton, which only ever states a month. The hospitalId argument is kept
+   * so callers do not change, though a month needs no timezone conversion.
+   */
+  const getExpiryDisplay = (date: Date | string | undefined, _hospitalId?: string) => {
+    if (!date) return '';
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`;
   };
 
   const getExpiryFromStock = (medicineId: string, batchNo: string) => {
@@ -1122,7 +1131,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     const now = new Date();
     const future = withMeta
-      .filter((b) => b.expiryDate && b.expiryDate >= now)
+      // End of the labelled month, not the stored 1st: a batch expiring 08/2027
+      // is still sellable for the whole of August.
+      .filter((b) => isUsableThrough(b.expiryDate, now))
       .sort((a, b) => (a.expiryDate as Date).getTime() - (b.expiryDate as Date).getTime());
     if (future.length) return future[0];
 
@@ -1177,6 +1188,60 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
    * otherwise the piece price multiplied by the pack size, so the two units always
    * reconcile (7 pieces at 1.00 == 1 pack at 7.00).
    */
+  /** MM/YYYY for display, from whatever the row currently holds. */
+  const toMonthInput = (value: Date | string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+  };
+
+  /**
+   * Keeps the field to digits and inserts the slash as the user types, so the
+   * four numbers printed on the carton can be entered without reaching for it.
+   */
+  const maskMonthYear = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 6);
+    if (digits.length <= 2) return digits;
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  };
+
+  /**
+   * MM/YYYY -> the FIRST of that month, so 08/2027 is stored as 01/08/2027.
+   *
+   * Stock stays usable through the whole labelled month, so anything comparing
+   * an expiry against today must use isUsableThrough() below rather than the
+   * stored date directly -- otherwise a batch would retire on the 1st and up to
+   * 30 days of good stock would be written off.
+   *
+   * Returns undefined until the value is complete and valid, so a half-typed
+   * entry never overwrites a stored date.
+   */
+  const parseMonthInput = (value: string): Date | undefined => {
+    const match = /^(\d{2})\/(\d{4})$/.exec(value);
+    if (!match) return undefined;
+    const month = Number(match[1]);
+    const year = Number(match[2]);
+    if (month < 1 || month > 12 || year < 1900 || year > 2999) return undefined;
+    // Midday, not midnight: the value is later serialised through UTC, and in a
+    // positive-offset zone like Kabul (+4:30) local midnight would shift the
+    // date across the day boundary once converted.
+    return new Date(year, month - 1, 1, 12, 0, 0);
+  };
+
+  /**
+   * Whether a batch is still good, given that an expiry is really a month.
+   *
+   * Compares against the END of the stored month, which is what the carton
+   * means: a pack labelled 08/2027 may be sold up to 31 August 2027.
+   */
+  const isUsableThrough = (expiry: Date | string | undefined, at: Date = new Date()): boolean => {
+    if (!expiry) return false;
+    const date = new Date(expiry);
+    if (Number.isNaN(date.getTime())) return false;
+    const endOfLabelledMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
+    return endOfLabelledMonth >= at;
+  };
+
   /** Currency is always two decimals -- anything finer cannot be tendered. */
   const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -1676,6 +1741,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setHighlightedMedicineIndex({});
     setLastEditedTotal('auto');
     setShowEditModal(true);
+
+    // An edit almost always means adding to the invoice, so the list opens
+    // scrolled to the last line instead of making the user drag past 49 rows.
+    // The scan field keeps the caret; only the list is scrolled.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const list = itemListRef.current;
+      if (list) list.scrollTop = list.scrollHeight;
+    }));
   };
 
   const handleDelete = (trx: Transaction) => {
@@ -1708,6 +1781,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   };
 
 
+  // What the user is currently typing per row, before it parses. Without
+  // this the field would snap back to the stored value mid-entry.
+  const [expiryDrafts, setExpiryDrafts] = useState<Record<number, string>>({});
   const [scanValue, setScanValue] = useState('');
   const [scanning, setScanning] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -1772,6 +1848,59 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     }
   };
 
+  /**
+   * Invoice-level keyboard shortcuts.
+   *
+   * Save (Shift+S) is deliberately inert while a free-text field has focus:
+   * Shift+S is simply a capital S, and medicine names are full of them
+   * ("Septrin", "Sinarest"), so firing there would save the invoice mid-word.
+   * Number, date and select fields have no use for a letter, so it is live in
+   * those, and in the modal body itself.
+   *
+   * Close is Escape, which carries no such risk and so works everywhere.
+   */
+  const isTextEntry = (element: Element | null): boolean => {
+    if (!element) return false;
+    const tag = element.tagName;
+    if (tag === 'TEXTAREA') return true;
+    if (tag !== 'INPUT') return false;
+    const type = (element as HTMLInputElement).type;
+    return ['text', 'search', 'tel', 'email', 'url', 'password'].includes(type);
+  };
+
+  useEffect(() => {
+    if (!showAddModal && !showEditModal) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+      // Escape closes, and unlike a letter shortcut it is safe inside a text
+      // field -- nobody types Esc into a medicine name -- so it works wherever
+      // the cursor happens to be.
+      if (event.key === 'Escape') {
+        // Let an open medicine dropdown take the first Escape for itself.
+        if (openMedicineDropdownIndex !== null) return;
+        event.preventDefault();
+        closeTransactionModal();
+        return;
+      }
+
+      if (!event.shiftKey) return;
+      if (event.key.toLowerCase() !== 's') return;
+      if (isTextEntry(document.activeElement)) return;
+
+      event.preventDefault();
+
+      if (submitting) return;
+      // Routed through the form so validation and the submit guard both run,
+      // exactly as if the Save button had been pressed.
+      transactionFormRef.current?.requestSubmit();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [showAddModal, showEditModal, submitting, openMedicineDropdownIndex]);
+
   const handleMedicineChange = (index: number, medicineId: string) => {
     // Adopt the medicine's configured default unit (Box for packaged products),
     // falling back to the line's current unit when that is also permitted.
@@ -1799,8 +1928,73 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     handleItemChange(index, { medicineId, price, batchNo: nextBatchNo, expiryDate });
   };
 
+  const itemListRef = useRef<HTMLDivElement>(null);
+  const transactionFormRef = useRef<HTMLFormElement>(null);
+
+  /**
+   * Brings an open medicine dropdown fully into the item panel.
+   *
+   * The panel clips its own overflow now, so a dropdown opened on the last
+   * visible row would be cut off. Scrolling the row up gives the list room to
+   * render inside the panel instead of hanging over the totals below it.
+   */
+  const revealDropdown = (index: number) => {
+    requestAnimationFrame(() => {
+      const list = itemListRef.current;
+      if (!list) return;
+      const row = list.children[index] as HTMLElement | undefined;
+      if (!row) return;
+
+      // How far the row's bottom sits below the panel's visible area, plus the
+      // dropdown's own height, is exactly how far the panel must scroll.
+      const DROPDOWN_HEIGHT = 192; // max-h-48
+      const rowBottom = row.offsetTop + row.offsetHeight;
+      const needed = rowBottom + DROPDOWN_HEIGHT - (list.scrollTop + list.clientHeight);
+      if (needed > 0) list.scrollTop += needed;
+    });
+  };
+
+  /** Scrolls the item list to the last row and focuses its medicine field. */
+  const focusLastRow = () => {
+    // Two frames: one for React to commit the new row, one for layout to
+    // settle so the scroll lands on the row rather than where it used to be.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const list = itemListRef.current;
+      if (!list) return;
+      list.scrollTop = list.scrollHeight;
+      const inputs = list.querySelectorAll<HTMLInputElement>('input[data-medicine-input]');
+      const last = inputs[inputs.length - 1];
+      last?.focus();
+    }));
+  };
+
   const addItemRow = () => {
     setFormData((prev) => ({ ...prev, items: [...prev.items, emptyItem()] }));
+    focusLastRow();
+  };
+
+  /**
+   * Enter anywhere on a row starts the next one.
+   *
+   * Reaching for the + button between every line is the slowest part of typing
+   * a 50-line purchase invoice. The medicine combobox is excluded because Enter
+   * there already picks the highlighted suggestion.
+   */
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, index: number) => {
+    if (event.key !== 'Enter') return;
+
+    const target = event.target as HTMLElement;
+    if (target.dataset?.medicineInput !== undefined) return;
+    if (target.tagName === 'BUTTON') return;
+
+    event.preventDefault();
+
+    // Only grow the list from the last row; Enter mid-list just moves on.
+    if (index === formData.items.length - 1) {
+      addItemRow();
+    } else {
+      focusLastRow();
+    }
   };
 
   const removeItemRow = (index: number) => {
@@ -2677,7 +2871,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       {/* Add/Edit Modal */}
       {(showAddModal || showEditModal) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-5xl border border-gray-200 dark:border-gray-700">
+          {/* Fixed height, not content height: the modal used to grow and shrink
+              as rows were added, moving the Save button under the cursor. */}
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-5xl h-[88vh] flex flex-col border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
               <div className="flex items-center gap-4">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -2706,7 +2902,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form className="p-4 space-y-4 max-h-[75vh] overflow-y-auto" onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}>
+            <form
+              ref={transactionFormRef}
+              className="p-4 space-y-4 flex-1 min-h-0 overflow-visible flex flex-col"
+              onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}
+            >
               <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm">
                 <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
                 {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && showCustomerToggle && (
@@ -3058,18 +3258,33 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               </div>
 
               <div
-                className={`space-y-1 pr-1 ${openMedicineDropdownIndex !== null ? 'overflow-visible' : 'max-h-64 overflow-y-auto'}`}
+                ref={itemListRef}
+                /*
+                  Fixed to five rows, always scrolling. It used to switch to
+                  overflow-visible whenever a medicine dropdown opened, which is
+                  what let the list escape the panel and hang over the totals;
+                  the dropdown now scrolls with the rows it belongs to.
+
+                  40px per row plus the row gap -- enough that the sixth row is
+                  half visible, which is what tells the user there is more.
+                */
+                className="space-y-1 pr-1 flex-1 min-h-[210px] overflow-y-auto overscroll-contain"
               >
                 {formData.items.map((item, index) => {
                   const medicineOptions = getMedicineOptions(index);
 
                   return (
-                  <div key={index} className="grid grid-cols-1 lg:grid-cols-12 gap-x-2 gap-y-1 items-center border-b border-gray-100 dark:border-gray-800 lg:border-0 px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                  <div
+                    key={index}
+                    onKeyDown={(e) => handleRowKeyDown(e, index)}
+                    className="grid grid-cols-1 lg:grid-cols-12 gap-x-3 gap-y-1 items-center border-b border-gray-100 dark:border-gray-800 lg:border-0 px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                  >
                     <div className={medicineColSpanRow}>
                       <label className="sr-only">Medicine</label>
                       <div className="relative">
                         <input
                           type="text"
+                          data-medicine-input=""
                           className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                           title="Medicine"
                           placeholder="Type medicine name..."
@@ -3077,6 +3292,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           onFocus={() => {
                             setOpenMedicineDropdownIndex(index);
                             setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: 0 }));
+                            revealDropdown(index);
                           }}
                           onBlur={() => setTimeout(() => {
                             setOpenMedicineDropdownIndex((prev) => (prev === index ? null : prev));
@@ -3216,12 +3432,42 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     {visibleFields.expiry && (
                     <div className="lg:col-span-1">
                       <label className="sr-only">{t('ui.expiry')}</label>
+                      {/*
+                        Typed MM/YYYY rather than a native month picker.
+
+                        A drug's labelled expiry IS a month, but the browser's
+                        month input renders it as "January 2026" and shows a
+                        "--------- ----" placeholder, neither of which is what a
+                        pharmacist reads off the carton. A plain text field takes
+                        the four keystrokes printed on the box and shows them
+                        back unchanged.
+
+                        Stored as the last day of that month, and only rewritten
+                        when the user actually edits the field, so an untouched
+                        row keeps its original date.
+                      */}
                       <input
-                        type="date"
-                        className="w-full max-w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={7}
+                        placeholder="MM/YYYY"
+                        className="w-full max-w-[92px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8 tabular-nums"
                         title={t('ui.expiryDate')}
-                        value={item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : ''}
-                        onChange={(e) => handleItemChange(index, { expiryDate: e.target.value ? new Date(e.target.value) : undefined })}
+                        value={expiryDrafts[index] ?? (item.expiryDate ? toMonthInput(item.expiryDate) : '')}
+                        onChange={(e) => {
+                          const draft = maskMonthYear(e.target.value);
+                          setExpiryDrafts((prev) => ({ ...prev, [index]: draft }));
+                          const parsed = parseMonthInput(draft);
+                          // Only commit once MM/YYYY is complete, so a half-typed
+                          // value never clears a date that was already stored.
+                          if (parsed) handleItemChange(index, { expiryDate: parsed });
+                          else if (draft === '') handleItemChange(index, { expiryDate: undefined });
+                        }}
+                        onBlur={() => setExpiryDrafts((prev) => {
+                          const next = { ...prev };
+                          delete next[index];
+                          return next;
+                        })}
                       />
                     </div>
                     )}
@@ -3343,17 +3589,28 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <span className="text-gray-600 dark:text-gray-300">Due: <strong className="text-gray-900 dark:text-white">{Number(formData.dueAmount || 0).toFixed(2)}</strong></span>
               </div>
 
+              {/* Wide and low rather than tall and narrow: these are the two
+                  actions that end the task, so they read as buttons at a glance
+                  and stay easy to hit without adding height to a fixed modal. */}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={closeTransactionModal}
-                  className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700"
-                >{t('ui.cancel')}</button>
+                  title="Esc"
+                  className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-5 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  {t('ui.cancel')}
+                </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  title="Shift + S"
+                  className="inline-flex items-center justify-center gap-1.5 min-w-[140px] px-5 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
+                  {submitting
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Check className="w-3.5 h-3.5" />}
                   {submitting ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
                 </button>
               </div>
