@@ -24,7 +24,15 @@ trait Sequenceable
             }
 
             $module = $model->getSequenceModuleName();
-            $next = ModuleSequence::incrementFor((int) $model->hospital_id, $module);
+            // The table and column are passed so the sequence can be floored
+            // against the numbers actually in use, rather than trusting a
+            // counter that a deletion may have left behind the real maximum.
+            $next = ModuleSequence::incrementFor(
+                (int) $model->hospital_id,
+                $module,
+                $model->getTable(),
+                $column
+            );
             $model->{$column} = (string) $next;
         });
 
@@ -38,7 +46,12 @@ trait Sequenceable
             }
 
             $module = $model->getSequenceModuleName();
-            ModuleSequence::incrementFor((int) $model->hospital_id, $module);
+            ModuleSequence::incrementFor(
+                (int) $model->hospital_id,
+                $module,
+                $model->getTable(),
+                $model->getSequenceColumnName()
+            );
         });
 
         static::deleted(function ($model) {
@@ -51,7 +64,12 @@ trait Sequenceable
             }
 
             $module = $model->getSequenceModuleName();
-            ModuleSequence::decrementFor((int) $model->hospital_id, $module);
+            ModuleSequence::decrementFor(
+                (int) $model->hospital_id,
+                $module,
+                $model->getTable(),
+                $model->getSequenceColumnName()
+            );
         });
     }
 
