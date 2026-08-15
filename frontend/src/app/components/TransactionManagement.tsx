@@ -3629,7 +3629,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             </button>
           </div>
           <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
-            <p>Are you sure you want to delete transaction <strong>#{selectedTransaction?.id}</strong>? This action cannot be undone.</p>
+            {/* The serial number is what the user sees on the invoice and in the
+                list; the database id is an internal value they have never been
+                shown, so confirming against it told them nothing. */}
+            <p>
+              Are you sure you want to delete{' '}
+              <strong>
+                {INVOICE_TABS.find((tab) => tab.id === selectedTransaction?.trxType)?.docTitle ?? 'transaction'}
+                {' #'}
+                {selectedTransaction?.serialNo ?? selectedTransaction?.id}
+              </strong>? This action cannot be undone.
+            </p>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setShowDeleteModal(false)} className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700">{t('ui.cancel')}</button>
               <button onClick={handleConfirmDelete} className="px-3 py-2 text-sm rounded-md bg-rose-600 text-white hover:bg-rose-700">{t('ui.delete')}</button>
