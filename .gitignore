@@ -14,4 +14,4 @@ Thumbs.db
 # Ignore full desktop apps
 frontend-desktop/
 desktop/
-desktop-tauri/
+desktop-tauri/.vite/
