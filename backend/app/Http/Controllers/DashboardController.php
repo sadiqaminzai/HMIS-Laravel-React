@@ -9,6 +9,7 @@ use App\Models\LabOrder;
 use App\Models\LedgerEntry;
 use App\Models\Manufacturer;
 use App\Models\Medicine;
+use App\Models\User;
 use App\Models\TransactionDetail;
 use App\Models\MedicineType;
 use App\Models\Patient;
@@ -84,10 +85,27 @@ class DashboardController extends Controller
 
         $counts = [
             'hospitals' => $hospitalId ? 1 : Hospital::count(),
-            'doctors' => Doctor::query()->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))->count(),
-            'active_doctors' => Doctor::query()
+            // Counted from `users` where role = doctor, which is the same source
+            // the Doctors screen and appointment booking read. The legacy
+            // `doctors` table has drifted -- hospital 4 holds 30 rows there
+            // against 16 real doctor accounts -- so counting it reported staff
+            // the hospital does not have.
+            'doctors' => User::query()
+                ->where('role', 'doctor')
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
-                ->where('status', 'active')
+                ->count(),
+            'active_doctors' => User::query()
+                ->where('role', 'doctor')
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->where(function ($q) {
+                    // `users` has no `status`; availability is `doctor_status`,
+                    // and `is_active` governs the account itself. A row with
+                    // neither set counts as active, matching the Doctors list.
+                    $q->whereNull('doctor_status')->orWhere('doctor_status', 'active');
+                })
+                ->where(function ($q) {
+                    $q->whereNull('is_active')->orWhere('is_active', 1);
+                })
                 ->count(),
             'patients' => Patient::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
@@ -406,7 +424,7 @@ class DashboardController extends Controller
             'total_cash_flow' => round($totalIncome - $totalExpensesWithSalary - $inventoryPurchases, 2),
         ];
 
-        return response()->json([
+        return response()->json($this->applyPanelPermissions($user, [
             'hospital_id' => $hospitalId,
             'hospitals' => $hospitals,
             'counts' => $counts,
@@ -422,6 +440,124 @@ class DashboardController extends Controller
                 'prescriptions' => $recentPrescriptions,
                 'lab_orders' => $recentLabOrders,
             ],
-        ]);
+        ]));
+    }
+
+    /**
+     * Panels the user may not see are stripped from the payload.
+     *
+     * Hiding a card in React is not access control -- the figures were still in
+     * the JSON for anyone who opened the network tab. Revenue, payroll and stock
+     * valuation are exactly the numbers a hospital does not want every role
+     * reading, so they are removed here, at the source.
+     *
+     * The rule mirrors the frontend so the two never disagree: until an
+     * administrator grants one of the NEW dashboard permissions, access falls
+     * back to the module permissions that governed these figures before, and a
+     * hospital that has not configured anything sees no change.
+     */
+    private function applyPanelPermissions($user, array $payload): array
+    {
+        if (!$user || $user->role === 'super_admin') {
+            return $payload;
+        }
+
+        $held = method_exists($user, 'permissionNames') ? $user->permissionNames() : [];
+        $can = fn (string $panel) => in_array('view_dashboard_' . $panel, $held, true);
+
+        // Panels whose permission predates this change and was already assigned;
+        // holding one of those does not mean the dashboard has been configured.
+        $legacy = ['available_stock', 'medicine_sale', 'appointment_fees',
+                   'lab_orders_amount', 'expenses', 'revenue_total'];
+
+        $configured = false;
+        foreach ($held as $name) {
+            if (!str_starts_with((string) $name, 'view_dashboard_')) {
+                continue;
+            }
+            if (!in_array(substr((string) $name, 15), $legacy, true)) {
+                $configured = true;
+                break;
+            }
+        }
+
+        if (!$configured) {
+            return $payload;
+        }
+
+        // Response key => the panel that controls it.
+        $financialPanels = [
+            'total_stock_cost_amount' => 'available_stock',
+            'total_sales_invoice_amount' => 'medicine_sale',
+            'total_fees' => 'appointment_fees',
+            'total_lab_fees' => 'lab_orders_amount',
+            'total_surgery_fees' => 'surgery_fees',
+            'total_room_fees' => 'room_booking_fees',
+            'total_expenses' => 'expenses',
+            'total_inventory_purchases' => 'inventory_purchases',
+            'total_other_income' => 'other_income',
+            'total_salary' => 'salary',
+            'total_revenue' => 'revenue_total',
+            'total_income' => 'revenue_total',
+            'total_cash_flow' => 'revenue_total',
+            'total_expenses_with_salary' => 'revenue_total',
+        ];
+
+        $countPanels = [
+            'hospitals' => 'count_hospitals',
+            'doctors' => 'count_doctors',
+            'active_doctors' => 'count_doctors',
+            'patients' => 'count_patients',
+            'prescriptions' => 'count_prescriptions',
+            'medicines' => 'count_medicines',
+            'manufacturers' => 'count_medicines',
+            'medicine_types' => 'count_medicines',
+            'test_templates' => 'count_test_templates',
+            'lab_orders_today' => 'count_lab_tests',
+            'appointments_today' => 'count_appointments',
+            'rooms' => 'count_rooms',
+            'active_rooms' => 'count_rooms',
+            'surgeries' => 'count_surgeries',
+            'patient_surgeries_today' => 'count_surgeries',
+            'room_bookings_today' => 'count_rooms',
+        ];
+
+        $chartPanels = [
+            'monthly' => 'chart_monthly',
+            'appointment_status' => 'chart_appointment_status',
+            'test_status' => 'chart_test_status',
+            'medicine_stock' => 'chart_medicine_stock',
+        ];
+
+        $recentPanels = [
+            'patients' => 'recent_patients',
+            'prescriptions' => 'recent_prescriptions',
+            'lab_orders' => 'recent_lab_orders',
+        ];
+
+        // Zeroed rather than removed, so the client keeps a complete shape and
+        // cannot mistake "not permitted" for "endpoint changed".
+        foreach ($financialPanels as $key => $panel) {
+            if (isset($payload['financials'][$key]) && !$can($panel)) {
+                $payload['financials'][$key] = 0;
+            }
+        }
+        foreach ($countPanels as $key => $panel) {
+            if (isset($payload['counts'][$key]) && !$can($panel)) {
+                $payload['counts'][$key] = 0;
+            }
+        }
+        foreach ($chartPanels as $key => $panel) {
+            if (isset($payload['charts'][$key]) && !$can($panel)) {
+                $payload['charts'][$key] = [];
+            }
+        }
+        foreach ($recentPanels as $key => $panel) {
+            if (isset($payload['recent'][$key]) && !$can($panel)) {
+                $payload['recent'][$key] = [];
+            }
+        }
+
+        return $payload;
     }
 }
