@@ -66,6 +66,7 @@ class HospitalSettingController extends Controller
             'default_payment_statuses.sales_return' => ['sometimes', 'in:paid,pending'],
             'default_payment_statuses.purchase' => ['sometimes', 'in:paid,pending'],
             'default_payment_statuses.purchase_return' => ['sometimes', 'in:paid,pending'],
+            'default_payment_statuses.appointments' => ['sometimes', 'in:paid,pending'],
             'barcode_label_width_mm' => ['sometimes', 'integer', 'min:20', 'max:210'],
             'barcode_label_height_mm' => ['sometimes', 'integer', 'min:10', 'max:297'],
             'print_paper_sizes' => ['sometimes', 'array'],

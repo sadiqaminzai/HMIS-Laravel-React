@@ -309,7 +309,7 @@ export function LabInvoicePrint({
               className="text-center font-bold uppercase"
               style={{ fontSize: '1.05em', letterSpacing: '0.18em', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '3px 0', margin: '4px 0' }}
             >
-              Lab Invoice
+              Laboratory Receipt
             </div>
 
             {/* Patient on the left, receipt identity on the right. Stacked
@@ -325,7 +325,6 @@ export function LabInvoicePrint({
                   ['Name', labTest.patientName],
                   ['ID', labTest.patientDisplayId || labTest.patientId],
                   ['Age / Sex', `${labTest.patientAge} / ${labTest.patientGender}`],
-                  ['Doctor', labTest.doctorName],
                 ].map(([label, value]) => (
                   <div key={String(label)} style={{ marginBottom: '1px' }}>
                     <span style={{ color: '#000', fontSize: '0.85em' }}>{label}: </span>
@@ -343,7 +342,7 @@ export function LabInvoicePrint({
                 {[
                   ['No', labTest.testNumber],
                   ['Date', formatOnlyDate(new Date(), hospital.timezone, hospital.calendarType)],
-                  ['Status', labTest.status === 'unpaid' ? 'Unpaid' : 'Paid'],
+                  ['Referred By', labTest.doctorName],
                 ].map(([label, value]) => (
                   <div key={String(label)} style={{ marginBottom: '1px' }}>
                     <span style={{ color: '#000', fontSize: '0.85em' }}>{label}: </span>
@@ -390,12 +389,14 @@ export function LabInvoicePrint({
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>{total.toFixed(2)}</span>
             </div>
 
-            <div
-              className="text-center font-bold uppercase"
-              style={{ letterSpacing: '0.2em', border: '1px solid #000', padding: '3px 0', margin: '7px 0' }}
-            >
-              {labTest.status === 'unpaid' ? 'Unpaid' : 'Paid'}
-            </div>
+            {labTest.status === 'unpaid' && (
+              <div
+                className="text-center font-bold uppercase"
+                style={{ letterSpacing: '0.2em', border: '1px solid #000', padding: '3px 0', margin: '7px 0' }}
+              >
+                Unpaid
+              </div>
+            )}
 
             <div className="text-center" style={{ fontSize: '0.82em', borderTop: '1px dashed #000', paddingTop: '4px' }}>
               <div>Please keep this receipt to collect your report.</div>

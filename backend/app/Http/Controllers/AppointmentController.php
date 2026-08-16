@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\HospitalSetting;
 use App\Models\Patient;
 use App\Models\User;
 use App\Services\DiscountService;
@@ -206,6 +207,17 @@ class AppointmentController extends Controller
 
         $canDiscount = $user->hasAnyPermission(['add_discounts', 'edit_discounts', 'manage_discounts']);
         $canSetPayment = $user->hasAnyPermission(['manage_appointment_payments', 'manage_appointments']);
+
+        // Undoing a collected fee is a correction, not part of taking one, so
+        // it stands on its own permission -- as in lab, ultrasound and pharmacy.
+        if (
+            $existing !== null
+            && (string) $existing->payment_status === 'paid'
+            && in_array($data['payment_status'] ?? null, ['pending', 'partial', 'cancelled'], true)
+            && !$user->hasAnyPermission(['reverse_appointment_payment', 'manage_appointments'])
+        ) {
+            $data['payment_status'] = 'paid';
+        }
         $canSetFee = $user->hasAnyPermission(['override_appointment_fee', 'manage_appointment_payments', 'manage_appointments']);
 
         // Disabling the input is only a hint; without this a crafted request
@@ -224,8 +236,28 @@ class AppointmentController extends Controller
         }
 
         if (! $canSetPayment) {
-            $data['payment_status'] = $existing->payment_status ?? 'pending';
+            $data['payment_status'] = $existing->payment_status
+                ?? $this->defaultAppointmentPaymentStatus((int) ($data['hospital_id'] ?? 0));
         }
+    }
+
+    /**
+     * What a new appointment's payment status starts on for this hospital.
+     *
+     * Configured under Settings > Reception. Defaults to pending, so money is
+     * only ever recorded as received where the hospital has said fees are
+     * collected at registration.
+     */
+    private function defaultAppointmentPaymentStatus(int $hospitalId): string
+    {
+        if ($hospitalId <= 0) {
+            return 'pending';
+        }
+
+        $defaults = HospitalSetting::where('hospital_id', $hospitalId)->value('default_payment_statuses');
+        $defaults = is_string($defaults) ? json_decode($defaults, true) : $defaults;
+
+        return ($defaults['appointments'] ?? 'pending') === 'paid' ? 'paid' : 'pending';
     }
 
     private function applyFeeDiscountRules(array &$data): void
@@ -241,7 +273,8 @@ class AppointmentController extends Controller
         $data['total_amount'] = $computed['total_amount'];
         $data['discount_enabled'] = (bool) ($data['discount_enabled'] ?? false);
         $data['currency'] = $data['currency'] ?? 'AFN';
-        $data['payment_status'] = $data['payment_status'] ?? 'paid';
+        $data['payment_status'] = $data['payment_status']
+            ?? $this->defaultAppointmentPaymentStatus((int) ($data['hospital_id'] ?? 0));
     }
 
     private function syncDoctorHospital(array &$data, ?Appointment $existing = null): void

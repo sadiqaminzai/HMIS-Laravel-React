@@ -213,7 +213,7 @@ export interface HospitalSetting {
   /** Which reports desk each income module's money is reported under. */
   reportModuleOwners: ReportModuleOwners;
   /** Payment status a new document of each type starts on. */
-  defaultPaymentStatuses: Record<'sales' | 'sales_return' | 'purchase' | 'purchase_return', 'paid' | 'pending'>;
+  defaultPaymentStatuses: Record<'sales' | 'sales_return' | 'purchase' | 'purchase_return' | 'appointments', 'paid' | 'pending'>;
   /** Whether pharmacy sales accept registered patients, walk-ins, or both. */
   pharmacyCustomerMode: PharmacyCustomerMode;
   pharmacyDefaultCustomer: PharmacyDefaultCustomer;
@@ -375,6 +375,7 @@ const SettingsContext = createContext<SettingsContextType>({
     sales_return: 'pending',
     purchase: 'pending',
     purchase_return: 'pending',
+    appointments: 'pending',
   }),
   getBarcodeLabel: () => ({ widthMm: 50, heightMm: 25 }),
   generatePatientId: () => 'P0001',
@@ -563,6 +564,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         sales_return: raw.default_payment_statuses?.sales_return ?? 'pending',
         purchase: raw.default_payment_statuses?.purchase ?? 'pending',
         purchase_return: raw.default_payment_statuses?.purchase_return ?? 'pending',
+        appointments: raw.default_payment_statuses?.appointments ?? 'pending',
       },
       barcodeScanningEnabled: raw.barcode_scanning_enabled !== undefined
         ? Boolean(raw.barcode_scanning_enabled) : true,
@@ -599,6 +601,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         sales_return: 'pending',
         purchase: 'pending',
         purchase_return: 'pending',
+        appointments: 'pending',
       },
       barcodeScanningEnabled: true,
       barcodeLabel: { widthMm: 50, heightMm: 25 },

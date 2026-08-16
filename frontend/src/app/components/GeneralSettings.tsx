@@ -67,6 +67,8 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const canManagePharmacySettings = hasPermission('manage_pharmacy_settings');
   const canSetLabPaymentDefault = hasPermission('manage_lab_payments');
   const canRecordFinancePayments = hasPermission('record_finance_payments') || hasPermission('manage_finance');
+  const canCollectAppointmentFees =
+    hasPermission('manage_appointment_payments') || hasPermission('manage_appointments');
 
   /**
    * One tab per module. Thirteen cards in a single grid meant scrolling past
@@ -125,6 +127,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     sales_return: 'pending',
     purchase: 'pending',
     purchase_return: 'pending',
+    appointments: 'pending',
   });
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [invoiceFields, setInvoiceFields] = useState<InvoiceFieldSettings>({ ...DEFAULT_INVOICE_FIELDS });
@@ -357,6 +360,43 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {settingsTab === 'reception' && canCollectAppointmentFees && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">OPD Fees</h2>
+          </div>
+          <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+            <span className="text-xs text-gray-800 dark:text-gray-200">New appointments start as Paid</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={paymentDefaults.appointments === 'paid'}
+              aria-label="New appointments start as paid"
+              onClick={() =>
+                setPaymentDefaults((prev) => {
+                  const next = prev.appointments === 'paid' ? 'pending' : 'paid';
+                  toast.info(`Appointment fees default to ${next === 'paid' ? 'Paid' : 'Pending'}`);
+                  return { ...prev, appointments: next };
+                })
+              }
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                paymentDefaults.appointments === 'paid' ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                paymentDefaults.appointments === 'paid' ? 'translate-x-4.5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </label>
+          <button
+            onClick={handleSavePaymentDefaults}
+            className="mt-2 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+          >
+            Save OPD defaults
+          </button>
+        </div>
+        )}
+
         {settingsTab === 'pharmacy' && canRecordFinancePayments && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-3">

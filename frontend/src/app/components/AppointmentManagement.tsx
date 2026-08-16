@@ -775,7 +775,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const canSetOriginalFee = hasPermission('override_appointment_fee')
     || hasPermission('manage_appointment_payments')
     || hasPermission('manage_appointments');
-  const canTogglePayment = canEdit || canChangeAnyStatus;
+  const canCollectFee = hasPermission('manage_appointment_payments') || hasPermission('manage_appointments');
+  const canReverseFee = hasPermission('reverse_appointment_payment') || hasPermission('manage_appointments');
+  const canTogglePayment = canCollectFee || canReverseFee;
 
   return (
     <div className="space-y-3">
@@ -1044,16 +1046,26 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         </button>
                         {canTogglePayment && (
                           <button
+                            type="button"
+                            role="switch"
+                            aria-checked={apt.paymentStatus === 'paid'}
                             onClick={() => handlePaymentStatusToggle(apt)}
-                            className={`p-1.5 rounded-md transition-colors ${
+                            disabled={apt.paymentStatus === 'paid' ? !canReverseFee : !canCollectFee}
+                            title={
                               apt.paymentStatus === 'paid'
-                                ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
-                                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/60'
-                            }`}
-                            title={apt.paymentStatus === 'paid' ? 'Set payment pending' : 'Set payment paid'}
-                            aria-label={apt.paymentStatus === 'paid' ? 'Set payment pending' : 'Set payment paid'}
+                                ? (canReverseFee ? 'Reverse fee to pending' : 'Fee collected')
+                                : (canCollectFee ? 'Mark fee collected' : 'Fee pending')
+                            }
+                            aria-label={apt.paymentStatus === 'paid' ? 'Reverse fee to pending' : 'Mark fee collected'}
+                            className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
+                              apt.paymentStatus === 'paid' ? 'bg-emerald-500' : 'bg-amber-400'
+                            } disabled:cursor-default disabled:opacity-70`}
                           >
-                            <ToggleRight className={`w-4 h-4 transition-transform ${apt.paymentStatus === 'paid' ? '' : 'rotate-180'}`} />
+                            <span
+                              className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                apt.paymentStatus === 'paid' ? 'translate-x-4' : 'translate-x-1'
+                              }`}
+                            />
                           </button>
                         )}
                         {canPrint && (
