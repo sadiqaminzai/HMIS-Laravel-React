@@ -93,6 +93,9 @@ export function PharmacyFinance({ hospital, userRole }: PharmacyFinanceProps) {
   const canManage = hasPermission('manage_finance');
   const canRecordPayments = hasPermission('record_finance_payments') || canManage;
   const canEditTerms = hasPermission('edit_finance_payment_status') || canManage;
+  // Settling a document and undoing that are separate acts, so the toggle can
+  // be one-way for a desk that collects but may not reverse.
+  const canReversePayment = hasPermission('reverse_finance_payment') || canManage;
   const canExport = hasPermission('export_finance') || canManage;
 
   /** Only the tabs this user is permitted to see. */
@@ -169,6 +172,25 @@ export function PharmacyFinance({ hospital, userRole }: PharmacyFinanceProps) {
   };
 
   /* ------------------------------- Actions -------------------------------- */
+
+  /**
+   * Flip a document between settled and outstanding.
+   *
+   * Both directions go through the same endpoint, which keeps paid_amount and
+   * payment_status consistent, and enforces the two permissions separately --
+   * so a blocked reversal fails on the server, not just in the UI.
+   */
+  const togglePaymentStatus = async (doc: FinanceDocApi) => {
+    const next = doc.payment_status === 'paid' ? 'pending' : 'paid';
+
+    try {
+      await updateFinanceStatus(doc.id, { payment_status: next });
+      await loadData();
+      toast.success(next === 'paid' ? 'Marked as paid' : 'Reversed to pending');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not change the payment status');
+    }
+  };
 
   const openPayModal = (doc: FinanceDocApi) => {
     setPayDoc(doc);
@@ -525,6 +547,35 @@ export function PharmacyFinance({ hospital, userRole }: PharmacyFinanceProps) {
                       </td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
+                          {/* Paid / unpaid at a glance, and one click to change
+                              it. Amber left is owed, green right is settled. */}
+                          {(canRecordPayments || canEditTerms || canReversePayment) && (
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={doc.payment_status === 'paid'}
+                              disabled={
+                                doc.payment_status === 'paid'
+                                  ? !canReversePayment
+                                  : !(canRecordPayments || canEditTerms)
+                              }
+                              onClick={() => togglePaymentStatus(doc)}
+                              title={
+                                doc.payment_status === 'paid'
+                                  ? (canReversePayment ? 'Reverse to pending' : 'Paid')
+                                  : ((canRecordPayments || canEditTerms) ? 'Mark as paid' : 'Pending')
+                              }
+                              className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
+                                doc.payment_status === 'paid' ? 'bg-emerald-500' : 'bg-amber-400'
+                              } disabled:cursor-default disabled:opacity-70`}
+                            >
+                              <span
+                                className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                  doc.payment_status === 'paid' ? 'translate-x-4' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          )}
                           {canRecordPayments && Number(doc.due_amount ?? 0) > 0 && (
                             <button
                               onClick={() => openPayModal(doc)}
@@ -532,15 +583,6 @@ export function PharmacyFinance({ hospital, userRole }: PharmacyFinanceProps) {
                               title={t('finance.recordPayment')}
                             >
                               {t('finance.pay')}
-                            </button>
-                          )}
-                          {canEditTerms && (
-                            <button
-                              onClick={() => openTermsModal(doc)}
-                              className="p-1.5 text-gray-600 hover:bg-gray-100 bg-gray-50 dark:bg-gray-700 dark:text-gray-300 rounded-md transition-colors"
-                              title={t('finance.editTerms')}
-                            >
-                              <Settings2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>

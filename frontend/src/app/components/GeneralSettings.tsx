@@ -55,14 +55,33 @@ const timezones = [
   'Europe/Berlin',
 ];
 
+type SettingsTab = 'general' | 'reception' | 'pharmacy' | 'laboratory' | 'prescription' | 'printing' | 'reports';
+
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults, getDefaultBarcodeType, getDefaultSaleUnit, getBarcodeLabel, getBarcodeScanningEnabled, getAllInvoiceFields, getReportModuleOwners, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults, getDefaultBarcodeType, getDefaultSaleUnit, getBarcodeLabel, getBarcodeScanningEnabled, getLabDefaultPaymentStatus, getDefaultPaymentStatuses, getAllInvoiceFields, getReportModuleOwners, generatePatientId } = useSettings();
   const { hasPermission } = useAuth();
   const canManagePrintSettings = hasPermission('manage_print_settings');
   // Which columns an invoice offers is pharmacy behaviour, so it shares the
   // pharmacy gate rather than the print one.
   const canManagePharmacySettings = hasPermission('manage_pharmacy_settings');
+  const canSetLabPaymentDefault = hasPermission('manage_lab_payments');
+  const canRecordFinancePayments = hasPermission('record_finance_payments') || hasPermission('manage_finance');
+
+  /**
+   * One tab per module. Thirteen cards in a single grid meant scrolling past
+   * pharmacy settings to reach a laboratory one, and every card competing for
+   * attention with the same weight.
+   */
+  const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'reception', label: 'Reception' },
+    { key: 'pharmacy', label: 'Pharmacy' },
+    { key: 'laboratory', label: 'Laboratory' },
+    { key: 'prescription', label: 'Prescription' },
+    { key: 'printing', label: 'Printing' },
+    { key: 'reports', label: 'Reports' },
+  ];
   const { hospitals } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -100,6 +119,14 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const [defaultSaleUnit, setDefaultSaleUnit] = useState<DefaultSaleUnit>('pack');
   const [barcodeLabel, setBarcodeLabel] = useState({ widthMm: 50, heightMm: 25 });
   const [barcodeScanningEnabled, setBarcodeScanningEnabled] = useState(true);
+  const [labDefaultPaid, setLabDefaultPaid] = useState(false);
+  const [paymentDefaults, setPaymentDefaults] = useState<Record<string, 'paid' | 'pending'>>({
+    sales: 'pending',
+    sales_return: 'pending',
+    purchase: 'pending',
+    purchase_return: 'pending',
+  });
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [invoiceFields, setInvoiceFields] = useState<InvoiceFieldSettings>({ ...DEFAULT_INVOICE_FIELDS });
   const [reportOwners, setReportOwners] = useState<ReportModuleOwners>({ ...DEFAULT_REPORT_MODULE_OWNERS });
 
@@ -139,6 +166,8 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       setDefaultSaleUnit(getDefaultSaleUnit(selectedHospital.id));
       setBarcodeLabel(getBarcodeLabel(selectedHospital.id));
       setBarcodeScanningEnabled(getBarcodeScanningEnabled(selectedHospital.id));
+      setLabDefaultPaid(getLabDefaultPaymentStatus(selectedHospital.id) === 'paid');
+      setPaymentDefaults({ ...getDefaultPaymentStatuses(selectedHospital.id) });
       setInvoiceFields(getAllInvoiceFields(selectedHospital.id));
       setReportOwners(getReportModuleOwners(selectedHospital.id));
       const prescriptionPrintConfig = getPrescriptionPrintAssetSettings(selectedHospital.id);
@@ -205,6 +234,20 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     saveHospitalSetting(selectedHospital.id, { reportModuleOwners: reportOwners })
       .then(() => toast.success('Report ownership saved'))
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save report ownership'));
+  };
+
+  const handleSavePaymentDefaults = () => {
+    saveHospitalSetting(selectedHospital.id, { defaultPaymentStatuses: paymentDefaults as any })
+      .then(() => toast.success('Payment defaults saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save payment defaults'));
+  };
+
+  const handleSaveLabDefaults = () => {
+    saveHospitalSetting(selectedHospital.id, {
+      labDefaultPaymentStatus: labDefaultPaid ? 'paid' : 'unpaid',
+    })
+      .then(() => toast.success('Laboratory defaults saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save laboratory defaults'));
   };
 
   const handleSaveBarcodeSettings = () => {
@@ -297,16 +340,114 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
         </div>
       )}
 
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+        {SETTINGS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setSettingsTab(tab.key)}
+            className={`px-3 py-2 text-xs font-medium border-b-2 whitespace-nowrap transition-colors ${
+              settingsTab === tab.key
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {settingsTab === 'pharmacy' && canRecordFinancePayments && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Payment Status</h2>
+          </div>
+          {([
+            ['sales', 'Sales Invoice'],
+            ['sales_return', 'Sales Return'],
+            ['purchase', 'Purchase Invoice'],
+            ['purchase_return', 'Purchase Return'],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+              <span className="text-xs text-gray-800 dark:text-gray-200">{label} starts as Paid</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={paymentDefaults[key] === 'paid'}
+                aria-label={`${label} starts as paid`}
+                onClick={() =>
+                  setPaymentDefaults((prev) => {
+                    const next = prev[key] === 'paid' ? 'pending' : 'paid';
+                    // Confirms what the switch now means, since "starts as
+                    // Paid" reads the same in both positions at a glance.
+                    toast.info(`${label} default set to ${next === 'paid' ? 'Paid' : 'Pending'}`);
+                    return { ...prev, [key]: next };
+                  })
+                }
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  paymentDefaults[key] === 'paid' ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  paymentDefaults[key] === 'paid' ? 'translate-x-4.5' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </label>
+          ))}
+          <button
+            onClick={handleSavePaymentDefaults}
+            className="mt-2 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+          >
+            Save payment defaults
+          </button>
+        </div>
+        )}
+
+        {settingsTab === 'laboratory' && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Lab Payments</h2>
+          </div>
+          {canSetLabPaymentDefault && (
+            <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+                <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
+                  New lab orders start as Paid
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={labDefaultPaid}
+                  aria-label="New lab orders start as paid"
+                  onClick={() => setLabDefaultPaid(!labDefaultPaid)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    labDefaultPaid ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    labDefaultPaid ? 'translate-x-4.5' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </label>
+              <button
+                onClick={handleSaveLabDefaults}
+                className="mt-2 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+              >
+                Save laboratory defaults
+              </button>
+            </div>
+          )}
+
+        </div>
+        )}
+
         {/* Default Doctor Settings - Compact */}
+        {settingsTab === 'general' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <User className="w-4 h-4 text-blue-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Doctor</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-            Set a default doctor to auto-populate in patient registration and appointment forms
-          </p>
 
           {/* Doctor Selection */}
           <div className="space-y-2">
@@ -338,23 +479,16 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           </div>
 
-          {/* Information Box */}
-          <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-            <p className="text-xs text-amber-700 dark:text-amber-300">
-              <strong>How it works:</strong> When creating a new patient or appointment, the doctor field will be automatically filled with the selected default doctor. You can still change it manually if needed.
-            </p>
-          </div>
         </div>
+        )}
 
         {/* Patient ID Configuration - Compact */}
+        {settingsTab === 'reception' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Hash className="w-4 h-4 text-green-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Patient ID Configuration</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-            Configure how patient IDs are generated and formatted.
-          </p>
 
           {/* Patient ID Configuration Form */}
           <div className="space-y-2">
@@ -434,16 +568,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           </div>
         </div>
+        )}
 
           {/* Timezone & Calendar Settings - Compact */}
+        {settingsTab === 'general' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Globe className="w-4 h-4 text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Date & Time Settings</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-            Set the default timezone and calendar system for the hospital.
-          </p>
 
           <div className="space-y-3">
             <div>
@@ -502,16 +635,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </p>
           </div>
         </div>
+        )}
 
         {/* Walk-in Patient Default Mode - NEW */}
+        {settingsTab === 'reception' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <UserPlus className="w-4 h-4 text-purple-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Walk-in Patient Mode</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Set default patient entry mode for prescription creation
-          </p>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
@@ -601,16 +733,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Medicine Visibility for Doctors */}
+        {settingsTab === 'prescription' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Pill className="w-4 h-4 text-teal-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription Medicine Visibility</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Control whether doctors can see out-of-stock medicines while creating prescriptions.
-          </p>
 
           <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
             <div className="flex-1">
@@ -653,16 +784,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </p>
           </div>
         </div>
+        )}
 
         {/* Medicine Visibility for Pharmacy */}
+        {settingsTab === 'pharmacy' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Pill className="w-4 h-4 text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Pharmacy Medicine Visibility</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Control whether pharmacy can sell medicines when stock is zero.
-          </p>
 
           <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
             <div className="flex-1">
@@ -707,16 +837,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </p>
           </div>
         </div>
+        )}
 
         {/* Prescription List Visibility */}
+        {settingsTab === 'prescription' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <ListChecks className="w-4 h-4 text-blue-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription List Visibility</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Control whether the prescription list shows the Rx number column and pagination count details.
-          </p>
 
           <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
             <div className="flex-1">
@@ -761,19 +890,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </p>
           </div>
         </div>
+        )}
 
         {/* Pharmacy - who a sale can be made to */}
+        {settingsTab === 'pharmacy' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-emerald-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Pharmacy Customers</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Choose who pharmacy sales can be made to. A hospital deployment normally
-            uses registered patients, a retail pharmacy uses walk-in customers, and
-            both can be offered together. Users additionally need the
-            &quot;Pharmacy Walk-in Sales&quot; permission to see the walk-in option.
-          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -845,10 +970,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Default walk-in customer
               </p>
-              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-2">
-                Pre-filled on every new walk-in sale so the counter does not retype it.
-                Staff can still change it on an individual invoice. Leave blank to start empty.
-              </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Customer Name</label>
@@ -891,26 +1012,19 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             Save Pharmacy Customer Settings
           </button>
         </div>
+        )}
 
         {/* Barcode defaults and label size */}
+        {settingsTab === 'pharmacy' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <ScanLine className="w-4 h-4 text-purple-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Barcodes</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Choose the barcode type new medicines start on, and the label size used by
-            your barcode printer. Manual is typed in, Manufacturer is scanned from the
-            packaging, and System Generated is created by ShifaaScript.
-          </p>
 
           <label className="flex items-center justify-between gap-3 mb-3 cursor-pointer select-none">
             <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
               Enable barcode / QR scanning
-              <span className="block text-[10px] font-normal text-gray-500 dark:text-gray-400">
-                Turns the barcode section on the product form and the scan field on every
-                invoice on or off. Stored barcodes are kept either way.
-              </span>
             </span>
             <button
               type="button"
@@ -981,18 +1095,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             Save Barcode Settings
           </button>
         </div>
+        )}
 
         {/* Print Settings - Paper Size per Module */}
+        {settingsTab === 'printing' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Printer className="w-4 h-4 text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Print Paper Size</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Configure the paper size for each printable document separately — thermal mini
-            printers for counter receipts, A4 for purchase invoices, reports and discharge
-            summaries. Staff still see a preview before printing.
-          </p>
 
           {!canManagePrintSettings && (
             <p className="mb-3 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 text-[11px] text-amber-700 dark:text-amber-300">
@@ -1042,8 +1153,10 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           )}
         </div>
+        )}
 
         {/* Report Ownership - which desk reports each income module */}
+        {settingsTab === 'reports' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <BarChart3 className="w-4 h-4 text-orange-500" />
@@ -1087,8 +1200,10 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             Save Report Ownership
           </button>
         </div>
+        )}
 
         {/* Invoice Fields - per transaction type */}
+        {settingsTab === 'pharmacy' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Columns3 className="w-4 h-4 text-cyan-500" />
@@ -1161,16 +1276,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           )}
         </div>
+        )}
 
         {/* Print Settings - Column Visibility */}
+        {settingsTab === 'printing' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
             <Printer className="w-4 h-4 text-emerald-500" />
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Print Settings</h2>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Control which columns appear on printed transaction invoices.
-          </p>
 
           <div className="space-y-2">
 
@@ -1278,6 +1392,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

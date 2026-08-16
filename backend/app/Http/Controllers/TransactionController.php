@@ -7,6 +7,7 @@ use App\Models\Patient;
 use App\Models\Stock;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\HospitalSetting;
 use App\Models\Transaction;
 use App\Models\WalkInPatient;
 use App\Services\LedgerPostingService;
@@ -76,14 +77,61 @@ class TransactionController extends Controller
 
             $data['total_discount'] = $data['total_discount'] ?? 0;
             $data['total_tax'] = $data['total_tax'] ?? 0;
-            if (!array_key_exists('paid_amount', $data) || $data['paid_amount'] === null) {
-                $data['paid_amount'] = 0;
+
+            // Stating that money was received is a financial act, not part of
+            // writing the document. A user without that right can raise the
+            // invoice; the counter settles it afterwards.
+            // Two different rights, deliberately.
+            //
+            // Typing an amount on the invoice is recording a payment, so the
+            // posted value is only accepted from record_finance_payments -- the
+            // same rule that disables the field in the UI.
+            //
+            // Applying the hospital's configured default is not the user's
+            // claim, it is the hospital's standing policy, so the pharmacy
+            // counter's edit_finance_payment_status is enough for that.
+            $mayTypePayment = $request->user()?->hasAnyPermission([
+                'record_finance_payments',
+                'manage_finance',
+            ]) ?? false;
+
+            $maySettleByDefault = $mayTypePayment || ($request->user()?->hasPermission('edit_finance_payment_status') ?? false);
+
+            if (!$mayTypePayment) {
+                unset($data['paid_amount']);
             }
 
             $data['grand_total'] = $data['grand_total'] ?? $this->calculateGrandTotal($items);
+
+            if (!array_key_exists('paid_amount', $data) || $data['paid_amount'] === null) {
+                // Falls back to the hospital's configured default for this
+                // document type, so a counter that always takes cash up front
+                // is not settling every invoice by hand afterwards.
+                $defaults = HospitalSetting::where('hospital_id', $data['hospital_id'] ?? null)
+                    ->value('default_payment_statuses');
+                $defaults = is_string($defaults) ? json_decode($defaults, true) : $defaults;
+                $startsPaid = ($defaults[$data['trx_type'] ?? ''] ?? 'pending') === 'paid';
+
+                $data['paid_amount'] = ($startsPaid && $maySettleByDefault)
+                    ? (float) $data['grand_total']
+                    : 0;
+            }
+
+
             $data['due_amount'] = $data['due_amount'] ?? max(0, (float) $data['grand_total'] - (float) $data['paid_amount']);
 
             $transaction = Transaction::create($data);
+
+            // Derive status from the amounts rather than leaving the column at
+            // its default: an invoice created fully paid was being stored as
+            // pending, so the list showed money received against an outstanding
+            // document.
+            $transaction->syncPaymentState();
+            if ((string) $transaction->payment_status === 'paid') {
+                $transaction->last_payment_at = $transaction->last_payment_at ?? now();
+                $transaction->settled_by = $transaction->settled_by ?? ($request->user()->name ?? null);
+            }
+            $transaction->save();
 
             foreach ($items as $item) {
                 $this->ensureHospitalConsistency($transaction->hospital_id, (int) $item['medicine_id']);

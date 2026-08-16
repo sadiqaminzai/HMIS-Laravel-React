@@ -1,0 +1,13 @@
+﻿name,display_name,category,description,status,is_system
+view_dashboard_ultrasound_fees,"View Dashboard Total - Ultrasound Fees",Dashboard,,active,True
+cancel_paid_lab_order,"Cancel A Paid Lab Order",Laboratory,,active,True
+reverse_lab_order_status,"Move Lab Order Backwards In Workflow",Laboratory,,active,True
+reverse_lab_payment,"Reverse Lab Payment (Paid to Unpaid)",Laboratory,,active,True
+reverse_finance_payment,"Reverse Finance Payment (Paid to Pending)","Pharmacy Finance",,active,True
+add_ultrasound_receipt,"Create Ultrasound Receipt",Ultrasound,,active,True
+complete_unpaid_ultrasound,"Complete An Unpaid Ultrasound Exam",Ultrasound,,active,True
+manage_ultrasound_payments,"Take Ultrasound Payments",Ultrasound,,active,True
+print_ultrasound_receipt,"Print Ultrasound Receipt",Ultrasound,,active,True
+reverse_ultrasound_payment,"Reverse Ultrasound Payment",Ultrasound,,active,True
+set_ultrasound_fee,"Set Ultrasound Fee / Price",Ultrasound,,active,True
+submit_ultrasound_result,"Submit Ultrasound Result",Ultrasound,,active,True

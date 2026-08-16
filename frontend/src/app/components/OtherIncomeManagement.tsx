@@ -16,6 +16,7 @@ const getDocumentUrl = (path: string | undefined | null) => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   return `${baseUrl}${cleanPath}`;
 };
+import { AddButton } from './AddButton';
 
 interface OtherIncomeManagementProps {
   hospital: Hospital;
@@ -222,13 +223,7 @@ export function OtherIncomeManagement({ hospital, userRole }: OtherIncomeManagem
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Other Incomes</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Track hospital other incomes and manage approvals.</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Other Income
-        </button>
+        <AddButton onClick={() => handleOpenModal()} label={'Add Other Income'} />
       </div>
 
       <div className="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">

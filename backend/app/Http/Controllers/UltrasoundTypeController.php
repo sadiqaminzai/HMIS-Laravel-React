@@ -35,6 +35,12 @@ class UltrasoundTypeController extends Controller
         $data = $this->validatePayload($request, $hospitalId, null);
 
         $data['hospital_id'] = $hospitalId;
+        if (!($request->user()?->hasPermission('set_ultrasound_fee') ?? false)) {
+            // A new type priced by someone who may not set prices starts at 0
+            // rather than at whatever was posted.
+            $data['price'] = 0;
+        }
+
         $data['created_by'] = $request->user()->name ?? null;
         $data['updated_by'] = $request->user()->name ?? null;
 
@@ -59,6 +65,12 @@ class UltrasoundTypeController extends Controller
 
         $data['hospital_id'] = $hospitalId;
         $data['updated_by'] = $request->user()->name ?? null;
+
+        // The price is what every new exam's fee defaults to, so it is guarded
+        // like the fee itself: without the permission the stored price stands.
+        if (!($request->user()?->hasPermission('set_ultrasound_fee') ?? false)) {
+            unset($data['price']);
+        }
 
         $ultrasoundType->update($data);
 

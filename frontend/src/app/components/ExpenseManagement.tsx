@@ -17,6 +17,7 @@ const getDocumentUrl = (path: string | undefined | null) => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   return `${baseUrl}${cleanPath}`;
 };
+import { AddButton } from './AddButton';
 
 interface ExpenseManagementProps {
   hospital: Hospital;
@@ -213,13 +214,7 @@ export function ExpenseManagement({ hospital, userRole }: ExpenseManagementProps
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('ui.expenses')}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Track hospital expenses and manage approvals.</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Expense
-        </button>
+        <AddButton onClick={() => handleOpenModal()} label={'Add Expense'} />
       </div>
 
        {/* Search Bar */}

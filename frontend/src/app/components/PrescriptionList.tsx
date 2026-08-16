@@ -20,6 +20,8 @@ import { useHospitals } from '../context/HospitalContext';
 import { useMedicines } from '../context/MedicineContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { AddButton } from './AddButton';
 
 interface PrescriptionListProps {
   hospital: Hospital;
@@ -1018,7 +1020,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     doc.setTextColor('#9ca3af');
     doc.text(`${hospitalInfo.name} • ${hospitalInfo.address || ''}`, pageWidth / 2, 280, { align: 'center' });
     doc.text(`License No: ${hospitalInfo.license || ''}`, pageWidth / 2, 283, { align: 'center' });
-    doc.text("Powered by: Soft Care IT Solutions", pageWidth / 2, 287, { align: 'center' });
+    doc.text(POWERED_BY_TEXT, pageWidth / 2, 287, { align: 'center' });
 
     doc.save(`Prescription_${prescription.prescriptionNumber}.pdf`);
   };
@@ -1099,12 +1101,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
             </button>
           )}
           {canCreatePrescriptions && (
-            <button
-              onClick={() => navigate('/prescriptions/create')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-              title={t('ui.addPrescription')}
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.addPrescription')}</button>
+            <AddButton onClick={() => navigate('/prescriptions/create')} label={t('ui.addPrescription')} />
           )}
         </div>
       </div>

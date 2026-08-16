@@ -27,8 +27,10 @@ import { useDoctors } from '../context/DoctorContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { toast } from 'sonner';
+import { poweredByHtml } from '../utils/receiptBranding';
 
 type TabKey = 'types' | 'surgeries' | 'patientSurgeries' | 'dischargeSummary';
+import { AddButton } from './AddButton';
 
 interface SurgeryManagementProps {
   hospital: Hospital;
@@ -115,6 +117,35 @@ const mapPatientSurgery = (item: any): PatientSurgeryItem => ({
   verificationToken: item.verification_token || undefined,
 });
 
+
+/**
+ * Coloured chip for the surgery table's status and payment columns.
+ *
+ * Plain text gave a cancelled operation and a completed one identical weight;
+ * colour lets the row be read at a glance, and the palette matches the badges
+ * used elsewhere in the app.
+ */
+function StatusBadge({ value }: { value?: string }) {
+  const key = String(value || '').toLowerCase();
+
+  const tone =
+    key === 'paid' || key === 'completed' || key === 'active'
+      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+      : key === 'pending' || key === 'scheduled' || key === 'partial'
+        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+        : key === 'in_progress'
+          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
+          : key === 'cancelled' || key === 'unpaid' || key === 'inactive'
+            ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200'
+            : 'bg-gray-100 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200';
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize whitespace-nowrap ${tone}`}>
+      {key ? key.replace(/_/g, ' ') : '—'}
+    </span>
+  );
+}
+
 export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps) {
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
@@ -126,6 +157,14 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const canAddTypes = hasPermission('add_surgery_types') || hasPermission('manage_surgery_types');
   const canEditTypes = hasPermission('edit_surgery_types') || hasPermission('manage_surgery_types');
   const canDeleteTypes = hasPermission('delete_surgery_types') || hasPermission('manage_surgery_types');
+  // Cost and payment status decide what the hospital is owed, so they are
+  // gated separately from the ability to schedule an operation. Enforced again
+  // in PatientSurgeryController -- disabling an input is a hint, not a control.
+  const canSetSurgeryCost = hasPermission('edit_surgery_cost')
+    || hasPermission('manage_patient_surgeries');
+  const canSetSurgeryPayment = hasPermission('edit_surgery_payment_status')
+    || hasPermission('manage_patient_surgeries');
+
   const canAddSurgeries = hasPermission('add_surgeries') || hasPermission('manage_surgeries');
   const canEditSurgeries = hasPermission('edit_surgeries') || hasPermission('manage_surgeries');
   const canDeleteSurgeries = hasPermission('delete_surgeries') || hasPermission('manage_surgeries');
@@ -134,7 +173,9 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const canDeletePatientSurgeries = hasPermission('delete_patient_surgeries') || hasPermission('manage_patient_surgeries');
   const canPrintPatientSurgeries = hasPermission('print_patient_surgeries') || hasPermission('view_patient_surgeries') || hasPermission('manage_patient_surgeries');
 
-  const [activeTab, setActiveTab] = useState<TabKey>('types');
+  // Patient Surgeries is the day-to-day tab; types and surgeries are setup
+  // data that is configured once.
+  const [activeTab, setActiveTab] = useState<TabKey>('patientSurgeries');
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -170,7 +211,9 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     surgeryId: '',
     surgeryDate: new Date().toISOString().slice(0, 10),
     status: 'scheduled' as PatientSurgeryItem['status'],
-    paymentStatus: 'pending' as PatientSurgeryItem['paymentStatus'],
+    // Paid by default: the receipt is normally raised at the counter when the
+    // patient pays, so pending was the wrong starting point for most entries.
+    paymentStatus: 'paid' as PatientSurgeryItem['paymentStatus'],
     cost: '',
     notes: '',
     isActive: true,
@@ -241,6 +284,9 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       const pageRule = isCompactReceipt
         ? `@page { size: ${size} auto; margin: 0; }`
         : `@page { size: ${size === 'a5' ? 'A5' : 'A4'}; margin: 10mm; }`;
+
+      const patientSerial =
+        patients.find((p) => String(p.id) === String(item.patientId))?.patientId || item.patientId || 'N/A';
       
       const receiptHtml = `
         <html>
@@ -289,13 +335,24 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                 width: 48%;
               }
               .label {
-                font-size: 10px;
+                font-size: ${isCompactReceipt ? '8px' : '9px'};
                 text-transform: uppercase;
+                letter-spacing: 0.04em;
                 color: #000000;
-                font-weight: bold;
-                margin-bottom: 2px;
+                font-weight: 600;
+                margin-bottom: 1px;
               }
-              .value { font-weight: bold; margin: 0; color: #000000; }
+              .hospital-contact {
+                margin: 1px 0 0;
+                font-size: ${isCompactReceipt ? '9px' : '11px'};
+                color: #000000;
+              }
+              .value {
+                font-weight: bold;
+                font-size: ${isCompactReceipt ? '11px' : '13px'};
+                margin: 0;
+                color: #000000;
+              }
               table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
               th { text-align: left; border-bottom: 2px solid #e5e7eb; padding: 6px 0; color: #000000; }
               th.text-right, td.text-right { text-align: right; }
@@ -319,7 +376,10 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                   color: #000000 !important;
                 }
                 body { background: #ffffff; padding: 0; }
-                .ticket { border: none; box-shadow: none; margin: 0; padding: ${isCompactReceipt ? '6px' : '0'}; width: ${ticketWidth}; }
+                /* Extra room at the top only: thermal paper is pulled past the
+                   print head before printing starts, so the first line loses
+                   its ascenders and the hospital name clipped. */
+                .ticket { border: none; box-shadow: none; margin: 0; padding: ${isCompactReceipt ? '3mm 6px 6px' : '0'}; width: ${ticketWidth}; }
                 ${pageRule}
               }
             </style>
@@ -328,6 +388,8 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
             <div class="ticket">
               <div class="header">
                 <h1 class="hospital-name">${hospital.name}</h1>
+                ${hospital.address ? `<p class="hospital-contact">${hospital.address}</p>` : ''}
+                ${hospital.phone ? `<p class="hospital-contact">${hospital.phone}</p>` : ''}
                 <p class="dept">Surgery Department</p>
                 <div style="margin-top: 6px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Invoice</div>
               </div>
@@ -335,13 +397,13 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <div class="meta-row">
                 <div class="meta-block">
                   <div class="label">Patient ID</div>
-                  <div class="value">${item.patientId || 'N/A'}</div>
+                  <div class="value">${patientSerial}</div>
                   <div class="label" style="margin-top: 8px;">Patient Name</div>
                   <div class="value">${item.patientName}</div>
                 </div>
                 <div class="meta-block" style="text-align: right;">
                   <div class="label">Invoice No / Date</div>
-                  <div class="value" style="font-size: ${isCompactReceipt ? '12px' : '16px'}">SURG-${item.id}</div>
+                  <div class="value" style="font-size: ${isCompactReceipt ? '11px' : '15px'}">${item.id}</div>
                   <div style="font-size: ${isCompactReceipt ? '10px' : '14px'}">${item.surgeryDate}</div>
                   <div class="label" style="margin-top: 8px;">Surgeon</div>
                   <div class="value">${item.doctorName || 'N/A'}</div>
@@ -351,17 +413,17 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <table>
                 <thead>
                   <tr>
-                    <th style="font-size: ${isCompactReceipt ? '16px' : '20px'}; font-weight: bold;">Description</th>
-                    <th class="text-right" style="font-size: ${isCompactReceipt ? '16px' : '20px'}; font-weight: bold;">Amount</th>
+                    <th style="font-size: ${isCompactReceipt ? '9px' : '12px'}; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">Description</th>
+                    <th class="text-right" style="font-size: ${isCompactReceipt ? '9px' : '12px'}; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td>
-                      <div class="value" style="font-size: ${isCompactReceipt ? '16px' : '20px'};">${item.surgeryName}</div>
-                      <div class="notes" style="font-size: ${isCompactReceipt ? '11px' : '14px'};">${item.notes || 'No notes'}</div>
+                      <div class="value" style="font-size: ${isCompactReceipt ? '11px' : '14px'};">${item.surgeryName}</div>
+                      ${item.notes ? `<div class="notes" style="font-size: ${isCompactReceipt ? '9px' : '12px'};">${item.notes}</div>` : ''}
                     </td>
-                    <td class="text-right value" style="font-size: ${isCompactReceipt ? '16px' : '20px'};">${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="text-right value" style="font-size: ${isCompactReceipt ? '11px' : '14px'};">${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   </tr>
                 </tbody>
               </table>
@@ -371,15 +433,11 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                   <span>Total Amount:</span>
                   <span>${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
-                <div style="color: #16a34a; font-size: ${isCompactReceipt ? '10px' : '14px'}">
-                  <span style="color: inherit">Payment Status:</span>
-                  <span style="text-transform: uppercase; font-style: italic;">${item.paymentStatus}</span>
-                </div>
               </div>
 
               <div class="footer">
-                <p style="margin:0 0 2px 0">${hospital.address || ''}</p>
-                <p style="margin:0">softcareitsolutions.com</p>
+                <p style="margin:0 0 2px 0; font-size: ${isCompactReceipt ? '9px' : '11px'}">Printed on: ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                ${poweredByHtml(isCompactReceipt)}
               </div>
             </div>
             <script>window.onload = function() { window.print(); window.close(); }</script>
@@ -723,10 +781,10 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
             />
           </div>
           <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
-          {activeTab === 'types' && canAddTypes && <button onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" />{t('ui.addType')}</button>}
-          {activeTab === 'surgeries' && canAddSurgeries && <button onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Surgery</button>}
-          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <button onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'pending', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Patient Surgery</button>}
-          {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <button onClick={openNewDischargeModal} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Discharge</button>}
+          {activeTab === 'types' && canAddTypes && <AddButton onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} label={t('ui.addType')} />}
+          {activeTab === 'surgeries' && canAddSurgeries && <AddButton onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} label="Add Surgery" />}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'paid', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
+          {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <AddButton onClick={openNewDischargeModal} label="Add Discharge" />}
         </div>
       </div>
 
@@ -781,13 +839,44 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                       <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.patientName}</td>
                       <td className="px-4 py-2">{row.surgeryName}</td>
                       <td className="px-4 py-2">{row.surgeryDate}</td>
-                      <td className="px-4 py-2">{row.status}</td>
-                      <td className="px-4 py-2">{row.paymentStatus}</td>
+                      <td className="px-4 py-2"><StatusBadge value={row.status} /></td>
+                      <td className="px-4 py-2"><StatusBadge value={row.paymentStatus} /></td>
                       <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-2">
                           {canPrintPatientSurgeries && (<button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title={t('ui.printInvoice')}><Printer className="w-4 h-4" /></button>)}
-                          <button onClick={async () => { try { const updated = await togglePatientSurgeryPaymentStatus(row.id); setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item)); toast.success('Payment status toggled'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); } }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Toggle payment pending/paid"><ToggleRight className="w-4 h-4" /></button>
+                          {/* A real sliding switch: the knob sits left on
+                              pending (amber) and right on paid (green), so the
+                              state is readable without opening the row. The old
+                              control was a fixed icon that never moved. */}
+                          {canSetSurgeryPayment && (() => {
+                            const isPaid = String(row.paymentStatus) === 'paid';
+                            return (
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isPaid}
+                                title={isPaid ? 'Mark as pending' : 'Mark as paid'}
+                                aria-label={isPaid ? 'Mark as pending' : 'Mark as paid'}
+                                onClick={async () => {
+                                  try {
+                                    const updated = await togglePatientSurgeryPaymentStatus(row.id);
+                                    setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item));
+                                    toast.success('Payment status updated');
+                                  } catch (e: any) {
+                                    toast.error(e?.response?.data?.message || 'Toggle failed');
+                                  }
+                                }}
+                                className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition-colors ${
+                                  isPaid ? 'bg-emerald-500' : 'bg-amber-400'
+                                }`}
+                              >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                                  isPaid ? 'translate-x-5' : 'translate-x-0.5'
+                                }`} />
+                              </button>
+                            );
+                          })()}
                           {canEditPatientSurgeries && (<button onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
                           {canDeletePatientSurgeries && (<button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
                         </div>
@@ -890,10 +979,34 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.surgery')}</label><select value={patientSurgeryForm.surgeryId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">Select surgery</option>{surgeries.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Surgery Date</label><input type="date" value={patientSurgeryForm.surgeryDate} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label><select value={patientSurgeryForm.status} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, status: e.target.value as PatientSurgeryItem['status'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="scheduled">scheduled</option><option value="in_progress">in_progress</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select></div>
-              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label><select value={patientSurgeryForm.paymentStatus} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>
-              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Cost (optional)</label><input type="number" min={0} step="0.01" value={patientSurgeryForm.cost} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, cost: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
+              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label><select value={patientSurgeryForm.paymentStatus} disabled={!canSetSurgeryPayment} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>
+              <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Cost (optional)</label><input type="number" min={0} step="0.01" value={patientSurgeryForm.cost} disabled={!canSetSurgeryCost} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, cost: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed" /></div>
               <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.notes')}</label><input value={patientSurgeryForm.notes} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, notes: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
-              <div className="col-span-12 flex items-center gap-2"><input id="ps-active" type="checkbox" checked={patientSurgeryForm.isActive} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, isActive: e.target.checked }))} /><label htmlFor="ps-active" className="text-sm">{t('ui.active')}</label></div>
+              {/* Same toggle used on the medicine form, so Active reads the
+                  same way everywhere rather than as a bare checkbox. */}
+              <div className="col-span-12 md:col-span-4">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={patientSurgeryForm.isActive}
+                  onClick={() => setPatientSurgeryForm((p) => ({ ...p, isActive: !p.isActive }))}
+                  className={`w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded border text-xs transition-colors ${
+                    patientSurgeryForm.isActive
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-300'
+                      : 'bg-gray-100 border-gray-300 text-gray-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  <span className="truncate">{patientSurgeryForm.isActive ? t('ui.active') : t('ui.inactive')}</span>
+                  <span className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
+                    patientSurgeryForm.isActive ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                      patientSurgeryForm.isActive ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </span>
+                </button>
+              </div>
               <div className="col-span-12 flex items-center justify-end gap-2"><button type="button" onClick={() => setIsPatientSurgeryModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button><button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editingPatientSurgery ? t('ui.update') : t('ui.create')}</button></div>
             </form>
           </div>

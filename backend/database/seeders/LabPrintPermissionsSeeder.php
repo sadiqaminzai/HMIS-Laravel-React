@@ -71,6 +71,18 @@ class LabPrintPermissionsSeeder extends Seeder
                 'display_name' => 'Pharmacy Walk-in Sales',
                 'category' => 'Pharmacy',
             ],
+            // Surgery cost and payment status decide what the hospital is owed,
+            // so scheduling an operation and pricing it are separate rights.
+            [
+                'name' => 'edit_surgery_cost',
+                'display_name' => 'Edit Surgery Cost',
+                'category' => 'Surgery Management',
+            ],
+            [
+                'name' => 'edit_surgery_payment_status',
+                'display_name' => 'Edit Surgery Payment Status',
+                'category' => 'Surgery Management',
+            ],
             // Overriding a doctor's consultation fee moves money in the same way
             // a discount does, so reception can book without being able to
             // rewrite the price.

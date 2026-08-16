@@ -66,6 +66,13 @@ class UltrasoundExamController extends Controller
         $data = $this->validatePayload($request, $hospitalId);
         $data['hospital_id'] = $hospitalId;
 
+        // The fee is financial: only a user permitted to set it may send one.
+        // Otherwise it falls back to the type's price, so reception can still
+        // raise a correctly priced order without being able to alter it.
+        if (!($request->user()?->hasPermission('set_ultrasound_fee') ?? false)) {
+            $data['fee'] = UltrasoundType::whereKey($data['ultrasound_type_id'])->value('price') ?? 0;
+        }
+
         // Fall back to the type's template so a report is never stored empty.
         if (empty($data['report_body'])) {
             $data['report_body'] = UltrasoundType::whereKey($data['ultrasound_type_id'])->value('default_template');
@@ -127,6 +134,45 @@ class UltrasoundExamController extends Controller
         $data['updated_by'] = $request->user()->name ?? null;
         unset($data['sequence_id']);
 
+        // The radiologist is whoever files the report, not a name chosen from a
+        // list: the record should say who actually read the images. Only set
+        // when the user is a doctor, since doctor_id is constrained to those.
+        if (($request->user()?->role ?? null) === 'doctor') {
+            $data['doctor_id'] = $request->user()->id;
+        } else {
+            unset($data['doctor_id']);
+        }
+
+        // The fee is financial, so it is only accepted from a user permitted to
+        // set it; without that the existing value stands. Disabling the input
+        // alone would be bypassed by posting to the API.
+        if (!($request->user()?->hasPermission('set_ultrasound_fee') ?? false)) {
+            unset($data['fee']);
+        }
+
+        // Payment fields belong to the counter's own endpoints. Accepting them
+        // here would let a specialist settle an exam by saving a report.
+        unset(
+            $data['payment_status'],
+            $data['paid_amount'],
+            $data['payment_method'],
+            $data['paid_at'],
+            $data['paid_by'],
+            $data['receipt_number']
+        );
+
+        // Completing an unpaid exam would hand the patient a report they have
+        // not paid for and post income that was never collected.
+        if (
+            ($data['status'] ?? null) === 'completed'
+            && (string) $ultrasoundExam->payment_status !== 'paid'
+            && !($request->user()?->hasPermission('complete_unpaid_ultrasound') ?? false)
+        ) {
+            return response()->json([
+                'message' => 'This exam is not paid. Take payment at reception before completing it.',
+            ], 422);
+        }
+
         $ultrasoundExam->update($data);
         $this->ledgerPostingService->upsertUltrasoundExamSnapshot($ultrasoundExam->fresh());
 
@@ -141,6 +187,112 @@ class UltrasoundExamController extends Controller
         $ultrasoundExam->delete();
 
         return response()->json(['message' => 'Ultrasound exam deleted']);
+    }
+
+    /**
+     * Take payment for an exam (reception).
+     *
+     * Payment is its own endpoint rather than a field on update() so that the
+     * desk that reports on an exam cannot mark it paid by editing the record,
+     * and so the receipt number and collector are recorded in one place.
+     */
+    public function processPayment(Request $request, UltrasoundExam $ultrasoundExam)
+    {
+        $this->authorizeScope($request->user(), $ultrasoundExam);
+
+        $data = $request->validate([
+            'paid_amount' => ['required', 'numeric', 'min:0'],
+            'payment_method' => ['required', 'string', 'max:50'],
+        ]);
+
+        if ($ultrasoundExam->isPaid()) {
+            return response()->json(['message' => 'This exam is already paid.'], 422);
+        }
+
+        $fee = (float) ($ultrasoundExam->fee ?? 0);
+        $paid = (float) $data['paid_amount'];
+
+        $ultrasoundExam->update([
+            'payment_status' => $paid >= $fee && $fee > 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
+            'paid_amount' => $paid,
+            'payment_method' => $data['payment_method'],
+            'paid_at' => now(),
+            'paid_by' => $request->user()?->name,
+            // The exam's own sequence doubles as the receipt number, so the
+            // paper and the record share one identifier.
+            'receipt_number' => $ultrasoundExam->receipt_number
+                ?? (string) ($ultrasoundExam->sequence_id ?? $ultrasoundExam->id),
+            'updated_by' => $request->user()?->name,
+        ]);
+
+        $this->ledgerPostingService->upsertUltrasoundExamSnapshot($ultrasoundExam->fresh());
+
+        return response()->json($ultrasoundExam->fresh()->load(self::RELATIONS));
+    }
+
+    /**
+     * Undo a payment.
+     *
+     * Deliberately a separate action behind its own permission: the desk that
+     * collects must not be able to make the money disappear, and a reversal
+     * without a recorded reason cannot be audited.
+     */
+    public function reversePayment(Request $request, UltrasoundExam $ultrasoundExam)
+    {
+        $this->authorizeScope($request->user(), $ultrasoundExam);
+
+        if (!($request->user()?->hasPermission('reverse_ultrasound_payment') ?? false)) {
+            return response()->json([
+                'message' => 'Reversing an ultrasound payment requires the Reverse Ultrasound Payment permission.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        $ultrasoundExam->update([
+            'payment_status' => 'unpaid',
+            'paid_amount' => 0,
+            'payment_method' => null,
+            'paid_at' => null,
+            'paid_by' => null,
+            'clinical_notes' => $ultrasoundExam->clinical_notes,
+            'updated_by' => $request->user()?->name,
+        ]);
+
+        $this->ledgerPostingService->upsertUltrasoundExamSnapshot($ultrasoundExam->fresh());
+
+        return response()->json([
+            'data' => $ultrasoundExam->fresh()->load(self::RELATIONS),
+            'message' => 'Payment reversed: ' . $data['reason'],
+        ]);
+    }
+
+    /**
+     * Payload for the printable payment receipt (reception counter).
+     */
+    public function receipt(Request $request, UltrasoundExam $ultrasoundExam)
+    {
+        $this->authorizeScope($request->user(), $ultrasoundExam);
+
+        $exam = $ultrasoundExam->load(self::RELATIONS);
+
+        return response()->json([
+            'receipt_number' => $exam->receipt_number ?? (string) ($exam->sequence_id ?? $exam->id),
+            'exam_id' => $exam->id,
+            'sequence_id' => $exam->sequence_id,
+            'patient' => $exam->patient,
+            'doctor' => $exam->doctor,
+            'ultrasound_type' => $exam->ultrasoundType,
+            'fee' => (float) ($exam->fee ?? 0),
+            'paid_amount' => (float) ($exam->paid_amount ?? 0),
+            'payment_status' => $exam->payment_status,
+            'payment_method' => $exam->payment_method,
+            'paid_at' => $exam->paid_at,
+            'paid_by' => $exam->paid_by,
+            'examined_at' => $exam->examined_at,
+        ]);
     }
 
     /**

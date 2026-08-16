@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check, Pencil } from 'lucide-react';
+import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check, Pencil, Receipt, FlaskConical, Wallet, Microscope } from 'lucide-react';
 import { Hospital, LabTest, Patient, TestResult, TestTemplate, UserRole } from '../types';
 import { Toast } from './Toast';
 import { LabReportPrintNew } from './LabReportPrintNew';
@@ -21,12 +21,16 @@ import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAppointments } from '../context/AppointmentContext';
 import { useAuth } from '../context/AuthContext';
+import { AddButton } from './AddButton';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
   userRole: UserRole;
   currentUserId?: string;
 }
+
+/** The three desks the lab workflow passes through, in order. */
+type LabStage = 'orders' | 'payments' | 'processing';
 
 const mapOrderStatus = (orderStatus: string, paymentStatus: string): LabTest['status'] => {
   if (paymentStatus !== 'paid') return 'unpaid';
@@ -169,10 +173,26 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const canDeleteOrders = hasPermission('delete_lab_orders') || canManageOrders;
   const canExportOrders = hasPermission('export_lab_orders') || canManageOrders;
   const canPrintOrders = hasPermission('print_lab_orders') || canManageOrders;
-  const canUpdateStatus = hasPermission('update_lab_order_status') || canEditOrders;
-  const canEnterResults = hasPermission('enter_lab_results') || canEditOrders;
-  const canManagePayments = hasPermission('manage_lab_payments') || canEditOrders;
-  const canEditLabOrderDiscount = hasPermission('lab_test_order_discount') || canManageOrders;
+  const canUpdateStatus = hasPermission('update_lab_order_status');
+  const canEnterResults = hasPermission('enter_lab_results');
+  const canManagePayments = hasPermission('manage_lab_payments');
+  // Undoing a settled payment is a separate act from taking one, and the
+  // backend rejects it without this permission.
+  const canReversePayment = hasPermission('reverse_lab_payment');
+  // No `|| canManageOrders` fallback here, unlike the flags above. The backend
+  // accepts a discount only from a holder of lab_test_order_discount, so
+  // widening it here let a user with manage_lab_orders type a discount, watch
+  // the modal recompute the payable total, and save an order the server had
+  // silently charged in full.
+  const canEditLabOrderDiscount = hasPermission('lab_test_order_discount');
+
+  /**
+   * The workflow has three desks, and each should see only its own queue:
+   * orders are raised, then paid for, then processed. Showing one combined
+   * list is what let a technician start work on an order nobody had charged
+   * for, and let reception act on results.
+   */
+  const [activeStage, setActiveStage] = useState<LabStage>('orders');
 
   const [labTests, setLabTests] = useState<LabTest[]>([]);
   const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
@@ -186,6 +206,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const [showResultModal, setShowResultModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  // 'pay' settles the order on print; 'reprint' only re-issues the paper. A
+  // reprint must never take money a second time.
+  const [invoiceMode, setInvoiceMode] = useState<'pay' | 'reprint'>('pay');
   const [selectedTest, setSelectedTest] = useState<LabTest | null>(null);
   const [isTestDropdownOpen, setIsTestDropdownOpen] = useState(false);
   const [testSearchKeyword, setTestSearchKeyword] = useState('');
@@ -199,6 +222,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const pdfContainerRef = React.useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'danger' } | null>(null);
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
+  /** Order awaiting a reversal reason, and the reason being typed. */
+  const [reverseTarget, setReverseTarget] = useState<LabTest | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -402,7 +428,34 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     });
   };
 
-  const filteredLabTests = getFilteredLabTests();
+  /**
+   * Which orders belong to the desk currently in view.
+   *
+   * Payments shows only what is owed; Processing only what has been paid for,
+   * which is the same rule the backend enforces when a result is entered.
+   */
+  const stageFilteredLabTests = getFilteredLabTests().filter((test) => {
+    // mapOrderStatus already collapses "not paid for" into status 'unpaid',
+    // so the queues key off that rather than re-deriving it from paymentStatus.
+    if (activeStage === 'payments') {
+      // Both states belong to this desk: unpaid is the work queue, paid is the
+      // record of what was collected and where a receipt is reprinted from.
+      return test.status !== 'cancelled';
+    }
+    if (activeStage === 'processing') {
+      return test.status !== 'unpaid' && test.status !== 'cancelled';
+    }
+    return true;
+  });
+
+  const filteredLabTests =
+    activeStage === 'payments'
+      ? [...stageFilteredLabTests].sort((a, b) => {
+          const aOwed = a.status === 'unpaid' ? 0 : 1;
+          const bOwed = b.status === 'unpaid' ? 0 : 1;
+          return aOwed - bOwed;
+        })
+      : stageFilteredLabTests;
   const totalPages = Math.max(1, Math.ceil(filteredLabTests.length / itemsPerPage));
   const paginatedLabTests = filteredLabTests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const minimumRowCount = 5;
@@ -595,9 +648,24 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     setToast({ message: `Test status updated to ${newStatus}.`, type: 'success' });
   };
 
-  const handleAdminResetToUnpaid = async (test: LabTest) => {
+  /** Settles the order without opening the receipt. */
+  const handleMarkPaid = async (test: LabTest) => {
     try {
-      await resetLabOrderPayment(test.id, 'Reset to unpaid by admin');
+      const total = test.totalAmount ?? 0;
+      const paid = test.paidAmount ?? 0;
+      const remaining = Math.max(0, total - paid);
+      await processPayment(test.id, remaining || total || 0, 'cash');
+      await refreshLabOrders();
+      setToast({ message: 'Payment recorded.', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: err?.response?.data?.message || 'Payment failed', type: 'danger' });
+    }
+  };
+
+  const handleAdminResetToUnpaid = async (test: LabTest, reason: string) => {
+    try {
+      await resetLabOrderPayment(test.id, reason);
       await refreshLabOrders();
       setToast({ message: 'Payment reset to unpaid.', type: 'success' });
     } catch (err: any) {
@@ -815,6 +883,14 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
   const handlePayAndPrint = (test: LabTest) => {
     setSelectedTest(test);
+    setInvoiceMode('pay');
+    setShowInvoiceModal(true);
+  };
+
+  /** Re-issues the receipt for an order that has already been settled. */
+  const handleReprintReceipt = (test: LabTest) => {
+    setSelectedTest(test);
+    setInvoiceMode('reprint');
     setShowInvoiceModal(true);
   };
 
@@ -836,12 +912,46 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
   return (
     <div className="space-y-3">
+      {/* Each stage is a different desk's queue. A stage the user has no
+          permission for is not offered: a technician never sees the payment
+          tab, and reception never sees results. */}
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
+        {([
+          { key: 'orders' as LabStage, label: 'Lab Orders', icon: <FlaskConical className="w-3.5 h-3.5" />, allowed: true },
+          { key: 'payments' as LabStage, label: 'Payments', icon: <Wallet className="w-3.5 h-3.5" />, allowed: canManagePayments },
+          { key: 'processing' as LabStage, label: 'Processing', icon: <Microscope className="w-3.5 h-3.5" />, allowed: canEnterResults || canUpdateStatus },
+        ]).filter((tab) => tab.allowed).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveStage(tab.key); setCurrentPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+              activeStage === tab.key
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('modules.labTestsTitle')}</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+            {activeStage === 'payments'
+              ? 'Lab Payments'
+              : activeStage === 'processing'
+                ? 'Lab Processing'
+                : t('modules.labTestsTitle')}
+          </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            {t('modules.labTestsSubtitle')} {isAllHospitals ? t('modules.allHospitals') : currentHospital.name}
+            {activeStage === 'payments'
+              ? 'Collect fees and reprint receipts. Unpaid orders are listed first.'
+              : activeStage === 'processing'
+                ? 'Paid orders ready for the laboratory. Enter and complete results.'
+                : `${t('modules.labTestsSubtitle')} ${isAllHospitals ? t('modules.allHospitals') : currentHospital.name}`}
           </p>
         </div>
         
@@ -892,11 +1002,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
             <RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
 
           {canCreate && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.newTest')}</button>
+            <AddButton onClick={() => setShowAddModal(true)} label={t('ui.newTest')} />
           )}
         </div>
       </div>
@@ -1036,23 +1142,12 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                 onClick={() => setOpenStatusDropdown(null)}
                               />
                               <div className="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-1 z-20 min-w-[140px]">
-                                {test.status === 'unpaid' && canPayment && (
-                                  <button
-                                    onClick={() => {
-                                      handlePayAndPrint(test);
-                                      setOpenStatusDropdown(null);
-                                    }}
-                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >
-                                    Pay & Print Invoice
-                                  </button>
-                                )}
-
                                 {/* Admin only: Reset to Unpaid (e.g. refund/error) */}
-                                {test.status !== 'unpaid' && canChangeAnyStatus && (
+                                {test.status !== 'unpaid' && canReversePayment && (
                                   <button
                                     onClick={() => {
-                                      handleAdminResetToUnpaid(test);
+                                      setReverseTarget(test);
+                                      setOpenStatusDropdown(null);
                                     }}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-700"
                                   >
@@ -1113,7 +1208,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          {canEditOrders && (
+                          {canEditOrders && activeStage === 'orders' && (
                             <button
                               onClick={() => openEditModal(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -1123,7 +1218,39 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPayment && test.status === 'unpaid' && (
+                          {canPayment && (activeStage === 'orders' || activeStage === 'payments') && (
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={test.status !== 'unpaid'}
+                              onClick={() => {
+                                if (test.status === 'unpaid') {
+                                  handleMarkPaid(test);
+                                } else if (canReversePayment) {
+                                  setReverseTarget(test);
+                                }
+                              }}
+                              disabled={test.status !== 'unpaid' && !canReversePayment}
+                              title={
+                                test.status === 'unpaid'
+                                  ? 'Mark as paid'
+                                  : canReversePayment
+                                    ? 'Reverse payment to unpaid'
+                                    : 'Paid'
+                              }
+                              className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
+                                test.status !== 'unpaid' ? 'bg-emerald-500' : 'bg-amber-400'
+                              } ${test.status !== 'unpaid' && !canReversePayment ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                            >
+                              <span
+                                className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                  test.status !== 'unpaid' ? 'translate-x-4' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          )}
+
+                          {canPayment && activeStage === 'payments' && test.status === 'unpaid' && (
                             <button
                               onClick={() => handlePayAndPrint(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -1132,8 +1259,22 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                               <Printer className="w-3.5 h-3.5" />
                             </button>
                           )}
+
+                          {/* Reprint the receipt for an order already paid.
+                              Gated on print permission rather than payment, so
+                              reception can re-issue paper without being able to
+                              settle orders. */}
+                          {canPrintOrders && activeStage !== 'processing' && test.status !== 'unpaid' && (
+                            <button
+                              onClick={() => handleReprintReceipt(test)}
+                              className="p-1.5 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-md transition-colors"
+                              title={t('ui.printReceipt')}
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           
-                          {canEnterResults && test.status === 'in_progress' && (
+                          {canEnterResults && activeStage === 'processing' && test.status === 'in_progress' && (
                             <button
                               onClick={() => { 
                                 setSelectedTest(test); 
@@ -1146,7 +1287,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPrintOrders && test.status === 'completed' && (
+                          {canPrintOrders && activeStage === 'processing' && test.status === 'completed' && (
                             <button
                               onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
                               className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
@@ -1156,7 +1297,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPrintOrders && test.status === 'completed' && (
+                          {canPrintOrders && activeStage === 'processing' && test.status === 'completed' && (
                             <button
                               onClick={() => setPdfTest(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -1166,7 +1307,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canDelete && (
+                          {canDelete && activeStage === 'orders' && (
                             <button
                               onClick={() => { setSelectedTest(test); setShowDeleteModal(true); }}
                               className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
@@ -1693,11 +1834,65 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           labTest={selectedTest}
           testTemplates={testTemplates}
           onClose={() => setShowInvoiceModal(false)}
-          onPrint={confirmPayment}
+          // Undefined falls back to a plain window.print() inside the modal, so
+          // a reprint cannot settle the order again.
+          onPrint={invoiceMode === 'pay' ? confirmPayment : undefined}
         />
       )}
 
       {/* Delete Modal */}
+      {/* Reversal confirmation. Centred and styled like the rest of the
+          application, and it captures the reason the backend requires. */}
+      {reverseTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Reverse Payment</h3>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                Test #{reverseTarget.testNumber} &mdash; {reverseTarget.patientName}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                This returns the order to Unpaid and reverses the recorded income. The reason
+                is stored against the order.
+              </p>
+              <label className="block mt-3 text-xs text-gray-700 dark:text-gray-300">
+                Reason
+                <input
+                  autoFocus
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  placeholder="e.g. charged in error"
+                  className="mt-1 w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
+                />
+              </label>
+            </div>
+            <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/40 flex justify-end gap-2">
+              <button
+                onClick={() => { setReverseTarget(null); setReverseReason(''); }}
+                className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200"
+              >
+                {t('ui.cancel')}
+              </button>
+              <button
+                onClick={async () => {
+                  const target = reverseTarget;
+                  const reason = reverseReason.trim();
+                  setReverseTarget(null);
+                  setReverseReason('');
+                  await handleAdminResetToUnpaid(target, reason);
+                }}
+                disabled={!reverseReason.trim()}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reverse Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full p-6 text-center border border-gray-200 dark:border-gray-700">

@@ -1,10 +1,11 @@
 import React from 'react';
 import { X, Printer, Phone, Mail, MapPin } from 'lucide-react';
 import { Hospital, LabTest, TestTemplate, Patient, Doctor } from '../types';
-import { formatDate } from '../utils/date';
+import { formatOnlyDate } from '../utils/date';
 import { useSettings } from '../context/SettingsContext';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { POWERED_BY_TEXT, poweredByStyle } from '../utils/receiptBranding';
 
 interface LabInvoicePrintProps {
   hospital: Hospital;
@@ -52,12 +53,111 @@ export function LabInvoicePrint({
     ? Number(labTest.totalAmount)
     : Math.max(0, subtotal - discountAmount + tax);
 
-  const handlePrint = () => {
-    if (onPrint) {
-      onPrint();
-    } else {
-      window.print();
+  /**
+   * Prints in a window of its own rather than via window.print() on the app
+   * page. Printing in place could never work reliably here: the global
+   * styles/print.css declares `@page { size: A4; margin: 10mm }` for the whole
+   * application, and an @page rule cannot be overridden by specificity or
+   * !important -- only by cascade order, which we do not control because Vite
+   * decides when the bundle's CSS is injected. On top of that the modal's
+   * fixed overlay and its backdrop-filter each establish a containing block,
+   * so the receipt anchored to the modal instead of the sheet. A dedicated
+   * document has neither problem: nothing but the receipt is in it, and our
+   * @page is the last one the parser sees.
+   */
+  const openPrintWindow = (markup: string) => {
+    const win = window.open('', '_blank', 'width=420,height=640');
+    if (!win) {
+      // Pop-up blocked -- printing in place is wrong on thermal paper, so say
+      // so rather than silently producing a mis-sized receipt.
+      window.alert('Please allow pop-ups for this site to print the receipt.');
+      return;
     }
+
+    // The app bundle is deliberately NOT loaded for thermal receipts. It
+    // carries `@page { size: A4; margin: 10mm }` from styles/print.css, and an
+    // @page rule cannot be beaten by specificity or !important -- verified by
+    // rendering this document with and without the bundle: with it, the sheet
+    // comes out A4 no matter what we declare. A4 invoices keep the bundle,
+    // since A4 is what they want anyway.
+    const styles = isThermal
+      ? ''
+      : Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+          .filter((node) => node.id !== 'lab-invoice-modal-print-css')
+          .map((node) => node.outerHTML)
+          .join('\n');
+
+    // Without the bundle the receipt needs the handful of utility classes it
+    // actually uses. Small enough to keep honest, and it removes the async
+    // stylesheet load that had to be waited on before printing.
+    const thermalUtilities = `
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
+      .font-bold { font-weight: 700; }
+      .font-semibold { font-weight: 600; }
+      .uppercase { text-transform: uppercase; }
+      .leading-tight { line-height: 1.15; }
+      .break-words { overflow-wrap: anywhere; word-break: break-word; }
+      .flex { display: flex; }
+      .justify-between { justify-content: space-between; }
+      .pb-1 { padding-bottom: 4px; }
+      .bg-white { background: #ffffff; }
+      .text-black { color: #000000; }
+      .mx-auto { margin-left: auto; margin-right: auto; }
+      .shadow-sm { box-shadow: none; }
+    `;
+
+    win.document.write(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>Lab Invoice</title>
+    ${styles}
+    <style>
+      ${isThermal ? thermalUtilities : ''}
+      * { box-sizing: border-box; }
+      @page { size: ${isThermal ? `${paperSize} auto` : paperSize === 'a5' ? 'A5' : 'A4'}; margin: 0; }
+      html, body {
+        width: ${isThermal ? paperSize : 'auto'};
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff;
+      }
+      #lab-invoice-content {
+        position: static !important;
+        width: ${isThermal ? '100%' : 'auto'} !important;
+        min-height: 0 !important;
+        height: auto !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: ${isThermal ? '2mm 0 0' : '10mm'} !important;
+        box-shadow: none !important;
+      }
+    </style>
+  </head>
+  <body>${markup}</body>
+</html>`);
+    win.document.close();
+
+    // A4 pulls in the app bundle, which is fetched asynchronously; printing
+    // before it lands gives an unstyled invoice. Thermal is self-contained.
+    const run = () => {
+      win.focus();
+      win.print();
+      win.close();
+    };
+    if (win.document.readyState === 'complete') {
+      setTimeout(run, 250);
+    } else {
+      win.onload = () => setTimeout(run, 250);
+    }
+  };
+
+  const handlePrint = () => {
+    // Captured before onPrint, which settles the payment and unmounts this
+    // modal -- by the time it resolves the node is gone.
+    const markup = document.getElementById('lab-invoice-content')?.outerHTML ?? '';
+    onPrint?.();
+    openPrintWindow(markup);
   };
 
   const handleDownloadPDF = async () => {
@@ -84,8 +184,8 @@ export function LabInvoicePrint({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <style>
+    <div id="lab-invoice-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <style id="lab-invoice-modal-print-css">
         {`
           @media print {
             body * {
@@ -94,17 +194,48 @@ export function LabInvoicePrint({
             #lab-invoice-content, #lab-invoice-content * {
               visibility: visible;
             }
+            html, body {
+              width: ${isThermal ? paperSize : 'auto'} !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+            }
+            /* The receipt is positioned absolutely so the hidden rest of the
+               page cannot push it around. That only anchors it to the paper if
+               no ancestor establishes a containing block -- and this modal has
+               two that do: the fixed overlay and its backdrop-filter. Left as
+               they are, the receipt inherits the overlay's centred box and
+               prints small and inset. */
+            #lab-invoice-overlay,
+            #lab-invoice-card,
+            #lab-invoice-card > div {
+              position: static !important;
+              display: block !important;
+              width: auto !important;
+              max-width: none !important;
+              max-height: none !important;
+              overflow: visible !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: none !important;
+              backdrop-filter: none !important;
+              filter: none !important;
+              transform: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+            }
             #lab-invoice-content {
               position: absolute;
               left: 0;
               top: 0;
-              width: ${isThermal ? paperSize : '100%'};
+              width: ${isThermal ? paperSize : '100%'} !important;
               min-height: 0 !important;
               max-width: none !important;
-              margin: 0;
-              padding: ${isThermal ? '3mm 2.5mm' : '20px'};
+              margin: 0 !important;
+              padding: ${isThermal ? '0' : '20px'} !important;
               background: white;
               display: block !important;
+              overflow: visible !important;
             }
             @page {
               size: ${isThermal ? `${paperSize} auto` : paperSize === 'a5' ? 'A5' : 'A4'};
@@ -114,7 +245,7 @@ export function LabInvoicePrint({
         `}
       </style>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div id="lab-invoice-card" className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header - Screen Only */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 print:hidden">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -154,63 +285,123 @@ export function LabInvoicePrint({
           */
           <div
             id="lab-invoice-content"
-            className="bg-white mx-auto p-3 shadow-sm text-black font-mono"
-            style={{ width: paperSize, fontSize: paperSize === '58mm' ? '9px' : '10px' }}
+            className="bg-white mx-auto shadow-sm text-black print:shadow-none"
+            style={{
+              width: paperSize,
+              padding: '2mm 0 0',
+              // Monospace only for the figures, not the whole slip. Setting it
+              // globally made every label look like terminal output, which is
+              // what gave the old receipt its cramped, unfinished feel.
+              fontFamily: "'Segoe UI', Tahoma, Verdana, sans-serif",
+              fontSize: paperSize === '58mm' ? '10px' : '11.5px',
+              lineHeight: 1.35,
+            }}
           >
-            <div className="text-center">
-              <div className="font-bold uppercase leading-tight" style={{ fontSize: '1.25em' }}>{hospital.name}</div>
-              {hospital.phone && <div style={{ fontSize: '0.9em' }}>{hospital.phone}</div>}
+            <div className="text-center pb-1">
+              <div className="font-bold uppercase leading-tight" style={{ fontSize: '1.35em', letterSpacing: '0.02em' }}>
+                {hospital.name}
+              </div>
               {hospital.address && <div style={{ fontSize: '0.85em' }}>{hospital.address}</div>}
+              {hospital.phone && <div style={{ fontSize: '0.85em' }}>{hospital.phone}</div>}
             </div>
 
-            <div className="text-center font-bold tracking-widest border-y border-black my-1.5 py-0.5">
-              LAB INVOICE
+            <div
+              className="text-center font-bold uppercase"
+              style={{ fontSize: '1.05em', letterSpacing: '0.18em', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '3px 0', margin: '4px 0' }}
+            >
+              Lab Invoice
             </div>
 
-            <div className="flex justify-between"><span>Invoice #</span><span className="font-bold">{labTest.testNumber}</span></div>
-            <div className="flex justify-between"><span>Date</span><span className="font-bold">{formatDate(new Date(), hospital.timezone, hospital.calendarType)}</span></div>
-            <div className="flex justify-between"><span>Patient</span><span className="font-bold text-right">{labTest.patientName}</span></div>
-            <div className="flex justify-between"><span>ID</span><span className="font-bold">{labTest.patientDisplayId || labTest.patientId}</span></div>
-            <div className="flex justify-between"><span>Age / Sex</span><span className="font-bold">{labTest.patientAge} / {labTest.patientGender}</span></div>
-            <div className="flex justify-between"><span>Doctor</span><span className="font-bold text-right">{labTest.doctorName}</span></div>
+            {/* Patient on the left, receipt identity on the right. Stacked
+                label/value rows used six full-width lines for what fits in
+                four half-width ones, which matters most on a roll where every
+                line is paper. */}
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-bold uppercase" style={{ fontSize: '0.8em', letterSpacing: '0.06em', borderBottom: '1px solid #000', marginBottom: '2px' }}>
+                  Patient
+                </div>
+                {[
+                  ['Name', labTest.patientName],
+                  ['ID', labTest.patientDisplayId || labTest.patientId],
+                  ['Age / Sex', `${labTest.patientAge} / ${labTest.patientGender}`],
+                  ['Doctor', labTest.doctorName],
+                ].map(([label, value]) => (
+                  <div key={String(label)} style={{ marginBottom: '1px' }}>
+                    <span style={{ color: '#000', fontSize: '0.85em' }}>{label}: </span>
+                    <span className="font-semibold break-words">{value}</span>
+                  </div>
+                ))}
+              </div>
 
-            <div className="border-t border-black mt-1.5 pt-0.5" />
-            <div className="flex justify-between font-bold uppercase" style={{ fontSize: '0.85em' }}>
+              <div style={{ width: '1px', alignSelf: 'stretch', background: '#000' }} />
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-bold uppercase" style={{ fontSize: '0.8em', letterSpacing: '0.06em', borderBottom: '1px solid #000', marginBottom: '2px' }}>
+                  Invoice
+                </div>
+                {[
+                  ['No', labTest.testNumber],
+                  ['Date', formatOnlyDate(new Date(), hospital.timezone, hospital.calendarType)],
+                  ['Status', labTest.status === 'unpaid' ? 'Unpaid' : 'Paid'],
+                ].map(([label, value]) => (
+                  <div key={String(label)} style={{ marginBottom: '1px' }}>
+                    <span style={{ color: '#000', fontSize: '0.85em' }}>{label}: </span>
+                    <span className="font-semibold break-words">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="flex justify-between font-bold uppercase"
+              style={{ fontSize: '0.85em', letterSpacing: '0.08em', borderTop: '1px solid #000', borderBottom: '1px dashed #000', padding: '3px 0', margin: '6px 0 3px' }}
+            >
               <span>Test</span><span>Amount</span>
             </div>
-            <div className="border-t border-dashed border-black my-0.5" />
 
-            {/* Name on its own line so a long test name is never truncated. */}
             {invoiceItems.map((item, idx) => (
-              <div key={idx} className="my-1">
-                <div className="font-bold leading-tight break-words">{idx + 1}. {item.name}</div>
-                <div className="flex justify-between">
-                  <span>{item.code}</span>
-                  <span className="font-bold">{item.price.toFixed(2)}</span>
-                </div>
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', padding: '2px 0' }}>
+                {/* Name wraps, amount never does. */}
+                <span className="break-words" style={{ flex: 1 }}>
+                  {idx + 1}. {item.name}
+                </span>
+                <span className="font-semibold" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {item.price.toFixed(2)}
+                </span>
               </div>
             ))}
 
-            <div className="border-t border-black mt-1 pt-0.5" />
-            <div className="flex justify-between"><span>Subtotal</span><span>{subtotal.toFixed(2)}</span></div>
+            <div style={{ borderTop: '1px dashed #000', margin: '5px 0 3px' }} />
+
+            <div className="flex justify-between"><span style={{ color: '#000' }}>Subtotal</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{subtotal.toFixed(2)}</span></div>
             {discountAmount > 0 && (
-              <div className="flex justify-between"><span>Discount</span><span>-{discountAmount.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span style={{ color: '#000' }}>Discount</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>-{discountAmount.toFixed(2)}</span></div>
             )}
             {tax > 0 && (
-              <div className="flex justify-between"><span>Tax</span><span>{tax.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span style={{ color: '#000' }}>Tax</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{tax.toFixed(2)}</span></div>
             )}
-            <div className="flex justify-between font-bold border-y border-black my-1 py-0.5" style={{ fontSize: '1.2em' }}>
-              <span>TOTAL</span><span>{total.toFixed(2)}</span>
+
+            <div
+              className="flex justify-between font-bold"
+              style={{ fontSize: '1.25em', borderTop: '2px solid #000', marginTop: '4px', paddingTop: '4px' }}
+            >
+              <span>TOTAL</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{total.toFixed(2)}</span>
             </div>
 
-            <div className="text-center font-bold border border-black py-0.5 my-1 tracking-widest">
-              {labTest.status === 'unpaid' ? 'UNPAID' : 'PAID'}
+            <div
+              className="text-center font-bold uppercase"
+              style={{ letterSpacing: '0.2em', border: '1px solid #000', padding: '3px 0', margin: '7px 0' }}
+            >
+              {labTest.status === 'unpaid' ? 'Unpaid' : 'Paid'}
             </div>
 
-            <div className="text-center mt-1.5" style={{ fontSize: '0.85em' }}>
-              Please keep this receipt to collect your report.
+            <div className="text-center" style={{ fontSize: '0.82em', borderTop: '1px dashed #000', paddingTop: '4px' }}>
+              <div>Please keep this receipt to collect your report.</div>
+              <div style={{ marginTop: '2px' }}>Thank you</div>
+              <div style={poweredByStyle(true)}>{POWERED_BY_TEXT}</div>
             </div>
-            <div className="text-center" style={{ fontSize: '0.8em' }}>Thank you</div>
           </div>
         ) : (
           <div id="lab-invoice-content" className="bg-white mx-auto max-w-[210mm] min-h-[297mm] p-8 shadow-sm text-gray-900">
@@ -241,7 +432,7 @@ export function LabInvoicePrint({
                   <span className="text-xl font-mono font-bold text-gray-900">INV-{labTest.testNumber}</span>
                 </div>
                 <div className="text-sm text-gray-500">
-                  Date: <span className="font-medium text-gray-900">{formatDate(new Date(), hospital.timezone, hospital.calendarType)}</span>
+                  Date: <span className="font-medium text-gray-900">{formatOnlyDate(new Date(), hospital.timezone, hospital.calendarType)}</span>
                 </div>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { AddButton } from './AddButton';
 
 interface PermissionManagementProps {
   hospital: Hospital;
@@ -300,11 +301,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
               </label>
             )}
             {canAdd && (
-              <button
-                onClick={handleAdd}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />{t('ui.addPermission')}</button>
+              <AddButton onClick={handleAdd} label={t('ui.addPermission')} />
             )}
           </div>
         )}

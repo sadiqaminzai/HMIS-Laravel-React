@@ -60,6 +60,12 @@ class HospitalSettingController extends Controller
             'pharmacy_default_barcode_type' => ['sometimes', Rule::in(['manual', 'manufacturer', 'system'])],
             'pharmacy_default_sale_unit' => ['sometimes', Rule::in(['piece', 'strip', 'pack'])],
             'barcode_scanning_enabled' => ['sometimes', 'boolean'],
+            'lab_default_payment_status' => ['sometimes', 'in:paid,unpaid'],
+            'default_payment_statuses' => ['sometimes', 'array'],
+            'default_payment_statuses.sales' => ['sometimes', 'in:paid,pending'],
+            'default_payment_statuses.sales_return' => ['sometimes', 'in:paid,pending'],
+            'default_payment_statuses.purchase' => ['sometimes', 'in:paid,pending'],
+            'default_payment_statuses.purchase_return' => ['sometimes', 'in:paid,pending'],
             'barcode_label_width_mm' => ['sometimes', 'integer', 'min:20', 'max:210'],
             'barcode_label_height_mm' => ['sometimes', 'integer', 'min:10', 'max:297'],
             'print_paper_sizes' => ['sometimes', 'array'],
@@ -92,12 +98,22 @@ class HospitalSettingController extends Controller
             'pharmacy_default_barcode_type',
             'pharmacy_default_sale_unit',
             'barcode_scanning_enabled',
+            'lab_default_payment_status',
+            'default_payment_statuses',
             'barcode_label_width_mm',
             'barcode_label_height_mm',
         ];
+        // Compared as JSON, not as strings: default_payment_statuses is an
+        // array, and casting one to string raises "Array to string conversion"
+        // and fails the whole save.
+        $asComparable = static fn ($value) => is_array($value) || is_object($value)
+            ? json_encode($value)
+            : (string) $value;
+
         $touchedPharmacy = array_filter(
             $pharmacyKeys,
-            fn ($key) => array_key_exists($key, $data) && (string) $data[$key] !== (string) $setting->{$key}
+            fn ($key) => array_key_exists($key, $data)
+                && $asComparable($data[$key]) !== $asComparable($setting->{$key})
         );
 
         if (!empty($touchedPharmacy) && !$this->canManagePharmacySettings($request->user())) {

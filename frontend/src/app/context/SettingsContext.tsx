@@ -212,6 +212,8 @@ export interface HospitalSetting {
   invoiceFields: InvoiceFieldSettings;
   /** Which reports desk each income module's money is reported under. */
   reportModuleOwners: ReportModuleOwners;
+  /** Payment status a new document of each type starts on. */
+  defaultPaymentStatuses: Record<'sales' | 'sales_return' | 'purchase' | 'purchase_return', 'paid' | 'pending'>;
   /** Whether pharmacy sales accept registered patients, walk-ins, or both. */
   pharmacyCustomerMode: PharmacyCustomerMode;
   pharmacyDefaultCustomer: PharmacyDefaultCustomer;
@@ -222,6 +224,13 @@ export interface HospitalSetting {
   defaultSaleUnit: DefaultSaleUnit;
   /** Master switch for barcode/QR scanning across products and invoices. */
   barcodeScanningEnabled: boolean;
+  /**
+   * Whether a new lab order starts already settled.
+   *
+   * Hospitals that collect at the counter before entering the order would
+   * otherwise have to mark every single order paid by hand.
+   */
+  labDefaultPaymentStatus: 'paid' | 'unpaid';
   barcodeLabel: { widthMm: number; heightMm: number };
 }
 
@@ -255,6 +264,8 @@ interface SettingsContextType {
   getDefaultBarcodeType: (hospitalId: string) => BarcodeType;
   getDefaultSaleUnit: (hospitalId: string) => DefaultSaleUnit;
   getBarcodeScanningEnabled: (hospitalId: string) => boolean;
+  getLabDefaultPaymentStatus: (hospitalId: string) => 'paid' | 'unpaid';
+  getDefaultPaymentStatuses: (hospitalId: string) => HospitalSetting['defaultPaymentStatuses'];
   getBarcodeLabel: (hospitalId: string) => { widthMm: number; heightMm: number };
   generatePatientId: (hospitalId: string, currentCount: number) => string;
   loadHospitalSetting: (hospitalId: string) => Promise<void>;
@@ -358,6 +369,13 @@ const SettingsContext = createContext<SettingsContextType>({
   getDefaultBarcodeType: () => 'manual' as BarcodeType,
   getDefaultSaleUnit: () => 'pack' as DefaultSaleUnit,
   getBarcodeScanningEnabled: () => true,
+  getLabDefaultPaymentStatus: () => 'unpaid',
+  getDefaultPaymentStatuses: () => ({
+    sales: 'pending',
+    sales_return: 'pending',
+    purchase: 'pending',
+    purchase_return: 'pending',
+  }),
   getBarcodeLabel: () => ({ widthMm: 50, heightMm: 25 }),
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
@@ -467,6 +485,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (payload.defaultSaleUnit !== undefined) {
       body.pharmacy_default_sale_unit = payload.defaultSaleUnit;
     }
+    if (payload.labDefaultPaymentStatus !== undefined) {
+      body.lab_default_payment_status = payload.labDefaultPaymentStatus;
+    }
+    if (payload.defaultPaymentStatuses !== undefined) {
+      body.default_payment_statuses = payload.defaultPaymentStatuses;
+    }
     if (payload.barcodeScanningEnabled !== undefined) {
       body.barcode_scanning_enabled = payload.barcodeScanningEnabled;
     }
@@ -533,6 +557,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         ? raw.pharmacy_default_barcode_type : 'manual') as BarcodeType,
       defaultSaleUnit: (['piece','strip','pack'].includes(String(raw.pharmacy_default_sale_unit))
         ? raw.pharmacy_default_sale_unit : 'pack') as DefaultSaleUnit,
+      labDefaultPaymentStatus: raw.lab_default_payment_status === 'paid' ? 'paid' : 'unpaid',
+      defaultPaymentStatuses: {
+        sales: raw.default_payment_statuses?.sales ?? 'pending',
+        sales_return: raw.default_payment_statuses?.sales_return ?? 'pending',
+        purchase: raw.default_payment_statuses?.purchase ?? 'pending',
+        purchase_return: raw.default_payment_statuses?.purchase_return ?? 'pending',
+      },
       barcodeScanningEnabled: raw.barcode_scanning_enabled !== undefined
         ? Boolean(raw.barcode_scanning_enabled) : true,
       barcodeLabel: {
@@ -562,6 +593,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       pharmacyWalkInDefaults: { name: '', phone: '', address: '' },
       defaultBarcodeType: 'manual',
       defaultSaleUnit: 'pack',
+      labDefaultPaymentStatus: 'unpaid',
+      defaultPaymentStatuses: {
+        sales: 'pending',
+        sales_return: 'pending',
+        purchase: 'pending',
+        purchase_return: 'pending',
+      },
       barcodeScanningEnabled: true,
       barcodeLabel: { widthMm: 50, heightMm: 25 },
     };
@@ -644,6 +682,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).defaultSaleUnit ?? 'pack';
   };
 
+  const getDefaultPaymentStatuses = (hospitalId: string) =>
+    getHospitalSetting(hospitalId).defaultPaymentStatuses;
+
+  const getLabDefaultPaymentStatus = (hospitalId: string): 'paid' | 'unpaid' =>
+    getHospitalSetting(hospitalId).labDefaultPaymentStatus === 'paid' ? 'paid' : 'unpaid';
+
   const getBarcodeScanningEnabled = (hospitalId: string): boolean => {
     return getHospitalSetting(hospitalId).barcodeScanningEnabled !== false;
   };
@@ -679,6 +723,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getDefaultBarcodeType,
       getDefaultSaleUnit,
       getBarcodeScanningEnabled,
+      getLabDefaultPaymentStatus,
+      getDefaultPaymentStatuses,
       getBarcodeLabel,
       getInvoiceFields,
       getAllInvoiceFields,

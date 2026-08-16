@@ -9,6 +9,7 @@ import { useShifts } from '../context/ShiftContext';
 import { useAuth } from '../context/AuthContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface AttendanceManagementProps {
   hospital: Hospital;
@@ -410,13 +411,7 @@ export function AttendanceManagement({ hospital, userRole }: AttendanceManagemen
           <p className="text-sm text-gray-500 dark:text-gray-400">Single entry, department-wise bulk attendance, and CSV import/export.</p>
         </div>
         <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-2">
-          <button
-            onClick={openAdd}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-[10px] text-sm font-medium flex items-center gap-2 shadow-sm transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            Add Attendance
-          </button>
+          <AddButton onClick={openAdd} label={'Add Attendance'} />
           <button
             onClick={openBulkAdd}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-medium"

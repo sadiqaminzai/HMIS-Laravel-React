@@ -21,6 +21,8 @@ import {
 import api from '../../api/axios';
 import { formatOnlyDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
+import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { AddButton } from './AddButton';
 
 /** Maps an invoice to its configurable print module (Settings > Print Paper Size). */
 const printModuleFor = (trx: Pick<Transaction, 'trxType'>): PrintModule => {
@@ -171,6 +173,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { patients } = usePatients();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
+  // Typing an amount into the invoice is recording a payment, so it needs
+  // record_finance_payments. Settling afterwards from the finance list is a
+  // different act with its own permission.
+  const canRecordPayment = hasPermission('record_finance_payments') || hasPermission('manage_finance');
   const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy, getPrintPaperSize,
           getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults,
           getBarcodeScanningEnabled, getInvoiceFields } = useSettings();
@@ -385,7 +391,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const invoiceHeading = resolvedTemplate === 'sale' ? 'SALES INVOICE' : resolvedTemplate === 'purchase' ? 'PURCHASE INVOICE' : 'SUPPLIER INVOICE';
     const hospitalName = hospitalInfo?.name || getHospitalName(trx.hospitalId);
     const hospitalAddress = hospitalInfo?.address || '';
-    const hospitalContact = [hospitalInfo?.phone || '', hospitalInfo?.email || ''].filter(Boolean).join(' | ');
+    const hospitalContact = hospitalInfo?.phone || '';
 
     const invoiceDate = trx.createdAt
       ? formatOnlyDate(trx.createdAt, hospitalInfo?.timezone || 'Asia/Kabul', (hospitalInfo?.calendarType as 'gregorian' | 'shamsi') || 'gregorian')
@@ -835,7 +841,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <div class="signature">AUTHORIZED SIGNATURE</div>
               </div>
 
-              <div class="brand-foot">Powered by: Soft Core IT Solutions - Kabul Afghanistan</div>
+              <div class="brand-foot">${POWERED_BY_TEXT}</div>
             </div>
             <script>
               window.onload = function () {
@@ -910,7 +916,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               @media screen { .receipt { display: none; } .screen-note { display: flex; } }
               @media print { .screen-note { display: none !important; } .receipt { display: block; } }
 
-              .receipt { width: ${paperWidth}; padding: 3mm 2.5mm 4mm; margin: 0 auto; }
+              .receipt { width: ${paperWidth}; padding: 5mm 2.5mm 4mm; margin: 0 auto; }
 
               /* ---- header ---- */
               .head { text-align: center; }
@@ -957,6 +963,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
               <div class="head">
                 <div class="h-name">${escapeHtml(hospitalName)}</div>
+                ${hospitalAddress ? `<div class="h-sub">${escapeHtml(hospitalAddress)}</div>` : ''}
                 ${hospitalContact ? `<div class="h-sub">${escapeHtml(hospitalContact)}</div>` : ''}
               </div>
 
@@ -979,7 +986,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               ${totalsSummary.totalDiscount > 0 ? `<div class="tot-row"><span>Discount</span><span>-${totalsSummary.totalDiscount.toFixed(2)}</span></div>` : ''}
               ${totalsSummary.totalTax > 0 ? `<div class="tot-row"><span>Tax</span><span>+${totalsSummary.totalTax.toFixed(2)}</span></div>` : ''}
               <div class="tot-row grand"><span>TOTAL</span><span>${netTotal.toFixed(2)}</span></div>
-              <div class="tot-row"><span>Paid</span><span>${paidAmount.toFixed(2)}</span></div>
               ${dueAmount > 0 ? `<div class="tot-row due"><span>Balance Due</span><span>${dueAmount.toFixed(2)}</span></div>` : ''}
 
               <div class="qr-wrap">
@@ -988,8 +994,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               </div>
 
               <div class="thanks">Thank you &mdash; get well soon</div>
-              ${hospitalAddress ? `<div class="addr">${escapeHtml(hospitalAddress)}</div>` : ''}
-              <div class="brand">Powered by SoftCare IT Solutions</div>
+              <div class="brand">${POWERED_BY_TEXT}</div>
             </div>
             <script>
               window.onload = function () {
@@ -2311,8 +2316,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             </button>
           )}
           {canAdd && (
-            <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
+            <AddButton onClick={handleAdd} label={t('ui.add')} />
           )}
         </div>
       </div>
@@ -3576,13 +3580,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <span className="text-gray-600 dark:text-gray-300">Net: <strong className="text-gray-900 dark:text-white">{totalPreview.toFixed(2)}</strong></span>
                 <div className="flex items-center gap-2 text-[10px]">
                   <label className="text-gray-600 dark:text-gray-300">{t('ui.paid')}</label>
+                  {/* Stating that money was received is a financial act, not
+                      part of writing the invoice. Without the permission the
+                      figure is shown but not editable, and the backend ignores
+                      any amount such a user posts. */}
                   <input
                     type="number"
                     min={0}
                     step={0.01}
-                    className="w-20 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1 py-0.5 text-[10px]"
-                    title="Paid amount"
+                    className="w-20 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1 py-0.5 text-[10px] disabled:opacity-60 disabled:cursor-not-allowed"
+                    title={canRecordPayment ? 'Paid amount' : 'Requires the Record Finance Payments permission'}
                     value={formData.paidAmount}
+                    disabled={!canRecordPayment}
                     onChange={(e) => handlePaidChange(Number(e.target.value))}
                   />
                 </div>

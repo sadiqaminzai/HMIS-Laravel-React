@@ -5,6 +5,7 @@ import { useOtherIncomeCategories } from '../context/OtherIncomeCategoryContext'
 import { useHospitals } from '../context/HospitalContext';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface OtherIncomeCategoriesProps {
   hospital: Hospital;
@@ -125,11 +126,7 @@ export function OtherIncomeCategories({ hospital, userRole }: OtherIncomeCategor
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Other Income Categories</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Create and manage other income categories.</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-        >
-          <Plus className="w-4 h-4" />{t('ui.addCategory')}</button>
+        <AddButton onClick={() => handleOpenModal()} label={t('ui.addCategory')} />
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">

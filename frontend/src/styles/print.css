@@ -1,10 +1,20 @@
 /* Print-specific styles */
 @media print {
-  /* A4 Page setup */
-  @page {
-    size: A4;
-    margin: 10mm;
-  }
+  /*
+    No @page rule here on purpose.
+    ------------------------------
+    This file is loaded application-wide, so an @page declared here applies to
+    every printed document -- including thermal receipts on an 80mm roll. An
+    @page rule cannot be overridden by specificity or !important, only by
+    cascade order, and the bundle's load order is Vite's to decide. The result
+    was that receipts declaring `size: 80mm auto; margin: 0` still came out A4
+    with 10mm margins, verified by rendering the same document with and without
+    this stylesheet.
+
+    Each print surface now declares its own page size. Anything printed without
+    one gets the browser default, which is the correct behaviour for an
+    ordinary document.
+  */
 
   /* Reset body */
   html, body {

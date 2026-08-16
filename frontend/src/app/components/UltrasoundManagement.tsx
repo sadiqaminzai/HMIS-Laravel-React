@@ -12,18 +12,24 @@ import {
   ChevronRight,
   ScanLine,
   LayoutTemplate,
+  Receipt,
+  Save,
+  ClipboardCheck,
 } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
+import { UltrasoundReceipts } from './UltrasoundReceipts';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Hospital, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { UltrasoundReportPrint } from './UltrasoundReportPrint';
+import { AddButton } from './AddButton';
 import {
   UltrasoundExamApi,
   UltrasoundTypeApi,
@@ -37,12 +43,14 @@ import {
   updateUltrasoundType,
 } from '../api/ultrasound';
 
+type TabKey = 'receipts' | 'exams' | 'templates';
+
 interface UltrasoundManagementProps {
   hospital: Hospital;
   userRole: UserRole;
+  /** Set by the route, so each sidebar entry lands on its own tab. */
+  initialTab?: TabKey;
 }
-
-type TabKey = 'exams' | 'templates';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -59,7 +67,7 @@ const emptyExamForm = () => ({
   patientId: '',
   doctorId: '',
   ultrasoundTypeId: '',
-  examinedAt: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+  examinedAt: format(new Date(), 'yyyy-MM-dd'),
   referredBy: '',
   clinicalNotes: '',
   reportBody: '',
@@ -84,15 +92,16 @@ const statusStyles: Record<string, string> = {
   draft: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
 };
 
-export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagementProps) {
+export function UltrasoundManagement({ hospital, userRole, initialTab }: UltrasoundManagementProps) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
+  const { getPrintPaperSize } = useSettings();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } =
     useHospitalFilter(hospital, userRole);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('exams');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'exams');
   const [exams, setExams] = useState<UltrasoundExamApi[]>([]);
   const [types, setTypes] = useState<UltrasoundTypeApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +112,8 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
   const [editingExam, setEditingExam] = useState<UltrasoundExamApi | null>(null);
   const [examForm, setExamForm] = useState(emptyExamForm);
   const [patientSearch, setPatientSearch] = useState('');
+  const [patientListOpen, setPatientListOpen] = useState(false);
+  const [referrerListOpen, setReferrerListOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [examToDelete, setExamToDelete] = useState<UltrasoundExamApi | null>(null);
   const [printExam, setPrintExam] = useState<UltrasoundExamApi | null>(null);
@@ -113,16 +124,44 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
   const [typeToDelete, setTypeToDelete] = useState<UltrasoundTypeApi | null>(null);
 
   const canManageExams = hasPermission('manage_ultrasound_exams');
-  const canCreateExams = hasPermission('add_ultrasound_exams') || canManageExams;
-  const canEditExams = hasPermission('edit_ultrasound_exams') || canManageExams;
-  const canDeleteExams = hasPermission('delete_ultrasound_exams') || canManageExams;
+  // An exam is raised as a receipt at the counter.
+  const canCreateExams = hasPermission('add_ultrasound_receipt') || canManageExams;
+  // Filing a report is the radiologist's act, and the record names whoever
+  // does it -- so it has a permission of its own rather than falling back to
+  // manage_ultrasound_exams, which reception holds.
+  const canEditExams = hasPermission('submit_ultrasound_result');
+  const canDeleteExams = hasPermission('delete_ultrasound_exams');
   const canPrintExams = hasPermission('print_ultrasound_exams') || canManageExams;
+
+  // Reception's side of the module. Kept separate from the exam permissions
+  // so the desk that takes the fee never needs rights over the clinical report.
+  const canTakeUltrasoundPayment = hasPermission('manage_ultrasound_payments') || canManageExams;
+  const canReverseUltrasoundPayment = hasPermission('reverse_ultrasound_payment');
+  const canPrintUltrasoundReceipt =
+    hasPermission('print_ultrasound_receipt') || canTakeUltrasoundPayment;
+  const canViewReceipts = canTakeUltrasoundPayment || canPrintUltrasoundReceipt;
+
+  const canSetUltrasoundFee = hasPermission('set_ultrasound_fee');
 
   const canManageTypes = hasPermission('manage_ultrasound_types');
   const canViewTypes = hasPermission('view_ultrasound_types') || canManageTypes;
   const canCreateTypes = hasPermission('add_ultrasound_types') || canManageTypes;
   const canEditTypes = hasPermission('edit_ultrasound_types') || canManageTypes;
   const canDeleteTypes = hasPermission('delete_ultrasound_types') || canManageTypes;
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+      return;
+    }
+    if (canViewReceipts) {
+      setActiveTab('receipts');
+    }
+    // Runs once the permissions are known; the tab is the user's to change after.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewReceipts, initialTab]);
+
+  const receiptPaperSize = getPrintPaperSize(currentHospital.id, 'ultrasound_receipt');
 
   /** Hospital id sent to the API; only super admins may target another tenant. */
   const scopedHospitalId = useMemo(() => {
@@ -164,23 +203,49 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
     [patients, isAllHospitals, currentHospital.id]
   );
 
+  /**
+   * Newest first: reception almost always wants the patient registered
+   * moments ago, and with no search term that used to be buried at the far end
+   * of a 200-row list.
+   */
   const filteredPatients = useMemo(() => {
     const term = patientSearch.trim().toLowerCase();
-    if (!term) return patientsForHospital.slice(0, 200);
-    return patientsForHospital
+    const byNewest = [...patientsForHospital].sort((a, b) => Number(b.id) - Number(a.id));
+    if (!term) return byNewest.slice(0, 25);
+    return byNewest
       .filter(
         (p) =>
           p.name.toLowerCase().includes(term) ||
           String(p.patientId ?? '').toLowerCase().includes(term) ||
           String(p.phone ?? '').toLowerCase().includes(term)
       )
-      .slice(0, 200);
+      .slice(0, 25);
   }, [patientsForHospital, patientSearch]);
+
+  /** What the combobox shows once a patient is chosen. */
+  const selectedPatientLabel = useMemo(() => {
+    if (!examForm.patientId) return '';
+    const chosen = patientsForHospital.find((p) => String(p.id) === String(examForm.patientId));
+    return chosen ? `${chosen.name} — ${chosen.patientId} (${chosen.age} Y / ${chosen.gender})` : '';
+  }, [examForm.patientId, patientsForHospital]);
 
   const doctorsForHospital = useMemo(
     () => doctors.filter((d) => isAllHospitals || d.hospitalId === currentHospital.id),
     [doctors, isAllHospitals, currentHospital.id]
   );
+
+  /** Doctors matching what has been typed into Referred By. */
+  const referrerOptions = useMemo(() => {
+    const term = examForm.referredBy.trim().toLowerCase();
+    if (!term) return doctorsForHospital.slice(0, 25);
+    return doctorsForHospital
+      .filter(
+        (d) =>
+          d.name.toLowerCase().includes(term) ||
+          String(d.specialization ?? '').toLowerCase().includes(term)
+      )
+      .slice(0, 25);
+  }, [doctorsForHospital, examForm.referredBy]);
 
   const filteredExams = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -196,6 +261,19 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
     );
   }, [exams, searchTerm]);
 
+  /**
+   * The specialist's queue: exams reception has settled.
+   *
+   * Unpaid exams stay on the receipts tab, so an exam cannot be examined and
+   * reported before anyone has taken the fee. Users who cannot see the receipts
+   * tab keep the unfiltered list, otherwise an exam they are responsible for
+   * would exist on no tab they can reach.
+   */
+  const examQueue = useMemo(
+    () => filteredExams.filter((exam) => exam.payment_status === 'paid'),
+    [filteredExams]
+  );
+
   const filteredTypes = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return types;
@@ -208,22 +286,35 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
   }, [types, searchTerm]);
 
   const rows: Array<UltrasoundExamApi | UltrasoundTypeApi> =
-    activeTab === 'exams' ? filteredExams : filteredTypes;
+    activeTab === 'exams' ? examQueue : filteredTypes;
   const totalPages = Math.max(1, Math.ceil(rows.length / ITEMS_PER_PAGE));
-  const pagedExams = filteredExams.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  // Paginates the same list the page counts, and the same list the paid filter
+  // produced. Slicing filteredExams here meant the rows ignored that filter
+  // entirely while the page count respected it.
+  const pagedExams = examQueue.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const pagedTypes = filteredTypes.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   /* --------------------------------- Exams ---------------------------------- */
 
+  /**
+   * Reception raises the bill; the specialist writes the report. On the
+   * receipts tab the modal shows only what the counter needs -- who the patient
+   * is, what examination, and what it costs. The clinical fields are not merely
+   * hidden from view: reception has no reason to fill them, and an empty report
+   * saved from here would look like a report that had been written.
+   */
+  const isReceptionForm = activeTab === 'receipts';
+
   const openExamModal = (exam?: UltrasoundExamApi) => {
     setPatientSearch('');
+    setPatientListOpen(false);
     if (exam) {
       setEditingExam(exam);
       setExamForm({
         patientId: String(exam.patient_id),
         doctorId: exam.doctor_id ? String(exam.doctor_id) : '',
         ultrasoundTypeId: String(exam.ultrasound_type_id),
-        examinedAt: format(new Date(exam.examined_at), "yyyy-MM-dd'T'HH:mm"),
+        examinedAt: format(new Date(exam.examined_at), 'yyyy-MM-dd'),
         referredBy: exam.referred_by ?? '',
         clinicalNotes: exam.clinical_notes ?? '',
         reportBody: exam.report_body ?? '',
@@ -279,7 +370,7 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
       return;
     }
     if (!examForm.examinedAt) {
-      toast.error('Please provide the examination date and time.');
+      toast.error('Please provide the examination date.');
       return;
     }
 
@@ -288,7 +379,12 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
       patient_id: examForm.patientId,
       doctor_id: examForm.doctorId || null,
       ultrasound_type_id: examForm.ultrasoundTypeId,
-      examined_at: examForm.examinedAt.replace('T', ' ') + ':00',
+      // The field is date-only now. This used to append ':00' to a
+      // datetime-local value; on a plain date it produced '2026-08-16:00',
+      // which the backend rejected as not a date.
+      examined_at: examForm.examinedAt.includes('T')
+        ? examForm.examinedAt.replace('T', ' ') + ':00'
+        : `${examForm.examinedAt} 00:00:00`,
       referred_by: examForm.referredBy || null,
       clinical_notes: examForm.clinicalNotes || null,
       report_body: examForm.reportBody || null,
@@ -417,10 +513,13 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('ultrasound.title')}</h1>
-          <p className="text-xs text-gray-600 dark:text-gray-400">
-            {t('ultrasound.subtitle')} — {isAllHospitals ? 'All Hospitals' : currentHospital.name}
-          </p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+            {activeTab === 'receipts'
+              ? 'Ultrasound Receipts'
+              : activeTab === 'templates'
+                ? 'Ultrasound Report Templates'
+                : 'Ultrasound Exams'}
+          </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -435,23 +534,13 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
             />
           </div>
 
-          {activeTab === 'exams' && canCreateExams && (
-            <button
-              onClick={() => openExamModal()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {t('ultrasound.addExam')}
-            </button>
+          {/* Only on Receipts: an exam enters the system as a paid order, so
+              the exam list is a work queue rather than somewhere to create. */}
+          {activeTab === 'receipts' && canCreateExams && (
+            <AddButton onClick={() => openExamModal()} label="Add ultrasound receipt" />
           )}
           {activeTab === 'templates' && canCreateTypes && (
-            <button
-              onClick={() => openTypeModal()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {t('ultrasound.addTemplate')}
-            </button>
+            <AddButton onClick={() => openTypeModal()} label={t('ultrasound.addTemplate')} />
           )}
         </div>
       </div>
@@ -462,34 +551,18 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
         onHospitalChange={setSelectedHospitalId}
       />
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
-        <button
-          onClick={() => setActiveTab('exams')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
-            activeTab === 'exams'
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-          }`}
-        >
-          <ScanLine className="w-3.5 h-3.5" />
-          {t('ultrasound.exams')}
-        </button>
-        {canViewTypes && (
-          <button
-            onClick={() => setActiveTab('templates')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
-              activeTab === 'templates'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            <LayoutTemplate className="w-3.5 h-3.5" />
-            {t('ultrasound.templates')}
-          </button>
-        )}
-      </div>
-
+      {activeTab === 'receipts' ? (
+        <UltrasoundReceipts
+          hospital={currentHospital}
+          exams={filteredExams}
+          paperSize={receiptPaperSize}
+          canTakePayment={canTakeUltrasoundPayment}
+          canReversePayment={canReverseUltrasoundPayment}
+          canPrintReceipt={canPrintUltrasoundReceipt}
+          onChanged={loadData}
+        />
+      ) : (
+      <>
       {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -500,7 +573,7 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   <th className="px-4 py-2">{t('auditLog.dateTime')}</th>
                   <th className="px-4 py-2">{t('ultrasound.patient')}</th>
                   <th className="px-4 py-2">{t('ultrasound.type')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.doctor')}</th>
+                  <th className="px-4 py-2">{t('ultrasound.referredBy')}</th>
                   <th className="px-4 py-2">{t('common.status')}</th>
                   <th className="px-4 py-2 text-center">{t('common.actions')}</th>
                 </tr>
@@ -530,10 +603,10 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                     <td className="px-4 py-2">
                       <div className="flex flex-col">
                         <span className="font-mono text-[10px] text-gray-400">
-                          US-{exam.hospital_id}-{String(exam.sequence_id).padStart(4, '0')}
+                          {exam.sequence_id}
                         </span>
                         <span className="text-gray-900 dark:text-white font-medium">
-                          {format(new Date(exam.examined_at), 'MMM dd, yyyy hh:mm a')}
+                          {format(new Date(exam.examined_at), 'MMM dd, yyyy')}
                         </span>
                       </div>
                     </td>
@@ -549,7 +622,7 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                       </div>
                     </td>
                     <td className="px-4 py-2">{exam.ultrasound_type?.name ?? '-'}</td>
-                    <td className="px-4 py-2">{exam.doctor?.name ?? '-'}</td>
+                    <td className="px-4 py-2">{exam.referred_by || exam.doctor?.name || '-'}</td>
                     <td className="px-4 py-2">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase ${
@@ -573,10 +646,13 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                         {canEditExams && (
                           <button
                             onClick={() => openExamModal(exam)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-md transition-colors"
-                            title={t('ui.edit')}
+                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-emerald-700 hover:bg-emerald-100 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-md transition-colors text-xs font-medium"
+                            title={exam.status === 'completed' ? 'View / edit report' : 'Submit report'}
                           >
-                            <Pencil className="w-4 h-4" />
+                            <ClipboardCheck className="w-4 h-4" />
+                            <span className="hidden sm:inline">
+                              {exam.status === 'completed' ? 'Report' : 'Submit Report'}
+                            </span>
                           </button>
                         )}
                         {canDeleteExams && (
@@ -701,11 +777,13 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Exam modal */}
       {isExamModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full ${isReceptionForm ? 'max-w-xl' : 'max-w-4xl'} max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700`}>
             <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
               <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 {editingExam ? t('ultrasound.editExam') : t('ultrasound.newExam')}
@@ -720,69 +798,102 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
               </button>
             </div>
 
-            <form onSubmit={submitExam} className="p-5 grid grid-cols-12 gap-3">
-              <div className="col-span-12 md:col-span-6">
+            <form
+              onSubmit={submitExam}
+              className="p-5 grid grid-cols-12 gap-x-4 gap-y-3"
+            >
+              {/* One field, not a filter box feeding a separate dropdown.
+                  Typing narrows the list; empty shows the most recently
+                  registered patients, which is what reception needs. */}
+              <div className="col-span-12 md:col-span-6 relative">
                 <label className={labelClass}>
                   {t('ultrasound.patient')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={patientSearch}
-                  onChange={(e) => setPatientSearch(e.target.value)}
-                  placeholder="Filter patients by name, ID or phone..."
-                  className={`${inputClass} mb-1`}
+                  value={selectedPatientLabel || patientSearch}
+                  onChange={(e) => {
+                    setPatientSearch(e.target.value);
+                    setPatientListOpen(true);
+                    // Typing after a choice means they are changing it.
+                    if (examForm.patientId) {
+                      setExamForm((prev) => ({ ...prev, patientId: '' }));
+                    }
+                  }}
+                  onFocus={() => setPatientListOpen(true)}
+                  onBlur={() => window.setTimeout(() => setPatientListOpen(false), 150)}
+                  placeholder="Search by name, ID or phone..."
+                  className={inputClass}
+                  autoComplete="off"
                 />
-                <select
-                  required
-                  value={examForm.patientId}
-                  onChange={(e) => setExamForm((prev) => ({ ...prev, patientId: e.target.value }))}
-                  title={t('ui.selectPatient')}
-                  aria-label={t('ui.selectPatient')}
-                  className={inputClass}
-                >
-                  <option value="">{t('ui.selectPatient')}</option>
-                  {filteredPatients.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {p.patientId} ({p.age} Y / {p.gender})
-                    </option>
-                  ))}
-                </select>
+                {!examForm.patientId && (
+                  <input type="text" required value="" onChange={() => {}} tabIndex={-1}
+                    aria-hidden="true"
+                    className="absolute opacity-0 h-0 w-0 pointer-events-none" />
+                )}
+                {patientListOpen && (
+                  <ul className="absolute z-20 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg">
+                    {filteredPatients.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setExamForm((prev) => ({ ...prev, patientId: String(p.id) }));
+                            setPatientSearch('');
+                            setPatientListOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white"
+                        >
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-gray-500"> — {p.patientId} ({p.age} Y / {p.gender})</span>
+                        </button>
+                      </li>
+                    ))}
+                    {filteredPatients.length === 0 && (
+                      <li className="px-3 py-2 text-xs text-gray-500">No matching patient.</li>
+                    )}
+                  </ul>
+                )}
               </div>
 
-              <div className="col-span-12 md:col-span-3">
-                <label className={labelClass}>{t('ultrasound.doctor')}</label>
-                <select
-                  value={examForm.doctorId}
-                  onChange={(e) => setExamForm((prev) => ({ ...prev, doctorId: e.target.value }))}
-                  title={t('ui.selectDoctor')}
-                  aria-label={t('ui.selectDoctor')}
-                  className={inputClass}
-                >
-                  <option value="">{t('ui.selectDoctor')}</option>
-                  {doctorsForHospital.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} — {d.specialization}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="col-span-12 md:col-span-3">
-                <label className={labelClass}>
-                  {t('ultrasound.examDateTime')} <span className="text-red-500">*</span>
-                </label>
+              <div className={`col-span-12 relative md:col-span-6`}>
+                <label className={labelClass}>{t('ultrasound.referredBy')}</label>
                 <input
-                  type="datetime-local"
-                  required
-                  value={examForm.examinedAt}
-                  onChange={(e) => setExamForm((prev) => ({ ...prev, examinedAt: e.target.value }))}
-                  title="Examination date and time"
-                  aria-label="Examination date and time"
+                  value={examForm.referredBy}
+                  onChange={(e) => {
+                    setExamForm((prev) => ({ ...prev, referredBy: e.target.value }));
+                    setReferrerListOpen(true);
+                  }}
+                  onFocus={() => setReferrerListOpen(true)}
+                  onBlur={() => window.setTimeout(() => setReferrerListOpen(false), 150)}
+                  placeholder="Referring physician"
                   className={inputClass}
+                  autoComplete="off"
                 />
+                {referrerListOpen && referrerOptions.length > 0 && (
+                  <ul className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg">
+                    {referrerOptions.map((d) => (
+                      <li key={d.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setExamForm((prev) => ({ ...prev, referredBy: d.name }));
+                            setReferrerListOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white"
+                        >
+                          <span className="font-medium">{d.name}</span>
+                          {d.specialization && <span className="text-gray-500"> — {d.specialization}</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
-              <div className="col-span-12 md:col-span-4">
+              <div className={`col-span-12 ${isReceptionForm ? 'md:col-span-6' : 'md:col-span-4'}`}>
                 <label className={labelClass}>
                   {t('ultrasound.type')} <span className="text-red-500">*</span>
                 </label>
@@ -792,7 +903,8 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   onChange={(e) => handleTypeChange(e.target.value)}
                   title="Select Ultrasound Type"
                   aria-label="Select Ultrasound Type"
-                  className={inputClass}
+                  disabled={!isReceptionForm}
+                  className={`${inputClass} disabled:opacity-70 disabled:cursor-not-allowed`}
                 >
                   <option value="">{t('ultrasound.selectType')}</option>
                   {activeTypes.map((type) => (
@@ -801,22 +913,18 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-0.5">
-                  {t('ultrasound.templateHint')}
-                </p>
+
               </div>
 
+              {/* Kept for reception: who sent the patient is billing
+                  information, unlike the reporting radiologist. Free text let
+                  the same doctor be spelled three ways, so it now picks from
+                  the doctor list while still accepting an outside referrer. */}
+              {/* Financial field: whoever raises the order is not necessarily
+                  allowed to decide what it costs. Without the permission the
+                  price is inherited from the ultrasound type. */}
+              {!isReceptionForm ? null : (
               <div className="col-span-12 md:col-span-3">
-                <label className={labelClass}>{t('ultrasound.referredBy')}</label>
-                <input
-                  value={examForm.referredBy}
-                  onChange={(e) => setExamForm((prev) => ({ ...prev, referredBy: e.target.value }))}
-                  placeholder="Referring physician"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="col-span-12 md:col-span-2">
                 <label className={labelClass}>{t('ultrasound.fee')}</label>
                 <input
                   type="number"
@@ -825,10 +933,28 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   value={examForm.fee}
                   onChange={(e) => setExamForm((prev) => ({ ...prev, fee: e.target.value }))}
                   placeholder="0.00"
+                  disabled={!canSetUltrasoundFee}
+                  className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
+                />
+              </div>
+              )}
+
+              <div className={`col-span-12 ${isReceptionForm ? 'md:col-span-3' : 'md:col-span-4'}`}>
+                <label className={labelClass}>
+                  {t('ultrasound.examDate')} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={examForm.examinedAt}
+                  onChange={(e) => setExamForm((prev) => ({ ...prev, examinedAt: e.target.value }))}
+                  title="Examination date"
+                  aria-label="Examination date"
                   className={inputClass}
                 />
               </div>
 
+              {!isReceptionForm && (
               <div className="col-span-12 md:col-span-3">
                 <label className={labelClass}>
                   {t('common.status')} <span className="text-red-500">*</span>
@@ -848,7 +974,9 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   <option value="cancelled">{t('ultrasound.status.cancelled')}</option>
                 </select>
               </div>
+              )}
 
+              {!isReceptionForm && (
               <div className="col-span-12">
                 <label className={labelClass}>{t('ultrasound.clinicalNotes')}</label>
                 <textarea
@@ -859,7 +987,9 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   className={`${inputClass} resize-none`}
                 />
               </div>
+              )}
 
+              {!isReceptionForm && (
               <div className="col-span-12">
                 <label className={labelClass}>{t('ultrasound.report')}</label>
                 <ReactQuill
@@ -871,7 +1001,9 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   modules={EDITOR_MODULES}
                 />
               </div>
+              )}
 
+              {!isReceptionForm && (
               <div className="col-span-12">
                 <label className={labelClass}>{t('ultrasound.impression')}</label>
                 <textarea
@@ -882,6 +1014,7 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   className={`${inputClass} resize-none`}
                 />
               </div>
+              )}
 
               <div className="col-span-12 flex justify-end pt-3 gap-2 border-t border-gray-100 dark:border-gray-700 mt-1">
                 <button
@@ -892,15 +1025,10 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
-                  {isSubmitting
-                    ? editingExam
-                      ? 'Updating...'
-                      : t('ui.saving')
-                    : editingExam
-                      ? 'Update Exam'
-                      : 'Save Exam'}
+                  <Save className="w-3.5 h-3.5" />
+                  {isSubmitting ? t('ui.saving') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -958,7 +1086,8 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
                   value={typeForm.price}
                   onChange={(e) => setTypeForm((prev) => ({ ...prev, price: e.target.value }))}
                   placeholder="0.00"
-                  className={inputClass}
+                  disabled={!canSetUltrasoundFee}
+                  className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
                 />
               </div>
 
@@ -985,30 +1114,40 @@ export function UltrasoundManagement({ hospital, userRole }: UltrasoundManagemen
 
               <div className="col-span-12">
                 <label className={labelClass}>{t('ultrasound.defaultTemplate')}</label>
-                <ReactQuill
-                  value={typeForm.defaultTemplate}
-                  onChange={(value) => setTypeForm((prev) => ({ ...prev, defaultTemplate: value }))}
-                  placeholder="Liver:&#10;Gall Bladder:&#10;CBD:&#10;Impression:"
-                  className="custom-quill-editor"
-                  theme="snow"
-                  modules={EDITOR_MODULES}
-                />
-                <p className="text-[10px] text-gray-500 mt-1">
-                  This content is loaded into the report editor whenever this type is selected on an exam.
-                </p>
+                <div className="[&_.ql-editor]:min-h-[260px]">
+                  <ReactQuill
+                    value={typeForm.defaultTemplate}
+                    onChange={(value) => setTypeForm((prev) => ({ ...prev, defaultTemplate: value }))}
+                    placeholder="Liver:&#10;Gall Bladder:&#10;CBD:&#10;Impression:"
+                    className="custom-quill-editor"
+                    theme="snow"
+                    modules={EDITOR_MODULES}
+                  />
+                </div>
               </div>
 
-              <div className="col-span-12 flex items-center gap-2">
-                <input
-                  id="ultrasound-type-active"
-                  type="checkbox"
-                  checked={typeForm.isActive}
-                  onChange={(e) => setTypeForm((prev) => ({ ...prev, isActive: e.target.checked }))}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="ultrasound-type-active" className="text-xs text-gray-700 dark:text-gray-300">
-                  Active (available for selection on new exams)
-                </label>
+              <div className="col-span-12 md:col-span-4">
+                <label className={labelClass}>{t('ui.status')}</label>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={typeForm.isActive}
+                  onClick={() => setTypeForm((prev) => ({ ...prev, isActive: !prev.isActive }))}
+                  className={`w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded border text-xs transition-colors ${
+                    typeForm.isActive
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-300'
+                      : 'bg-gray-100 border-gray-300 text-gray-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  <span className="truncate">{typeForm.isActive ? t('ui.active') : t('ui.inactive')}</span>
+                  <span className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
+                    typeForm.isActive ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                      typeForm.isActive ? 'translate-x-4' : 'translate-x-1'
+                    }`} />
+                  </span>
+                </button>
               </div>
 
               <div className="col-span-12 flex justify-end pt-3 gap-2 border-t border-gray-100 dark:border-gray-700 mt-1">

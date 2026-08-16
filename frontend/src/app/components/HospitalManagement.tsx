@@ -15,6 +15,7 @@ interface HospitalManagementProps {
 }
 
 type ManagedHospital = Hospital & { id: string };
+import { AddButton } from './AddButton';
 
 export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const { t } = useTranslation();
@@ -330,11 +331,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
             </button>
           )}
           {canAdd && (
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium shadow-sm bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
+            <AddButton onClick={handleAdd} label={t('ui.add')} />
           )}
         </div>
       </div>

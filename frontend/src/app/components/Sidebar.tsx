@@ -37,6 +37,7 @@ import {
   Database,
   Briefcase,
   ScanLine,
+  LayoutTemplate,
   ShieldCheck,
   BadgeDollarSign
 } from 'lucide-react';
@@ -136,20 +137,35 @@ const menuItems: MenuItem[] = [
     icon: <ScanLine className="w-3.5 h-3.5" />,
     anyPermissions: [
       'view_radiology_menu',
-      'view_ultrasound_exams', 'add_ultrasound_exams', 'edit_ultrasound_exams', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
+      'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
       'view_ultrasound_types', 'manage_ultrasound_types'
     ],
     subItems: [
       {
-        // Exams and report templates live here as tabs.
-        id: '/radiology/ultrasound',
+        // Reception's side of ultrasound. Its own entry because it belongs to a
+        // different desk than the reporting screens -- a receptionist should
+        // reach the bill without passing through the clinical list.
+        id: '/ultrasound/receipts',
+        translationKey: 'nav.ultrasoundReceipts',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'manage_ultrasound_payments', 'print_ultrasound_receipt', 'manage_ultrasound_exams'
+        ]
+      },
+      {
+        id: '/ultrasound/exams',
         translationKey: 'nav.ultrasound',
         icon: <ScanLine className="w-3.5 h-3.5" />,
         anyPermissions: [
-          'view_ultrasound_exams', 'add_ultrasound_exams', 'edit_ultrasound_exams', 'delete_ultrasound_exams',
-          'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams',
-          'view_ultrasound_types', 'manage_ultrasound_types'
+          'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams',
+          'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams'
         ]
+      },
+      {
+        id: '/ultrasound/templates',
+        translationKey: 'nav.ultrasoundTemplates',
+        icon: <LayoutTemplate className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_ultrasound_types', 'manage_ultrasound_types']
       }
     ]
   },
@@ -478,7 +494,11 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     }
 
     // If navigating away from radiology and its menu is expanded, collapse it
-    const isRadiologySubItem = ['/radiology/ultrasound'].includes(path);
+    const isRadiologySubItem = [
+      '/ultrasound/exams',
+      '/ultrasound/receipts',
+      '/ultrasound/templates',
+    ].includes(path);
     if (!isRadiologySubItem && path !== 'radiology' && expandedMenus.includes('radiology')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'radiology'));
     }

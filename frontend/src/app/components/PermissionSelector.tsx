@@ -23,7 +23,7 @@ interface PermissionSelectorProps {
 const ACTIONS = [
   'view', 'add', 'edit', 'delete', 'export', 'print', 'import', 'manage',
   'create', 'register', 'schedule', 'update', 'dispense', 'enter', 'approve',
-  'generate', 'record', 'reset',
+  'generate', 'record', 'reset', 'submit',
 ];
 
 /**
@@ -60,6 +60,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   lab_payments: 'Lab Payments',
   test_templates: 'Test Templates',
   ultrasound_exams: 'Ultrasound Exams',
+  ultrasound_receipt: 'Ultrasound Receipt',
+  ultrasound_result: 'Ultrasound Result',
   ultrasound_types: 'Ultrasound Templates',
   audit_logs: 'Audit Log',
   prescriptions: 'Prescriptions',

@@ -16,6 +16,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
+import { poweredByHtml } from '../utils/receiptBranding';
+import { AddButton } from './AddButton';
 
 interface AppointmentManagementProps {
   hospital: Hospital;
@@ -352,6 +354,21 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           <title>OPD Appointment Card</title>
           <style>
               @page { size: ${opdPageSize}; margin: ${opdIsA4 ? '10mm' : '0'}; }
+              /* Patient left, doctor/appointment right. The stacked version
+                 repeated a label on every line and ran to eleven rows; this
+                 says the same in five, which on a roll is five fewer lines of
+                 paper per patient. */
+              .two-col { display: flex; gap: ${opdIsA4 ? '16px' : '6px'}; align-items: flex-start; margin-top: 6px; }
+              .two-col .col { flex: 1; min-width: 0; }
+              .two-col .col-sep { width: 1px; align-self: stretch; background: #000; }
+              .two-col .col-head {
+                font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+                font-size: ${opdIsA4 ? '12px' : '10px'};
+                border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px;
+              }
+              .two-col .col-row { display: flex; flex-direction: column; margin-bottom: 3px; }
+              .two-col .k { color: #000; font-size: ${opdIsA4 ? '11px' : '9px'}; text-transform: uppercase; letter-spacing: 0.04em; }
+              .two-col .v { color: #000; font-weight: 600; word-break: break-word; }
               body {
                   margin: 0;
                   padding: 2mm;
@@ -363,6 +380,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   background: #fff; 
               }
               .card-wrapper { padding-bottom: 2mm; page-break-inside: avoid; break-inside: avoid; }
+              * { color: #000 !important; opacity: 1 !important; }
               .text-center { text-align: center; }
               .font-bold { font-weight: bold; }
               .text-lg { font-size: 14px; }
@@ -387,39 +405,32 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
               <div class="font-bold mt-2 uppercase">OPD Appointment Card</div>
           </div>
 
-          <div class="flex-between mb-2">
-              <span class="label">Appointment:</span>
-              <span class="val font-bold">${formatAppointmentNumber(selectedAppointment.appointmentNumber)}</span>
-          </div>
-          <div class="flex-between mb-2">
-              <span class="label">Date & Time:</span>
-              <span class="val">${formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)} | ${selectedAppointment.appointmentTime || 'No time'}</span>
-          </div>
+          <div class="two-col">
+              <div class="col">
+                  <div class="col-head">Patient Details</div>
+                  <div class="col-row"><span class="k">Name</span><span class="v">${selectedAppointment.patientName}</span></div>
+                  <div class="col-row"><span class="k">ID</span><span class="v">${patientDisplayId}</span></div>
+                  <div class="col-row"><span class="k">Age / Gender</span><span class="v">${selectedAppointment.patientAge} Y / ${selectedAppointment.patientGender}</span></div>
+                  ${(() => {
+                    // Appointments do not always carry the phone; the helper
+                    // falls back to the patient record, same as the list view.
+                    const phone = getAppointmentPatientPhone(selectedAppointment);
+                    return phone ? `<div class="col-row"><span class="k">Contact</span><span class="v">${phone}</span></div>` : '';
+                  })()}
+              </div>
 
-          <div class="dashed-line"></div>
+              <div class="col-sep"></div>
 
-          <div class="flex-between mt-4">
-              <span class="label font-bold uppercase">Patient Details</span>
-              <span class="val font-bold">${selectedAppointment.patientName}</span>
-          </div>
-          <div class="flex-between">
-              <span class="label">Age/Gender:</span>
-              <span class="val">${selectedAppointment.patientAge} Y / ${selectedAppointment.patientGender}</span>
-          </div>
-          <div class="flex-between mb-2">
-              <span class="label">ID:</span>
-              <span class="val">${patientDisplayId}</span>
-          </div>
-
-          <div class="dashed-line"></div>
-
-          <div class="flex-between mt-2">
-              <span class="label font-bold uppercase">Assigned Doctor</span>
-              <span class="val font-bold">${selectedAppointment.doctorName}</span>
-          </div>
-          <div class="flex-between mb-2">
-              <span class="label">Spec:</span>
-              <span class="val">${doctorSpecialization}</span>
+              <div class="col">
+                  <div class="col-head">Appointment</div>
+                  <div class="col-row"><span class="k">Doctor</span><span class="v">${selectedAppointment.doctorName}</span></div>
+                  <div class="col-row"><span class="k">Specialization</span><span class="v">${doctorSpecialization}</span></div>
+                  <div class="col-row"><span class="k">Token No</span><span class="v">${formatAppointmentNumber(selectedAppointment.appointmentNumber)}</span></div>
+                  <div class="col-row"><span class="k">Date</span><span class="v">${formatOnlyDate(selectedAppointment.appointmentDate, currentHospital.timezone, currentHospital.calendarType)}</span></div>
+                  ${selectedAppointment.appointmentTime
+                    ? `<div class="col-row"><span class="k">Time</span><span class="v">${selectedAppointment.appointmentTime}</span></div>`
+                    : ''}
+              </div>
           </div>
 
           <div class="dashed-line"></div>
@@ -442,6 +453,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
           <div class="text-center mt-2 mb-2" style="font-size: 11px; page-break-inside: avoid; break-inside: avoid;">
               <div>Printed on: ${formatDate(new Date(), currentHospital.timezone, currentHospital.calendarType)}</div>
               <div class="mt-1">Please bring this card for follow-up visits.</div>
+              ${poweredByHtml(!opdIsA4)}
           </div>
         </div>
         <script>
@@ -821,7 +833,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             </button>
           )}
           {canCreate && (
-            <button
+            <AddButton
               onClick={() => {
                 const defaultDoctorId = getDefaultDoctorId(currentHospital.id) || '';
                 const defaultDoctor = hospitalDoctors.find((d) => d.id === defaultDoctorId);
@@ -840,11 +852,8 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                 });
                 setShowAddModal(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New Appointment
-            </button>
+              label="New Appointment"
+            />
           )}
         </div>
       </div>

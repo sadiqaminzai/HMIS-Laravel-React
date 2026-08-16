@@ -187,6 +187,23 @@ class PharmacyFinanceController extends Controller
             'finance_note' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        // Recording that money arrived and undoing that record are different
+        // acts: one is the counter's daily work, the other corrects it. Sharing
+        // a permission meant whoever could take a payment could also make it
+        // disappear.
+        $next = $data['payment_status'] ?? null;
+        $wasPaid = (string) $transaction->payment_status === 'paid';
+
+        // Marking paid is covered by edit_finance_payment_status, already
+        // required above -- a desk that may set the status is the desk that
+        // settles documents. Only the reversal needs a right of its own.
+        if ($wasPaid && in_array($next, ['pending', 'partial'], true)
+            && !$request->user()->hasAnyPermission(['reverse_finance_payment', 'manage_finance'])) {
+            return response()->json([
+                'message' => 'Reversing a settled invoice requires the Reverse Finance Payment permission.',
+            ], 403);
+        }
+
         $before = [
             'payment_status' => $transaction->payment_status,
             'paid_amount' => (float) $transaction->paid_amount,
@@ -214,6 +231,16 @@ class PharmacyFinanceController extends Controller
                 if ($data['payment_status'] === 'partial') {
                     $transaction->payment_status = 'partial';
                 }
+            }
+
+            // The moment the money was recorded, which the daily handover and
+            // the dashboard report on. Cleared on reversal so a reversed
+            // document does not keep a settlement date.
+            if ((string) $transaction->payment_status === 'paid') {
+                $transaction->last_payment_at = now();
+            } elseif (in_array((string) $transaction->payment_status, ['pending', 'partial'], true)
+                && (float) $transaction->paid_amount <= 0) {
+                $transaction->last_payment_at = null;
             }
 
             $transaction->settled_by = $request->user()->name;

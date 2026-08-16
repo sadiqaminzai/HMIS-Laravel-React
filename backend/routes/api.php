@@ -67,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('/health', [ShifaaScriptController::class, 'index']);
 	Route::get('/my-hospital', [HospitalController::class, 'myHospital']);
 	Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->middleware('permission:view_dashboard');
+	Route::get('/dashboard/finance-submission', [DashboardController::class, 'financeSubmission'])->middleware('permission:view_dashboard');
 
 	Route::get('hospitals', [HospitalController::class, 'index'])->middleware('permission:view_hospitals,manage_hospitals');
 	Route::get('hospitals/{hospital}', [HospitalController::class, 'show'])->middleware('permission:view_hospitals,manage_hospitals');
@@ -327,7 +328,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::match(['PUT', 'PATCH'], 'lab-orders/{labOrder}', [LabOrderController::class, 'update'])->middleware('permission:edit_lab_orders,manage_lab_orders,update_lab_order_status');
 	Route::delete('lab-orders/{labOrder}', [LabOrderController::class, 'destroy'])->middleware('permission:delete_lab_orders,manage_lab_orders');
 	Route::post('lab-orders/{labOrder}/payment', [LabOrderController::class, 'processPayment'])->middleware('permission:manage_lab_payments,manage_lab_orders');
-	Route::post('lab-orders/{labOrder}/reset-payment', [LabOrderController::class, 'resetPayment'])->middleware('permission:manage_lab_payments,manage_lab_orders');
+	Route::post('lab-orders/{labOrder}/reset-payment', [LabOrderController::class, 'resetPayment'])->middleware('permission:reverse_lab_payment');
 	Route::post('lab-orders/{labOrder}/collect-sample', [LabOrderController::class, 'collectSample'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::post('lab-orders/{labOrder}/cancel', [LabOrderController::class, 'cancel'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::post('lab-order-items/{labOrderItem}/results', [LabOrderController::class, 'enterResults'])->middleware('permission:enter_lab_results,manage_lab_orders');
@@ -345,9 +346,12 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('ultrasound-exams', [UltrasoundExamController::class, 'index'])->middleware('permission_or_doctor:view_ultrasound_exams,manage_ultrasound_exams');
 	Route::get('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'show'])->middleware('permission_or_doctor:view_ultrasound_exams,manage_ultrasound_exams');
 	Route::get('ultrasound-exams/{ultrasoundExam}/report', [UltrasoundExamController::class, 'report'])->middleware('permission_or_doctor:print_ultrasound_exams,export_ultrasound_exams,view_ultrasound_exams,manage_ultrasound_exams');
-	Route::post('ultrasound-exams', [UltrasoundExamController::class, 'store'])->middleware('permission_or_doctor:add_ultrasound_exams,manage_ultrasound_exams');
-	Route::match(['PUT', 'PATCH'], 'ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'update'])->middleware('permission_or_doctor:edit_ultrasound_exams,manage_ultrasound_exams');
+	Route::post('ultrasound-exams', [UltrasoundExamController::class, 'store'])->middleware('permission_or_doctor:add_ultrasound_receipt,manage_ultrasound_exams');
+	Route::match(['PUT', 'PATCH'], 'ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'update'])->middleware('permission_or_doctor:submit_ultrasound_result');
 	Route::delete('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'destroy'])->middleware('permission:delete_ultrasound_exams,manage_ultrasound_exams');
+	Route::post('ultrasound-exams/{ultrasoundExam}/payment', [UltrasoundExamController::class, 'processPayment'])->middleware('permission:manage_ultrasound_payments,manage_ultrasound_exams');
+	Route::post('ultrasound-exams/{ultrasoundExam}/reverse-payment', [UltrasoundExamController::class, 'reversePayment'])->middleware('permission:reverse_ultrasound_payment');
+	Route::get('ultrasound-exams/{ultrasoundExam}/receipt', [UltrasoundExamController::class, 'receipt'])->middleware('permission:print_ultrasound_receipt,manage_ultrasound_payments,manage_ultrasound_exams');
 
 	// Audit Log (read-only; entries are written by the application itself)
 	Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:view_audit_logs,manage_audit_logs');

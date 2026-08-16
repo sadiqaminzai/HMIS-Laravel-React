@@ -22,7 +22,8 @@ const resolveAssetUrl = (path?: string | null): string => {
   return `${base}${withStorage}`;
 };
 
-const safeDate = (value?: string | null, pattern = 'MMM dd, yyyy hh:mm a') => {
+// The examination is recorded by day, so the clock time is not printed.
+const safeDate = (value?: string | null, pattern = 'MMM dd, yyyy') => {
   if (!value) return '-';
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? '-' : format(parsed, pattern);
@@ -166,7 +167,7 @@ export function UltrasoundReportPrint({ hospital, exam, onClose }: UltrasoundRep
                   </div>
                   <div>
                     <dt className="text-blue-700 font-semibold">Radiologist</dt>
-                    <dd className="text-gray-900">{exam.doctor?.name ?? '-'}</dd>
+                    <dd className="text-gray-900">{exam.doctor?.name || exam.updated_by || '-'}</dd>
                   </div>
                   <div>
                     <dt className="text-blue-700 font-semibold">Referred By</dt>
@@ -205,7 +206,7 @@ export function UltrasoundReportPrint({ hospital, exam, onClose }: UltrasoundRep
             <div className="flex justify-end mt-10">
               <div className="text-center">
                 <div className="w-52 border-t border-gray-400 pt-1">
-                  <p className="text-xs font-semibold text-gray-900">{exam.doctor?.name ?? ''}</p>
+                  <p className="text-xs font-semibold text-gray-900">{exam.doctor?.name || exam.updated_by || ''}</p>
                   <p className="text-[10px] text-gray-500">
                     {exam.doctor?.specialization || 'Radiologist'}
                     {exam.doctor?.registration_number ? ` • ${exam.doctor.registration_number}` : ''}

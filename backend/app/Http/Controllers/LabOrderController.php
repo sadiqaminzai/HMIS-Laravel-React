@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HospitalSetting;
 use App\Models\LabOrder;
 use App\Models\LabOrderItem;
 use App\Models\LabOrderResult;
@@ -269,10 +270,27 @@ class LabOrderController extends Controller
             $netAmount = max(0, $grossAmount - $discountAmount);
 
             // Update financial amount fields after test items are created.
-            $order->update([
+            $totals = [
                 'discount_amount' => round($discountAmount, 2),
                 'total_amount' => round($netAmount, 2),
-            ]);
+            ];
+
+            // Where the hospital collects the fee at the counter before the
+            // order is entered, every order starting Unpaid means settling each
+            // one again by hand. The default is only honoured for a user who
+            // may take payments; it must not become a way around that.
+            $startsPaid = HospitalSetting::where('hospital_id', $order->hospital_id)
+                ->value('lab_default_payment_status') === 'paid';
+
+            if ($startsPaid && $netAmount > 0 && ($request->user()?->hasPermission('manage_lab_payments') ?? false)) {
+                $totals['payment_status'] = 'paid';
+                $totals['paid_amount'] = round($netAmount, 2);
+                $totals['payment_method'] = 'cash';
+                $totals['paid_at'] = now();
+                $totals['paid_by'] = $request->user()?->name;
+            }
+
+            $order->update($totals);
             $this->ledgerPostingService->upsertLabOrderSnapshot($order);
 
             return response()->json([
@@ -356,6 +374,10 @@ class LabOrderController extends Controller
             'remarks' => ['nullable', 'string'],
             'status' => ['in:pending,sample_collected,processing,completed,cancelled'],
         ]);
+
+        if ($blocked = $this->guardStatusTransition($request, $labOrder, $request->input('status'))) {
+            return $blocked;
+        }
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
@@ -514,12 +536,87 @@ class LabOrderController extends Controller
     }
 
     /**
+     * How far through the workflow each status sits.
+     *
+     * Cancelled is deliberately absent: it is a departure from the line rather
+     * than a point on it, and is guarded separately.
+     */
+    private const STATUS_ORDER = [
+        'pending' => 0,
+        'sample_collected' => 1,
+        'processing' => 2,
+        'completed' => 3,
+    ];
+
+    /**
+     * Refuse a status change that walks the workflow backwards, or that
+     * cancels an order the patient has already paid for.
+     *
+     * Enforced here rather than only in the UI: a status dropdown is trivially
+     * bypassed by calling the API directly, and these transitions decide
+     * whether money is owed.
+     *
+     * Returns an error response, or null when the change is allowed.
+     */
+    private function guardStatusTransition(Request $request, LabOrder $labOrder, ?string $next)
+    {
+        if ($next === null || $next === (string) $labOrder->status) {
+            return null;
+        }
+
+        $user = $request->user();
+        $current = (string) $labOrder->status;
+
+        if ($next === 'cancelled') {
+            $isPaid = in_array((string) $labOrder->payment_status, ['paid', 'partial'], true);
+
+            if ($isPaid && !($user?->hasPermission('cancel_paid_lab_order') ?? false)) {
+                return response()->json([
+                    'message' => 'Cancelling a paid lab order requires the Cancel A Paid Lab Order permission. Reverse the payment first, or ask an authorised user.',
+                ], 403);
+            }
+
+            return null;
+        }
+
+        // Leaving a cancelled order is a reinstatement, not ordinary progress.
+        if ($current === 'cancelled' && !($user?->hasPermission('reverse_lab_order_status') ?? false)) {
+            return response()->json([
+                'message' => 'Reinstating a cancelled lab order requires the Move Lab Order Backwards permission.',
+            ], 403);
+        }
+
+        $from = self::STATUS_ORDER[$current] ?? null;
+        $to = self::STATUS_ORDER[$next] ?? null;
+
+        if ($from === null || $to === null) {
+            return null;
+        }
+
+        if ($to < $from && !($user?->hasPermission('reverse_lab_order_status') ?? false)) {
+            return response()->json([
+                'message' => 'A lab order cannot be moved back from ' . $current . ' to ' . $next . '. This requires the Move Lab Order Backwards permission.',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    /**
      * Reset payment back to unpaid (Admin/Super Admin)
      */
     public function resetPayment(Request $request, LabOrder $labOrder)
     {
+        // Route middleware already requires reverse_lab_payment; checked again
+        // here so the rule survives a route being re-pointed at this method.
+        if (!($request->user()?->hasPermission('reverse_lab_payment') ?? false)) {
+            return response()->json([
+                'message' => 'Reversing a lab payment requires the Reverse Lab Payment permission.',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'reason' => ['nullable', 'string', 'max:255'],
+            'reason' => ['required', 'string', 'max:255'],
         ]);
 
         if ($validator->fails()) {
@@ -688,6 +785,12 @@ class LabOrderController extends Controller
     {
         if ($labOrder->status === 'completed') {
             return response()->json(['message' => 'Cannot cancel completed order'], 422);
+        }
+
+        // Cancelling voids the ledger entry, so a paid order cancelled here
+        // would erase money that was actually taken.
+        if ($blocked = $this->guardStatusTransition($request, $labOrder, 'cancelled')) {
+            return $blocked;
         }
 
         $labOrder->update([

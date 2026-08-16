@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import { useMedicineTypes } from '../context/MedicineTypeContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
+import { AddButton } from './AddButton';
 
 interface MedicineTypeManagementProps {
   hospital: Hospital;
@@ -464,11 +465,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
             </>
           )}
           {canAdd && (
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
+            <AddButton onClick={handleAdd} label={t('ui.add')} />
           )}
         </div>
       </div>

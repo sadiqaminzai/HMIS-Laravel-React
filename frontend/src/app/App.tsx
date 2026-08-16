@@ -655,11 +655,33 @@ function AppContent() {
               }
             />
             <Route
-              path="/radiology/ultrasound"
+              path="/ultrasound/exams"
               element={
-                <RequirePermission anyOf={["view_ultrasound_exams", "add_ultrasound_exams", "edit_ultrasound_exams", "delete_ultrasound_exams", "export_ultrasound_exams", "print_ultrasound_exams", "manage_ultrasound_exams", "view_ultrasound_types", "manage_ultrasound_types"]}>
+                <RequirePermission anyOf={["view_ultrasound_exams", "add_ultrasound_receipt", "submit_ultrasound_result", "delete_ultrasound_exams", "export_ultrasound_exams", "print_ultrasound_exams", "manage_ultrasound_exams", "view_ultrasound_types", "manage_ultrasound_types"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
-                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} />
+                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} initialTab="exams" />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* The tabs are reachable as their own menu entries, since each
+                belongs to a different desk. Same screen, different landing tab. */}
+            <Route
+              path="/ultrasound/receipts"
+              element={
+                <RequirePermission anyOf={["manage_ultrasound_payments", "print_ultrasound_receipt", "manage_ultrasound_exams"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} initialTab="receipts" />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/ultrasound/templates"
+              element={
+                <RequirePermission anyOf={["view_ultrasound_types", "manage_ultrasound_types"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} initialTab="templates" />
                   </Suspense>
                 </RequirePermission>
               }

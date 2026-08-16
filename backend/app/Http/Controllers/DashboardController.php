@@ -58,6 +58,29 @@ class DashboardController extends Controller
                     $startDate = Carbon::today()->subDays(6);
                     $endDate = Carbon::today()->endOfDay();
                     break;
+                case 'custom':
+                    // Any range the user picks. Parsed defensively: a malformed
+                    // date must not throw, and a reversed range is swapped
+                    // rather than silently returning nothing.
+                    try {
+                        $from = $request->filled('start_date')
+                            ? Carbon::parse($request->input('start_date'))->startOfDay()
+                            : null;
+                        $to = $request->filled('end_date')
+                            ? Carbon::parse($request->input('end_date'))->endOfDay()
+                            : null;
+                    } catch (\Throwable) {
+                        $from = $to = null;
+                    }
+
+                    if ($from && $to && $from->greaterThan($to)) {
+                        [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
+                    }
+
+                    // A one-sided range is still useful: "everything since X".
+                    $startDate = $from ?: ($to ? $to->copy()->startOfDay() : null);
+                    $endDate = $to ?: ($from ? $from->copy()->endOfDay() : null);
+                    break;
             }
         }
 
@@ -411,6 +434,14 @@ class DashboardController extends Controller
                 ->where('module', 'pharmacy')
                 ->where('category', 'sales')
                 ->sum('net_amount'), 2),
+            'total_sales_paid_amount' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'pharmacy')
+                ->where('category', 'sales')
+                ->sum('paid_amount'), 2),
+            'total_sales_due_amount' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'pharmacy')
+                ->where('category', 'sales')
+                ->sum('due_amount'), 2),
             'total_other_income' => $totalOtherIncome,
             'total_income' => $totalIncome,
             'total_expenses' => $totalExpenses,
@@ -444,6 +475,188 @@ class DashboardController extends Controller
     }
 
     /**
+     * Daily finance submission (handover) report.
+     *
+     * At the end of a shift a user hands their collected amounts to the finance
+     * officer, and this is the paper that goes with the cash.
+     *
+     * There is deliberately no permission of its own. A revenue area appears in
+     * the report exactly when the user is allowed to see that total on the
+     * dashboard -- give a desk the room booking total and room bookings start
+     * being included, remove it and they stop. One permission per total, used
+     * for both purposes, rather than a parallel set that can drift out of step
+     * and leave a user printing figures they cannot see on screen.
+     *
+     * Totals the user may not see are never computed, let alone returned.
+     */
+    public function financeSubmission(Request $request)
+    {
+        $user = $request->user();
+
+        $hospitalId = null;
+        if ($user && $user->role === 'super_admin') {
+            $hospitalId = $request->integer('hospital_id') ?: null;
+        } else {
+            $hospitalId = $user?->hospital_id;
+        }
+
+        if (!$hospitalId && (!$user || $user->role !== 'super_admin')) {
+            return response()->json(['message' => 'Hospital is required'], 422);
+        }
+
+        try {
+            $from = $request->filled('from')
+                ? Carbon::parse($request->input('from'))->startOfDay()
+                : Carbon::today();
+            $to = $request->filled('to')
+                ? Carbon::parse($request->input('to'))->endOfDay()
+                : Carbon::today()->endOfDay();
+        } catch (\Throwable) {
+            return response()->json(['message' => 'Invalid date range'], 422);
+        }
+
+        // A reversed range is a slip, not an empty report.
+        if ($from->greaterThan($to)) {
+            [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
+        }
+
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $held = (!$isSuperAdmin && method_exists($user, 'permissionNames')) ? $user->permissionNames() : [];
+        $can = fn (string $permission) => $isSuperAdmin || in_array($permission, $held, true);
+
+        $base = LedgerEntry::query()
+            ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+            // Voided entries are reversals, not money in the drawer; counting
+            // them would have the user hand over cash they never took.
+            ->whereNull('voided_at')
+            ->whereBetween('posted_at', [$from, $to]);
+
+        // Ledger module (and category, where the module carries more than one
+        // kind of money) => the permission that reveals it.
+        $lines = [
+            'appointments' => ['label' => 'Registration / OPD Fees', 'module' => 'appointments', 'permission' => 'view_dashboard_appointment_fees'],
+            'laboratory' => ['label' => 'Laboratory Fees', 'module' => 'laboratory', 'permission' => 'view_dashboard_lab_orders_amount'],
+            'radiology' => ['label' => 'Ultrasound Fees', 'module' => 'radiology', 'permission' => 'view_dashboard_ultrasound_fees'],
+            'surgery' => ['label' => 'Surgery Fees', 'module' => 'surgery', 'permission' => 'view_dashboard_surgery_fees'],
+            'room_booking' => ['label' => 'Room Booking Fees', 'module' => 'room_booking', 'permission' => 'view_dashboard_room_booking_fees'],
+            'pharmacy' => ['label' => 'Pharmacy Sales', 'module' => 'pharmacy', 'category' => 'sales', 'permission' => 'view_dashboard_medicine_sale'],
+            'other_income' => ['label' => 'Other Income', 'module' => 'other_income', 'permission' => 'view_dashboard_other_income'],
+        ];
+
+        $permitted = array_filter($lines, fn ($line) => $can($line['permission']));
+
+        // Per-user breakdown. Shifts mean several people collect against the
+        // same revenue areas in a day, and each hands over their own takings --
+        // a single hospital-wide figure cannot be signed for by one person.
+        if ($request->boolean('by_user')) {
+            // Seeing what a colleague collected is a supervisory act, so it
+            // follows the same admin distinction the rest of the application
+            // uses rather than introducing a permission that would duplicate
+            // the dashboard ones.
+            $seesEveryone = in_array($user?->role, ['super_admin', 'admin'], true);
+
+            // ledger_entries.posted_by holds the user's NAME, not an id, so the
+            // grouping is by name and the match for a single user is by name
+            // too. Two staff sharing a name would share a row; that is a
+            // property of the existing schema, not something this report can
+            // resolve.
+            $totalsByUser = [];
+
+            foreach ($permitted as $key => $line) {
+                $query = (clone $base)
+                    ->where('entry_direction', 'income')
+                    ->where('module', $line['module'])
+                    ->when(!$seesEveryone, fn ($q) => $q->where('posted_by', $user?->name));
+
+                if (isset($line['category'])) {
+                    $query->where('category', $line['category']);
+                }
+
+                $grouped = $query
+                    ->groupBy('posted_by')
+                    ->selectRaw('posted_by, SUM(paid_amount) as amount')
+                    ->get();
+
+                foreach ($grouped as $row) {
+                    // Older entries were posted before the collector was
+                    // recorded. They are shown as unattributed rather than
+                    // dropped, so the rows still add up to the hospital total
+                    // above -- money that appears to vanish between two
+                    // reports is worse than money nobody has claimed.
+                    $name = $row->posted_by ?: 'Unattributed';
+                    $totalsByUser[$name][$key] = round((float) $row->amount, 2);
+                }
+            }
+
+            $users = [];
+            foreach ($totalsByUser as $name => $amounts) {
+                $users[] = [
+                    'user_name' => $name,
+                    'amounts' => $amounts,
+                    'total_amount' => round(array_sum($amounts), 2),
+                ];
+            }
+
+            usort($users, fn ($a, $b) => $b['total_amount'] <=> $a['total_amount']);
+
+            return response()->json([
+                'hospital_id' => $hospitalId,
+                'from' => $from->toDateString(),
+                'to' => $to->toDateString(),
+                'currency' => 'AFN',
+                'generated_at' => now()->toDateTimeString(),
+                'columns' => array_values(array_map(
+                    fn ($key, $line) => ['key' => $key, 'label' => $line['label']],
+                    array_keys($permitted),
+                    $permitted
+                )),
+                'users' => $users,
+                'grand_total' => round(array_sum(array_column($users, 'total_amount')), 2),
+            ]);
+        }
+
+        $rows = [];
+        $total = 0.0;
+
+        foreach ($permitted as $key => $line) {
+            $query = (clone $base)
+                ->where('entry_direction', 'income')
+                ->where('module', $line['module']);
+
+            if (isset($line['category'])) {
+                $query->where('category', $line['category']);
+            }
+
+            $amount = round((float) $query->sum('paid_amount'), 2);
+            $count = (clone $query)->count();
+
+            $rows[] = [
+                'key' => $key,
+                'label' => $line['label'],
+                'amount' => $amount,
+                'entries' => $count,
+            ];
+
+            $total += $amount;
+        }
+
+        return response()->json([
+            'hospital_id' => $hospitalId,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'currency' => 'AFN',
+            'submitted_by' => [
+                'id' => $user?->id,
+                'name' => $user?->name,
+                'role' => $user?->role,
+            ],
+            'generated_at' => now()->toDateTimeString(),
+            'lines' => $rows,
+            'total_amount' => round($total, 2),
+        ]);
+    }
+
+    /**
      * Panels the user may not see are stripped from the payload.
      *
      * Hiding a card in React is not access control -- the figures were still in
@@ -465,30 +678,12 @@ class DashboardController extends Controller
         $held = method_exists($user, 'permissionNames') ? $user->permissionNames() : [];
         $can = fn (string $panel) => in_array('view_dashboard_' . $panel, $held, true);
 
-        // Panels whose permission predates this change and was already assigned;
-        // holding one of those does not mean the dashboard has been configured.
-        $legacy = ['available_stock', 'medicine_sale', 'appointment_fees',
-                   'lab_orders_amount', 'expenses', 'revenue_total'];
-
-        $configured = false;
-        foreach ($held as $name) {
-            if (!str_starts_with((string) $name, 'view_dashboard_')) {
-                continue;
-            }
-            if (!in_array(substr((string) $name, 15), $legacy, true)) {
-                $configured = true;
-                break;
-            }
-        }
-
-        if (!$configured) {
-            return $payload;
-        }
-
         // Response key => the panel that controls it.
         $financialPanels = [
             'total_stock_cost_amount' => 'available_stock',
             'total_sales_invoice_amount' => 'medicine_sale',
+            'total_sales_paid_amount' => 'medicine_sale',
+            'total_sales_due_amount' => 'medicine_sale',
             'total_fees' => 'appointment_fees',
             'total_lab_fees' => 'lab_orders_amount',
             'total_surgery_fees' => 'surgery_fees',

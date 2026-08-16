@@ -41,7 +41,11 @@ class LedgerPostingService
                 'status' => (string) ($appointment->payment_status ?? 'pending'),
                 'currency' => (string) ($appointment->currency ?? 'AFN'),
                 'posted_at' => $appointment->appointment_date ?? $appointment->created_at ?? now(),
-                'posted_by' => null,
+                // Every other module records who took the money; appointments
+                // hardcoded null, so registration fees could never be attributed
+                // to the desk that collected them and landed in the handover
+                // report's Unattributed row for ever.
+                'posted_by' => $appointment->updated_by ?? $appointment->created_by,
                 'voided_at' => null,
                 'metadata' => [
                     'appointment_status' => $appointment->status,
@@ -192,13 +196,15 @@ class LedgerPostingService
      * financial report and to the dashboard's Revenue -- money the hospital had
      * genuinely earned simply did not appear anywhere.
      *
-     * There is no payment tracking on an exam, only a fee, so it is recorded as
-     * collected once the exam is completed and pending until then.
+     * Settlement now comes from the exam's own payment_status, set when
+     * reception takes the money. It previously had to be inferred from the
+     * clinical status, which meant an exam reported before it was paid for
+     * counted as collected income.
      */
     public function upsertUltrasoundExamSnapshot(UltrasoundExam $exam): LedgerEntry
     {
         $netAmount = (float) ($exam->fee ?? 0);
-        $isSettled = in_array((string) $exam->status, ['completed', 'paid'], true);
+        $isSettled = (string) $exam->payment_status === 'paid';
 
         return $this->upsertSnapshot(
             (int) $exam->hospital_id,
@@ -215,11 +221,13 @@ class LedgerPostingService
                 'discount_amount' => 0,
                 'tax_amount' => 0,
                 'net_amount' => $netAmount,
-                'paid_amount' => $isSettled ? $netAmount : 0,
+                'paid_amount' => $isSettled ? (float) ($exam->paid_amount ?? $netAmount) : 0,
                 'due_amount' => $isSettled ? 0 : $netAmount,
                 'status' => $isSettled ? 'paid' : 'pending',
                 'currency' => 'AFN',
-                'posted_at' => $exam->examined_at ?? $exam->created_at ?? now(),
+                // Paid_at where known: an exam reported days after payment
+                // belongs in the day's takings for the day it was collected.
+                'posted_at' => $exam->paid_at ?? $exam->examined_at ?? $exam->created_at ?? now(),
                 'posted_by' => $exam->updated_by ?? $exam->created_by,
                 'voided_at' => null,
                 'metadata' => [

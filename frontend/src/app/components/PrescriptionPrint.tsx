@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { formatDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
 import { useSettings } from '../context/SettingsContext';
+import { POWERED_BY_TEXT } from '../utils/receiptBranding';
 
 // Extended type for medicine with additional display fields
 type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
@@ -686,7 +687,7 @@ export function PrescriptionPrint({
             <div className="text-center mt-8 pt-4 border-t border-gray-100 text-[10px] text-gray-400">
               <p className="font-medium text-gray-500">{hospital.name} • {hospital.address}</p>
               <p>License No: {hospital.license}</p>
-              <p className="mt-1 italic">Powered by: Soft Care IT Solutions - Kabul Afghanistan. +93 789 68 10 10 | +93 70 102 1319 | +93 78 979 5964 | softcareitsolutions.com</p>
+              <p className="mt-1 italic">{POWERED_BY_TEXT} - Kabul Afghanistan. +93 789 68 10 10 | +93 70 102 1319 | +93 78 979 5964 | softcareitsolutions.com</p>
             </div>
           </div>
 

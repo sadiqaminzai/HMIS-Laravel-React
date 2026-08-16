@@ -9,6 +9,7 @@ import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { AddButton } from './AddButton';
 
 interface LabTestManagementProps {
   hospital: Hospital;
@@ -449,11 +450,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
            )}
 
           {canCreate && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.newTest')}</button>
+            <AddButton onClick={() => setShowAddModal(true)} label={t('ui.newTest')} />
           )}
         </div>
       </div>

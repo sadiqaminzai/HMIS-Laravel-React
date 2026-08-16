@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { FileText, X, Search, Clock, AlertTriangle, User, Calendar, Beaker, Stethoscope, CheckCircle2, Plus, Trash2, Printer, Eye } from 'lucide-react';
 import { Hospital, LabTest, UserRole } from '../types';
 import { Toast } from './Toast';
+import { AddButton } from './AddButton';
 
 interface LabResultEntryProps {
   hospital: Hospital;
@@ -448,13 +449,7 @@ export function LabResultEntry({ hospital, userRole, currentUserId }: LabResultE
                       <span className="text-red-500">*</span>
                     </span>
                   </label>
-                  <button
-                    onClick={handleAddParameter}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Parameter
-                  </button>
+                  <AddButton onClick={handleAddParameter} label={'Add Parameter'} />
                 </div>
 
                 <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">

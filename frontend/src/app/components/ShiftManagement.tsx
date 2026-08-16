@@ -6,6 +6,7 @@ import { useShifts } from '../context/ShiftContext';
 import { useAuth } from '../context/AuthContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface ShiftManagementProps {
   hospital: Hospital;
@@ -184,13 +185,7 @@ export function ShiftManagement({ hospital, userRole }: ShiftManagementProps) {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Shifts</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage shift timings and assign them to employees.</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-[10px] text-sm font-medium flex items-center gap-2 shadow-sm transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          Add Shift
-        </button>
+        <AddButton onClick={openAdd} label={'Add Shift'} />
       </div>
 
       <div className="flex flex-col md:flex-row gap-3">

@@ -94,6 +94,7 @@ class PatientSurgeryController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatePayload($request);
+        $this->enforceFinancialPermissions($request, $data);
         $data['created_by'] = $request->user()?->name;
         $this->decorateDischargeAuditFields($data, $request->user()?->name);
 
@@ -123,6 +124,7 @@ class PatientSurgeryController extends Controller
         $this->authorizeScope($request->user(), $patientSurgery->hospital_id);
 
         $data = $this->validatePayload($request, $patientSurgery->hospital_id);
+        $this->enforceFinancialPermissions($request, $data, $patientSurgery);
         $data['updated_by'] = $request->user()?->name;
         $this->decorateDischargeAuditFields($data, $request->user()?->name, $patientSurgery);
 
@@ -169,6 +171,41 @@ class PatientSurgeryController extends Controller
         $this->ledgerPostingService->voidPatientSurgerySnapshot($patientSurgery, $request->user()?->name);
 
         return response()->json(['message' => 'Patient surgery deleted']);
+    }
+
+
+    /**
+     * Cost and payment status decide what the hospital is owed, so they are
+     * gated apart from the ability to schedule an operation.
+     *
+     * The form disables these inputs, but that only hides the controls -- a
+     * crafted request could still set any cost or mark an operation paid. On
+     * edit the stored values stand; on create the cost falls back to the
+     * surgery's list price and payment to pending.
+     */
+    private function enforceFinancialPermissions(Request $request, array &$data, ?PatientSurgery $existing = null): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            return;
+        }
+
+        if ($user->role === 'super_admin') {
+            return;
+        }
+
+        $held = method_exists($user, 'permissionNames') ? $user->permissionNames() : [];
+        $can = fn (string $permission) => in_array($permission, $held, true)
+            || in_array('manage_patient_surgeries', $held, true);
+
+        if (!$can('edit_surgery_cost')) {
+            // null lets resolveCost() fall back to the surgery's own price.
+            $data['cost'] = $existing?->cost;
+        }
+
+        if (!$can('edit_surgery_payment_status')) {
+            $data['payment_status'] = $existing->payment_status ?? 'pending';
+        }
     }
 
     private function validatePayload(Request $request, ?int $existingHospitalId = null): array

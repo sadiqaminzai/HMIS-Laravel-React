@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
 import { buildVerificationUrl } from '../utils/verification';
+import { AddButton } from './AddButton';
 
 // Helper to convert hex to RGB array for jsPDF
 const hexToRgb = (hex?: string): [number, number, number] | null => {
@@ -68,6 +69,20 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showIdCardModal, setShowIdCardModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+
+  /**
+   * The hospital whose identity the ID card carries.
+   *
+   * The lookup is by patient, so a card printed while viewing another hospital
+   * still shows the issuing one. It falls back to the hospital in context
+   * rather than to a placeholder: the card was printing "Medical Center" and
+   * "123 Medical Center Drive" whenever the lookup missed, which is worse than
+   * an approximate name -- it is a card that belongs to no hospital at all.
+   * Comparison is loose because hospitalId arrives as a string from some
+   * endpoints and a number from others.
+   */
+  const cardHospital =
+    contextHospitals.find((h) => String(h.id) === String(selectedPatient?.hospitalId)) || currentHospital;
   const [patientImageError, setPatientImageError] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   // Ref-backed so a double-click on a slow save cannot register twice.
@@ -566,11 +581,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             </button>
           )}
           {canCreate && (
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
+            <AddButton onClick={handleAdd} label={t('ui.add')} />
           )}
         </div>
       </div>
@@ -1170,15 +1181,23 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   border-color: #000000 !important;
                   background: #ffffff !important;
                 }
-                /* Break out of the fixed modal container for printing */
+                /* Break out of the fixed modal container for printing.
+                   position alone is not enough: the overlay's backdrop-filter
+                   also establishes a containing block, so the card anchored to
+                   the centred modal box instead of the page. */
                 .fixed.inset-0 {
-                  position: absolute !important;
+                  position: static !important;
                   display: block !important;
                   height: auto !important;
-                  min-height: 100vh !important;
+                  min-height: 0 !important;
                   width: 100% !important;
                   overflow: visible !important;
                   background: transparent !important;
+                  backdrop-filter: none !important;
+                  -webkit-backdrop-filter: none !important;
+                  filter: none !important;
+                  transform: none !important;
+                  padding: 0 !important;
                 }
                 #patient-id-card-print {
                   position: absolute !important;
@@ -1186,10 +1205,12 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   top: 0 !important;
                   margin: 0 !important;
                   padding: 0 !important;
-                  /* Follows the configured roll width instead of a hardcoded
-                     76mm, which overflowed a 58mm roll and left a margin on an
-                     80mm one. 4mm is taken off for the printer's dead zone. */
-                  width: calc(${cardIsA4 ? '86mm' : cardPrintWidth} - 4mm) !important;
+                  /* Full configured width. The card used to be laid out at
+                     the credit-card 85.6mm regardless of paper, which overflows
+                     an 80mm roll -- the driver then shrank the whole page to
+                     fit, which is why the card printed small and left space at
+                     the top and right. */
+                  width: ${cardIsA4 ? '86mm' : cardPrintWidth} !important;
                   height: auto !important;
                   min-height: 0 !important;
                   background: white !important;
@@ -1210,18 +1231,36 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   width: ${cardPrintWidth === '58mm' ? '12mm' : '16mm'} !important;
                   height: ${cardPrintWidth === '58mm' ? '12mm' : '16mm'} !important;
                 }
-                /* A monochrome thermal head cannot render a photo usefully --
-                   it comes out as a black smear -- so it is dropped and the
-                   space given to the details that identify the patient. */
                 #patient-id-card-print .patient-card-photo {
-                  display: ${cardIsA4 ? 'block' : 'none'} !important;
+                  display: block !important;
                 }
                 @page {
                   /* auto height: a thermal roll is continuous, so a fixed 60mm
                      page fed blank paper after every card. */
                   size: ${cardIsA4 ? 'A4' : `${cardPrintWidth} auto`};
-                  margin: 2mm;
+                  margin: 0;
                 }
+
+                ${cardIsA4 ? '' : `
+                /* The card keeps its screen proportions on paper: it is laid
+                   out at its designed 85.6mm and then scaled down to the roll,
+                   so every element shrinks together instead of the layout
+                   reflowing into a different card. transform-origin at the top
+                   left keeps it flush with the edge, and the wrapper's height
+                   is corrected to the scaled height so the roll is not fed the
+                   full 54mm of blank paper afterwards. */
+                #patient-id-card-print {
+                  width: 85.6mm !important;
+                  height: 54mm !important;
+                  transform: scale(calc(${cardPrintWidth} / 85.6mm)) !important;
+                  transform-origin: top left !important;
+                  overflow: hidden !important;
+                }
+                #patient-id-card-print-wrapper {
+                  height: calc(54mm * (${cardPrintWidth} / 85.6mm)) !important;
+                  overflow: hidden !important;
+                }
+                `}
               }
             `}
           </style>
@@ -1251,10 +1290,11 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
             </div>
 
             <div className="p-6 flex justify-center bg-gray-100 dark:bg-gray-900">
+               <div id="patient-id-card-print-wrapper" className="print:overflow-hidden">
                <div id="patient-id-card-print" className="w-[85.6mm] h-[54mm] bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col print:shadow-none print:rounded-none relative overflow-hidden pt-0 pb-0">
-                  <div className="patient-card-header h-10 flex items-center justify-between px-3 shrink-0" style={{ backgroundColor: contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.brandColor || '#2563eb' }}>
+                  <div className="patient-card-header h-10 flex items-center justify-between px-3 shrink-0" style={{ backgroundColor: cardHospital?.brandColor || '#2563eb' }}>
                      <div className="text-white font-bold text-xs tracking-wide">
-                        {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.name || 'Medical Center'}
+                        {cardHospital?.name || ''}
                      </div>
                      <div className="text-[8px] text-white uppercase tracking-widest font-bold">Patient Card</div>
                   </div>
@@ -1294,7 +1334,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   
                   <div className="patient-card-footer h-12 bg-white border-t border-gray-900 flex items-center justify-between px-3 shrink-0">
                      <div className="text-[6px] text-black font-semibold leading-tight max-w-[60%]">
-                        {contextHospitals.find(h => h.id === selectedPatient.hospitalId)?.address || '123 Medical Center Drive'}
+                        {cardHospital?.address || ''}
                      </div>
                      <div className="patient-card-qr shrink-0 border border-gray-900 bg-white">
                        <QRCodeSVG
@@ -1308,6 +1348,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                        />
                      </div>
                   </div>
+               </div>
                </div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-t border-gray-200 dark:border-gray-700 rounded-b-lg flex flex-col gap-3">

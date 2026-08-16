@@ -5,6 +5,7 @@ import { TestMaster, TestParameter } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface TestMasterManagementProps {
   testMasters: TestMaster[];
@@ -186,13 +187,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t('testMasterManagement')}</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">{t('manageTestTemplates')}</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          {t('addTest')}
-        </button>
+        <AddButton onClick={() => handleOpenModal()} label={t('addTest')} />
       </div>
 
       {/* Search */}

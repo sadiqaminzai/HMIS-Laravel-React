@@ -14,6 +14,13 @@ class Transaction extends Model
     protected static $sequenceModule = 'transaction';
     protected static $sequenceColumn = 'serial_no';
 
+    /**
+     * Each document type is numbered on its own: Purchase #1, Sale #1, and so
+     * on. A single shared counter produced gaps that looked like missing
+     * paperwork to anyone reading a purchase book (Purchase 1, 3, 7...).
+     */
+    protected static $sequenceScopeColumn = 'trx_type';
+
     protected $fillable = [
         'hospital_id',
         'supplier_id',
@@ -53,6 +60,19 @@ class Transaction extends Model
 
     /** Document types that the Finance module reports on. */
     public const TYPES = ['sales', 'purchase', 'sales_return', 'purchase_return'];
+
+    /**
+     * A serial number retired by a deletion is never reissued.
+     *
+     * The number is printed on the copy the supplier or patient keeps, so
+     * handing it to a different document later would leave two papers claiming
+     * to be the same transaction. After deleting Purchase #2, the next purchase
+     * is #4.
+     */
+    public function shouldDecrementSequenceOnDelete(): bool
+    {
+        return false;
+    }
 
     /**
      * Recalculate due amount and payment status from the recorded totals.

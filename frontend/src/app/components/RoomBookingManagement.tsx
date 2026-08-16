@@ -12,6 +12,8 @@ import { useSettings } from '../context/SettingsContext';
 import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
 import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
+import { poweredByHtml } from '../utils/receiptBranding';
+import { AddButton } from './AddButton';
 
 interface RoomBookingManagementProps {
   hospital: Hospital;
@@ -123,16 +125,14 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const [availability, setAvailability] = useState<AvailabilityState | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<BookingItem | null>(null);
-  const [printBooking, setPrintBooking] = useState<BookingItem | null>(null);
   const [viewing, setViewing] = useState<BookingItem | null>(null);
-  const [receiptSize, setReceiptSize] = useState<ReceiptSize>(() => {
-    const saved = localStorage.getItem('room_booking_receipt_size');
-    if (saved === '58mm' || saved === '76mm' || saved === '80mm' || saved === 'a4') return saved;
-    return '80mm';
-  });
+  // Seeded from the hospital's configured size rather than localStorage: a
+  // value cached in one browser used to override the hospital-wide setting, so
+  // the same receipt printed differently on different machines.
+  const [receiptSize, setReceiptSize] = useState<ReceiptSize>('80mm');
 
-  // The hospital-wide paper size (Settings > General > Print Settings) is the source of
-  // truth; it overrides the remembered per-user choice when the hospital changes.
+  // The hospital-wide paper size (Settings > General > Print Settings) is the
+  // only source of truth for this receipt.
   const configuredPaperSize = getPrintPaperSize(currentHospital.id, 'room_booking_receipt');
   useEffect(() => {
     loadHospitalSetting(currentHospital.id);
@@ -457,7 +457,10 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const filteredRooms = roomOptions.filter((r) => r.hospitalId === form.hospitalId);
 
   const openPrintReceipt = (item: BookingItem) => {
-    setPrintBooking(item);
+    // Straight to the printer using the configured size -- no size prompt, and
+    // no confirmation step that told the user nothing they had not just read
+    // off the row.
+    printReceipt(item, configuredPaperSize as ReceiptSize);
   };
 
   const resolveHospitalLogoUrl = (logo?: string): string => {
@@ -495,14 +498,24 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         color: #111827;
         margin: 0;
         background: ${isCompactReceipt ? '#ffffff' : '#f3f4f6'};
-        padding: ${isCompactReceipt ? '0' : '20px'};
+        padding: 0;
+        ${isCompactReceipt ? '' : 'padding: 20px;'}
         line-height: 1.5;
-        ${pageRule}
       }
+      ${pageRule}
       * { box-sizing: border-box; }
+      /* Two related fields per row, left and right. A single stretched
+         label/value line per field made the slip tall and sent the eye from
+         edge to edge for every one. */
+      .frow { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 4px; }
+      .frow .fcell { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .frow .fcell.r { text-align: right; }
+      .frow .k { color: #000; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; }
+      .frow .v { color: #000; font-weight: 600; font-size: 0.82em; word-break: break-word; }
       .ticket {
-        width: ${ticketWidth};
-        margin: 0 auto;
+        width: ${isCompactReceipt ? '100%' : ticketWidth};
+        margin: 0;
+        padding: 0;
         background: #ffffff;
         border: ${isCompactReceipt ? 'none' : '1px solid #e5e7eb'};
         border-radius: ${isCompactReceipt ? '0' : '8px'};
@@ -514,7 +527,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         background-color: ${isCompactReceipt ? 'transparent' : 'var(--brand-color)'};
         color: ${isCompactReceipt ? '#111827' : '#ffffff'};
         text-align: center;
-        padding: ${isCompactReceipt ? '12px 8px 8px' : '24px 20px'};
+        padding: ${isCompactReceipt ? '0 0 4px' : '24px 20px'};
         ${isCompactReceipt ? 'border-bottom: 2px dashed #d1d5db;' : ''}
         page-break-inside: avoid;
       }
@@ -550,7 +563,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         color: ${isCompactReceipt ? 'var(--brand-color)' : '#475569'};
         margin: 0;
       }
-      .content { padding: ${isCompactReceipt ? '12px' : '24px'}; }
+      .content { padding: ${isCompactReceipt ? '8px 0' : '24px'}; }
       .row {
         display: flex;
         justify-content: space-between;
@@ -567,7 +580,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         margin-top: ${isCompactReceipt ? '16px' : '24px'};
         background: ${isCompactReceipt ? 'transparent' : '#f8fafc'};
         border-radius: ${isCompactReceipt ? '0' : '8px'};
-        padding: ${isCompactReceipt ? '12px 0 0' : '16px'};
+        padding: ${isCompactReceipt ? '8px 0 0' : '16px'};
         border-top: ${isCompactReceipt ? '2px dashed #d1d5db' : '1px solid #e5e7eb'};
         page-break-inside: avoid;
       }
@@ -577,11 +590,11 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         padding-top: ${isCompactReceipt ? '8px' : '12px'};
         border-top: ${isCompactReceipt ? '1px solid #000' : '2px solid #e2e8f0'};
       }
-      .amount-card .total-key { font-size: ${isCompactReceipt ? '13px' : '16px'}; font-weight: 700; color: #0f172a; }
-      .amount-card .total-val { font-size: ${isCompactReceipt ? '15px' : '20px'}; font-weight: 800; color: var(--brand-color); }
+      .amount-card .total-key { font-size: ${isCompactReceipt ? '12px' : '16px'}; font-weight: 700; color: #0f172a; }
+      .amount-card .total-val { font-size: ${isCompactReceipt ? '13px' : '20px'}; font-weight: 800; color: var(--brand-color); }
       .footer {
         margin-top: ${isCompactReceipt ? '16px' : '24px'};
-        padding: ${isCompactReceipt ? '12px 0' : '20px'};
+        padding: ${isCompactReceipt ? '8px 0' : '20px'};
         text-align: center;
         font-size: ${isCompactReceipt ? '9px' : '11px'};
         color: #64748b;
@@ -616,7 +629,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   <body>
     <div class="ticket">
       <div class="head">
-        ${logoUrl ? `<img src="${logoUrl}" class="logo" alt="Hospital Logo" />` : ''}
+        ${logoUrl && !isCompactReceipt ? `<img src="${logoUrl}" class="logo" alt="Hospital Logo" />` : ''}
         <div class="hospital">${hospitalInfo.name}</div>
         <div class="meta">${hospitalInfo.address || ''}</div>
         <div class="meta">${hospitalInfo.phone || ''}</div>
@@ -629,37 +642,21 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       ${!isCompactReceipt && item.patientName ? `<div class="row" style="border: none; padding: 0;"><div class="val" style="text-align: center; color: var(--brand-color); font-size: 14px;">Patient: ${item.patientName}</div></div>` : ''}
       
       <div class="content">
-        <div class="row">
-          <div class="key">Receipt Date</div>
-          <div class="val">${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+        <div class="frow">
+          <div class="fcell"><span class="k">Receipt No</span><span class="v">${item.id}</span></div>
+          <div class="fcell r"><span class="k">Date</span><span class="v">${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })}</span></div>
         </div>
-        <div class="row">
-          <div class="key">Patient Name</div>
-          <div class="val">${item.patientName}</div>
+        <div class="frow">
+          <div class="fcell"><span class="k">Patient</span><span class="v">${item.patientName}</span></div>
+          <div class="fcell r"><span class="k">Doctor</span><span class="v">${item.doctorName || 'N/A'}</span></div>
         </div>
-        <div class="row">
-          <div class="key">Room No.</div>
-          <div class="val">${item.roomNumber || 'N/A'}</div>
+        <div class="frow">
+          <div class="fcell"><span class="k">Room No</span><span class="v">${item.roomNumber || 'N/A'}</span></div>
+          <div class="fcell r"><span class="k">Status</span><span class="v">${item.status}</span></div>
         </div>
-        <div class="row">
-          <div class="key">Attending Doctor</div>
-          <div class="val">${item.doctorName || 'N/A'}</div>
-        </div>
-        <div class="row">
-          <div class="key">Check In</div>
-          <div class="val">${new Date(item.checkInDate).toLocaleDateString('en-US', { dateStyle: 'medium' })}</div>
-        </div>
-        <div class="row">
-          <div class="key">Check Out</div>
-          <div class="val">${item.checkOutDate ? new Date(item.checkOutDate).toLocaleDateString('en-US', { dateStyle: 'medium' }) : 'Open'}</div>
-        </div>
-        <div class="row">
-          <div class="key">Status</div>
-          <div class="val">${item.status}</div>
-        </div>
-        <div class="row">
-          <div class="key">Payment</div>
-          <div class="val">${item.paymentStatus}</div>
+        <div class="frow">
+          <div class="fcell"><span class="k">Check In</span><span class="v">${new Date(item.checkInDate).toLocaleDateString('en-US', { dateStyle: 'medium' })}</span></div>
+          <div class="fcell r"><span class="k">Check Out</span><span class="v">${item.checkOutDate ? new Date(item.checkOutDate).toLocaleDateString('en-US', { dateStyle: 'medium' }) : 'Open'}</span></div>
         </div>
 
         <div class="amount-card">
@@ -671,8 +668,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
 
       </div>
       <div class="footer">
-        Generated by <strong>${hospitalInfo.name}</strong><br/>
-        Powered by ShifaaScript HMIS
+        <div style="font-size:0.78em">Printed on: ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+        ${poweredByHtml(isCompactReceipt)}
       </div>
     </div>
     <script>
@@ -696,10 +693,6 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
     printWindow.document.write(receiptHtml);
     printWindow.document.close();
   };
-
-  useEffect(() => {
-    localStorage.setItem('room_booking_receipt_size', receiptSize);
-  }, [receiptSize]);
 
   useEffect(() => {
     if (userRole !== 'super_admin') return;
@@ -736,10 +729,7 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
           </div>
           <button onClick={loadBookings} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs">{t('ui.refresh')}</button>
           {canAdd && (
-            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5" />
-              Add Booking
-            </button>
+            <AddButton onClick={openCreate} label={'Add Booking'} />
           )}
         </div>
       </TabActionsSlot>
@@ -1016,46 +1006,6 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
         </div>
       )}
 
-      {printBooking && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('ui.printReceipt')}</h3>
-              <button onClick={() => setPrintBooking(null)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-4 h-4" /></button>
-            </div>
-            <div className="p-4 space-y-3 text-sm">
-              <div className="text-gray-700 dark:text-gray-300">Room: <strong>{printBooking.roomNumber}</strong></div>
-              <div className="text-gray-700 dark:text-gray-300">Patient: <strong>{printBooking.patientName}</strong></div>
-              <div className="text-gray-700 dark:text-gray-300">Total Cost: <strong>{printBooking.totalCost.toFixed(2)}</strong></div>
-              <div>
-                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Receipt Size</label>
-                <select
-                  title="Receipt size"
-                  value={receiptSize}
-                  onChange={(e) => setReceiptSize(e.target.value as ReceiptSize)}
-                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                >
-                  <option value="a4">A4 Invoice</option>
-                  <option value="a5">A5 Invoice</option>
-                  <option value="58mm">58mm Receipt</option>
-                  <option value="76mm">76mm Receipt</option>
-                  <option value="80mm">80mm Receipt</option>
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                <button onClick={() => setPrintBooking(null)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
-                <button
-                  onClick={() => {
-                    printReceipt(printBooking, receiptSize);
-                    setPrintBooking(null);
-                  }}
-                  className="px-3 py-2 text-xs rounded bg-indigo-600 text-white"
-                >{t('ui.printReceipt')}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <ModalOverlay open={!!viewing}>
         <ModalPanel size="md" scroll>
           <DetailModalHeader

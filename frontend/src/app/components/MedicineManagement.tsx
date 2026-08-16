@@ -15,6 +15,7 @@ import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { Hospital, Medicine, SaleUnit, UserRole } from '../types';
+import { AddButton } from './AddButton';
 
 interface MedicineManagementProps {
   hospital: Hospital;
@@ -1033,8 +1034,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             </>
           )}
           {canAdd && (
-            <button onClick={handleAdd} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm">
-              <Plus className="w-3.5 h-3.5" />{t('ui.add')}</button>
+            <AddButton onClick={handleAdd} label={t('ui.add')} />
           )}
         </div>
       </div>

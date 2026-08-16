@@ -7,6 +7,7 @@ import { useEmployees } from '../context/EmployeeContext';
 import { useAuth } from '../context/AuthContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface LeaveRequestManagementProps {
   hospital: Hospital;
@@ -251,13 +252,7 @@ export function LeaveRequestManagement({ hospital, userRole }: LeaveRequestManag
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Leave Requests</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Single-level leave request approval workflow.</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-[10px] text-sm font-medium flex items-center gap-2 shadow-sm transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          Add Leave Request
-        </button>
+        <AddButton onClick={openAdd} label={'Add Leave Request'} />
       </div>
 
       <div className="flex flex-col md:flex-row gap-3">

@@ -10,6 +10,7 @@ import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface PrescriptionDiagnosisManagementProps {
   hospital: Hospital;
@@ -386,13 +387,7 @@ export function PrescriptionDiagnosisManagement({ hospital, userRole = 'admin' }
               />
             </label>
           )}
-          <button
-            onClick={resetForm}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Diagnosis
-          </button>
+          <AddButton onClick={resetForm} label={'New Diagnosis'} />
         </div>
       </div>
 

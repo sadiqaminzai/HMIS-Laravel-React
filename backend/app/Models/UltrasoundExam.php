@@ -22,15 +22,29 @@ class UltrasoundExam extends Model
         'report_body',
         'impression',
         'status',
+        'payment_status',
         'fee',
+        'paid_amount',
+        'payment_method',
+        'paid_at',
+        'paid_by',
+        'receipt_number',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
         'examined_at' => 'datetime',
+        'paid_at' => 'datetime',
         'fee' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
     ];
+
+    /** Settled at the counter, so the specialist may begin. */
+    public function isPaid(): bool
+    {
+        return (string) $this->payment_status === 'paid';
+    }
 
     public function patient()
     {

@@ -43,6 +43,8 @@ import {
   Cell
 } from 'recharts';
 import { AppFooter } from './AppFooter';
+import { UserWiseTotalsPanel } from './UserWiseTotalsPanel';
+import { printHandoverReport } from '../utils/handoverPrint';
 
 /** Rendered instead of the ISO code, which reads as noise to local staff. */
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -73,19 +75,6 @@ const DASHBOARD_PANELS = [
 ] as const;
 
 export type DashboardPanel = typeof DASHBOARD_PANELS[number];
-
-/**
- * Panels whose permission already existed and was already assigned to roles in
- * production, under the old "permission OR module access" semantics.
- *
- * They are deliberately excluded from the opt-in check below: a hospital that
- * had only ever granted `view_dashboard_revenue_total` must not suddenly find
- * every count card, chart and list hidden the moment this build ships.
- */
-const LEGACY_DASHBOARD_PANELS: ReadonlySet<string> = new Set([
-  'available_stock', 'medicine_sale', 'appointment_fees',
-  'lab_orders_amount', 'expenses', 'revenue_total',
-]);
 
 interface DashboardProps {
   role: UserRole;
@@ -135,6 +124,8 @@ interface DashboardSummary {
     total_surgery_fees?: number;
     total_room_fees?: number;
     total_sales_invoice_amount: number;
+    total_sales_paid_amount?: number;
+    total_sales_due_amount?: number;
     total_other_income?: number;
     total_income: number;
     total_expenses: number;
@@ -151,7 +142,15 @@ export function Dashboard({ role, hospital }: DashboardProps) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'last_7_days' | 'this_month' | 'last_month' | 'this_year'>('today');
+  const [dateFilter, setDateFilter] = useState<
+    'today' | 'yesterday' | 'last_7_days' | 'this_month' | 'last_month' | 'this_year' | 'custom'
+  >('today');
+  // Only sent when the range is 'custom'. Seeded to today so the inputs are
+  // never blank when the user first switches to them.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [showFinanceSubmission, setShowFinanceSubmission] = useState(false);
+  const [customFrom, setCustomFrom] = useState(todayIso);
+  const [customTo, setCustomTo] = useState(todayIso);
 
   useEffect(() => {
     if (!hospital) return;
@@ -160,6 +159,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       try {
         const params = {
           date_filter: dateFilter,
+          ...(dateFilter === 'custom' ? { start_date: customFrom, end_date: customTo } : {}),
           ...(role === 'super_admin' ? { hospital_id: hospital.id } : {}),
         };
         const { data } = await api.get('/dashboard/summary', { params });
@@ -170,7 +170,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     };
 
     loadSummary();
-  }, [hospital?.id, role, dateFilter]);
+  }, [hospital?.id, role, dateFilter, customFrom, customTo]);
 
   const counts = summary?.counts ?? {
     hospitals: 0,
@@ -242,28 +242,22 @@ export function Dashboard({ role, hospital }: DashboardProps) {
   const canViewAny = (...permissions: string[]) => permissions.some((permission) => hasPermission(permission));
 
   /**
-   * True once the administrator has configured ANY dashboard permission for
-   * this user. Until then the dashboard falls back to the module permissions it
-   * used before, so upgrading an existing hospital does not blank everyone's
-   * home screen. After the first dashboard permission is granted, these
-   * permissions become the sole authority.
+   * Every panel is gated on its own permission, with no fallback.
+   *
+   * An earlier version fell back to module permissions until a "new" dashboard
+   * permission was granted, so a role holding only long-standing ones saw every
+   * tile regardless of what was ticked. That made the checkboxes look broken.
+   * The permission is now the only thing consulted.
+   *
+   * Consequence: a role with no dashboard permissions sees no panels. That is
+   * intended -- the tiles are opt-in per role.
+   *
+   * @param panel the dashboard panel key; extra arguments are ignored and kept
+   *              only so existing call sites need not change.
    */
-  const dashboardPermissionsConfigured = useMemo(
-    () => DASHBOARD_PANELS
-      .filter((panel) => !LEGACY_DASHBOARD_PANELS.has(panel))
-      .some((panel) => hasPermission(`view_dashboard_${panel}`)),
-    [hasPermission]
-  );
-
-  /**
-   * @param panel     the dashboard panel key
-   * @param fallbacks module permissions consulted only before any dashboard
-   *                  permission has been assigned
-   */
-  const showPanel = (panel: DashboardPanel, ...fallbacks: string[]) => {
+  const showPanel = (panel: DashboardPanel, ..._fallbacks: string[]) => {
     if (role === 'super_admin') return true;
-    if (dashboardPermissionsConfigured) return hasPermission(`view_dashboard_${panel}`);
-    return fallbacks.length === 0 || canViewAny(...fallbacks);
+    return hasPermission(`view_dashboard_${panel}`);
   };
 
   const rbacMetrics = useMemo(() => {
@@ -451,58 +445,48 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     }
   };
 
-  const printReceptionFinancialReport = () => {
-    const printWindow = window.open('', '_blank', 'width=900,height=700');
-    if (!printWindow) return;
-
-    const hospitalName = hospital?.name || 'Hospital';
-    const reportDate = dailyFinancials.report_date || new Date().toISOString().slice(0, 10);
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Reception Financial Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
-            h1 { margin: 0 0 6px 0; font-size: 20px; }
-            p { margin: 2px 0; color: #374151; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-            th, td { border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 13px; }
-            th { background: #f3f4f6; font-weight: 700; }
-            .num { text-align: right; font-variant-numeric: tabular-nums; }
-            .total { font-weight: 700; background: #f9fafb; }
-            .footer { margin-top: 16px; font-size: 11px; color: #6b7280; }
-          </style>
-        </head>
-        <body>
-          <h1>Daily Reception Financial Report</h1>
-          <p>Hospital: ${hospitalName}</p>
-          <p>Report Date: ${reportDate}</p>
-          <table>
-            <thead>
-              <tr><th>Metric</th><th class="num">Amount</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Total Fees</td><td class="num">${formatMoney(dailyFinancials.total_fees)}</td></tr>
-              <tr><td>Total Lab Fees</td><td class="num">${formatMoney(dailyFinancials.total_lab_fees)}</td></tr>
-              <tr><td>Total Sales Invoice Amount</td><td class="num">${formatMoney(dailyFinancials.total_sales_invoice_amount)}</td></tr>
-              <tr><td>Total Other Income</td><td class="num">${formatMoney(dailyFinancials.total_other_income ?? 0)}</td></tr>
-              <tr><td>Total Income</td><td class="num">${formatMoney(dailyFinancials.total_income)}</td></tr>
-              <tr><td>Total Expenses (Excl. Salary)</td><td class="num">${formatMoney(dailyFinancials.total_expenses)}</td></tr>
-              <tr><td>Total Salary</td><td class="num">${formatMoney(dailyFinancials.total_salary ?? 0)}</td></tr>
-              <tr><td>Total Expenses (Incl. Salary)</td><td class="num">${formatMoney(dailyFinancials.total_expenses_with_salary ?? (dailyFinancials.total_expenses + (dailyFinancials.total_salary ?? 0)))}</td></tr>
-              <tr class="total"><td>Net Income</td><td class="num">${formatMoney(dailyFinancials.total_revenue ?? netIncome)}</td></tr>
-            </tbody>
-          </table>
-          <div class="footer">Generated from ShifaaScript dashboard</div>
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+  /**
+   * Prints the hospital-wide handover sheet for the range on screen.
+   *
+   * Only the totals this user is permitted to see are included -- the backend
+   * decides that, and the figures below are already filtered the same way.
+   */
+  const financialRange = {
+    from: dailyFinancials.report_period_start || dailyFinancials.report_date || todayIso,
+    to: dailyFinancials.report_period_end || dailyFinancials.report_date || todayIso,
   };
+
+  const printReceptionFinancialReport = async () => {
+    try {
+      const params: Record<string, string | number> = {
+        from: financialRange.from,
+        to: financialRange.to,
+      };
+      if (role === 'super_admin' && summary?.hospital_id) {
+        params.hospital_id = summary.hospital_id;
+      }
+      const { data } = await api.get('/dashboard/finance-submission', { params });
+      printHandoverReport({
+        hospitalName: hospital?.name || 'Hospital',
+        hospitalAddress: hospital?.address,
+        hospitalPhone: hospital?.phone,
+        from: data.from,
+        to: data.to,
+        submittedBy: data.submitted_by?.name || '',
+        generatedAt: data.generated_at,
+        currency: data.currency,
+        lines: data.lines.map((line: any) => ({
+          label: line.label,
+          amount: line.amount,
+          entries: line.entries,
+        })),
+        totalAmount: data.total_amount,
+      });
+    } catch (err) {
+      console.error('Could not build the finance submission report', err);
+    }
+  };
+
 
   const RbacDashboardMetrics = () => {
     if (visibleRbacMetrics.length === 0) {
@@ -515,7 +499,9 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           <div>
             <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Main Dashboard (RBAC)</h3>
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-              Default today data is shown. Totals remain unchanged.
+              {dateFilter === 'custom'
+                ? `Showing ${customFrom} to ${customTo}.`
+                : 'Figures follow the selected range.'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -531,7 +517,34 @@ export function Dashboard({ role, hospital }: DashboardProps) {
               <option value="this_month">This Month</option>
               <option value="last_month">Last Month</option>
               <option value="this_year">This Year</option>
+              <option value="custom">Custom Range</option>
             </select>
+
+            {/* The two date inputs only appear for a custom range, so the
+                header stays compact for the presets people use daily. */}
+            {dateFilter === 'custom' && (
+              <>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  title="From date"
+                  aria-label="From date"
+                  className="text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-md px-2 py-1.5"
+                />
+                <span className="text-xs text-gray-400">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  title="To date"
+                  aria-label="To date"
+                  className="text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-md px-2 py-1.5"
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -1061,6 +1074,11 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
       </div>
 
+      {/* Hidden entirely when the user may see none of its figures, so the
+          card and its Print button do not advertise data they cannot read. */}
+      {[ 'appointment_fees', 'lab_orders_amount', 'medicine_sale',
+         'revenue_total', 'other_income', 'expenses',
+       ].some((panel) => showPanel(panel as DashboardPanel)) && (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div>
@@ -1081,39 +1099,88 @@ export function Dashboard({ role, hospital }: DashboardProps) {
           </div>
         </div>
 
+        {/*
+          Each figure is gated on the same panel permission as its dashboard
+          tile. This block used to render every total unconditionally, so a role
+          with almost no dashboard permissions still read the day's income here
+          -- the tiles above were gated while this was not.
+        */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">{t('ui.totalFees')}</p>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_fees)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Lab Fees</p>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_lab_fees)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Sales Invoice Amount</p>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_sales_invoice_amount)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Income</p>
-            <p className="text-sm font-semibold text-green-700 dark:text-green-400">{formatMoney(dailyFinancials.total_income)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Other Income</p>
-            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{formatMoney(dailyFinancials.total_other_income ?? 0)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Expenses</p>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-400">{formatMoney(dailyFinancials.total_expenses)}</p>
-          </div>
-          <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Net Income</p>
-            <p className={`text-sm font-semibold ${netIncome >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-              {formatMoney(netIncome)}
-            </p>
-          </div>
+          {showPanel('appointment_fees') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">{t('ui.totalFees')}</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_fees)}</p>
+            </div>
+          )}
+          {showPanel('lab_orders_amount') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Lab Fees</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_lab_fees)}</p>
+            </div>
+          )}
+          {showPanel('medicine_sale') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Sales Invoice Amount</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(dailyFinancials.total_sales_invoice_amount)}</p>
+              {/* Billed is not collected: only the paid figure is money someone
+                  can hand over at the end of the day. Both are shown so the
+                  difference is visible rather than implied. */}
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                Collected <span className="font-semibold text-green-700 dark:text-green-400">{formatMoney(dailyFinancials.total_sales_paid_amount ?? 0)}</span>
+                {' · '}
+                Due <span className="font-semibold text-red-700 dark:text-red-400">{formatMoney(dailyFinancials.total_sales_due_amount ?? 0)}</span>
+              </p>
+            </div>
+          )}
+          {showPanel('revenue_total') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Income</p>
+              <p className="text-sm font-semibold text-green-700 dark:text-green-400">{formatMoney(dailyFinancials.total_income)}</p>
+            </div>
+          )}
+          {showPanel('other_income') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Other Income</p>
+              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{formatMoney(dailyFinancials.total_other_income ?? 0)}</p>
+            </div>
+          )}
+          {showPanel('expenses') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Expenses</p>
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">{formatMoney(dailyFinancials.total_expenses)}</p>
+            </div>
+          )}
+          {showPanel('revenue_total') && (
+            <div className="rounded border border-gray-200 dark:border-gray-600 p-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Net Income</p>
+              <p className={`text-sm font-semibold ${netIncome >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                {formatMoney(netIncome)}
+              </p>
+            </div>
+          )}
         </div>
       </div>
+      )}
+
+      {/* Who collected what. Same permission set as the card above, so a desk
+          that cannot see a revenue area does not see it here either. */}
+      {hospital && [ 'appointment_fees', 'lab_orders_amount', 'medicine_sale',
+         'revenue_total', 'other_income', 'expenses',
+       ].some((panel) => showPanel(panel as DashboardPanel)) && (
+        <UserWiseTotalsPanel
+          hospital={hospital}
+          defaultFrom={financialRange.from}
+          defaultTo={financialRange.to}
+          fetchByUser={async (from, to) => {
+            const params: Record<string, string | number> = { from, to, by_user: 1 };
+            if (role === 'super_admin' && summary?.hospital_id) {
+              params.hospital_id = summary.hospital_id;
+            }
+            const { data } = await api.get('/dashboard/finance-submission', { params });
+            return data;
+          }}
+        />
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

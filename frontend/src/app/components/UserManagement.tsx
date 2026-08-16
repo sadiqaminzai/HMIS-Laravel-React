@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { AddButton } from './AddButton';
 
 interface UserManagementProps {
   hospital: Hospital;
@@ -580,13 +581,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
             </button>
           )}
           {canAddUsers && (
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add User
-            </button>
+            <AddButton onClick={handleAdd} label={'Add User'} />
           )}
         </div>
       </div>

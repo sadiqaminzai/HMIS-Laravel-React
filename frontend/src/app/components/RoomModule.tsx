@@ -16,18 +16,18 @@ export function RoomModule({ hospital, userRole }: RoomModuleProps) {
   const { t } = useTranslation();
   const tabs: ModuleTab[] = [
     {
-      key: 'rooms',
-      label: t('ui.rooms'),
-      icon: <BedDouble className="w-3.5 h-3.5" />,
-      anyPermissions: ['view_rooms', 'manage_rooms'],
-      render: () => <RoomManagement hospital={hospital} userRole={userRole} />,
-    },
-    {
       key: 'room-bookings',
       label: t('ui.roomBookings'),
       icon: <CalendarCheck className="w-3.5 h-3.5" />,
       anyPermissions: ['view_room_bookings', 'manage_room_bookings'],
       render: () => <RoomBookingManagement hospital={hospital} userRole={userRole} />,
+    },
+    {
+      key: 'rooms',
+      label: t('ui.rooms'),
+      icon: <BedDouble className="w-3.5 h-3.5" />,
+      anyPermissions: ['view_rooms', 'manage_rooms'],
+      render: () => <RoomManagement hospital={hospital} userRole={userRole} />,
     },
   ];
 

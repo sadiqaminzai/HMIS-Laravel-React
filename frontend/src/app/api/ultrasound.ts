@@ -28,7 +28,14 @@ export interface UltrasoundExamApi {
   report_body: string | null;
   impression: string | null;
   status: 'draft' | 'completed' | 'cancelled';
+  /** Set at the reception counter, not by the reporting specialist. */
+  payment_status: 'unpaid' | 'partial' | 'paid';
   fee: number | string;
+  paid_amount?: number | string | null;
+  payment_method?: string | null;
+  paid_at?: string | null;
+  paid_by?: string | null;
+  receipt_number?: string | null;
   created_by?: string | null;
   updated_by?: string | null;
   created_at?: string;
@@ -107,5 +114,30 @@ export async function deleteUltrasoundExam(id: number | string): Promise<void> {
 
 export async function getUltrasoundReport(id: number | string) {
   const { data } = await api.get(`/ultrasound-exams/${id}/report`);
+  return data?.data ?? data;
+}
+
+/* -------------------------------- Payments -------------------------------- */
+
+/** Reception takes the fee; the exam becomes visible to the specialist. */
+export async function payUltrasoundExam(
+  id: number | string,
+  payload: { paid_amount: number; payment_method: string }
+): Promise<UltrasoundExamApi> {
+  const { data } = await api.post(`/ultrasound-exams/${id}/payment`, payload);
+  return data?.data ?? data;
+}
+
+/** Behind its own permission; the reason is recorded and required. */
+export async function reverseUltrasoundPayment(
+  id: number | string,
+  reason: string
+): Promise<UltrasoundExamApi> {
+  const { data } = await api.post(`/ultrasound-exams/${id}/reverse-payment`, { reason });
+  return data?.data ?? data;
+}
+
+export async function getUltrasoundReceipt(id: number | string): Promise<any> {
+  const { data } = await api.get(`/ultrasound-exams/${id}/receipt`);
   return data?.data ?? data;
 }

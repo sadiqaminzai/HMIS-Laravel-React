@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMedicines } from '../context/MedicineContext';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface MedicineSetManagementProps {
   hospital: Hospital;
@@ -333,13 +334,7 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
             Manage grouped medicine templates for {currentHospital.name}
           </p>
         </div>
-        <button
-          onClick={resetForm}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Set
-        </button>
+        <AddButton onClick={resetForm} label={'New Set'} />
       </div>
 
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />

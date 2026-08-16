@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
 import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
+import { AddButton } from './AddButton';
 
 interface RoomManagementProps {
   hospital: Hospital;
@@ -226,11 +227,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
             className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs"
           >{t('ui.refresh')}</button>
           {canAdd && (
-            <button
-              onClick={openCreate}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />{t('ui.addRoom')}</button>
+            <AddButton onClick={openCreate} label={t('ui.addRoom')} />
           )}
         </div>
       </TabActionsSlot>
