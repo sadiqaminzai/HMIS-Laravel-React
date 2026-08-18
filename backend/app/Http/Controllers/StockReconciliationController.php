@@ -92,9 +92,11 @@ class StockReconciliationController extends Controller
 
         $appliedCount = DB::transaction(function () use ($items, $hospitalId, $date, $user) {
             $applied = 0;
+            $touchedMedicineIds = [];
 
             foreach ($items as $item) {
                 $medicineId = (int) $item['medicine_id'];
+                $touchedMedicineIds[$medicineId] = true;
                 $batchNo = $item['batch_no'] ?? null;
                 $physicalQty = (int) ($item['physical_qty'] ?? 0);
                 $physicalBonus = (int) ($item['physical_bonus'] ?? 0);
@@ -152,16 +154,6 @@ class StockReconciliationController extends Controller
                 $stock->bonus_qty = $physicalBonus;
                 $stock->save();
 
-                $aggregateStock = (int) Stock::query()
-                    ->where('hospital_id', $hospitalId)
-                    ->where('medicine_id', $medicineId)
-                    ->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
-
-                Medicine::query()
-                    ->where('hospital_id', $hospitalId)
-                    ->whereKey($medicineId)
-                    ->update(['stock' => $aggregateStock]);
-
                 if ($deltaQty !== 0 || $deltaBonus !== 0) {
                     StockMovement::create([
                         'hospital_id' => $hospitalId,
@@ -181,6 +173,18 @@ class StockReconciliationController extends Controller
                 }
 
                 $applied++;
+            }
+
+            foreach (array_keys($touchedMedicineIds) as $medicineId) {
+                $aggregateStock = (int) Stock::query()
+                    ->where('hospital_id', $hospitalId)
+                    ->where('medicine_id', $medicineId)
+                    ->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+
+                Medicine::query()
+                    ->where('hospital_id', $hospitalId)
+                    ->whereKey($medicineId)
+                    ->update(['stock' => $aggregateStock]);
             }
 
             return $applied;
