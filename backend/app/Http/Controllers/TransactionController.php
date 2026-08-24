@@ -243,6 +243,25 @@ class TransactionController extends Controller
             $transaction->details()->delete();
             $transaction->update($data);
 
+            // Derive the status from the amounts, exactly as store() does.
+            //
+            // Without this an edit could leave the two disagreeing: typing the
+            // full amount into Paid set paid_amount and due_amount but left
+            // payment_status at 'pending', so the finance list showed a document
+            // marked PENDING with its money already under Paid and nothing in
+            // Due -- and the outstanding total at the top, which sums due_amount,
+            // correctly ignored it. The badge was the part that was wrong.
+            $transaction->syncPaymentState();
+            if ((string) $transaction->payment_status === 'paid') {
+                $transaction->last_payment_at = $transaction->last_payment_at ?? now();
+                $transaction->settled_by = $transaction->settled_by ?? ($request->user()->name ?? null);
+            } elseif ((float) $transaction->paid_amount <= 0) {
+                // Fully unpaid again: the collector goes with the money.
+                $transaction->last_payment_at = null;
+                $transaction->settled_by = null;
+            }
+            $transaction->save();
+
             foreach ($items as $item) {
                 $this->ensureHospitalConsistency($transaction->hospital_id, (int) $item['medicine_id']);
 
@@ -394,15 +413,41 @@ class TransactionController extends Controller
         // line by the full pack_size.
         $packaging = Medicine::query()
             ->whereIn('id', $medicineIds)
-            ->get(['id', 'pack_size', 'pieces_per_strip'])
+            ->get(['id', 'brand_name', 'pack_size', 'pieces_per_strip', 'sellable_units'])
             ->keyBy('id');
 
-        return array_map(function (array $item) use ($packaging) {
+        return array_map(function (array $item, int $index) use ($packaging) {
             $medicineId = (int) ($item['medicine_id'] ?? 0);
-            $requested = (string) ($item['sale_unit'] ?? 'piece');
-            $saleUnit = in_array($requested, ['piece', 'strip', 'pack'], true) ? $requested : 'piece';
+            $saleUnit = (string) ($item['sale_unit'] ?? 'piece');
+
+            // Falling back to piece here is never safe: an unrecognised unit would
+            // reserve 1 piece for what the till charged as a full pack, quietly
+            // draining stock. Refuse the line instead.
+            if (!in_array($saleUnit, ['piece', 'strip', 'pack'], true)) {
+                throw ValidationException::withMessages([
+                    "items.$index.sale_unit" => "Unknown sale unit \"$saleUnit\". Expected piece, strip or pack.",
+                ]);
+            }
 
             $medicine = $packaging->get($medicineId);
+
+            // The unit must be one the product is actually sold in. Accepting
+            // 'piece' for a product sold only by the box stocked one tablet for
+            // a carton of two hundred -- the line looked settled and the shelf
+            // never matched. Refused rather than silently corrected: only the
+            // person entering it knows whether they meant 10 boxes or 10 strips.
+            $sellable = $medicine?->sellable_units;
+            if (is_array($sellable) && $sellable !== [] && !in_array($saleUnit, $sellable, true)) {
+                throw ValidationException::withMessages([
+                    "items.$index.sale_unit" => sprintf(
+                        '%s is not sold by %s. Choose one of: %s.',
+                        $medicine->brand_name ?? 'This medicine',
+                        $saleUnit,
+                        implode(', ', $sellable)
+                    ),
+                ]);
+            }
+
             $packSize = max(1, (int) ($medicine->pack_size ?? 1));
             $perStrip = max(1, (int) ($medicine->pieces_per_strip ?? 1));
 
@@ -421,7 +466,7 @@ class TransactionController extends Controller
             $item['base_bonus'] = (int) ($item['bonus'] ?? 0) * $factor;
 
             return $item;
-        }, $items);
+        }, $items, array_keys($items));
     }
 
     private function ensureStockAvailable(int $hospitalId, string $trxType, array $items, bool $lockRows = false): void
@@ -667,14 +712,21 @@ class TransactionController extends Controller
             ]);
         }
 
-        if ($expiryDate && (!$stock->expiry_date || (string) $stock->expiry_date !== (string) $expiryDate)) {
-            $stock->expiry_date = $expiryDate;
-        }
-        if (in_array($trxType, ['purchase', 'purchase_return'], true) && $price > 0) {
-            $stock->purchase_price = $price;
-        }
-        if (in_array($trxType, ['sales', 'sales_return'], true) && $price > 0) {
-            $stock->sale_price = $price;
+        // A reversal only gives quantity back -- it must never restate the batch's
+        // expiry or price. Editing a purchase applies the new lines first and
+        // reverses the old ones after, so a reversal that wrote metadata stamped
+        // the *superseded* expiry back over the corrected one and the batch stayed
+        // expired however many times it was fixed on screen.
+        if (!$reverse) {
+            if ($expiryDate && (!$stock->expiry_date || (string) $stock->expiry_date !== (string) $expiryDate)) {
+                $stock->expiry_date = $expiryDate;
+            }
+            if (in_array($trxType, ['purchase', 'purchase_return'], true) && $price > 0) {
+                $stock->purchase_price = $price;
+            }
+            if (in_array($trxType, ['sales', 'sales_return'], true) && $price > 0) {
+                $stock->sale_price = $price;
+            }
         }
 
         $nextStockQty = ((int) $stock->stock_qty) + $qtyDelta;

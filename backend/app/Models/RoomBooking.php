@@ -23,6 +23,9 @@ class RoomBooking extends Model
         'discount_amount',
         'status',
         'payment_status',
+        'payment_method',
+        'paid_at',
+        'paid_by',
         'remarks',
         'is_active',
         'is_delete',
@@ -32,6 +35,7 @@ class RoomBooking extends Model
     ];
 
     protected $casts = [
+        'paid_at' => 'datetime',
         'booking_date' => 'date',
         'check_in_date' => 'date',
         'check_out_date' => 'date',

@@ -10,6 +10,17 @@ interface AppointmentContextType {
   refresh: () => Promise<void>;
   addAppointment: (payload: Partial<Appointment>) => Promise<void>;
   updateAppointment: (payload: Partial<Appointment> & { id: string }) => Promise<void>;
+  /**
+   * Take or reverse the consultation fee.
+   *
+   * Deliberately not part of updateAppointment: collecting money is its own
+   * right, so it has its own endpoint that a cashier can be granted without
+   * also being able to edit the appointment. Sending the whole record through
+   * PUT would have made the two inseparable, and would record the editor rather
+   * than the collector against the cash.
+   */
+  collectAppointmentPayment: (id: string, paymentMethod?: string) => Promise<void>;
+  reverseAppointmentPayment: (id: string) => Promise<void>;
   deleteAppointment: (id: string) => Promise<void>;
   loading: boolean;
 }
@@ -34,6 +45,7 @@ const mapAppointment = (a: any): Appointment => ({
   patientName: a.patient_name ?? a.patient?.name ?? '',
   patientPhone: a.patient?.phone ?? a.patient_phone ?? '',
   patientAge: Number(a.patient_age ?? a.patient?.age ?? 0),
+  patientAgeUnit: (a.patient_age_unit ?? a.patient?.age_unit ?? 'year') as 'year' | 'month' | 'day',
   patientGender: a.patient_gender ?? a.patient?.gender ?? 'other',
   doctorId: a.doctor_id ? String(a.doctor_id) : '',
   doctorName: a.doctor?.name ?? '',
@@ -111,6 +123,16 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
     await refresh();
   };
 
+  const collectAppointmentPayment = async (id: string, paymentMethod?: string) => {
+    await api.post(`/appointments/${id}/payment`, { payment_method: paymentMethod ?? 'cash' });
+    await refresh();
+  };
+
+  const reverseAppointmentPayment = async (id: string) => {
+    await api.post(`/appointments/${id}/payment/reverse`);
+    await refresh();
+  };
+
   const deleteAppointment = async (id: string) => {
     await api.delete(`/appointments/${id}`);
     await refresh();
@@ -124,6 +146,7 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
     if (payload.appointmentNumber) body.appointment_number = payload.appointmentNumber;
     if (payload.patientName) body.patient_name = payload.patientName;
     if (payload.patientAge !== undefined && payload.patientAge !== null) body.patient_age = payload.patientAge;
+    if (payload.patientAgeUnit) body.patient_age_unit = payload.patientAgeUnit;
     if (payload.patientGender) body.patient_gender = payload.patientGender;
     if (payload.appointmentDate) body.appointment_date = formatDateOnly(payload.appointmentDate);
     if (payload.appointmentTime !== undefined) body.appointment_time = payload.appointmentTime || null;
@@ -149,7 +172,7 @@ export function AppointmentProvider({ children }: { children: React.ReactNode })
   };
 
   return (
-    <AppointmentContext.Provider value={{ appointments, refresh, addAppointment, updateAppointment, deleteAppointment, loading }}>
+    <AppointmentContext.Provider value={{ appointments, refresh, addAppointment, updateAppointment, collectAppointmentPayment, reverseAppointmentPayment, deleteAppointment, loading }}>
       {children}
     </AppointmentContext.Provider>
   );
@@ -164,6 +187,8 @@ export function useAppointments() {
       refresh: async () => {},
       addAppointment: async () => {},
       updateAppointment: async () => {},
+      collectAppointmentPayment: async () => {},
+      reverseAppointmentPayment: async () => {},
       deleteAppointment: async () => {},
       loading: false,
     };

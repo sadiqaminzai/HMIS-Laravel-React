@@ -7,6 +7,8 @@ import { useDoctors } from "../context/DoctorContext";
 import { useSettings } from "../context/SettingsContext";
 import { buildVerificationUrl } from "../utils/verification";
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { printName } from '../utils/printName';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface PatientSurgeryItem {
   id: string;
@@ -210,9 +212,9 @@ export function DischargeSummaryPrint({
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Patient Information</h3>
               <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-sm">
-                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Name</span><span className="font-semibold text-gray-900">{patient?.name || surgeryItem.patientName}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Name</span><span className="font-semibold text-gray-900">{printName(patient?.name || surgeryItem.patientName)}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Patient ID</span><span className="font-mono text-gray-900">{patient?.patientId || "N/A"}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Age / Gender</span><span className="text-gray-900">{patient?.age ? `${patient.age} Y` : "-"} / {patient?.gender || "-"}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Age / Gender</span><span className="text-gray-900">{formatAge(patient?.age, patient?.ageUnit)} / {patient?.gender || "-"}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Discharge Date</span><span className="text-gray-900">{surgeryItem.dischargeDate ? formatDate(surgeryItem.dischargeDate, hospital.timezone, hospital.calendarType) : "-"}</span></div>
               </div>
             </div>
@@ -220,8 +222,8 @@ export function DischargeSummaryPrint({
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-5">
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-2 mb-3">Surgery Information</h3>
               <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-sm">
-                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Doctor/Surgeon</span><span className="font-semibold text-gray-900">{doctorForPrint?.name || surgeryItem.doctorName || completedByName || "N/A"}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Name</span><span className="text-gray-900">{surgeryItem.surgeryName}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Doctor/Surgeon</span><span className="font-semibold text-gray-900">{printName(doctorForPrint?.name || surgeryItem.doctorName || completedByName) || "N/A"}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Name</span><span className="text-gray-900">{printName(surgeryItem.surgeryName)}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Date</span><span className="text-gray-900">{formatDate(surgeryItem.surgeryDate, hospital.timezone, hospital.calendarType)}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Case #</span><span className="font-mono font-bold text-gray-900">SURG-{surgeryItem.id}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Status</span><span className="text-gray-900 capitalize">{surgeryItem.status.replace('_', ' ')}</span></div>
@@ -269,7 +271,7 @@ export function DischargeSummaryPrint({
                       <div className="h-28 mb-1 flex items-end justify-center text-xs italic text-gray-500">No signature on file</div>
                     )}
                     <div className="border-t border-gray-900 pt-1">
-                      <p className="font-bold text-gray-900 text-sm">{doctorForPrint?.name || surgeryItem.doctorName || completedByName || "Doctor"}</p>
+                      <p className="font-bold text-gray-900 text-sm">{printName(doctorForPrint?.name || surgeryItem.doctorName || completedByName) || "DOCTOR"}</p>
                       <p className="text-[10px] text-gray-600 uppercase tracking-wide">Doctor / Surgeon</p>
                     </div>
                   </div>

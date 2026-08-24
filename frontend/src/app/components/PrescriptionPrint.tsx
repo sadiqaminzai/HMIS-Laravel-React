@@ -8,6 +8,7 @@ import { formatDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
 import { useSettings } from '../context/SettingsContext';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { printName } from '../utils/printName';
 
 // Extended type for medicine with additional display fields
 type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
@@ -104,7 +105,8 @@ export function PrescriptionPrint({
       displayName += ` ${strength}`;
     }
 
-    return displayName.replace(/\s+/g, ' ').trim();
+    // Printed in capitals like every other name on a hospital document.
+    return printName(displayName.replace(/\s+/g, ' ').trim());
   };
 
   const waitForPrintImages = async () => {
@@ -510,7 +512,7 @@ export function PrescriptionPrint({
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
                 <div className="flex items-baseline gap-1 min-w-0">
                   <span className="font-bold text-blue-900 shrink-0">Name</span>
-                  <span className="font-semibold text-gray-900 truncate">{patient.name}</span>
+                  <span className="font-semibold text-gray-900 truncate">{printName(patient.name)}</span>
                 </div>
                 {showPrescriptionListMeta && (
                   <div className="flex items-baseline gap-1 min-w-0">
@@ -539,7 +541,7 @@ export function PrescriptionPrint({
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
                 <div className="flex items-baseline gap-1 min-w-0">
                   <span className="font-bold text-blue-900 shrink-0">Doctor</span>
-                  <span className="font-semibold text-gray-900 truncate">{doctor.name}</span>
+                  <span className="font-semibold text-gray-900 truncate">{printName(doctor.name)}</span>
                 </div>
                 <div className="flex items-baseline gap-1 min-w-0">
                   <span className="font-bold text-blue-900 shrink-0">Reg. No</span>

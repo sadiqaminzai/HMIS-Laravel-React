@@ -46,6 +46,8 @@ class LedgerPostingService
                 // to the desk that collected them and landed in the handover
                 // report's Unattributed row for ever.
                 'posted_by' => $appointment->updated_by ?? $appointment->created_by,
+                'collected_by' => $appointment->paid_by,
+                'collected_at' => $appointment->paid_at,
                 'voided_at' => null,
                 'metadata' => [
                     'appointment_status' => $appointment->status,
@@ -89,6 +91,8 @@ class LedgerPostingService
                 'currency' => 'AFN',
                 'posted_at' => $labOrder->created_at ?? now(),
                 'posted_by' => $labOrder->updated_by ?? $labOrder->created_by,
+                'collected_by' => $labOrder->paid_by,
+                'collected_at' => $labOrder->paid_at,
                 'voided_at' => null,
                 'metadata' => [
                     'order_status' => $labOrder->status,
@@ -131,6 +135,8 @@ class LedgerPostingService
                 'currency' => 'AFN',
                 'posted_at' => $booking->booking_date ?? $booking->created_at ?? now(),
                 'posted_by' => $booking->updated_by ?? $booking->created_by,
+                'collected_by' => $booking->paid_by,
+                'collected_at' => $booking->paid_at,
                 'voided_at' => null,
                 'metadata' => [
                     'room_id' => $booking->room_id,
@@ -174,6 +180,8 @@ class LedgerPostingService
                 'currency' => 'AFN',
                 'posted_at' => $patientSurgery->surgery_date ?? $patientSurgery->created_at ?? now(),
                 'posted_by' => $patientSurgery->updated_by ?? $patientSurgery->created_by,
+                'collected_by' => $patientSurgery->paid_by,
+                'collected_at' => $patientSurgery->paid_at,
                 'voided_at' => null,
                 'metadata' => [
                     'doctor_id' => $patientSurgery->doctor_id,
@@ -229,6 +237,8 @@ class LedgerPostingService
                 // belongs in the day's takings for the day it was collected.
                 'posted_at' => $exam->paid_at ?? $exam->examined_at ?? $exam->created_at ?? now(),
                 'posted_by' => $exam->updated_by ?? $exam->created_by,
+                'collected_by' => $exam->paid_by,
+                'collected_at' => $exam->paid_at,
                 'voided_at' => null,
                 'metadata' => [
                     'ultrasound_type_id' => $exam->ultrasound_type_id,
@@ -275,6 +285,9 @@ class LedgerPostingService
                 'status' => $status,
                 'posted_at' => $transaction->created_at ?? now(),
                 'posted_by' => $transaction->updated_by ?? $transaction->created_by,
+                // Pharmacy keeps its collector under its own names.
+                'collected_by' => $transaction->settled_by,
+                'collected_at' => $transaction->last_payment_at,
                 'voided_at' => null,
                 'metadata' => [
                     'trx_type' => $transaction->trx_type,
@@ -348,7 +361,11 @@ class LedgerPostingService
                 'due_amount' => 0,
                 'status' => (string) $otherIncome->status,
                 'posted_at' => $otherIncome->income_date ?? $otherIncome->created_at ?? now(),
+                // Other income has no separate settlement step -- recording it IS
+                // receiving it -- so the recorder is the collector by definition.
                 'posted_by' => $otherIncome->updated_by ?? $otherIncome->created_by,
+                'collected_by' => $otherIncome->created_by ?? $otherIncome->updated_by,
+                'collected_at' => $otherIncome->income_date ?? $otherIncome->created_at ?? now(),
                 'voided_at' => null,
                 'metadata' => [
                     'other_income_category_id' => $otherIncome->other_income_category_id,

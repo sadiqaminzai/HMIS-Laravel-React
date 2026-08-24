@@ -16,6 +16,7 @@ import {
   Save,
   ClipboardCheck,
 } from 'lucide-react';
+import { SearchableSelect } from './SearchableSelect';
 import ReactQuill from 'react-quill-new';
 import { UltrasoundReceipts } from './UltrasoundReceipts';
 import 'react-quill-new/dist/quill.snow.css';
@@ -197,6 +198,20 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   /* ------------------------------- Derived data ------------------------------ */
 
   const activeTypes = useMemo(() => types.filter((type) => type.is_active), [types]);
+
+  // Code and price ride along as searchable meta: staff who know a study by its
+  // code should not have to remember the full name, and at the counter the price
+  // is half of what identifies the study being asked for.
+  const ultrasoundTypeOptions = useMemo(
+    () => activeTypes.map((type) => ({
+      value: String(type.id),
+      label: type.name,
+      meta: [type.code, Number(type.price ?? 0) > 0 ? Number(type.price).toFixed(2) : null]
+        .filter(Boolean)
+        .join(' · ') || undefined,
+    })),
+    [activeTypes]
+  );
 
   const patientsForHospital = useMemo(
     () => patients.filter((p) => isAllHospitals || p.hospitalId === currentHospital.id),
@@ -783,7 +798,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
       {/* Exam modal */}
       {isExamModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
-          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full ${isReceptionForm ? 'max-w-xl' : 'max-w-4xl'} max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700`}>
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full ${isReceptionForm ? 'max-w-3xl' : 'max-w-4xl'} max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700`}>
             <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
               <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 {editingExam ? t('ultrasound.editExam') : t('ultrasound.newExam')}
@@ -897,22 +912,15 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 <label className={labelClass}>
                   {t('ultrasound.type')} <span className="text-red-500">*</span>
                 </label>
-                <select
-                  required
+                <SearchableSelect
                   value={examForm.ultrasoundTypeId}
-                  onChange={(e) => handleTypeChange(e.target.value)}
-                  title="Select Ultrasound Type"
-                  aria-label="Select Ultrasound Type"
+                  options={ultrasoundTypeOptions}
+                  onChange={handleTypeChange}
+                  placeholder={t('ultrasound.selectType')}
+                  title={t('ultrasound.type')}
                   disabled={!isReceptionForm}
-                  className={`${inputClass} disabled:opacity-70 disabled:cursor-not-allowed`}
-                >
-                  <option value="">{t('ultrasound.selectType')}</option>
-                  {activeTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.name}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
 
               </div>
 

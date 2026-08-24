@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\UltrasoundType;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class UltrasoundTypeController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -97,7 +100,7 @@ class UltrasoundTypeController extends Controller
      */
     private function validatePayload(Request $request, int $hospitalId, ?int $typeId): array
     {
-        return $request->validate([
+        return $this->upperCaseNames($request->validate([
             'name' => [
                 'required',
                 'string',
@@ -112,7 +115,7 @@ class UltrasoundTypeController extends Controller
             'price' => ['nullable', 'numeric', 'min:0'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
-        ]);
+        ]), ['name']);
     }
 
     private function resolveHospitalId(Request $request): int

@@ -18,6 +18,7 @@ import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { poweredByHtml } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface AppointmentManagementProps {
   hospital: Hospital;
@@ -85,7 +86,15 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { patients } = usePatients();
   const { doctors } = useDoctors();
-  const { appointments, refresh, addAppointment, updateAppointment, deleteAppointment } = useAppointments();
+  const {
+    appointments,
+    refresh,
+    addAppointment,
+    updateAppointment,
+    collectAppointmentPayment,
+    reverseAppointmentPayment,
+    deleteAppointment,
+  } = useAppointments();
   const { hospitals } = useHospitals();
   const { hasPermission } = useAuth();
   
@@ -104,7 +113,9 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   const { submitting, guard } = useSubmitGuard();
   const { getDefaultDoctorId, getPrintPaperSize, loadHospitalSetting } = useSettings();
   
-  // Sorting state
+  // Sorting state. Matches the order the API returns -- latest appointment date
+  // first -- so the page is not re-shuffled the moment it loads. The API sorts
+  // the whole table; these headers only reorder the page in view.
   const [sortField, setSortField] = useState<string>('appointmentDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -410,7 +421,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   <div class="col-head">Patient Details</div>
                   <div class="col-row"><span class="k">Name</span><span class="v">${selectedAppointment.patientName}</span></div>
                   <div class="col-row"><span class="k">ID</span><span class="v">${patientDisplayId}</span></div>
-                  <div class="col-row"><span class="k">Age / Gender</span><span class="v">${selectedAppointment.patientAge} Y / ${selectedAppointment.patientGender}</span></div>
+                  <div class="col-row"><span class="k">Age / Gender</span><span class="v">${formatAge(selectedAppointment.patientAge, selectedAppointment.patientAgeUnit)} / ${selectedAppointment.patientGender}</span></div>
                   ${(() => {
                     // Appointments do not always carry the phone; the helper
                     // falls back to the patient record, same as the list view.
@@ -677,32 +688,34 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       .catch((err: any) => setToast({ message: err?.response?.data?.message || 'Failed to update status.', type: 'danger' }));
   };
 
+  /**
+   * Take or reverse the fee through the payment endpoints.
+   *
+   * This used to PUT the whole appointment back with a flipped payment_status,
+   * which meant the till action was indistinguishable from an edit: it needed
+   * edit rights, and the ledger recorded whoever saved last as the person
+   * holding the cash. The dedicated endpoints carry their own permission and
+   * stamp the collector, so the day-end handover follows the money.
+   */
   const handlePaymentStatusToggle = (apt: Appointment) => {
-    const nextPaymentStatus: NonNullable<Appointment['paymentStatus']> =
-      apt.paymentStatus === 'paid' ? 'pending' : 'paid';
+    const isReversal = apt.paymentStatus === 'paid';
 
-    updateAppointment({
-      id: apt.id,
-      hospitalId: apt.hospitalId,
-      patientId: apt.patientId,
-      doctorId: apt.doctorId,
-      patientName: apt.patientName,
-      patientAge: apt.patientAge,
-      patientGender: apt.patientGender,
-      appointmentDate: apt.appointmentDate,
-      appointmentTime: apt.appointmentTime,
-      reason: apt.reason,
-      notes: apt.notes,
-      status: apt.status,
-      originalFeeAmount: apt.originalFeeAmount,
-      discountEnabled: apt.discountEnabled,
-      discountAmount: apt.discountAmount,
-      totalAmount: apt.totalAmount,
-      currency: apt.currency,
-      paymentStatus: nextPaymentStatus,
-    })
-      .then(() => setToast({ message: `Payment marked as ${nextPaymentStatus}.`, type: 'success' }))
-      .catch((err: any) => setToast({ message: err?.response?.data?.message || 'Failed to update payment status.', type: 'danger' }));
+    const action = isReversal
+      ? reverseAppointmentPayment(apt.id)
+      : collectAppointmentPayment(apt.id);
+
+    action
+      .then(() => setToast({
+        message: isReversal ? 'Payment reversed to pending.' : 'Payment collected.',
+        type: 'success',
+      }))
+      .catch((err: any) => setToast({
+        message: err?.response?.data?.message
+          || (err?.response?.status === 403
+            ? 'You do not have permission to change payment on appointments.'
+            : 'Failed to update payment status.'),
+        type: 'danger',
+      }));
   };
 
   const resetForm = () => {
@@ -776,7 +789,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     || hasPermission('manage_appointment_payments')
     || hasPermission('manage_appointments');
   const canCollectFee = hasPermission('manage_appointment_payments') || hasPermission('manage_appointments');
-  const canReverseFee = hasPermission('reverse_appointment_payment') || hasPermission('manage_appointments');
+  // No fallback on reverse: undoing a payment is how cash gets taken and the
+  // trace erased, so it is held explicitly or not at all. Collect keeps its
+  // fallback so the counter is not locked out mid-deploy.
+  const canReverseFee = hasPermission('reverse_appointment_payment');
   const canTogglePayment = canCollectFee || canReverseFee;
 
   return (
@@ -933,7 +949,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                     <td className="px-4 py-2">
                       <div>
                         <div className="text-xs font-medium text-gray-900 dark:text-white">{apt.patientName}</div>
-                        <div className="text-[10px] text-gray-600 dark:text-gray-400">{apt.patientAge}Y • {apt.patientGender}</div>
+                        <div className="text-[10px] text-gray-600 dark:text-gray-400">{formatAge(apt.patientAge, apt.patientAgeUnit, { compact: true })} • {apt.patientGender}</div>
                         {patientPhone && (
                           <div className="text-[10px] text-gray-500 dark:text-gray-400">{patientPhone}</div>
                         )}
@@ -1398,7 +1414,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
             <div className="p-4 space-y-3 max-h-[75vh] overflow-y-auto overflow-x-hidden">
               <ViewSection title={t('ui.patient')}>
                 <ViewRow label={t('ui.name')} value={selectedAppointment.patientName} />
-                <ViewRow label={t('ui.age')} value={`${selectedAppointment.patientAge} / ${selectedAppointment.patientGender}`} />
+                <ViewRow label={t('ui.age')} value={`${formatAge(selectedAppointment.patientAge, selectedAppointment.patientAgeUnit)} / ${selectedAppointment.patientGender}`} />
                 <ViewRow label={t('ui.phone')} value={selectedAppointment.patientPhone} />
                 <ViewRow label={t('ui.patientId')} value={selectedAppointment.patientDisplayId} />
               </ViewSection>
@@ -1539,7 +1555,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                         <div className="col-span-1">
                            <label className="text-[9px] text-gray-500 uppercase font-bold block leading-none mb-0.5">{t('ui.patientDetails')}</label>
                            <div className="font-bold text-sm text-gray-900">{selectedAppointment.patientName}</div>
-                           <div className="text-[10px] text-gray-600">{selectedAppointment.patientAge} Yrs / {selectedAppointment.patientGender}</div>
+                           <div className="text-[10px] text-gray-600">{formatAgeLong(selectedAppointment.patientAge, selectedAppointment.patientAgeUnit)} / {selectedAppointment.patientGender}</div>
                           <div className="text-[9px] text-gray-400 mt-0.5">ID: {selectedAppointment.patientDisplayId || formatPatientId(selectedAppointment.patientId)}</div>
                         </div>
 

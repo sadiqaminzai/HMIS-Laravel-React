@@ -54,6 +54,8 @@ export interface Patient {
   patientId: string;
   name: string;
   age: number;
+  /** The unit `age` was given in. Never converted, so 15 months stays 15 months. */
+  ageUnit?: 'year' | 'month' | 'day';
   gender: 'male' | 'female' | 'other';
   phone: string;
   address: string;
@@ -320,6 +322,8 @@ export interface Prescription {
   patientName: string;
   patientPhone?: string;
   patientAge: number;
+  /** Unit the snapshotted age was given in. Frozen with the document. */
+  patientAgeUnit?: 'year' | 'month' | 'day';
   patientGender: string;
   doctorId: string;
   doctorName: string;
@@ -363,6 +367,8 @@ export interface Appointment {
   patientName: string;
   patientPhone?: string;
   patientAge: number;
+  /** Unit the snapshotted age was given in. Frozen with the document. */
+  patientAgeUnit?: 'year' | 'month' | 'day';
   patientGender: string;
   doctorId: string;
   doctorName: string;
@@ -456,6 +462,8 @@ export interface LabTest {
   patientName: string;
   patientPhone?: string;
   patientAge: number;
+  /** Unit the snapshotted age was given in. Frozen with the document. */
+  patientAgeUnit?: 'year' | 'month' | 'day';
   patientGender: string;
   doctorId: string;
   doctorName: string;

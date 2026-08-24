@@ -377,7 +377,7 @@ const SettingsContext = createContext<SettingsContextType>({
     purchase_return: 'pending',
     appointments: 'pending',
   }),
-  getBarcodeLabel: () => ({ widthMm: 50, heightMm: 25 }),
+  getBarcodeLabel: () => ({ widthMm: 29, heightMm: 18 }),
   generatePatientId: () => 'P0001',
   loadHospitalSetting: async () => {},
   saveHospitalSetting: async () => {}
@@ -569,8 +569,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       barcodeScanningEnabled: raw.barcode_scanning_enabled !== undefined
         ? Boolean(raw.barcode_scanning_enabled) : true,
       barcodeLabel: {
-        widthMm: toPositiveInt(raw.barcode_label_width_mm, 50),
-        heightMm: toPositiveInt(raw.barcode_label_height_mm, 25),
+        widthMm: toPositiveInt(raw.barcode_label_width_mm, 29),
+        heightMm: toPositiveInt(raw.barcode_label_height_mm, 18),
       },
     };
   };
@@ -604,7 +604,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         appointments: 'pending',
       },
       barcodeScanningEnabled: true,
-      barcodeLabel: { widthMm: 50, heightMm: 25 },
+      barcodeLabel: { widthMm: 29, heightMm: 18 },
     };
   };
 
@@ -696,7 +696,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getBarcodeLabel = (hospitalId: string) => {
-    return getHospitalSetting(hospitalId).barcodeLabel ?? { widthMm: 50, heightMm: 25 };
+    return getHospitalSetting(hospitalId).barcodeLabel ?? { widthMm: 29, heightMm: 18 };
   };
 
   const generatePatientId = (hospitalId: string, currentCount: number): string => {

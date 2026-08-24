@@ -93,6 +93,24 @@ export async function updateRoomBooking(id: string, payload: Partial<RoomBooking
   return res.data;
 }
 
+/**
+ * Take payment for a booking.
+ *
+ * Its own endpoint, not a field on updateRoomBooking: collecting money carries
+ * a permission a cashier can hold without being able to move a patient's bed,
+ * and it stamps who took the cash so the day-end handover can attribute it.
+ */
+export async function collectRoomBookingPayment(id: string, paymentMethod = 'cash') {
+  const res = await api.post(`/room-bookings/${id}/payment`, { payment_method: paymentMethod });
+  return res.data?.data ?? res.data;
+}
+
+/** Reverse a payment. A separate right from taking one. */
+export async function reverseRoomBookingPayment(id: string) {
+  const res = await api.post(`/room-bookings/${id}/payment/reverse`);
+  return res.data?.data ?? res.data;
+}
+
 export async function deleteRoomBooking(id: string) {
   const res = await api.delete(`/room-bookings/${id}`);
   return res.data;

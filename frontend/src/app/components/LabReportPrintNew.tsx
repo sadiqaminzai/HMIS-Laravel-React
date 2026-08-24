@@ -13,7 +13,7 @@ interface LabReportPrintNewProps {
   onPrint?: () => void;
 }
 
-export function LabReportPrintNew({ test, hospital, onClose, onPrint }: LabReportPrintNewProps) {
+export function LabReportPrintNew({ test, testTemplates, hospital, onClose, onPrint }: LabReportPrintNewProps) {
   const { t } = useTranslation();
   const handlePrint = () => {
     window.print();
@@ -166,7 +166,7 @@ export function LabReportPrintNew({ test, hospital, onClose, onPrint }: LabRepor
 
         {/* Preview Content - This will be printed */}
         <div className="flex-1 overflow-y-auto p-6 print:p-0 print:overflow-visible">
-          <LabReportTemplate test={test} hospital={hospital} />
+          <LabReportTemplate test={test} hospital={hospital} testTemplates={testTemplates} />
         </div>
       </div>
     </div>

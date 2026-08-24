@@ -32,11 +32,15 @@ class Appointment extends Model
         'total_amount',
         'currency',
         'payment_status',
+        'payment_method',
+        'paid_at',
+        'paid_by',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
+        'paid_at' => 'datetime',
         'appointment_date' => 'date:Y-m-d',
         'original_fee_amount' => 'decimal:2',
         'discount_enabled' => 'boolean',

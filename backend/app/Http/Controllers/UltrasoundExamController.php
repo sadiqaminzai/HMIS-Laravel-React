@@ -55,8 +55,21 @@ class UltrasoundExamController extends Controller
             $query->whereDate('examined_at', '<=', $request->string('end_date'));
         }
 
+        // Work first, history second.
+        //
+        // Ordering purely by exam date buried a freshly submitted draft among
+        // everything already reported, so the sonologist paged forward to find
+        // the study they had just been handed. Drafts now sit at the top,
+        // oldest first because that is the order they should be reported in;
+        // finished work sits below, most recently completed first, which is
+        // what someone reprinting a report is looking for.
         return response()->json(
-            $query->orderByDesc('examined_at')->orderByDesc('id')->get()
+            $query
+                ->orderByRaw("CASE WHEN status = 'draft' THEN 0 WHEN status = 'completed' THEN 1 ELSE 2 END")
+                ->orderByRaw("CASE WHEN status = 'draft' THEN created_at END ASC")
+                ->orderByRaw("CASE WHEN status <> 'draft' THEN updated_at END DESC")
+                ->orderByDesc('id')
+                ->get()
         );
     }
 

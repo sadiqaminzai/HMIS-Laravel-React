@@ -6,11 +6,14 @@ use App\Models\Room;
 use App\Models\RoomBooking;
 use App\Services\LedgerPostingService;
 use App\Services\RoomBookingService;
+use App\Http\Controllers\Concerns\RecordsPaymentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class RoomBookingController extends Controller
 {
+    use RecordsPaymentCollection;
+
     public function __construct(
         private readonly RoomBookingService $bookingService,
         private readonly LedgerPostingService $ledgerPostingService
@@ -167,6 +170,9 @@ class RoomBookingController extends Controller
 
         $data = $this->validatePayload($request, $roomBooking->hospital_id);
         $data['updated_by'] = $request->user()?->name;
+        // A payment_status arriving on a plain edit still has to record
+        // who took the money -- see RecordsPaymentCollection.
+        $data = $this->syncPaymentCollection($request, $data, $roomBooking);
 
         DB::transaction(function () use ($data, $roomBooking) {
             $nextStatus = (string) ($data['status'] ?? $roomBooking->status);
@@ -209,6 +215,42 @@ class RoomBookingController extends Controller
         });
 
         return response()->json($roomBooking->fresh()->load(['room', 'patient', 'doctor']));
+    }
+
+    /**
+     * Take payment for a booking.
+     *
+     * Separate from update() so collecting money can be granted to a cashier
+     * without also granting the right to move a patient's bed or dates -- and
+     * withheld from the clerk who does the booking.
+     */
+    public function processPayment(Request $request, RoomBooking $roomBooking)
+    {
+        $this->authorizeScope($request->user(), $roomBooking->hospital_id);
+
+        $data = $request->validate(['payment_method' => $this->paymentMethodRule()]);
+
+        $roomBooking->update($this->paymentCollectedAttributes($request, $data['payment_method'] ?? null));
+        $this->ledgerPostingService->upsertRoomBookingSnapshot($roomBooking);
+
+        return response()->json([
+            'data' => $roomBooking->fresh()->load(['room', 'patient', 'doctor']),
+            'message' => 'Payment recorded',
+        ]);
+    }
+
+    /** Undo a payment. Deliberately a right of its own -- see the routes file. */
+    public function reversePayment(Request $request, RoomBooking $roomBooking)
+    {
+        $this->authorizeScope($request->user(), $roomBooking->hospital_id);
+
+        $roomBooking->update($this->paymentReversedAttributes($request));
+        $this->ledgerPostingService->upsertRoomBookingSnapshot($roomBooking);
+
+        return response()->json([
+            'data' => $roomBooking->fresh()->load(['room', 'patient', 'doctor']),
+            'message' => 'Payment reversed',
+        ]);
     }
 
     public function destroy(Request $request, RoomBooking $roomBooking)

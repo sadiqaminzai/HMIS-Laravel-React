@@ -25,6 +25,22 @@ interface MedicineManagementProps {
 type SortField = 'brandName' | 'genericName' | 'medicineType' | 'strength'
   | 'manufacturer' | 'stock' | 'cost' | 'sale' | 'status';
 
+/**
+ * Printed-label proportions. All three live together because they only make
+ * sense read against each other.
+ *
+ * The SVG scales as a single piece, so bars and digits keep whatever ratio they
+ * were DRAWN with -- the way to get bigger numbers is to draw shorter bars
+ * beside a larger font, not to restyle anything at print time.
+ *
+ *   LABEL_BAR_WIDTH_PCT  how much of the sticker's width the bar block spans
+ *   PRINT_BAR_HEIGHT     bar height in the source SVG
+ *   PRINT_FONT_SIZE      digit height in the same units
+ */
+const LABEL_BAR_WIDTH_PCT = 86;
+const PRINT_BAR_HEIGHT = 20;
+const PRINT_FONT_SIZE = 15;
+
 export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineManagementProps) {
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
@@ -55,6 +71,77 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   // Batch label printing: which medicines are selected and how many copies each.
   const [selectedForLabels, setSelectedForLabels] = useState<Set<string>>(new Set());
   const [labelCopies, setLabelCopies] = useState(1);
+  /**
+   * Whether the label content is turned a quarter turn before printing.
+   *
+   * Which way round a roll printer feeds its stock is a property of the printer
+   * and its driver, not of this app, and no stylesheet can overrule a driver
+   * whose paper is set to the other orientation. So the choice is remembered per
+   * browser: set it once for the printer on this counter and every later print
+   * comes out the same way.
+   */
+  const [labelRotated, setLabelRotated] = useState<boolean>(
+    () => localStorage.getItem('barcode_label_rotated') === '1'
+  );
+  const toggleLabelRotated = (next: boolean) => {
+    setLabelRotated(next);
+    localStorage.setItem('barcode_label_rotated', next ? '1' : '0');
+  };
+  /**
+   * Whether the PAGE handed to the driver is 29x18 or 18x29.
+   *
+   * Separate from the rotation above, because they fix different faults. The
+   * rotation decides which way the bars run; this decides the shape of the
+   * sheet. A sheet whose long side lies along the feed when the driver expects
+   * the short one gets stretched over the die cut, which is what spoils the
+   * sticker after each label. Only the driver knows which it wants, so both are
+   * exposed rather than guessed at.
+   */
+  const [labelPageSwapped, setLabelPageSwapped] = useState<boolean>(
+    () => localStorage.getItem('barcode_label_page_swapped') === '1'
+  );
+  const toggleLabelPageSwapped = (next: boolean) => {
+    setLabelPageSwapped(next);
+    localStorage.setItem('barcode_label_page_swapped', next ? '1' : '0');
+  };
+
+  /**
+   * The orientation switches, rendered wherever a label can be printed.
+   *
+   * They started life beside the batch Print Labels button, which is only on
+   * screen once medicines are ticked in the list -- so anyone printing a single
+   * label from the details modal never saw them and their setting silently did
+   * nothing. Both entry points now show the same two controls over the same
+   * stored state.
+   */
+  const labelOrientationControls = (
+    <>
+      <label
+        className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-300 cursor-pointer select-none"
+        title="Swap the page between 29x18 and 18x29. Use this when one barcode runs onto the next sticker."
+      >
+        <input
+          type="checkbox"
+          checked={labelPageSwapped}
+          onChange={(e) => toggleLabelPageSwapped(e.target.checked)}
+          className="w-3 h-3"
+        />
+        Swap page
+      </label>
+      <label
+        className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-300 cursor-pointer select-none"
+        title="Turn the label a quarter turn. Use this when the bars print down the sticker instead of across it."
+      >
+        <input
+          type="checkbox"
+          checked={labelRotated}
+          onChange={(e) => toggleLabelRotated(e.target.checked)}
+          className="w-3 h-3"
+        />
+        Rotate 90°
+      </label>
+    </>
+  );
 
   const [sortField, setSortField] = useState<SortField>('brandName');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -654,23 +741,95 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
    * Shelf label: bars plus the human-readable number only. Name, formula and
    * strength are deliberately omitted -- the label is stamped onto packaging
    * that already carries them, and a smaller label fits more products.
+   *
+   * The number is NOT added here. react-barcode already draws it inside the SVG
+   * (displayValue defaults on), so a second line of markup printed it twice.
    */
-  const buildLabelHtml = (medicine: Medicine, svg: string) => `
-      <div class="label">
-        ${svg}
-        <div class="code">${medicine.barcode}</div>
-      </div>`;
+  /**
+   * Make a JsBarcode SVG stretch to whatever box it is dropped into.
+   *
+   * It is emitted with fixed pixel width and height and no viewBox, so it draws
+   * at its natural size and the CSS max-* rules can only ever shrink it -- which
+   * is why a 25mm barcode sat in the middle of a 29mm sticker with white space
+   * all round. Turning those fixed dimensions into a viewBox makes the artwork
+   * scalable; preserveAspectRatio="none" then lets it fill the label in both
+   * directions. Stretching a barcode vertically is safe -- taller bars, same
+   * widths -- and the widths are what a scanner reads.
+   */
+  const fitSvgToLabel = (svg: string) => {
+    const open = svg.match(/<svg[^>]*>/)?.[0];
+    if (!open) return svg;
+    const width = open.match(/\bwidth="([\d.]+)"/)?.[1];
+    const height = open.match(/\bheight="([\d.]+)"/)?.[1];
+    if (!width || !height) return svg;
 
-  const labelStyles = (widthMm: number, heightMm: number) => `
-    @page { size: ${widthMm}mm ${heightMm}mm; margin: 1mm; }
-    body { margin:0; font-family: Arial, Helvetica, sans-serif; text-align:center; }
-    .label { width:${widthMm - 2}mm; height:${heightMm - 2}mm; padding:1mm 0;
-             page-break-after: always; box-sizing: border-box; overflow: hidden; }
-    .label:last-child { page-break-after: auto; }
-    .label { display:flex; flex-direction:column; align-items:center; justify-content:center; }
-    svg { max-width:${widthMm - 4}mm; max-height:${heightMm - 6}mm; height:auto; }
-    .code { font-size:7pt; letter-spacing:0.5px; margin-top:0.3mm; word-break:break-all;
-            max-width:${widthMm - 4}mm; line-height:1.1; }`;
+    let next = open;
+    if (!/viewBox=/.test(next)) next = next.replace('<svg', `<svg viewBox="0 0 ${width} ${height}"`);
+    if (!/preserveAspectRatio=/.test(next)) next = next.replace('<svg', '<svg preserveAspectRatio="none"');
+    // Only the opening tag is rewritten, so the <rect> bars inside keep theirs.
+    next = next.replace(/\bwidth="[\d.]+"/, 'width="100%"').replace(/\bheight="[\d.]+"/, 'height="100%"');
+    return svg.replace(open, next);
+  };
+
+  const buildLabelHtml = (_medicine: Medicine, svg: string) => `
+      <div class="page"><div class="label">${fitSvgToLabel(svg)}</div></div>`;
+
+  /**
+   * One label per page, at exactly the media size.
+   *
+   * The page box has to match the die-cut sticker to the millimetre. When the
+   * declared page is larger than the loaded media the driver rescales the sheet
+   * to make it fit, and a sheet even slightly taller than the label pitch runs
+   * on past the die cut and spoils the sticker after it. Any breathing room is
+   * therefore padding INSIDE the label, never an @page margin, so the printer
+   * is always handed a page the exact shape of the label it is feeding.
+   */
+  const labelStyles = (widthMm: number, heightMm: number, rotated: boolean, pageSwapped: boolean) => {
+    // Two independent knobs, because two different things can be wrong.
+    //
+    //   pageSwapped -- the SHAPE of the sheet handed to the driver. Get this
+    //                  wrong and the sheet is stretched across the die cut, so
+    //                  each barcode bleeds onto the sticker after it.
+    //   rotated     -- which way the BARS run on that sheet.
+    //
+    // The label box is always sized to fill the page it sits on, measured after
+    // its own quarter turn, so no combination of the two can overflow.
+    const pageW = pageSwapped ? heightMm : widthMm;
+    const pageH = pageSwapped ? widthMm : heightMm;
+    const labelW = rotated ? pageH : pageW;
+    const labelH = rotated ? pageW : pageH;
+    return `
+    @page { size: ${pageW}mm ${pageH}mm; margin: 0; }
+    html, body { width:${pageW}mm; margin:0; padding:0;
+                 font-family: Arial, Helvetica, sans-serif; text-align:center;
+                 -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { width:${pageW}mm; height:${pageH}mm; position:relative; overflow:hidden;
+            page-break-after: always; break-after: page; }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    /* The 1mm side padding is the quiet zone -- the blank margin a scanner needs
+       to find where the code starts. Printing bars to the very edge of the
+       sticker is what makes an otherwise perfect label unreadable, so the
+       artwork fills everything except that. */
+    .label { padding:0.4mm 1mm; box-sizing:border-box; overflow:hidden;
+             display:flex; align-items:stretch; justify-content:center; }
+    ${rotated
+      // A turned label has to be pinned to the middle of the page and spun about
+      // its own centre; there is no other way to land a box on its side.
+      ? `.label { width:${labelW}mm; height:${labelH}mm; position:absolute; top:50%; left:50%;
+                 transform: translate(-50%, -50%) rotate(90deg); }`
+      // An upright label just IS the page. Centring it absolutely instead made
+      // its position depend on the two boxes agreeing to the pixel, and when the
+      // driver's printable area came up shorter than the declared page the whole
+      // label slid to one end of the sticker.
+      : `.label { width:100%; height:100%; }`}
+    /* Not the full width: the bar block is deliberately shorter than the sticker
+       so it reads as a compact code with room around it, rather than a band of
+       hairlines stretched wall to wall. The digits' size is set by the barcode's
+       own font metrics (see the print-only <Barcode> nodes), not here -- the SVG
+       scales as one piece, so bars and text keep whatever ratio they were drawn
+       with. */
+    .label svg { width:${LABEL_BAR_WIDTH_PCT}%; height:100%; display:block; margin:0 auto; }`;
+  };
 
   const openLabelWindow = (inner: string, widthMm: number, heightMm: number, title: string) => {
     const win = window.open('', '_blank', 'width=520,height=420');
@@ -679,7 +838,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       return;
     }
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
-      `<style>${labelStyles(widthMm, heightMm)}</style></head>` +
+      `<style>${labelStyles(widthMm, heightMm, labelRotated, labelPageSwapped)}</style></head>` +
       `<body onload="window.print(); setTimeout(function(){window.close();}, 400);">${inner}</body></html>`);
     win.document.close();
   };
@@ -696,10 +855,16 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     // The barcode is rendered under a different id depending on where Print
     // Label was pressed -- the edit form, the view modal, or a batch row. The
     // view modal's id was missing, so printing from there always failed.
-    const svg = document.getElementById(`barcode-svg-${medicine.id}`)?.innerHTML
+    //
+    // The print-only nodes come FIRST. They are drawn to label proportions --
+    // short bars, large digits -- while the on-screen ones are drawn to suit the
+    // screen, and printing those gave a tall thin code with unreadably small
+    // numbers once it was scaled onto a 29mm sticker.
+    const svg = document.getElementById(`print-barcode-${medicine.id}`)?.innerHTML
+      || document.getElementById(`batch-barcode-${medicine.id}`)?.innerHTML
+      || document.getElementById(`barcode-svg-${medicine.id}`)?.innerHTML
       || document.getElementById(`view-barcode-${medicine.id}`)?.innerHTML
-      || document.getElementById(`barcode-svg-new`)?.innerHTML
-      || document.getElementById(`batch-barcode-${medicine.id}`)?.innerHTML;
+      || document.getElementById(`barcode-svg-new`)?.innerHTML;
     if (!svg) {
       toast.error(t('ui.noBarcodeToPrint'));
       return;
@@ -987,6 +1152,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   onChange={(e) => setLabelCopies(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
                   className="w-12 px-1.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-xs"
                 />
+                {labelOrientationControls}
                 <button
                   onClick={printSelectedLabels}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-xs font-medium shadow-sm"
@@ -1046,7 +1212,15 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
           .filter((m) => selectedForLabels.has(m.id) && m.barcode)
           .map((m) => (
             <div key={m.id} id={`batch-barcode-${m.id}`}>
-              <Barcode value={m.barcode as string} height={34} width={1.3} fontSize={11} margin={0} />
+              {/* Print-only node, drawn to the same label proportions as the
+                  single-label twin so both routes print an identical sticker. */}
+              <Barcode
+                value={m.barcode as string}
+                height={PRINT_BAR_HEIGHT}
+                fontSize={PRINT_FONT_SIZE}
+                width={(m.barcode as string).length > 24 ? 0.7 : 1}
+                margin={0}
+              />
             </div>
           ))}
       </div>
@@ -1349,14 +1523,28 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                                 margin={0}
                               />
                             </div>
+                            {/* Print-only twin of the barcode above, drawn to
+                                label proportions instead of screen ones. */}
+                            <div id={`print-barcode-${med.id}`} className="hidden">
+                              <Barcode
+                                value={med.barcode}
+                                height={PRINT_BAR_HEIGHT}
+                                fontSize={PRINT_FONT_SIZE}
+                                width={med.barcode.length > 24 ? 0.7 : 1}
+                                margin={0}
+                              />
+                            </div>
                             {canManageBarcodes && (
-                              <button
-                                type="button"
-                                onClick={() => printBarcodeLabel(med)}
-                                className="px-2.5 py-1 rounded-md border border-gray-300 text-[10px] font-medium text-gray-700"
-                              >
-                                {t('ui.printLabel')}
-                              </button>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {labelOrientationControls}
+                                <button
+                                  type="button"
+                                  onClick={() => printBarcodeLabel(med)}
+                                  className="px-2.5 py-1 rounded-md border border-gray-300 text-[10px] font-medium text-gray-700"
+                                >
+                                  {t('ui.printLabel')}
+                                </button>
+                              </div>
                             )}
                           </div>
                         </>

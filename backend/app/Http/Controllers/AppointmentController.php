@@ -8,11 +8,14 @@ use App\Models\Patient;
 use App\Models\User;
 use App\Services\DiscountService;
 use App\Services\LedgerPostingService;
+use App\Http\Controllers\Concerns\RecordsPaymentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class AppointmentController extends Controller
 {
+    use RecordsPaymentCollection;
+
     public function __construct(
         private readonly DiscountService $discountService,
         private readonly LedgerPostingService $ledgerPostingService
@@ -74,9 +77,18 @@ class AppointmentController extends Controller
 
         $perPage = max(1, min($request->integer('per_page', 25), 200));
 
+        // Ordered by the date the appointment is FOR, then its time slot: the
+        // list is read as a schedule, so the day being worked belongs at the top
+        // and the slots within it in the order they will be seen.
+        //
+        // The id tiebreak is not cosmetic: many appointments share a date and
+        // carry no time at all, and without a final unique key MySQL is free to
+        // return tied rows in a different order per page, which drops or repeats
+        // them across page boundaries.
         $appointments = $query
             ->orderBy('appointment_date', 'desc')
             ->orderBy('appointment_time')
+            ->orderByDesc('id')
             ->paginate($perPage);
 
         return response()->json($appointments);
@@ -100,6 +112,7 @@ class AppointmentController extends Controller
         $data['appointment_number'] = $data['appointment_number'] ?? null;
         // Stamped server-side so the client cannot claim to be someone else.
         $data['created_by'] = $request->user()?->name;
+        $data = $this->syncPaymentCollection($request, $data);
         $data['updated_by'] = $request->user()?->name;
 
         $appointment = Appointment::create($data);
@@ -136,6 +149,9 @@ class AppointmentController extends Controller
         }
 
         $data['updated_by'] = $request->user()?->name;
+        // A payment_status arriving on a plain edit still has to record
+        // who took the money -- see RecordsPaymentCollection.
+        $data = $this->syncPaymentCollection($request, $data, $appointment);
 
         $appointment->update($data);
 
@@ -146,6 +162,43 @@ class AppointmentController extends Controller
         }
 
         return response()->json($appointment->fresh()->load(['hospital', 'doctor', 'patient']));
+    }
+
+    /**
+     * Take the consultation fee.
+     *
+     * Payment used to ride inside update(), which meant it could not be
+     * permissioned apart from editing the appointment: anyone able to correct a
+     * patient's name could also mark the fee collected, and nothing recorded
+     * which desk had taken it.
+     */
+    public function processPayment(Request $request, Appointment $appointment)
+    {
+        $this->authorizeScope($request->user(), $appointment);
+
+        $data = $request->validate(['payment_method' => $this->paymentMethodRule()]);
+
+        $appointment->update($this->paymentCollectedAttributes($request, $data['payment_method'] ?? null));
+        $this->ledgerPostingService->upsertAppointmentSnapshot($appointment);
+
+        return response()->json([
+            'data' => $appointment->fresh()->load(['hospital', 'doctor', 'patient']),
+            'message' => 'Payment recorded',
+        ]);
+    }
+
+    /** Undo a payment. Deliberately a right of its own -- see the routes file. */
+    public function reversePayment(Request $request, Appointment $appointment)
+    {
+        $this->authorizeScope($request->user(), $appointment);
+
+        $appointment->update($this->paymentReversedAttributes($request));
+        $this->ledgerPostingService->upsertAppointmentSnapshot($appointment);
+
+        return response()->json([
+            'data' => $appointment->fresh()->load(['hospital', 'doctor', 'patient']),
+            'message' => 'Payment reversed',
+        ]);
     }
 
     public function destroy(Request $request, Appointment $appointment)
@@ -179,6 +232,7 @@ class AppointmentController extends Controller
             ],
             'patient_name' => ['required_without:patient_id', 'string', 'max:255'],
             'patient_age' => ['nullable', 'integer', 'min:0', 'max:150'],
+            'patient_age_unit' => ['nullable', 'in:year,month,day'],
             'patient_gender' => ['nullable', 'in:male,female,other'],
             'appointment_date' => ['required', 'date'],
             'appointment_time' => ['nullable', 'string', 'max:20'],
@@ -327,6 +381,8 @@ class AppointmentController extends Controller
 
         $data['patient_name'] = $data['patient_name'] ?? $patient->name;
         $data['patient_age'] = $data['patient_age'] ?? $patient->age;
+        // Snapshot the unit too, or an infant is frozen as "3 Years".
+        $data['patient_age_unit'] = $data['patient_age_unit'] ?? $patient->age_unit;
         $data['patient_gender'] = $data['patient_gender'] ?? $patient->gender;
     }
 

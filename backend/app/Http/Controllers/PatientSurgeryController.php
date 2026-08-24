@@ -6,11 +6,14 @@ use App\Models\PatientSurgery;
 use App\Models\Surgery;
 use App\Services\LedgerPostingService;
 use App\Services\SurgeryService;
+use App\Http\Controllers\Concerns\RecordsPaymentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PatientSurgeryController extends Controller
 {
+    use RecordsPaymentCollection;
+
     public function __construct(
         private readonly SurgeryService $surgeryService,
         private readonly LedgerPostingService $ledgerPostingService
@@ -96,6 +99,7 @@ class PatientSurgeryController extends Controller
         $data = $this->validatePayload($request);
         $this->enforceFinancialPermissions($request, $data);
         $data['created_by'] = $request->user()?->name;
+        $data = $this->syncPaymentCollection($request, $data);
         $this->decorateDischargeAuditFields($data, $request->user()?->name);
 
         $patientSurgery = DB::transaction(function () use ($data) {
@@ -126,6 +130,9 @@ class PatientSurgeryController extends Controller
         $data = $this->validatePayload($request, $patientSurgery->hospital_id);
         $this->enforceFinancialPermissions($request, $data, $patientSurgery);
         $data['updated_by'] = $request->user()?->name;
+        // A payment_status arriving on a plain edit still has to record
+        // who took the money -- see RecordsPaymentCollection.
+        $data = $this->syncPaymentCollection($request, $data, $patientSurgery);
         $this->decorateDischargeAuditFields($data, $request->user()?->name, $patientSurgery);
 
         DB::transaction(function () use ($data, $patientSurgery) {
@@ -146,17 +153,72 @@ class PatientSurgeryController extends Controller
         return response()->json($patientSurgery->fresh()->load(['patient', 'doctor', 'surgery.type']));
     }
 
+    /**
+     * Legacy flip, kept so existing callers do not break.
+     *
+     * It now maintains the collection fields as well, otherwise a payment taken
+     * through this route would leave paid_by empty and drop out of the day-end
+     * handover entirely.
+     */
     public function togglePaymentStatus(Request $request, PatientSurgery $patientSurgery)
     {
         $this->authorizeScope($request->user(), $patientSurgery->hospital_id);
 
-        $patientSurgery->update([
-            'payment_status' => $this->surgeryService->togglePaymentStatus($patientSurgery),
-            'updated_by' => $request->user()?->name,
-        ]);
+        $next = $this->surgeryService->togglePaymentStatus($patientSurgery);
+
+        // The route can only be guarded by one rule, but this endpoint performs
+        // two very different acts. Undoing a payment is checked here, where the
+        // direction is actually known -- otherwise anyone who may edit a surgery
+        // could reverse a settled fee, which is the hole the split was for.
+        if ($next !== 'paid' && !$request->user()?->can('reverse_surgery_payment')) {
+            return response()->json([
+                'message' => 'You do not have permission to reverse a surgery payment.',
+            ], 403);
+        }
+
+        $patientSurgery->update($next === 'paid'
+            ? $this->paymentCollectedAttributes($request, $patientSurgery->payment_method)
+            : $this->paymentReversedAttributes($request));
+
         $this->ledgerPostingService->upsertPatientSurgerySnapshot($patientSurgery);
 
         return response()->json($patientSurgery->fresh()->load(['patient', 'doctor', 'surgery.type']));
+    }
+
+    /**
+     * Take payment for an operation.
+     *
+     * Separate from update() so that collecting money can be granted to a
+     * cashier without also granting the right to reschedule or re-cost the
+     * operation -- and withheld from the clerk who does the scheduling.
+     */
+    public function processPayment(Request $request, PatientSurgery $patientSurgery)
+    {
+        $this->authorizeScope($request->user(), $patientSurgery->hospital_id);
+
+        $data = $request->validate(['payment_method' => $this->paymentMethodRule()]);
+
+        $patientSurgery->update($this->paymentCollectedAttributes($request, $data['payment_method'] ?? null));
+        $this->ledgerPostingService->upsertPatientSurgerySnapshot($patientSurgery);
+
+        return response()->json([
+            'data' => $patientSurgery->fresh()->load(['patient', 'doctor', 'surgery.type']),
+            'message' => 'Payment recorded',
+        ]);
+    }
+
+    /** Undo a payment. Deliberately a right of its own -- see the routes file. */
+    public function reversePayment(Request $request, PatientSurgery $patientSurgery)
+    {
+        $this->authorizeScope($request->user(), $patientSurgery->hospital_id);
+
+        $patientSurgery->update($this->paymentReversedAttributes($request));
+        $this->ledgerPostingService->upsertPatientSurgerySnapshot($patientSurgery);
+
+        return response()->json([
+            'data' => $patientSurgery->fresh()->load(['patient', 'doctor', 'surgery.type']),
+            'message' => 'Payment reversed',
+        ]);
     }
 
     public function destroy(Request $request, PatientSurgery $patientSurgery)

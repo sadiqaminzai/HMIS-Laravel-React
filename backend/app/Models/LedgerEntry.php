@@ -32,6 +32,8 @@ class LedgerEntry extends Model
         'posted_at',
         'voided_at',
         'posted_by',
+        'collected_by',
+        'collected_at',
         'metadata',
     ];
 
@@ -43,6 +45,7 @@ class LedgerEntry extends Model
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
         'posted_at' => 'datetime',
+        'collected_at' => 'datetime',
         'voided_at' => 'datetime',
         'metadata' => 'array',
     ];

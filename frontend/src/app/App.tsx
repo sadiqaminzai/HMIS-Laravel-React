@@ -86,6 +86,7 @@ const StockManagementLazy = lazy(() => import('./components/StockManagement').th
 const StockAdjustmentLazy = lazy(() => import('./components/StockAdjustment').then((m) => ({ default: m.StockAdjustment })));
 const AppointmentManagementLazy = lazy(() => import('./components/AppointmentManagement').then((m) => ({ default: m.AppointmentManagement })));
 const RoomBookingManagementLazy = lazy(() => import('./components/RoomBookingManagement').then((m) => ({ default: m.RoomBookingManagement })));
+const PaymentCollectionLazy = lazy(() => import('./components/PaymentCollection').then((m) => ({ default: m.PaymentCollection })));
 const SurgeryManagementLazy = lazy(() => import('./components/SurgeryManagement').then((m) => ({ default: m.SurgeryManagement })));
 const TestManagementLazy = lazy(() => import('./components/TestManagement').then((m) => ({ default: m.TestManagement })));
 const UserManagementLazy = lazy(() => import('./components/UserManagement').then((m) => ({ default: m.UserManagement })));
@@ -565,6 +566,16 @@ function AppContent() {
               }
             />
             <Route
+              path="/payment-collection"
+              element={
+                <RequirePermission anyOf={["manage_appointment_payments", "manage_lab_payments", "manage_ultrasound_payments", "manage_surgery_payments", "manage_room_booking_payments", "record_finance_payments"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PaymentCollectionLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
               path="/appointments"
               element={
                 <RequirePermission anyOf={["view_appointments", "add_appointments", "edit_appointments", "delete_appointments", "export_appointments", "print_appointments", "manage_appointments", "schedule_appointments", "update_appointment_status"]}>
@@ -669,7 +680,7 @@ function AppContent() {
             <Route
               path="/ultrasound/receipts"
               element={
-                <RequirePermission anyOf={["manage_ultrasound_payments", "print_ultrasound_receipt", "manage_ultrasound_exams"]}>
+                <RequirePermission anyOf={["manage_ultrasound_payments", "print_ultrasound_receipt"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} initialTab="receipts" />
                   </Suspense>

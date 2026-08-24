@@ -20,6 +20,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
 import { buildVerificationUrl } from '../utils/verification';
 import { AddButton } from './AddButton';
+import { formatAge, maxAgeFor, AgeUnit } from '../utils/age';
+import { printName } from '../utils/printName';
 
 // Helper to convert hex to RGB array for jsPDF
 const hexToRgb = (hex?: string): [number, number, number] | null => {
@@ -110,15 +112,18 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
     return hospitalFiltered;
   }, [hospitalFiltered, userRole, currentUser?.doctorId, appointments]);
   
-  // Sorting state
-  const [sortField, setSortField] = useState<string>('id');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  // Sorting state. Matches the order the API returns -- newest registration
+  // first -- so the page is not re-shuffled the moment it loads. The API sorts
+  // the whole table; these headers only reorder the page in view.
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Form state
   const [formData, setFormData] = useState({
     patientId: '',
     name: '',
     age: '',
+    ageUnit: 'year' as AgeUnit,
     gender: 'male',
     phone: '',
     address: '',
@@ -165,15 +170,24 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
   );
 
   // Sort patients
+  //
+  // Values are compared by type rather than all being flattened to strings.
+  // A Date stringifies to "Tue Aug 18 2026 ...", so comparing those as text
+  // sorted the list by weekday name; ages and ids sorted as text put 10 before 9.
   const sortedPatients = [...filteredPatients].sort((a: any, b: any) => {
-    const aValue = a[sortField]?.toString().toLowerCase() || '';
-    const bValue = b[sortField]?.toString().toLowerCase() || '';
-    
-    if (sortDirection === 'asc') {
-      return aValue.localeCompare(bValue);
+    const aRaw = a[sortField];
+    const bRaw = b[sortField];
+
+    let result: number;
+    if (aRaw instanceof Date || bRaw instanceof Date) {
+      result = (aRaw instanceof Date ? aRaw.getTime() : 0) - (bRaw instanceof Date ? bRaw.getTime() : 0);
+    } else if (aRaw !== '' && bRaw !== '' && !Number.isNaN(Number(aRaw)) && !Number.isNaN(Number(bRaw))) {
+      result = Number(aRaw) - Number(bRaw);
     } else {
-      return bValue.localeCompare(aValue);
+      result = String(aRaw ?? '').toLowerCase().localeCompare(String(bRaw ?? '').toLowerCase());
     }
+
+    return sortDirection === 'asc' ? result : -result;
   });
 
   const itemsPerPage = 10;
@@ -364,6 +378,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       patientId: autoPatientId,
       name: '',
       age: '',
+    ageUnit: 'year' as AgeUnit,
       gender: 'male',
       phone: '',
       address: '',
@@ -391,6 +406,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
       patientId: patient.patientId,
       name: patient.name,
       age: patient.age?.toString() || '',
+      ageUnit: (patient.ageUnit ?? 'year') as AgeUnit,
       gender: patient.gender,
       phone: patient.phone,
       address: patient.address,
@@ -468,7 +484,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
         hospitalId: formData.hospitalId,
         patientId: newPatientId,
         name: formData.name,
-        age: Number(formData.age),
+        age: Number(formData.age) || 0,
+        ageUnit: formData.ageUnit,
         gender: formData.gender as Patient['gender'],
         phone: formData.phone,
         address: formData.address,
@@ -502,7 +519,8 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
         hospitalId: formData.hospitalId,
         patientId: formData.patientId || selectedPatient.patientId,
         name: formData.name,
-        age: Number(formData.age),
+        age: Number(formData.age) || 0,
+        ageUnit: formData.ageUnit,
         gender: formData.gender as Patient['gender'],
         phone: formData.phone,
         address: formData.address,
@@ -675,7 +693,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                         <span className="text-xs font-medium text-gray-900 dark:text-white">{patient.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{patient.age}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{formatAge(patient.age, patient.ageUnit)}</td>
                     <td className="px-4 py-2">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
                         patient.gender === 'male' 
@@ -835,14 +853,37 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.age')}<span className="text-red-500">*</span></label>
-                  <input
-                    type="number"
-                    value={formData.age}
-                    onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
-                    required
-                    placeholder="30"
-                  />
+                  {/* One box: the number, with its unit chosen inside the field.
+                      Two boxes asked for a conversion nobody does in their head,
+                      and the unit is a property of the number, not a second
+                      quantity. Arrow keys change Y/M without leaving the field. */}
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={maxAgeFor(formData.ageUnit)}
+                      value={formData.age}
+                      onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                      className="w-full pl-2 pr-14 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                      required
+                      placeholder="30"
+                      title={t('ui.age')}
+                    />
+                    <select
+                      value={formData.ageUnit}
+                      onChange={(e) => setFormData({ ...formData, ageUnit: e.target.value as AgeUnit })}
+                      title="Years or months"
+                      aria-label="Age unit"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-6 bg-transparent border-0 text-[11px] font-medium text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-blue-500 rounded cursor-pointer"
+                    >
+                      <option value="year">Y</option>
+                      <option value="month">M</option>
+                      <option value="day">D</option>
+                    </select>
+                  </div>
+                  <p className="mt-0.5 text-[9px] text-gray-500 dark:text-gray-400">
+                    Infants: switch to M or D. 15 M is kept as 15 M, never converted.
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1313,7 +1354,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                      <div className="flex-1 space-y-1 pt-1">
                         <div>
                            <div className="text-[8px] text-black uppercase tracking-wider font-black">Name</div>
-                           <div className="text-sm font-bold text-gray-900 leading-tight">{selectedPatient.name}</div>
+                           <div className="text-sm font-bold text-gray-900 leading-tight">{printName(selectedPatient.name)}</div>
                         </div>
                         <div className="grid grid-cols-2 gap-1 mt-1">
                            <div>
@@ -1322,7 +1363,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                            </div>
                            <div>
                               <div className="text-[7px] text-black uppercase tracking-wider font-black">Age / Gender</div>
-                              <div className="text-xs font-bold text-black">{selectedPatient.age}Y / {formatPatientGender(selectedPatient.gender)}</div>
+                              <div className="text-xs font-bold text-black">{formatAge(selectedPatient.age, selectedPatient.ageUnit, { compact: true })} / {formatPatientGender(selectedPatient.gender)}</div>
                            </div>
                         </div>
                         <div className="mt-1.5">

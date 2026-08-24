@@ -33,7 +33,67 @@ const ACTIONS = [
  * a tab of their own.
  */
 const CATEGORY_TO_TAB: Record<string, string> = {
+  // --- Reception ---------------------------------------------------------
+  // Everything the front desk does, in one tab: registering a patient, booking
+  // an appointment or a bed, scheduling an operation and taking the money for
+  // any of it. Previously these were five separate tabs a supervisor had to
+  // hunt across to configure one role.
+  'Patient Management': 'Reception',
+  Appointments: 'Reception',
+  'Room Management': 'Reception',
+  'Surgery Management': 'Reception',
+
+  // --- Finance -----------------------------------------------------------
+  // Taking and reversing money is finance work wherever the charge came from,
+  // so the twelve collection rights sit with the money, not with the desk that
+  // happens to raise the document.
+  'Cash Collection': 'Finance',
+
+  // --- Pharmacy ----------------------------------------------------------
   'Pharmacy Finance': 'Pharmacy',
+
+  // --- Prescriptions -----------------------------------------------------
+  Prescription: 'Prescriptions',
+
+  // --- Settings ----------------------------------------------------------
+  // Administration rather than clinical work: who exists, what they may see,
+  // and how the system is configured.
+  'User Management': 'Settings',
+  RBAC: 'Settings',
+  // Navigation deliberately keeps its own tab. It answers a different question
+  // from the rest of Settings -- which menus a role can see at all -- and it is
+  // the first place someone looks when a role cannot reach a screen.
+  Hospitals: 'Settings',
+  'Audit Log': 'Settings',
+  Support: 'Settings',
+};
+
+/**
+ * Permissions that are grouped by hand rather than by the shape of their name.
+ *
+ * Splitting on the leading verb put these in twelve separate one-checkbox
+ * panels -- "Lab Payments / Manage" beside "Reverse Lab Payment / Reverse Lab
+ * Payment (P..." -- which reads as twelve unrelated features instead of one
+ * decision made six times. They are the same decision: for each revenue module,
+ * may this role take money, and may it put money back.
+ *
+ * Labels are written as a pair per module so the two columns line up and the
+ * asymmetry is obvious: a role with Collect but no Reverse is the normal case.
+ */
+const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
+  manage_appointment_payments:   { resource: 'payment_collection', label: 'Collect — OPD / Appointments' },
+  manage_lab_payments:           { resource: 'payment_collection', label: 'Collect — Laboratory' },
+  manage_ultrasound_payments:    { resource: 'payment_collection', label: 'Collect — Ultrasound' },
+  manage_surgery_payments:       { resource: 'payment_collection', label: 'Collect — Surgery' },
+  manage_room_booking_payments:  { resource: 'payment_collection', label: 'Collect — Room Booking' },
+  record_finance_payments:       { resource: 'payment_collection', label: 'Collect — Pharmacy' },
+
+  reverse_appointment_payment:   { resource: 'payment_reversal', label: 'Reverse — OPD / Appointments' },
+  reverse_lab_payment:           { resource: 'payment_reversal', label: 'Reverse — Laboratory' },
+  reverse_ultrasound_payment:    { resource: 'payment_reversal', label: 'Reverse — Ultrasound' },
+  reverse_surgery_payment:       { resource: 'payment_reversal', label: 'Reverse — Surgery' },
+  reverse_room_booking_payment:  { resource: 'payment_reversal', label: 'Reverse — Room Booking' },
+  reverse_finance_payment:       { resource: 'payment_reversal', label: 'Reverse — Pharmacy' },
 };
 
 /**
@@ -41,6 +101,8 @@ const CATEGORY_TO_TAB: Record<string, string> = {
  * version of the resource key, so new permissions group sensibly on their own.
  */
 const RESOURCE_LABELS: Record<string, string> = {
+  payment_collection: 'Payment Collection — Take Money',
+  payment_reversal: 'Payment Collection — Put Money Back',
   manufacturers: 'Manufacturers',
   medicine_types: 'Medicine Types',
   medicines: 'Medicines',
@@ -124,6 +186,10 @@ function splitPermission(name: string): { action: string; resource: string } {
 
 /** Short label for a checkbox once its panel already names the resource. */
 function actionLabel(perm: PermissionOption, action: string): string {
+  const override = PERMISSION_PANEL[perm.name];
+  if (override) {
+    return override.label;
+  }
   if (action) {
     return titleCase(action);
   }
@@ -153,7 +219,10 @@ export function PermissionSelector({
 
       const rawCategory = perm.category || 'General';
       const category = CATEGORY_TO_TAB[rawCategory] ?? rawCategory;
-      const { action, resource } = splitPermission(perm.name);
+      const override = PERMISSION_PANEL[perm.name];
+      const { action, resource } = override
+        ? { action: '', resource: override.resource }
+        : splitPermission(perm.name);
 
       out[category] = out[category] || {};
       out[category][resource] = out[category][resource] || [];
@@ -292,13 +361,24 @@ export function PermissionSelector({
             const count = countFor(perms);
             const allSelected = count === perms.length && count > 0;
 
+            // Money rights are tinted apart from the rest. Granting Collect or
+            // Reverse is a different kind of decision from granting Print, and
+            // the panel should not look like every other panel on the page.
+            const isMoney = resource === 'payment_collection' || resource === 'payment_reversal';
+
             return (
               <div
                 key={resource}
-                className={`rounded-md border bg-white dark:bg-gray-800 ${
+                className={`rounded-md border ${
+                  isMoney
+                    ? 'bg-amber-50/70 dark:bg-amber-900/10 ring-1 ring-amber-200 dark:ring-amber-800/60'
+                    : 'bg-white dark:bg-gray-800'
+                } ${
                   count > 0
                     ? 'border-blue-300 dark:border-blue-700'
-                    : 'border-gray-200 dark:border-gray-700'
+                    : isMoney
+                      ? 'border-amber-300 dark:border-amber-800'
+                      : 'border-gray-200 dark:border-gray-700'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-gray-200 dark:border-gray-700">

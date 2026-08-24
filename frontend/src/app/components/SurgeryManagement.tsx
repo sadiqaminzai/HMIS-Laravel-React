@@ -20,7 +20,8 @@ import {
   createPatientSurgery,
   updatePatientSurgery,
   deletePatientSurgery,
-  togglePatientSurgeryPaymentStatus,
+  collectPatientSurgeryPayment,
+  reversePatientSurgeryPayment,
 } from '../../api/surgeries';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -164,6 +165,12 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     || hasPermission('manage_patient_surgeries');
   const canSetSurgeryPayment = hasPermission('edit_surgery_payment_status')
     || hasPermission('manage_patient_surgeries');
+  // Collecting and reversing are separate rights. Reverse has no fallback:
+  // undoing a payment is how cash gets taken and the trace erased, so it is
+  // held explicitly or not at all.
+  const canCollectSurgeryFee = hasPermission('manage_surgery_payments')
+    || hasPermission('manage_patient_surgeries');
+  const canReverseSurgeryFee = hasPermission('reverse_surgery_payment');
 
   const canAddSurgeries = hasPermission('add_surgeries') || hasPermission('manage_surgeries');
   const canEditSurgeries = hasPermission('edit_surgeries') || hasPermission('manage_surgeries');
@@ -849,25 +856,38 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                               pending (amber) and right on paid (green), so the
                               state is readable without opening the row. The old
                               control was a fixed icon that never moved. */}
-                          {canSetSurgeryPayment && (() => {
+                          {(canCollectSurgeryFee || canReverseSurgeryFee) && (() => {
                             const isPaid = String(row.paymentStatus) === 'paid';
+                            const allowed = isPaid ? canReverseSurgeryFee : canCollectSurgeryFee;
                             return (
                               <button
                                 type="button"
                                 role="switch"
                                 aria-checked={isPaid}
-                                title={isPaid ? 'Mark as pending' : 'Mark as paid'}
-                                aria-label={isPaid ? 'Mark as pending' : 'Mark as paid'}
+                                disabled={!allowed}
+                                title={isPaid
+                                  ? (canReverseSurgeryFee ? 'Reverse payment to pending' : 'Payment collected')
+                                  : (canCollectSurgeryFee ? 'Mark as paid' : 'Payment pending')}
+                                aria-label={isPaid ? 'Reverse payment to pending' : 'Mark as paid'}
                                 onClick={async () => {
                                   try {
-                                    const updated = await togglePatientSurgeryPaymentStatus(row.id);
+                                    // Collecting and reversing are separate
+                                    // rights, so they are separate calls -- the
+                                    // old toggle rode on "can edit surgeries"
+                                    // and recorded no collector.
+                                    const updated = isPaid
+                                      ? await reversePatientSurgeryPayment(row.id)
+                                      : await collectPatientSurgeryPayment(row.id);
                                     setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item));
-                                    toast.success('Payment status updated');
+                                    toast.success(isPaid ? 'Payment reversed' : 'Payment collected');
                                   } catch (e: any) {
-                                    toast.error(e?.response?.data?.message || 'Toggle failed');
+                                    toast.error(e?.response?.data?.message
+                                      || (e?.response?.status === 403
+                                        ? 'You do not have permission to change payment on surgeries.'
+                                        : 'Toggle failed'));
                                   }
                                 }}
-                                className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition-colors ${
+                                className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                   isPaid ? 'bg-emerald-500' : 'bg-amber-400'
                                 }`}
                               >

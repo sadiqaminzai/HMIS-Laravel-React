@@ -13,7 +13,6 @@ import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
 import {
   useSettings,
-  INVOICE_FIELD_KEYS,
   type PrintModule,
   type PrintPaperSize,
   type InvoiceType,
@@ -23,6 +22,8 @@ import { formatOnlyDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
+import { printName } from '../utils/printName';
+import { createPortal } from 'react-dom';
 
 /** Maps an invoice to its configurable print module (Settings > Print Paper Size). */
 const printModuleFor = (trx: Pick<Transaction, 'trxType'>): PrintModule => {
@@ -115,21 +116,6 @@ interface TransactionManagementProps {
   hospital: Hospital;
   userRole?: UserRole;
 }
-
-/**
- * The medicine column grows as optional columns are switched off in Settings.
- * Spelled out literally because Tailwind generates classes by scanning source
- * text -- a computed `col-span-${n}` would produce no CSS at all.
- */
-const MEDICINE_HEADER_SPANS = {
-  2: 'col-span-2', 3: 'col-span-3', 4: 'col-span-4',
-  5: 'col-span-5', 6: 'col-span-6', 7: 'col-span-7',
-} as const;
-
-const MEDICINE_ROW_SPANS = {
-  2: 'lg:col-span-2', 3: 'lg:col-span-3', 4: 'lg:col-span-4',
-  5: 'lg:col-span-5', 6: 'lg:col-span-6', 7: 'lg:col-span-7',
-} as const;
 
 const emptyItem = (): TransactionDetail => ({
   id: '',
@@ -251,9 +237,26 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const getHospital = (id: string) => hospitals.find((h) => h.id === id);
   const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
   const activePrintColumns = getPrintColumnSettings(selectedTransaction?.hospitalId || currentHospital.id);
-  const getAvailableStock = (medicineId?: string, batchNo?: string, hospitalId?: string) => {
+  /**
+   * Pieces on hand, matching what the API will actually let a sale draw on.
+   *
+   * A sale cannot be served from an expired batch -- the API filters those out
+   * before it checks availability -- so counting them here only produces a
+   * figure the pharmacist trusts and the server then refuses. Batches with no
+   * expiry recorded are never dated, so they stay in, exactly as on the server.
+   */
+  const getAvailableStock = (
+    medicineId?: string,
+    batchNo?: string,
+    hospitalId?: string,
+    options?: { includeExpired?: boolean },
+  ) => {
     if (!medicineId || !hospitalId) return 0;
-    const scoped = stocks.filter((s) => String(s.hospitalId) === String(hospitalId) && String(s.medicineId) === String(medicineId));
+    const excludeExpired = formData.trxType === 'sales' && !options?.includeExpired;
+    const scoped = stocks.filter((s) =>
+      String(s.hospitalId) === String(hospitalId)
+      && String(s.medicineId) === String(medicineId)
+      && (!excludeExpired || !s.expiryDate || isUsableThrough(s.expiryDate)));
     if (!scoped.length) return 0;
     if (batchNo) {
       return scoped
@@ -287,8 +290,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     ) {
       (selectedTransaction.details || []).forEach((detail) => {
         if (!detail.medicineId) return;
-        // Use the pack size recorded at the time of sale, not today's value.
-        const factor = (detail.saleUnit === 'pack') ? Math.max(1, Number(detail.packSizeSnapshot ?? 1)) : 1;
+        // Use the pieces-per-unit recorded at the time of sale, not today's value.
+        // The snapshot covers strip lines too, so releasing an edited strip line
+        // credits back the pieces it actually consumed.
+        const factor = (detail.saleUnit === 'pack' || detail.saleUnit === 'strip')
+          ? Math.max(1, Number(detail.packSizeSnapshot ?? 1))
+          : 1;
         const required = (Number(detail.qtty || 0) + Number(detail.bonus || 0)) * factor;
         if (required <= 0) return;
         const key = `${detail.medicineId}::${detail.batchNo || '__all__'}`;
@@ -381,10 +388,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     const patient = patients.find((p) => p.id === trx.patientId);
     const supplier = suppliers.find((s) => s.id === trx.supplierId);
-    const billedToName =
+    const billedToName = printName(
       resolvedTemplate === 'sale'
         ? (patient?.name || trx.patientName || getPatientDisplay(trx.patientId) || 'Walk-in Customer')
-        : (supplier?.name || trx.supplierName || getSupplierDisplay(trx.supplierId) || 'Supplier');
+        : (supplier?.name || trx.supplierName || getSupplierDisplay(trx.supplierId) || 'Supplier')
+    );
     const billedToAddress = resolvedTemplate === 'sale' ? (patient?.address || '') : (supplier?.address || '');
     const billedToPhone = resolvedTemplate === 'sale' ? (patient?.phone || '') : (supplier?.contactInfo || '');
 
@@ -412,7 +420,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       paidAmount: Number((trx.paidAmount || 0).toFixed(2)),
       dueAmount: Number((trx.dueAmount || 0).toFixed(2)),
       medicines: transactionDetails.map((detail) => ({
-        medicine: detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown'),
+        medicine: printName(detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown')),
         batchNo: detail.batchNo || null,
         quantity: Number(detail.qtty || 0),
         bonus: Number(detail.bonus || 0),
@@ -438,7 +446,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             const discount = Number(detail.discount || 0);
             const tax = Number(detail.tax || 0);
             const netPrice = qty > 0 ? amount / qty : Number(detail.price || 0);
-            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+            const itemName = printName(detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown'));
 
             return `
               <tr>
@@ -466,7 +474,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       ? transactionDetails
           .map((detail, index) => {
             const amount = Number(detail.amount ?? calculateLineAmount(detail));
-            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+            const itemName = printName(detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown'));
             return `
               <tr>
                 <td>${index + 1}</td>
@@ -868,7 +876,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             const amount = Number(detail.amount ?? calculateLineAmount(detail));
             const qty = Number(detail.qtty || 0);
             const netPrice = qty > 0 ? amount / qty : Number(detail.price || 0);
-            const itemName = detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown');
+            const itemName = printName(detail.medicineId ? getMedicineDisplay(detail.medicineId) : (detail.medicineName || 'Unknown'));
             const unit = detail.saleUnit && detail.saleUnit !== 'piece'
               ? ` ${detail.saleUnit === 'pack' ? 'Pack' : 'Strip'}`
               : '';
@@ -1173,11 +1181,33 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return 1;
   };
 
+  /**
+   * The name of a sale tier. The piece tier is deliberately NOT labelled with the
+   * medicine's category: "Surgical" is a type, not a unit, and reading it in the
+   * Sale Unit dropdown made a per-piece line look like a category filter while
+   * the pack tier next to it carried the pack price.
+   */
   const unitLabelFor = (id: string | undefined, unit: SaleUnit) => {
     const med = getMedicineById(id);
     if (unit === 'pack') return med?.packLabel || t('ui.pack');
     if (unit === 'strip') return med?.stripLabel || t('ui.strip');
-    return med?.type || t('ui.piece');
+    return t('ui.piece');
+  };
+
+  /**
+   * What the Sale Unit dropdown actually offers for a line.
+   *
+   * A <select> whose value is absent from its options silently renders the FIRST
+   * option instead. Lines saved before the unit was recorded correctly hold
+   * 'piece' on products sold only by pack/strip, so the row displayed "Pack"
+   * while holding 'piece' -- right on screen, wrong in the payload, and
+   * impossible to correct by hand because the field already read "Pack".
+   * The stored unit is therefore always offered, even when it is no longer a
+   * configured tier, so what is shown is what will be sent.
+   */
+  const unitOptionsFor = (id?: string, current?: SaleUnit): SaleUnit[] => {
+    const allowed = sellableUnitsFor(id);
+    return current && !allowed.includes(current) ? [current, ...allowed] : allowed;
   };
 
   /** Units the pharmacist configured this product to be sold in. */
@@ -1485,15 +1515,29 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const getMedicineOptions = (index: number) => {
     return availableMedicines
       .filter((m) => {
-        const term = (medicineQueries[index] || '').toLowerCase();
+        const term = (medicineQueries[index] || '').trim().toLowerCase();
         if (!term) return true;
-        const display = `${m.brandName} ${m.genericName || ''} ${m.strength || ''} ${m.type || ''}`.toLowerCase();
+        // Id and barcode are searched too: staff who know a product by the
+        // number on the shelf label should not have to spell its brand name,
+        // and a code typed by hand should find the same row a scan would.
+        const display = [
+          m.id,
+          m.barcode,
+          m.brandName,
+          m.genericName,
+          m.strength,
+          m.type,
+        ].filter(Boolean).join(' ').toLowerCase();
         return display.includes(term);
       })
       .filter((m) => {
         if (!['sales', 'purchase_return'].includes(formData.trxType)) return true;
         if (formData.trxType === 'sales' && getShowOutOfStockMedicinesForPharmacy(formData.hospitalId)) return true;
-        return getAvailableStock(m.id, undefined, formData.hospitalId) > 0;
+        if (getAvailableStock(m.id, undefined, formData.hospitalId) > 0) return true;
+        // A product whose every batch has lapsed still sits on the shelf. Dropping
+        // it from the list reads as "we never stocked it"; it is listed with an
+        // Expired tag instead, so the reason it cannot be sold is visible.
+        return getAvailableStock(m.id, undefined, formData.hospitalId, { includeExpired: true }) > 0;
       })
       .slice(0, 50);
   };
@@ -1789,6 +1833,22 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   // What the user is currently typing per row, before it parses. Without
   // this the field would snap back to the stored value mid-entry.
   const [expiryDrafts, setExpiryDrafts] = useState<Record<number, string>>({});
+  const [itemFilter, setItemFilter] = useState('');
+  // Per row: does its medicine list open upward because it sits near the foot?
+  const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+
+  /** Does this line match what was typed into the find box? */
+  const itemMatchesFilter = (item: TransactionDetail) => {
+    const term = itemFilter.trim().toLowerCase();
+    if (!term) return true;
+    const med = getMedicineById(item.medicineId);
+    return [med?.id, med?.barcode, med?.brandName, med?.genericName, med?.strength, item.batchNo]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(term);
+  };
+
   const [scanValue, setScanValue] = useState('');
   const [scanning, setScanning] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -1837,7 +1897,23 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           ? med.defaultSaleUnit
           : allowedUnits[0]) as SaleUnit;
         const price = getMedicinePrice(med.id, prev.trxType, unit);
-        const line = { ...emptyItem(), medicineId: med.id, qtty: 1, saleUnit: unit, price };
+
+        // A scanned line has to pick its batch the same way a typed one does.
+        // Leaving it blank sent the sale in against "any batch", which the API
+        // then resolves to unexpired stock only -- so a product whose oldest
+        // batch had lapsed was refused as out of stock at the till.
+        let batchNo = '';
+        let expiryDate: TransactionDetail['expiryDate'];
+        if (prev.trxType === 'sales' || prev.trxType === 'sales_return') {
+          const preferred = getPreferredBatchForMedicine(med.id);
+          if (preferred?.batchNo) {
+            batchNo = preferred.batchNo;
+            expiryDate = preferred.expiryDate || expiryDate;
+          } else {
+            expiryDate = getNearestExpiryForMedicine(med.id) || expiryDate;
+          }
+        }
+        const line = { ...emptyItem(), medicineId: med.id, qtty: 1, saleUnit: unit, price, batchNo, expiryDate };
 
         // Replace a blank first row rather than leaving it empty.
         const blank = items.findIndex((it) => !it.medicineId);
@@ -1856,27 +1932,28 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   /**
    * Invoice-level keyboard shortcuts.
    *
-   * Save (Shift+S) is deliberately inert while a free-text field has focus:
-   * Shift+S is simply a capital S, and medicine names are full of them
-   * ("Septrin", "Sinarest"), so firing there would save the invoice mid-word.
-   * Number, date and select fields have no use for a letter, so it is live in
-   * those, and in the modal body itself.
-   *
-   * Close is Escape, which carries no such risk and so works everywhere.
+   * Ctrl+S saves and Escape closes. Both are safe wherever the cursor is: no
+   * one types either into a medicine name, unlike the plain-letter shortcut
+   * this replaced, which could never fire from inside a cell.
    */
-  const isTextEntry = (element: Element | null): boolean => {
-    if (!element) return false;
-    const tag = element.tagName;
-    if (tag === 'TEXTAREA') return true;
-    if (tag !== 'INPUT') return false;
-    const type = (element as HTMLInputElement).type;
-    return ['text', 'search', 'tel', 'email', 'url', 'password'].includes(type);
-  };
 
   useEffect(() => {
     if (!showAddModal && !showEditModal) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Ctrl+S is the only save shortcut. Shift+S was removed: inside a text
+      // cell Shift+S is simply how the letter S is typed, so it could never
+      // fire where the cursor actually is, and two shortcuts for one action is
+      // one more than anyone needs to remember.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (submitting) return;
+        // Routed through the form so validation and the submit guard both run,
+        // exactly as if the Save button had been pressed.
+        transactionFormRef.current?.requestSubmit();
+        return;
+      }
+
       if (event.ctrlKey || event.altKey || event.metaKey) return;
 
       // Escape closes, and unlike a letter shortcut it is safe inside a text
@@ -1890,16 +1967,6 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         return;
       }
 
-      if (!event.shiftKey) return;
-      if (event.key.toLowerCase() !== 's') return;
-      if (isTextEntry(document.activeElement)) return;
-
-      event.preventDefault();
-
-      if (submitting) return;
-      // Routed through the form so validation and the submit guard both run,
-      // exactly as if the Save button had been pressed.
-      transactionFormRef.current?.requestSubmit();
     };
 
     document.addEventListener('keydown', onKeyDown);
@@ -1930,32 +1997,73 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         }
       }
     }
-    handleItemChange(index, { medicineId, price, batchNo: nextBatchNo, expiryDate });
+    // The unit has to travel with the price it produced. Writing only the price
+    // left the line on 'piece' while it carried the pack price, so a 100-piece
+    // box was billed at box price and reserved a single piece.
+    handleItemChange(index, { medicineId, price, saleUnit: effectiveUnit, batchNo: nextBatchNo, expiryDate });
   };
 
   const itemListRef = useRef<HTMLDivElement>(null);
+
+  // A portalled list is positioned in page coordinates, so it has to be
+  // re-measured whenever those coordinates move.
+  useEffect(() => {
+    if (openMedicineDropdownIndex === null) {
+      setDropdownRect(null);
+      return;
+    }
+    const reposition = () => positionDropdown(openMedicineDropdownIndex);
+    reposition();
+    const list = itemListRef.current;
+    list?.addEventListener('scroll', reposition);
+    window.addEventListener('resize', reposition);
+    return () => {
+      list?.removeEventListener('scroll', reposition);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [openMedicineDropdownIndex]);
   const transactionFormRef = useRef<HTMLFormElement>(null);
 
   /**
-   * Brings an open medicine dropdown fully into the item panel.
+   * Decides which way a medicine dropdown should open.
    *
-   * The panel clips its own overflow now, so a dropdown opened on the last
-   * visible row would be cut off. Scrolling the row up gives the list room to
-   * render inside the panel instead of hanging over the totals below it.
+   * It used to scroll the row upward to make room, which meant clicking a line
+   * near the bottom moved that line out from under the cursor -- the row the
+   * user had just aimed at jumped away as the list appeared. The row now stays
+   * exactly where it is and the list opens upward instead, the way a desktop
+   * combo box behaves at the foot of a window.
    */
   const revealDropdown = (index: number) => {
-    requestAnimationFrame(() => {
-      const list = itemListRef.current;
-      if (!list) return;
-      const row = list.children[index] as HTMLElement | undefined;
-      if (!row) return;
+    requestAnimationFrame(() => positionDropdown(index));
+  };
 
-      // How far the row's bottom sits below the panel's visible area, plus the
-      // dropdown's own height, is exactly how far the panel must scroll.
-      const DROPDOWN_HEIGHT = 192; // max-h-48
-      const rowBottom = row.offsetTop + row.offsetHeight;
-      const needed = rowBottom + DROPDOWN_HEIGHT - (list.scrollTop + list.clientHeight);
-      if (needed > 0) list.scrollTop += needed;
+  /**
+   * Pin the medicine list to the box it belongs to, in page coordinates.
+   *
+   * The list is drawn in a portal on document.body rather than inside the row.
+   * The item panel scrolls, and a scrolling box clips on BOTH axes -- so a list
+   * rendered inside it was cut off, or vanished entirely, exactly when the row
+   * was near an edge. Neither scrolling the row into view nor flipping the list
+   * upward fixed that reliably; both were working around the clip instead of
+   * leaving it. Measured against the viewport, nothing can crop it.
+   */
+  const positionDropdown = (index: number) => {
+    const list = itemListRef.current;
+    const input = list?.querySelector(
+      `[data-grid-row="${index}"] [data-medicine-input]`
+    ) as HTMLElement | null;
+    if (!input) return;
+
+    const rect = input.getBoundingClientRect();
+    const DROPDOWN_HEIGHT = 192; // max-h-48
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipUp = spaceBelow < DROPDOWN_HEIGHT && rect.top > spaceBelow;
+
+    setDropdownRect({
+      left: rect.left,
+      width: rect.width,
+      top: flipUp ? rect.top - DROPDOWN_HEIGHT - 4 : rect.bottom + 2,
+      maxHeight: Math.max(96, Math.min(DROPDOWN_HEIGHT, flipUp ? rect.top - 8 : spaceBelow - 8)),
     });
   };
 
@@ -1985,20 +2093,124 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
    * a 50-line purchase invoice. The medicine combobox is excluded because Enter
    * there already picks the highlighted suggestion.
    */
+  /**
+   * Every editable cell in a row, in the order they are read.
+   *
+   * Taken from the DOM rather than from a hand-maintained column list: which
+   * columns exist depends on the hospital's visibleFields settings, and a
+   * hardcoded index would silently point at the wrong cell the moment a site
+   * turned Bonus or Tax off.
+   */
+  const rowCells = (row: Element | null): HTMLElement[] =>
+    row
+      ? Array.from(row.querySelectorAll<HTMLElement>(
+          'input:not([type="hidden"]):not([disabled]), select:not([disabled])'
+        ))
+      : [];
+
+  const focusCell = (rowIndex: number, colIndex: number): boolean => {
+    const row = itemListRef.current?.querySelector(`[data-grid-row="${rowIndex}"]`) ?? null;
+    const cells = rowCells(row);
+    if (!cells.length) return false;
+
+    // Clamp: a row may legitimately have fewer cells than the one moved from.
+    const cell = cells[Math.min(colIndex, cells.length - 1)];
+    cell?.focus();
+    if (cell instanceof HTMLInputElement) cell.select?.();
+    return Boolean(cell);
+  };
+
+  /**
+   * Spreadsheet keys for the item grid.
+   *
+   * Staff here come from desktop stock software and expect a sheet: up and down
+   * walk the same column through the rows, left and right step between cells,
+   * and Enter moves down rather than submitting the document.
+   *
+   * Left/Right only leave a text cell once the caret is already at its edge, so
+   * ordinary editing inside a cell still works -- the alternative would make it
+   * impossible to correct the middle of a medicine name. Number cells hold a few
+   * characters at most, so they hand over immediately.
+   */
   const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, index: number) => {
-    if (event.key !== 'Enter') return;
+    // The medicine box owns its own arrows and Enter while its list is open.
+    if (event.defaultPrevented) return;
+    if (event.altKey || event.metaKey) return;
+
+    // Ctrl+Up/Down walks rows from anywhere, including out of a dropdown whose
+    // plain arrows are busy changing its value.
+    if (event.ctrlKey) {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      const row = target.closest('[data-grid-row]');
+      const col = rowCells(row).indexOf(target);
+      if (col === -1) return;
+      event.preventDefault();
+      focusCell(index + (event.key === 'ArrowDown' ? 1 : -1), col);
+      return;
+    }
 
     const target = event.target as HTMLElement;
-    if (target.dataset?.medicineInput !== undefined) return;
     if (target.tagName === 'BUTTON') return;
 
-    event.preventDefault();
+    const row = target.closest('[data-grid-row]');
+    const cells = rowCells(row);
+    const col = cells.indexOf(target);
+    if (col === -1) return;
 
-    // Only grow the list from the last row; Enter mid-list just moves on.
-    if (index === formData.items.length - 1) {
-      addItemRow();
-    } else {
-      focusLastRow();
+    const lastRow = formData.items.length - 1;
+    const input = target as HTMLInputElement;
+    const isTextCell = target.tagName === 'INPUT' && input.type !== 'number';
+
+    // selectionStart throws on number inputs in some browsers, so it is only
+    // consulted for the text cells that actually need caret awareness.
+    const atStart = !isTextCell || (input.selectionStart === 0 && input.selectionEnd === 0);
+    const atEnd = !isTextCell
+      || (input.selectionStart === input.value.length && input.selectionEnd === input.value.length);
+
+    // A dropdown owns its own up/down: that is how the value is changed without
+    // reaching for the mouse, which was the whole point of working by keyboard.
+    // Rows are still walked from a dropdown with Enter, or Ctrl+Up/Down.
+    const isSelect = target.tagName === 'SELECT';
+
+    switch (event.key) {
+      case 'ArrowDown':
+        if (isSelect) return;
+        event.preventDefault();
+        focusCell(index + 1, col);
+        return;
+
+      case 'ArrowUp':
+        if (isSelect) return;
+        event.preventDefault();
+        focusCell(index - 1, col);
+        return;
+
+      case 'ArrowLeft':
+        if (!atStart || col === 0) return;
+        event.preventDefault();
+        cells[col - 1]?.focus();
+        if (cells[col - 1] instanceof HTMLInputElement) (cells[col - 1] as HTMLInputElement).select?.();
+        return;
+
+      case 'ArrowRight':
+        if (!atEnd || col === cells.length - 1) return;
+        event.preventDefault();
+        cells[col + 1]?.focus();
+        if (cells[col + 1] instanceof HTMLInputElement) (cells[col + 1] as HTMLInputElement).select?.();
+        return;
+
+      case 'Enter':
+        // Never submits. A grid that saves on Enter files the invoice halfway
+        // through typing it, which is what the counter kept doing by accident.
+        event.preventDefault();
+        if (index === lastRow) {
+          addItemRow();
+        } else {
+          focusCell(index + 1, col);
+        }
+        return;
+
+      default:
     }
   };
 
@@ -2233,10 +2445,32 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   // optional columns free up instead of leaving a gap.
   // Written out in full rather than interpolated: Tailwind scans source text for
   // class names, so a template literal would never be generated.
-  const optionalColumnCount = INVOICE_FIELD_KEYS.filter((key) => visibleFields[key]).length;
-  const medicineSpan = Math.min(7, Math.max(2, 12 - 5 - optionalColumnCount)) as 2 | 3 | 4 | 5 | 6 | 7;
-  const medicineColSpan = MEDICINE_HEADER_SPANS[medicineSpan];
-  const medicineColSpanRow = MEDICINE_ROW_SPANS[medicineSpan];
+  /**
+   * Explicit column widths, the way a desktop grid sizes itself.
+   *
+   * A twelve-column layout gave every field the same slice, so Bonus and Tax --
+   * which hold a single digit -- were as wide as the medicine name, and with all
+   * the optional columns on the product got 2/12 of the row. Each column is now
+   * sized to what it actually holds and the medicine takes the rest, so nothing
+   * is padded out to fill a slot it does not need.
+   *
+   * Emitted as a stylesheet rather than a Tailwind class because the set of
+   * columns depends on the hospital's settings, and Tailwind only generates
+   * classes it can find written out in the source.
+   */
+  const gridTemplateColumns = [
+    'minmax(200px, 1fr)',                        // medicine
+    '84px',                                      // sale unit
+    visibleFields.batch ? '86px' : null,         // batch
+    visibleFields.expiry ? '80px' : null,        // expiry
+    '54px',                                      // qty
+    visibleFields.bonus ? '50px' : null,         // bonus
+    '76px',                                      // price
+    visibleFields.discount ? '50px' : null,      // disc %
+    visibleFields.tax ? '50px' : null,           // tax %
+    '84px',                                      // amount
+    '28px',                                      // delete
+  ].filter(Boolean).join(' ');
 
   // Summed once in the footer instead of a badge under every Qty field.
   // Deduped by medicine+batch so the same stock is not counted twice.
@@ -2878,9 +3112,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           {/* Fixed height, not content height: the modal used to grow and shrink
               as rows were added, moving the Save button under the cursor. */}
           <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-5xl h-[88vh] flex flex-col border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-              <div className="flex items-center gap-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <h3 className="text-[13px] font-semibold text-gray-800 dark:text-gray-100 tracking-tight">
                   {showAddModal ? `New ${invoiceTypeLabel}` : `Edit ${invoiceTypeLabel}`}
                 </h3>
                   {userRole === 'super_admin' && (
@@ -2910,7 +3144,40 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               ref={transactionFormRef}
               className="p-4 space-y-4 flex-1 min-h-0 overflow-visible flex flex-col"
               onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}
+              /**
+               * A form with a submit button files itself when Enter is pressed in
+               * any input. In a grid that means the invoice is saved partway
+               * through typing a line -- the single thing the counter complained
+               * about. Enter is handled by the grid instead (move down / add a
+               * row); saving is only ever the Save button or Ctrl+S.
+               */
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON') return;
+                e.preventDefault();
+              }}
             >
+              <style>{`
+                @media (min-width: 1024px) {
+                  .trx-grid { display: grid; grid-template-columns: ${gridTemplateColumns}; }
+                }
+                /* Cells sit flush; the grid's own gap draws the rules between
+                   them, so the inputs do not each carry a rounded outline. */
+                .grid-cell:focus { outline: 2px solid rgb(37 99 235); outline-offset: -2px; z-index: 1; position: relative; }
+                /* Active line: tint plus a solid bar down the left edge, so the
+                   row the cursor is on is findable without hunting for a faint
+                   background on a seventy-line invoice. */
+                .trx-row { position: relative; }
+                .trx-row:focus-within { background: rgb(219 234 254); }
+                .trx-row:focus-within::before {
+                  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+                  width: 3px; background: rgb(37 99 235);
+                }
+                .trx-kbd { display:inline-block; min-width:1.1rem; padding:0 3px; border:1px solid rgb(203 213 225);
+                           border-bottom-width:2px; border-radius:3px; background:#fff; color:rgb(71 85 105);
+                           font:inherit; font-size:9px; line-height:14px; text-align:center; }
+              `}</style>
               <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm">
                 <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
                 {(formData.trxType === 'sales' || formData.trxType === 'sales_return') && showCustomerToggle && (
@@ -3231,24 +3498,52 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     />
                   </div>
                   <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('ui.barcodeScanHint')}</span>
+
+                  {/* Find a line already on this invoice.
+                      A received purchase can run to seventy lines; hunting for
+                      one by scrolling or arrowing is the slow part of correcting
+                      it. Typing filters the rows in place -- each keeps its real
+                      position, so editing a filtered row edits the right line. */}
+                  <div className="relative ml-auto w-64">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={itemFilter}
+                      onChange={(e) => setItemFilter(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setItemFilter(''); } }}
+                      placeholder="Find item: id, brand or generic..."
+                      aria-label="Find an item on this invoice"
+                      className="w-full pl-8 pr-7 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {itemFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setItemFilter('')}
+                        title="Clear"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <X className="w-3 h-3 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Column titles shown once instead of repeating a label on every item row. */}
-              <div className="hidden lg:grid grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <div className={medicineColSpan}>Medicine</div>
+              <div className="trx-grid hidden lg:grid gap-px px-0 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600">
+                <div className="px-1.5">Medicine</div>
                 {/* Sale Unit sits directly after the product: it changes the price,
                     so it belongs with the thing it prices. */}
-                <div className="col-span-1">{t('ui.saleUnit')}</div>
-                {visibleFields.batch && <div className="col-span-1">Batch</div>}
-                {visibleFields.expiry && <div className="col-span-1">Expiry</div>}
-                <div className="col-span-1">Qty</div>
-                {visibleFields.bonus && <div className="col-span-1">Bonus</div>}
-                <div className="col-span-1">Price</div>
-                {visibleFields.discount && <div className="col-span-1">Disc %</div>}
-                {visibleFields.tax && <div className="col-span-1">Tax %</div>}
-                <div className="col-span-1 text-right">Amount</div>
-                <div className="col-span-1 flex items-center justify-end">
+                <div className="px-1.5">{t('ui.saleUnit')}</div>
+                {visibleFields.batch && <div className="px-1.5">Batch</div>}
+                {visibleFields.expiry && <div className="px-1.5">Expiry</div>}
+                <div className="px-1.5">Qty</div>
+                {visibleFields.bonus && <div className="px-1.5">Bonus</div>}
+                <div className="px-1.5">Price</div>
+                {visibleFields.discount && <div className="px-1.5">Disc %</div>}
+                {visibleFields.tax && <div className="px-1.5">Tax %</div>}
+                <div className="px-1.5">Amount</div>
+                <div className="flex items-center justify-end">
                   <button
                     type="button"
                     onClick={addItemRow}
@@ -3276,20 +3571,27 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               >
                 {formData.items.map((item, index) => {
                   const medicineOptions = getMedicineOptions(index);
+                  // Filtered out, not removed: `index` stays the row's real
+                  // position, so every handler still edits the correct line.
+                  if (!itemMatchesFilter(item)) return null;
 
                   return (
                   <div
                     key={index}
+                    data-grid-row={index}
                     onKeyDown={(e) => handleRowKeyDown(e, index)}
-                    className="grid grid-cols-1 lg:grid-cols-12 gap-x-3 gap-y-1 items-center border-b border-gray-100 dark:border-gray-800 lg:border-0 px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                    /* Sheet density: cells butt against each other with a single
+                       shared rule, the way a desktop grid looks, instead of
+                       floating in their own rounded boxes with gaps between. */
+                    className="trx-row trx-grid grid grid-cols-1 gap-px items-stretch border-b border-gray-200 dark:border-gray-700 hover:bg-blue-50/40 dark:hover:bg-blue-900/10"
                   >
-                    <div className={medicineColSpanRow}>
+                    <div>
                       <label className="sr-only">Medicine</label>
                       <div className="relative">
                         <input
                           type="text"
                           data-medicine-input=""
-                          className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                          className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7"
                           title="Medicine"
                           placeholder="Type medicine name..."
                           value={medicineQueries[index] ?? (item.medicineId ? getMedicineDisplay(item.medicineId) : '')}
@@ -3343,14 +3645,30 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           }}
                           required
                         />
-                        {openMedicineDropdownIndex === index && (
-                          <div className="absolute z-30 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
+                        {openMedicineDropdownIndex === index && dropdownRect && createPortal(
+                          <div
+                            style={{
+                              position: 'fixed',
+                              left: dropdownRect.left,
+                              top: dropdownRect.top,
+                              width: dropdownRect.width,
+                              maxHeight: dropdownRect.maxHeight,
+                            }}
+                            // Rendered on document.body so the scrolling item
+                            // panel cannot crop it. onMouseDown keeps focus in
+                            // the input, otherwise the blur handler closes the
+                            // list before the click lands on an option.
+                            onMouseDown={(e) => e.preventDefault()}
+                            className="z-[60] overflow-auto rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-xl">
                             {medicineOptions
                               .map((m, optionIndex) => {
                                 const display = `${m.brandName} ${m.genericName ? `(${m.genericName})` : ''} ${m.strength || ''} ${m.type || ''}`.replace(/\s+/g, ' ').trim();
                                 const available = ['sales', 'purchase_return'].includes(formData.trxType)
                                   ? getAvailableStock(m.id, undefined, formData.hospitalId)
                                   : null;
+                                // Nothing sellable, yet cartons on the shelf: every batch has lapsed.
+                                const expiredOnly = available === 0
+                                  && getAvailableStock(m.id, undefined, formData.hospitalId, { includeExpired: true }) > 0;
                                 return (
                                   <button
                                     key={m.id}
@@ -3367,8 +3685,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                     <div className="flex items-center justify-between gap-2">
                                       <span>{display}</span>
                                       {available !== null && (
-                                        <span className={`text-[10px] font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                          {available}
+                                        <span className="flex items-center gap-1 shrink-0">
+                                          {expiredOnly && (
+                                            <span className="rounded bg-amber-100 px-1 py-px text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                              Expired
+                                            </span>
+                                          )}
+                                          <span className={`text-[10px] font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                            {available}
+                                          </span>
                                         </span>
                                       )}
                                     </div>
@@ -3378,17 +3703,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                             {medicineOptions.length === 0 && (
                               <div className="px-2 py-2 text-xs text-gray-500">No medicines found</div>
                             )}
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </div>
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">{t('ui.saleUnit')}</label>
                       <select
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-1 text-[11px] h-8 disabled:opacity-60"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1 py-0.5 text-[11px] h-7 disabled:opacity-60"
                         title={t('ui.saleUnit')}
-                        // Only meaningful when more than one unit is sellable.
-                        disabled={sellableUnitsFor(item.medicineId).length <= 1}
+                        // Only meaningful when more than one unit is on offer. A
+                        // line carrying a retired unit always has at least two,
+                        // so it can never be locked out of being corrected.
+                        disabled={unitOptionsFor(item.medicineId, item.saleUnit ?? 'piece').length <= 1}
                         value={item.saleUnit ?? 'piece'}
                         onChange={(e) => {
                           // Strip is a real tier, not a synonym for piece -- coercing
@@ -3404,16 +3732,19 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                           });
                         }}
                       >
-                        {sellableUnitsFor(item.medicineId).map((u) => (
-                          <option key={u} value={u}>{unitLabelFor(item.medicineId, u)}</option>
+                        {unitOptionsFor(item.medicineId, item.saleUnit ?? 'piece').map((u) => (
+                          <option key={u} value={u}>
+                            {unitLabelFor(item.medicineId, u)}
+                            {sellableUnitsFor(item.medicineId).includes(u) ? '' : ' (as saved)'}
+                          </option>
                         ))}
                       </select>
                     </div>
                     {visibleFields.batch && (
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">Batch No</label>
                       <input
-                        className="w-full max-w-[120px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7"
                         title="Batch Number"
                         value={item.batchNo || ''}
                         onChange={(e) => {
@@ -3434,7 +3765,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     </div>
                     )}
                     {visibleFields.expiry && (
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">{t('ui.expiry')}</label>
                       {/*
                         Typed MM/YYYY rather than a native month picker.
@@ -3455,7 +3786,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         inputMode="numeric"
                         maxLength={7}
                         placeholder="MM/YYYY"
-                        className="w-full max-w-[92px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8 tabular-nums"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 tabular-nums text-center"
                         title={t('ui.expiryDate')}
                         value={expiryDrafts[index] ?? (item.expiryDate ? toMonthInput(item.expiryDate) : '')}
                         onChange={(e) => {
@@ -3475,12 +3806,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       />
                     </div>
                     )}
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">{t('ui.qty')}</label>
                       <input
                         type="number"
                         min={1}
-                        className="w-full max-w-[64px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right"
                         title="Quantity"
                         value={item.qtty}
                         onFocus={(e) => e.currentTarget.select()}
@@ -3488,12 +3819,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       />
                     </div>
                     {visibleFields.bonus && (
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">Bonus</label>
                       <input
                         type="number"
                         min={0}
-                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right"
                         title="Bonus"
                         value={item.bonus ?? 0}
                         onFocus={(e) => e.currentTarget.select()}
@@ -3501,13 +3832,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       />
                     </div>
                     )}
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">{t('ui.price')}</label>
                       <input
                         type="number"
                         min={0}
                         step={0.01}
-                        className="w-full max-w-[100px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right"
                         title={t('ui.price')}
                         value={item.price}
                         onFocus={(e) => e.currentTarget.select()}
@@ -3515,14 +3846,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       />
                     </div>
                     {visibleFields.discount && (
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">Disc %</label>
                       <input
                         type="number"
                         min={0}
                         max={100}
                         step={0.01}
-                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right"
                         title={t('ui.discount')}
                         value={item.discount ?? 0}
                         onFocus={(e) => e.currentTarget.select()}
@@ -3531,14 +3862,14 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     </div>
                     )}
                     {visibleFields.tax && (
-                    <div className="lg:col-span-1">
+                    <div>
                       <label className="sr-only">Tax %</label>
                       <input
                         type="number"
                         min={0}
                         max={100}
                         step={0.01}
-                        className="w-full max-w-[70px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right"
                         title="Tax"
                         value={item.tax ?? 0}
                         onFocus={(e) => e.currentTarget.select()}
@@ -3546,11 +3877,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                       />
                     </div>
                     )}
-                    <div className="lg:col-span-1 flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1 px-1.5">
                       <span className="lg:hidden text-[10px] text-gray-500 dark:text-gray-400">{t('ui.amount')}</span>
                       <div className="text-[11px] font-semibold text-gray-900 dark:text-white">{calculateLineAmount(item).toFixed(2)}</div>
                     </div>
-                    <div className="lg:col-span-1 flex items-center justify-end">
+                    <div className="flex items-center justify-end">
                       <button
                         type="button"
                         onClick={() => removeItemRow(index)}
@@ -3598,30 +3929,40 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                 <span className="text-gray-600 dark:text-gray-300">Due: <strong className="text-gray-900 dark:text-white">{Number(formData.dueAmount || 0).toFixed(2)}</strong></span>
               </div>
 
-              {/* Wide and low rather than tall and narrow: these are the two
-                  actions that end the task, so they read as buttons at a glance
-                  and stay easy to hit without adding height to a fixed modal. */}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeTransactionModal}
-                  title="Esc"
-                  className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-5 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  {t('ui.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  title="Shift + S"
-                  className="inline-flex items-center justify-center gap-1.5 min-w-[140px] px-5 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                >
-                  {submitting
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Check className="w-3.5 h-3.5" />}
-                  {submitting ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
-                </button>
+              {/* A desktop command strip: the shortcut legend on the left, the
+                  two actions on the right, each captioned with the key that
+                  fires it so the keyboard route is discoverable rather than
+                  folded away in a tooltip. */}
+              <div className="flex items-center justify-between gap-3 mt-2 px-2 py-1.5 border-t border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 rounded-b">
+                <div className="hidden md:flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400">
+                  <span><kbd className="trx-kbd">&#8593;&#8595;</kbd> row</span>
+                  <span><kbd className="trx-kbd">&#8592;&#8594;</kbd> cell</span>
+                  <span><kbd className="trx-kbd">Enter</kbd> next / new row</span>
+                  <span><kbd className="trx-kbd">Ctrl</kbd>+<kbd className="trx-kbd">S</kbd> save</span>
+                  <span><kbd className="trx-kbd">Esc</kbd> close</span>
+                </div>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={closeTransactionModal}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-[104px] px-3 py-1 text-xs font-medium rounded border border-gray-400 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 active:translate-y-px transition-all"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    {t('ui.cancel')}
+                    <span className="text-[9px] text-gray-400">Esc</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-[124px] px-3 py-1 text-xs font-semibold rounded border border-blue-700 bg-blue-600 text-white hover:bg-blue-700 active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                  >
+                    {submitting
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Check className="w-3.5 h-3.5" />}
+                    {submitting ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
+                    <span className="text-[9px] text-blue-100">Ctrl+S</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -1,46 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Building2,
-  Calendar,
-  BedDouble,
-  Scissors,
-  UserCheck,
-  Stethoscope,
-  Users,
-  TestTube,
-  FileText,
-  Package,
-  Factory,
-  Pill,
-  Receipt,
-  Box,
-  ClipboardList,
-  FilePlus,
-  List,
-  BarChart,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Sun,
-  Moon,
-  Globe,
-  Sliders,
-  MessageSquare,
-  UserCog,
-  Shield,
-  Key,
-  LogOut,
-  Hospital,
-  Database,
-  Briefcase,
-  ScanLine,
-  LayoutTemplate,
-  ShieldCheck,
-  BadgeDollarSign
-} from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, LayoutTemplate, ShieldCheck, BadgeDollarSign, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
@@ -148,9 +108,10 @@ const menuItems: MenuItem[] = [
         id: '/ultrasound/receipts',
         translationKey: 'nav.ultrasoundReceipts',
         icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: [
-          'manage_ultrasound_payments', 'print_ultrasound_receipt', 'manage_ultrasound_exams'
-        ]
+        // Gated on the receipt/payment rights alone. It used to accept
+        // manage_ultrasound_exams too, so a sonographer given the exam list
+        // silently gained the cash desk beside it.
+        anyPermissions: ['manage_ultrasound_payments', 'print_ultrasound_receipt']
       },
       {
         id: '/ultrasound/exams',
@@ -199,12 +160,43 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.stockControl',
         icon: <Box className="w-3.5 h-3.5" />,
         anyPermissions: ['view_stocks', 'manage_stocks', 'edit_stocks']
+      }
+    ]
+  },
+  {
+    // Money, wherever it came from.
+    //
+    // Collection and settlement used to sit inside the modules that raise the
+    // charges -- pharmacy invoices under Pharmacy, the collection desk under
+    // Reception -- which suited whoever creates the document rather than
+    // whoever handles the cash. A cashier works across all of them, and now has
+    // one place to stand.
+    id: 'finance', // Group ID, not a route
+    translationKey: 'nav.finance',
+    icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
+    anyPermissions: [
+      'view_finance_menu',
+      'view_finance_sales', 'view_finance_purchases',
+      'view_finance_sales_returns', 'view_finance_purchase_returns',
+      'record_finance_payments', 'edit_finance_payment_status', 'manage_finance',
+      'manage_appointment_payments', 'manage_lab_payments', 'manage_ultrasound_payments',
+      'manage_surgery_payments', 'manage_room_booking_payments'
+    ],
+    subItems: [
+      {
+        // Every unpaid charge in the hospital, in one queue.
+        id: '/payment-collection',
+        translationKey: 'nav.paymentCollection',
+        icon: <Wallet className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'manage_appointment_payments', 'manage_lab_payments', 'manage_ultrasound_payments',
+          'manage_surgery_payments', 'manage_room_booking_payments', 'record_finance_payments'
+        ]
       },
       {
-        // Financial control (paid / pending) over the documents the rest of the
-        // Pharmacy menu creates. Access is further split per document type.
+        // Paid / pending control over pharmacy documents, split per type.
         id: '/pharmacy-finance',
-        translationKey: 'nav.finance',
+        translationKey: 'nav.pharmacyFinance',
         icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
         anyPermissions: [
           'view_finance_menu',

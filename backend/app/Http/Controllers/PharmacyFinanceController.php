@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Transaction;
 use App\Services\AuditLogger;
+use App\Services\LedgerPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,10 @@ use Illuminate\Validation\Rule;
  */
 class PharmacyFinanceController extends Controller
 {
+    public function __construct(private readonly LedgerPostingService $ledgerPostingService)
+    {
+    }
+
     /**
      * Document type => permissions that grant read access to it.
      *
@@ -148,6 +153,11 @@ class PharmacyFinanceController extends Controller
             $transaction->settled_by = $request->user()->name;
             $transaction->syncPaymentState();
             $transaction->save();
+
+            // Every other module reposts its snapshot when money moves; pharmacy
+            // did not, so the ledger kept showing settled invoices as owing and
+            // the collection desk offered charges that could not be taken.
+            $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
         });
 
         AuditLogger::log([
@@ -243,8 +253,15 @@ class PharmacyFinanceController extends Controller
                 $transaction->last_payment_at = null;
             }
 
-            $transaction->settled_by = $request->user()->name;
+            // Reversing here clears the collector, so the money leaves that
+            // person's handover at the same moment it leaves the document.
+            $transaction->settled_by = (string) $transaction->payment_status === 'pending'
+                && (float) $transaction->paid_amount <= 0
+                    ? null
+                    : $request->user()->name;
             $transaction->save();
+
+            $this->ledgerPostingService->upsertTransactionSnapshot($transaction);
         });
 
         AuditLogger::log([

@@ -22,6 +22,9 @@ class PatientSurgery extends Model
         'discharge_completed_by',
         'status',
         'payment_status',
+        'payment_method',
+        'paid_at',
+        'paid_by',
         'cost',
         'notes',
         'verification_token',
@@ -33,6 +36,7 @@ class PatientSurgery extends Model
     ];
 
     protected $casts = [
+        'paid_at' => 'datetime',
         'surgery_date' => 'date',
         'discharge_date' => 'date',
         'cost' => 'decimal:2',

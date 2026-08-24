@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\TestTemplate;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
 
 class TestTemplateController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function index(Request $request)
     {
         $query = TestTemplate::query()->with('parameters');
@@ -119,7 +122,7 @@ class TestTemplateController extends Controller
             'status' => ['required', 'in:active,inactive'],
         ]);
 
-        return $validator->validate();
+        return $this->upperCaseNames($validator->validate(), ['test_name']);
     }
 
     private function normalizeParameters(array $parameters): array

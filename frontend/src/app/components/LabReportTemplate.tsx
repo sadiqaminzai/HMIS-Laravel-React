@@ -1,271 +1,450 @@
 import React from 'react';
-import { LabTest, Hospital } from '../types';
+import { LabTest, Hospital, TestTemplate, TestResult } from '../types';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
-
+// One branding string for every printout, rather than each report
+// spelling the company name its own way.
+import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { printNameOr } from '../utils/printName';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface LabReportTemplateProps {
   test: LabTest;
   hospital: Hospital;
+  testTemplates?: TestTemplate[];
 }
 
-export function LabReportTemplate({ test, hospital }: LabReportTemplateProps) {
-  const brandColor = hospital?.brandColor || '#2563eb';
+/**
+ * Brand palette, taken from the hospital logo: a cyan crescent over a red hand,
+ * on near-black navy type. The red is reserved for the two things that must
+ * catch the eye -- the tail on each rule, and a result outside its range.
+ */
+const BRAND = {
+  cyan: '#35B7CE',
+  cyanDark: '#1E8FA3',
+  cyanTint: '#EAF8FB',
+  red: '#EE3B33',
+  navy: '#22354B',
+  ink: '#1A2734',
+  muted: '#5B6B7C',
+  line: '#C9D6E0',
+  lineSoft: '#E6EDF2',
+  white: '#FFFFFF',
+};
+
+/**
+ * Wash of the accent for the table heading strip.
+ *
+ * Derived from whatever colour the hospital has configured rather than being a
+ * second stored value, so the strip can never drift out of step with the rule
+ * and headings above it. Falls back to the stock tint if the field holds
+ * something that is not a hex colour.
+ */
+function accentTint(hex: string, alpha = 0.1): string {
+  const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return BRAND.cyanTint;
+
+  let body = match[1];
+  if (body.length === 3) body = body.split('').map((c) => c + c).join('');
+
+  const r = parseInt(body.slice(0, 2), 16);
+  const g = parseInt(body.slice(2, 4), 16);
+  const b = parseInt(body.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Decide whether a result sits outside its reference range.
+ *
+ * Ranges are free text typed by whoever built the template, so only the shapes
+ * that actually occur are handled -- "4000 - 11000", "0-5", "< 6.0", "> 30" --
+ * and anything else (or any non-numeric result such as "Negative") yields no
+ * verdict at all. Guessing would be worse than staying silent: an arrow against
+ * a normal value is a clinical error, so the bar for drawing one is a range and
+ * a result that both parse cleanly.
+ */
+function rangeVerdict(result: string, normalRange: string): 'high' | 'low' | null {
+  const value = Number(String(result ?? '').trim().replace(/,/g, ''));
+  if (!Number.isFinite(value)) return null;
+
+  const range = String(normalRange ?? '').trim().replace(/,/g, '');
+  if (!range) return null;
+
+  // "4000.0 - 11000.0", "0–5", "13.5 to 17.5"
+  const pair = range.match(/^(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)$/i);
+  if (pair) {
+    const min = Number(pair[1]);
+    const max = Number(pair[2]);
+    if (value < min) return 'low';
+    if (value > max) return 'high';
+    return null;
+  }
+
+  const under = range.match(/^<\s*=?\s*(-?\d+(?:\.\d+)?)$/);
+  if (under) return value > Number(under[1]) ? 'high' : null;
+
+  const over = range.match(/^>\s*=?\s*(-?\d+(?:\.\d+)?)$/);
+  if (over) return value < Number(over[1]) ? 'low' : null;
+
+  return null;
+}
+
+export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabReportTemplateProps) {
+  /**
+   * One configurable colour for the whole sheet: the hospital name, the LAB
+   * REPORT mark, both rules, and the column headings with their tint.
+   *
+   * It comes from Hospital Details > Brand Color so a site can match its own
+   * letterhead. Everything accented is driven from this single value -- nothing
+   * is hard-coded alongside it -- so changing the field changes the report and
+   * cannot leave one element behind in a colour nobody chose.
+   */
+  const accent = hospital?.brandColor || BRAND.cyanDark;
+  const accentWash = accentTint(accent);
   const patientIdentifier = test.patientDisplayId || '-';
   const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
   const qrValue = verificationUrl || `LAB-${test.testNumber}-${patientIdentifier}`;
 
-  // Explicit hex colors
-  const colors = {
-    white: '#ffffff',
-    gray50: '#f9fafb',
-    gray100: '#f3f4f6',
-    gray200: '#e5e7eb',
-    gray300: '#d1d5db',
-    gray400: '#9ca3af',
-    gray600: '#4b5563',
-    gray700: '#374151',
-    gray800: '#1f2937',
-    gray900: '#111827',
-    black: '#000000',
-  };
+  // One page per test, in the order the tests were ordered in.
+  const groups: Array<{ testName: string; templateId: string; results: TestResult[] }> = [];
+  (test.testResults || []).forEach((result) => {
+    const existing = groups.find((g) => g.testName === result.testName);
+    if (existing) {
+      existing.results.push(result);
+    } else {
+      groups.push({
+        testName: result.testName,
+        templateId: String(result.testTemplateId ?? ''),
+        results: [result],
+      });
+    }
+  });
+
+  const collectionDate = formatDate(test.sampleCollectedAt, hospital?.timezone, hospital?.calendarType);
+  const reportingDate = formatDate(test.reportedAt, hospital?.timezone, hospital?.calendarType);
+
+  // Left column is the person, right column is the specimen and its paperwork.
+  const meta: Array<[string, string]> = [
+    ['Name', printNameOr(test.patientName)],
+    ['Gender', test.patientGender || '-'],
+    ['Age', formatAgeLong(test.patientAge, test.patientAgeUnit)],
+    ['Contact', test.patientPhone || '-'],
+  ];
+  const meta2: Array<[string, string]> = [
+    ['Patient Code', patientIdentifier],
+    ['Referred By', printNameOr(test.doctorName)],
+    ['Collection Date', collectionDate || '-'],
+    ['Reporting Date', reportingDate || '-'],
+  ];
+
+  const metaCell = (label: string, value: string) => (
+    <div key={label} style={{ display: 'flex', gap: '6px', lineHeight: 1.45 }}>
+      <span style={{ color: BRAND.muted, minWidth: '78px', flexShrink: 0 }}>{label}:</span>
+      <span style={{ color: BRAND.ink, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
 
   return (
     <div
       id={`report-${test.id}`}
+      className="lab-report"
       style={{
-        backgroundColor: colors.white,
-        color: colors.gray900,
-        padding: '16px',
-        width: '100%',
-        maxWidth: '56rem', // max-w-4xl
-        margin: '0 auto',
-        fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        backgroundColor: BRAND.white,
+        color: BRAND.ink,
+        fontFamily: 'Arial, "Segoe UI", Helvetica, sans-serif',
+        fontSize: '11px',
       }}
     >
-      <div
-        style={{
-          paddingBottom: '16px',
-          marginBottom: '16px',
-          borderBottom: `2px solid ${colors.gray800}`,
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '16px'
-        }}
-      >
-        <div style={{ flex: '1 1 0%', minWidth: '200px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: '32px', color: brandColor, margin: 0 }}>
-            {hospital.name}
-          </h1>
-          <p style={{ fontSize: '14px', lineHeight: '20px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>
-            {hospital.address}
-          </p>
-          <p style={{ fontSize: '14px', lineHeight: '20px', color: colors.gray600, margin: 0 }}>
-            Phone: {hospital.phone}
-          </p>
-          <p style={{ fontSize: '14px', lineHeight: '20px', color: colors.gray600, margin: 0 }}>
-            Email: {hospital.email}
-          </p>
-        </div>
-        <div style={{ textAlign: 'center', flexShrink: 0 }}>
-          <QRCodeCanvas value={qrValue} size={100} />
-          <p style={{ fontSize: '10px', marginTop: '6px', color: colors.gray500, fontWeight: 'bold', letterSpacing: '0.05em' }}>SCAN TO VERIFY</p>
-        </div>
-      </div>
+      <style>{`
+        /* Each test is a page of its own: a fixed body height lets the footer sit
+           on the sheet edge instead of floating up under short results. Matches
+           A4 less the 15mm @page margin the print window sets. */
+        .lab-report .report-page {
+          height: 267mm;
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
+          page-break-after: always;
+          break-after: page;
+        }
+        .lab-report .report-page:last-child { page-break-after: auto; break-after: auto; }
+        .lab-report table { border-collapse: collapse; width: 100%; }
+        /* Tight rows: the reference reports fit 15 parameters on one page, which
+           only works if a row is type height plus a hairline, not a padded cell. */
+        .lab-report .param-row td { padding: 2.2px 8px; border-bottom: 1px solid ${BRAND.lineSoft}; }
+        .lab-report .quill-body p { margin: 0 0 4px 0; line-height: 1.45; }
+        .lab-report .quill-body p:last-child { margin-bottom: 0; }
+        .lab-report .quill-body ul, .lab-report .quill-body ol { margin: 0 0 4px 18px; padding: 0; }
+        .lab-report .quill-body li { margin: 0 0 2px 0; line-height: 1.4; }
+        .lab-report .quill-body .ql-align-center { text-align: center; }
+        .lab-report .quill-body .ql-align-right { text-align: right; }
+        .lab-report .quill-body .ql-align-justify { text-align: justify; }
+        @media print {
+          .lab-report .report-page { height: 267mm; }
+        }
+      `}</style>
 
-      {/* Report Title */}
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: 'bold', textTransform: 'uppercase', color: colors.gray900, margin: 0 }}>
-          Laboratory Test Report
-        </h2>
-        <p style={{ fontSize: '14px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>
-          Test Number: {test.testNumber}
-        </p>
-      </div>
+      {groups.map((group, groupIndex) => {
+        const template = testTemplates.find((tpl) => String(tpl.id) === group.templateId);
+        const description = template?.description?.trim();
+        const isLast = groupIndex === groups.length - 1;
 
-      {/* Patient & Test Info */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', fontSize: '14px' }}>
-        <div>
-          <h3 
-            style={{ 
-              fontWeight: '600', 
-              marginBottom: '8px', 
-              paddingBottom: '4px',
-              borderBottom: `1px solid ${colors.gray300}`,
-              color: colors.gray900,
-              margin: '0 0 8px 0'
-            }}
-          >
-            Patient Information
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Name:</span> <span>{test.patientName}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Age:</span> <span>{test.patientAge} Years</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Gender:</span> <span style={{ textTransform: 'capitalize' }}>{test.patientGender}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Patient ID:</span> <span>{patientIdentifier}</span></div>
-          </div>
-        </div>
-        <div>
-          <h3 
-            style={{ 
-              fontWeight: '600', 
-              marginBottom: '8px', 
-              paddingBottom: '4px',
-              borderBottom: `1px solid ${colors.gray300}`,
-              color: colors.gray900,
-              margin: '0 0 8px 0'
-            }}
-          >
-            Test Information
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Ordered By:</span> <span>{test.doctorName}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Sample Date:</span> <span>{formatDate(test.sampleCollectedAt, hospital.timezone, hospital.calendarType)}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Report Date:</span> <span>{formatDate(test.reportedAt, hospital.timezone, hospital.calendarType)}</span></div>
-            <div style={{ display: 'flex' }}><span style={{ fontWeight: '500', width: '128px' }}>Priority:</span> <span style={{ textTransform: 'uppercase', fontWeight: '600' }}>{test.priority}</span></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Test Results */}
-      <div style={{ marginBottom: '24px' }}>
-        <h3 style={{ fontWeight: '600', marginBottom: '12px', fontSize: '16px', color: colors.gray900, margin: '0 0 12px 0' }}>Test Results</h3>
-        
-        {test.testResults?.reduce((acc, result) => {
-          if (!acc[result.testName]) acc[result.testName] = [];
-          acc[result.testName].push(result);
-          return acc;
-        }, {} as Record<string, typeof test.testResults>) && 
-         Object.entries(test.testResults?.reduce((acc, result) => {
-            if (!acc[result.testName]) acc[result.testName] = [];
-            acc[result.testName].push(result);
-            return acc;
-          }, {} as Record<string, typeof test.testResults>) || {}).map(([testName, results]) => (
-          <div key={testName} style={{ marginBottom: '16px' }}>
-            {/* Test Name */}
-            <div 
-              style={{ 
-                padding: '8px 12px', 
-                fontWeight: '600', 
-                fontSize: '14px', 
-                marginBottom: '8px',
-                backgroundColor: colors.gray100, 
-                color: colors.gray900,
-                borderLeft: `4px solid ${brandColor}` 
-              }}
-            >
-              {testName}
+        return (
+          <div className="report-page" key={`${group.testName}-${groupIndex}`}>
+            {/* ---------- Header: logo and identity left, LAB REPORT right ---------- */}
+            {/* flex-end drops the right-hand block off the very top edge, so it
+                settles level with the contact lines rather than the name. */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0, paddingLeft: '5px' }}>
+                {hospital?.logo && (
+                  <img
+                    src={hospital.logo}
+                    alt=""
+                    style={{ height: '82px', width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+                  />
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      // A serif face gives the name the weight of a letterhead;
+                      // the rest of the sheet stays sans for legibility at 10px.
+                      fontFamily: 'Georgia, "Times New Roman", "Palatino Linotype", serif',
+                      fontSize: '25px',
+                      fontWeight: 700,
+                      letterSpacing: '0.01em',
+                      color: accent,
+                      lineHeight: 1.12,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {hospital?.name}
+                  </div>
+                  {/* Black, not grey: thermal and laser output thins mid-greys to
+                      the point of vanishing, and this is the line a patient rings. */}
+                  <div style={{ fontSize: '11.5px', color: BRAND.ink, marginTop: '5px', lineHeight: 1.55 }}>
+                    {hospital?.address}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: BRAND.ink, lineHeight: 1.55 }}>
+                    {[hospital?.phone && `Phone: ${hospital.phone}`, hospital?.email && `Email: ${hospital.email}`]
+                      .filter(Boolean)
+                      .join('  ·  ')}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0, paddingBottom: '2px' }}>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 800,
+                    letterSpacing: '0.14em',
+                    color: accent,
+                    lineHeight: 1.25,
+                  }}
+                >
+                  LAB REPORT
+                </div>
+                {/* Set quietly in black: the number identifies the sheet but
+                    should not compete with the mark above it. */}
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    color: BRAND.ink,
+                    marginTop: '2px',
+                  }}
+                >
+                  {test.testNumber}
+                </div>
+              </div>
             </div>
 
-            {/* Parameters Table */}
-            <div style={{ overflowX: 'auto' }}>
-              <table 
-                style={{ 
-                  width: '100%', 
-                  fontSize: '12px', 
-                  border: `1px solid ${colors.gray300}`,
-                  borderCollapse: 'collapse',
-                  minWidth: '500px'
+            {/* Brand rule: cyan body with a red tail, echoing the logo. */}
+            <div style={{ display: 'flex', marginTop: '8px' }}>
+              <div style={{ height: '3px', backgroundColor: accent, flex: '1 1 auto' }} />
+              <div style={{ height: '3px', backgroundColor: BRAND.red, width: '72px' }} />
+            </div>
+
+            {/* ---------- Patient / sample block ---------- */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '16px',
+                padding: '9px 0 10px',
+                borderBottom: `1px solid ${BRAND.line}`,
+                fontSize: '10.5px',
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '1 1 0' }}>
+                {meta.map(([label, value]) => metaCell(label, value))}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '1 1 0' }}>
+                {meta2.map(([label, value]) => metaCell(label, value))}
+              </div>
+              <div style={{ flexShrink: 0, textAlign: 'center' }}>
+                <QRCodeCanvas value={qrValue} size={62} />
+                <div style={{ fontSize: '7px', color: BRAND.muted, marginTop: '2px', letterSpacing: '0.08em' }}>
+                  SCAN TO VERIFY
+                </div>
+              </div>
+            </div>
+
+            {/* ---------- Test title, centred ---------- */}
+            <div style={{ textAlign: 'center', margin: '14px 0 8px' }}>
+              <div
+                style={{
+                  display: 'inline-block',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: BRAND.navy,
+                  padding: '3px 22px 5px',
+                  borderBottom: `2px solid ${accent}`,
                 }}
               >
-                <thead>
-                  <tr style={{ backgroundColor: colors.gray50 }}>
-                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Parameter</th>
-                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Result</th>
-                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Unit</th>
-                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Normal Range</th>
-                    <th style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', textAlign: 'left', fontWeight: '600' }}>Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results?.map((result, idx) => (
-                    <tr key={idx}>
-                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '500' }}>{result.parameterName}</td>
-                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', fontWeight: '600' }}>{result.result || '-'}</td>
-                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.unit}</td>
-                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.normalRange}</td>
-                      <td style={{ border: `1px solid ${colors.gray300}`, padding: '6px 8px', color: colors.gray600 }}>{result.remarks || '-'}</td>
-                    </tr>
+                {group.testName}
+              </div>
+            </div>
+
+            {/* ---------- Parameters ---------- */}
+            <table>
+              <thead>
+                <tr style={{ backgroundColor: accentWash }}>
+                  {[
+                    ['INVESTIGATION', 'left', '42%'],
+                    ['RESULT', 'left', '18%'],
+                    ['UNIT', 'left', '16%'],
+                    ['NORMAL RANGE', 'right', '24%'],
+                  ].map(([label, align, width]) => (
+                    <th
+                      key={label}
+                      style={{
+                        textAlign: align as 'left' | 'right',
+                        width,
+                        padding: '5px 8px',
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        color: accent,
+                        borderTop: `1px solid ${BRAND.line}`,
+                        borderBottom: `1px solid ${BRAND.line}`,
+                      }}
+                    >
+                      {label}
+                    </th>
                   ))}
-                </tbody>
-              </table>
+                </tr>
+              </thead>
+              <tbody>
+                {group.results.map((result, idx) => {
+                  const verdict = rangeVerdict(result.result, result.normalRange);
+                  return (
+                    <tr className="param-row" key={`${result.parameterName}-${idx}`}>
+                      <td style={{ fontSize: '10.5px', color: BRAND.ink }}>{result.parameterName}</td>
+                      <td style={{ fontSize: '10.5px', fontWeight: 700, color: verdict ? BRAND.red : BRAND.ink }}>
+                        {result.result || '-'}
+                        {verdict && (
+                          <span style={{ marginLeft: '5px', fontWeight: 700 }}>{verdict === 'high' ? '↑' : '↓'}</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: '10px', color: BRAND.muted }}>{result.unit || ''}</td>
+                      <td style={{ fontSize: '10px', color: BRAND.muted, textAlign: 'right' }}>
+                        {result.normalRange || ''}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Per-parameter notes, listed under the table so they never widen it. */}
+            {group.results.some((r) => r.remarks?.trim()) && (
+              <div style={{ marginTop: '8px', fontSize: '9.5px', color: BRAND.muted, lineHeight: 1.5 }}>
+                {group.results
+                  .filter((r) => r.remarks?.trim())
+                  .map((r, idx) => (
+                    <div key={idx}>
+                      <span style={{ fontWeight: 700, color: BRAND.ink }}>{r.parameterName}:</span> {r.remarks}
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {description && (
+              <div style={{ marginTop: '12px', fontSize: '9.5px', color: BRAND.muted, lineHeight: 1.55 }}>
+                <div style={{ fontWeight: 700, color: BRAND.navy, marginBottom: '2px' }}>Description:</div>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{description}</div>
+              </div>
+            )}
+
+            {/* Overall remarks and signatures belong to the report, not to any one
+                test, so they are printed once, at the end. */}
+            {isLast && test.remarks && (
+              <div style={{ marginTop: '14px' }}>
+                <div style={{ fontWeight: 700, color: BRAND.navy, fontSize: '10.5px', marginBottom: '4px' }}>
+                  Lab Technician Remarks
+                </div>
+                <div
+                  className="quill-body"
+                  style={{
+                    fontSize: '10px',
+                    color: BRAND.ink,
+                    borderLeft: `3px solid ${accent}`,
+                    paddingLeft: '9px',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: test.remarks }}
+                />
+              </div>
+            )}
+
+            {/* margin-top:auto pins everything below to the foot of the sheet. */}
+            <div style={{ marginTop: 'auto', paddingTop: '14px' }}>
+              {isLast && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '40px', marginBottom: '12px' }}>
+                  {[
+                    ['Performed By', test.completedBy || test.assignedToName || 'Lab Technician'],
+                    ['Verified By', ''],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ flex: '0 0 210px', textAlign: 'center' }}>
+                      <div style={{ height: '26px' }} />
+                      <div style={{ borderTop: `1px solid ${BRAND.line}`, paddingTop: '3px' }}>
+                        <div style={{ fontSize: '9.5px', fontWeight: 700, color: BRAND.navy }}>{label}</div>
+                        <div style={{ fontSize: '9px', color: BRAND.muted }}>{value || ' '}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex' }}>
+                <div style={{ height: '2px', backgroundColor: BRAND.red, width: '72px' }} />
+                <div style={{ height: '2px', backgroundColor: accent, flex: '1 1 auto' }} />
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  padding: '5px 2px 0',
+                  fontSize: '8.5px',
+                  color: BRAND.muted,
+                }}
+              >
+                {/* The hospital's address and numbers are already set out in full
+                    at the top of every page; repeating them here only crowded the
+                    foot of the sheet. */}
+                <span>{POWERED_BY_TEXT}</span>
+                <span>
+                  Page {groupIndex + 1} of {groups.length}
+                </span>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Overall Remarks */}
-      {test.remarks && (
-        <div style={{ marginBottom: '24px' }}>
-          <h3 style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: colors.gray900, margin: '0 0 8px 0' }}>Lab Technician Remarks:</h3>
-          <div 
-            style={{ 
-              padding: '12px', 
-              borderRadius: '0.25rem', // rounded
-              fontSize: '14px', 
-              backgroundColor: colors.gray50, 
-              color: colors.gray700, 
-              border: `1px solid ${colors.gray200}` 
-            }}
-          >
-            {test.remarks}
-          </div>
-        </div>
-      )}
-
-      {/* Instructions */}
-      {test.instructions && (
-        <div style={{ marginBottom: '24px' }}>
-          <h3 style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: colors.gray900, margin: '0 0 8px 0' }}>Special Instructions:</h3>
-          <div style={{ fontSize: '14px', color: colors.gray700 }}>
-            {test.instructions}
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div 
-        style={{ 
-          paddingTop: '16px', 
-          marginTop: '32px', 
-          borderTop: `2px solid ${colors.gray800}` 
-        }}
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '32px', fontSize: '14px' }}>
-          <div>
-            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Completed By:</p>
-            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>{test.completedBy || test.assignedToName || 'Lab Technician'}</p>
-            <div 
-              style={{ 
-                marginTop: '32px', 
-                paddingTop: '4px', 
-                borderTop: `1px solid ${colors.gray400}` 
-              }}
-            >
-              <p style={{ fontSize: '12px', color: colors.gray600, margin: 0 }}>Signature & Stamp</p>
-            </div>
-          </div>
-          <div>
-            <p style={{ fontWeight: '600', color: colors.gray900, margin: 0 }}>Completed At:</p>
-            <p style={{ fontSize: '12px', marginTop: '4px', color: colors.gray600, margin: '4px 0 0 0' }}>{test.reportedAt ? formatDate(test.reportedAt, hospital?.timezone || 'Asia/Kabul', hospital?.calendarType as any) : '-'}</p>
-            <div 
-              style={{ 
-                marginTop: '32px', 
-                paddingTop: '4px', 
-                borderTop: `1px solid ${colors.gray400}` 
-              }}
-            >
-              <p style={{ fontSize: '12px', color: colors.gray600, margin: 0 }}>Signature & Stamp</p>
-            </div>
-          </div>
-        </div>
-        <div style={{ marginTop: '16px', fontSize: '12px', textAlign: 'center', color: colors.gray500 }}>
-          This is a computer-generated report. For any queries, please contact the laboratory.
-        </div>
-      </div>
+        );
+      })}
     </div>
   );
 }

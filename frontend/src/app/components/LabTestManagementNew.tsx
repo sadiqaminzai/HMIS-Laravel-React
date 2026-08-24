@@ -22,6 +22,7 @@ import { useHospitals } from '../context/HospitalContext';
 import { useAppointments } from '../context/AppointmentContext';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
@@ -173,6 +174,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const canDeleteOrders = hasPermission('delete_lab_orders') || canManageOrders;
   const canExportOrders = hasPermission('export_lab_orders') || canManageOrders;
   const canPrintOrders = hasPermission('print_lab_orders') || canManageOrders;
+  // With entry and collection split between two desks, the slip has to be
+  // printable before the money is taken -- the clerk raises the order and the
+  // patient carries the paper to the cashier. Still a permission of its own,
+  // because a receipt printed before payment can be mistaken for proof of it.
+  const canPrintUnpaidReceipt = hasPermission('print_unpaid_lab_receipt') || canManageOrders;
   const canUpdateStatus = hasPermission('update_lab_order_status');
   const canEnterResults = hasPermission('enter_lab_results');
   const canManagePayments = hasPermission('manage_lab_payments');
@@ -1078,7 +1084,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                         <div>
                           <div className="text-xs font-semibold text-gray-900 dark:text-white">{test.patientName}</div>
                           <div className="text-[10px] text-gray-500 dark:text-gray-400">ID: {test.patientDisplayId || '-'}</div>
-                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientAge}Y • {test.patientGender}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{formatAge(test.patientAge, test.patientAgeUnit, { compact: true })} • {test.patientGender}</div>
                           {test.patientPhone && (
                             <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.patientPhone}</div>
                           )}
@@ -1264,7 +1270,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                               Gated on print permission rather than payment, so
                               reception can re-issue paper without being able to
                               settle orders. */}
-                          {canPrintOrders && activeStage !== 'processing' && test.status !== 'unpaid' && (
+                          {canPrintOrders && activeStage !== 'processing' && (test.status !== 'unpaid' || canPrintUnpaidReceipt) && (
                             <button
                               onClick={() => handleReprintReceipt(test)}
                               className="p-1.5 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-md transition-colors"
@@ -1719,7 +1725,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.patient')}</label>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">{selectedTest.patientName}</div>
-                    <div className="text-xs text-gray-500">{selectedTest.patientAge} Years • {selectedTest.patientGender}</div>
+                    <div className="text-xs text-gray-500">{formatAgeLong(selectedTest.patientAge, selectedTest.patientAgeUnit)} • {selectedTest.patientGender}</div>
                     {selectedTest.patientPhone && (
                       <div className="text-xs text-gray-500">{selectedTest.patientPhone}</div>
                     )}
@@ -1937,9 +1943,10 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                </div>
             </div>
             <div className="flex-1 overflow-auto bg-gray-100 p-8">
-               <LabReportPrintNew 
-                 test={selectedTest} 
-                 hospital={hospital} 
+               <LabReportPrintNew
+                 test={selectedTest}
+                 testTemplates={testTemplates}
+                 hospital={hospital}
                  onClose={() => setShowPrintModal(false)}
                />
             </div>

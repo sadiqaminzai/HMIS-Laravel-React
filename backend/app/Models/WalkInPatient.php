@@ -17,6 +17,7 @@ class WalkInPatient extends Model
         'hospital_id',
         'name',
         'age',
+        'age_unit',
         'gender',
         'phone',
         'address',

@@ -20,6 +20,7 @@ class Patient extends Model
         'patient_id',
         'name',
         'age',
+        'age_unit',
         'gender',
         'phone',
         'address',

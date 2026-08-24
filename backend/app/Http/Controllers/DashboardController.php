@@ -555,36 +555,59 @@ class DashboardController extends Controller
             // the dashboard ones.
             $seesEveryone = in_array($user?->role, ['super_admin', 'admin'], true);
 
-            // ledger_entries.posted_by holds the user's NAME, not an id, so the
-            // grouping is by name and the match for a single user is by name
-            // too. Two staff sharing a name would share a row; that is a
-            // property of the existing schema, not something this report can
-            // resolve.
+            // Group by WHO TOOK THE MONEY, not who last saved the document.
+            //
+            // This used to group by posted_by, which LedgerPostingService fills
+            // from updated_by: any later edit moved the cash into the editor's
+            // handover. A clerk correcting a lab order after the cashier settled
+            // it would find the takings on their own sheet and the cashier's
+            // sheet short, which is why one person has had to both enter and
+            // collect. collected_by is written only when a payment is actually
+            // taken, so it cannot drift.
+            //
+            // Both columns hold the user's NAME, not an id, so grouping and the
+            // single-user match are by name. Two staff sharing a name share a
+            // row; that is a property of the schema, not of this report.
+            // Summed in PHP rather than with GROUP BY.
+            //
+            // The collector is an expression -- collected_by, falling back to
+            // posted_by for rows written before it existed -- and grouping by an
+            // expression trips MariaDB's ONLY_FULL_GROUP_BY, which does not
+            // treat the SELECT and GROUP BY expressions as the same one and
+            // rejects the query outright. The handover then printed a SQL error
+            // where the day's takings should be. One day of collections is a
+            // small enough set to add up here, and it removes the dependency on
+            // how a particular server happens to be configured.
             $totalsByUser = [];
 
             foreach ($permitted as $key => $line) {
                 $query = (clone $base)
                     ->where('entry_direction', 'income')
-                    ->where('module', $line['module'])
-                    ->when(!$seesEveryone, fn ($q) => $q->where('posted_by', $user?->name));
+                    ->where('module', $line['module']);
 
                 if (isset($line['category'])) {
                     $query->where('category', $line['category']);
                 }
 
-                $grouped = $query
-                    ->groupBy('posted_by')
-                    ->selectRaw('posted_by, SUM(paid_amount) as amount')
-                    ->get();
+                foreach ($query->get(['collected_by', 'posted_by', 'paid_amount']) as $row) {
+                    // Entries posted before the collector was recorded fall back
+                    // to posted_by, and to Unattributed when neither is set. They
+                    // are shown rather than dropped so the rows still add up to
+                    // the hospital total -- money that appears to vanish between
+                    // two reports is worse than money nobody has claimed.
+                    $collector = trim((string) ($row->collected_by ?? '')) !== ''
+                        ? (string) $row->collected_by
+                        : trim((string) ($row->posted_by ?? ''));
 
-                foreach ($grouped as $row) {
-                    // Older entries were posted before the collector was
-                    // recorded. They are shown as unattributed rather than
-                    // dropped, so the rows still add up to the hospital total
-                    // above -- money that appears to vanish between two
-                    // reports is worse than money nobody has claimed.
-                    $name = $row->posted_by ?: 'Unattributed';
-                    $totalsByUser[$name][$key] = round((float) $row->amount, 2);
+                    if (!$seesEveryone && $collector !== (string) $user?->name) {
+                        continue;
+                    }
+
+                    $name = $collector !== '' ? $collector : 'Unattributed';
+                    $totalsByUser[$name][$key] = round(
+                        ($totalsByUser[$name][$key] ?? 0) + (float) $row->paid_amount,
+                        2
+                    );
                 }
             }
 

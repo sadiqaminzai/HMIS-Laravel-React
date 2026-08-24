@@ -6,6 +6,8 @@ import { useSettings } from '../context/SettingsContext';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { POWERED_BY_TEXT, poweredByStyle } from '../utils/receiptBranding';
+import { printName } from '../utils/printName';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface LabInvoicePrintProps {
   hospital: Hospital;
@@ -40,7 +42,7 @@ export function LabInvoicePrint({
   const invoiceItems = labTest.selectedTests.map(testId => {
     const template = testTemplates.find(t => t.id === testId);
     return {
-      name: template?.testName || 'Unknown Test',
+      name: printName(template?.testName) || 'UNKNOWN TEST',
       price: template?.price || 0,
       code: template?.testCode || '-'
     };
@@ -322,9 +324,9 @@ export function LabInvoicePrint({
                   Patient
                 </div>
                 {[
-                  ['Name', labTest.patientName],
+                  ['Name', printName(labTest.patientName)],
                   ['ID', labTest.patientDisplayId || labTest.patientId],
-                  ['Age / Sex', `${labTest.patientAge} / ${labTest.patientGender}`],
+                  ['Age / Sex', `${formatAge(labTest.patientAge, labTest.patientAgeUnit)} / ${labTest.patientGender}`],
                 ].map(([label, value]) => (
                   <div key={String(label)} style={{ marginBottom: '1px' }}>
                     <span style={{ color: '#000', fontSize: '0.85em' }}>{label}: </span>
@@ -389,14 +391,11 @@ export function LabInvoicePrint({
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>{total.toFixed(2)}</span>
             </div>
 
-            {labTest.status === 'unpaid' && (
-              <div
-                className="text-center font-bold uppercase"
-                style={{ letterSpacing: '0.2em', border: '1px solid #000', padding: '3px 0', margin: '7px 0' }}
-              >
-                Unpaid
-              </div>
-            )}
+            {/* No payment-status stamp. The slip is now printed before the money
+                is taken -- the clerk raises the order and the patient carries it
+                to the cashier -- so an UNPAID box would be on almost every
+                receipt handed out, and would still be there on the copy the
+                patient keeps after paying. */}
 
             <div className="text-center" style={{ fontSize: '0.82em', borderTop: '1px dashed #000', paddingTop: '4px' }}>
               <div>Please keep this receipt to collect your report.</div>
@@ -443,9 +442,9 @@ export function LabInvoicePrint({
               <div>
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">Bill To (Patient)</h3>
                 <div className="space-y-1 text-sm">
-                  <p className="font-bold text-lg text-gray-900">{labTest.patientName}</p>
+                  <p className="font-bold text-lg text-gray-900">{printName(labTest.patientName)}</p>
                   <p className="text-gray-600">ID: {labTest.patientDisplayId || labTest.patientId}</p>
-                  <p className="text-gray-600">{labTest.patientAge} Years / {labTest.patientGender}</p>
+                  <p className="text-gray-600">{formatAgeLong(labTest.patientAge, labTest.patientAgeUnit)} / {labTest.patientGender}</p>
                   {patient?.phone && <p className="text-gray-600">Phone: {patient.phone}</p>}
                   {patient?.address && <p className="text-gray-600">{patient.address}</p>}
                 </div>
@@ -453,7 +452,7 @@ export function LabInvoicePrint({
               <div>
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">Prescribed By</h3>
                 <div className="space-y-1 text-sm">
-                  <p className="font-bold text-lg text-gray-900">{labTest.doctorName}</p>
+                  <p className="font-bold text-lg text-gray-900">{printName(labTest.doctorName)}</p>
                   {doctor?.specialization && <p className="text-gray-600">{doctor.specialization}</p>}
                   <p className="text-gray-600">Hospital: {hospital.name}</p>
                 </div>
@@ -511,12 +510,10 @@ export function LabInvoicePrint({
               </table>
             </div>
 
-            {/* Payment Status */}
-            <div className="mb-12 flex justify-end">
-              <div className="border-2 border-green-500 text-green-600 px-6 py-2 rounded-lg font-bold text-xl uppercase tracking-widest transform -rotate-6 opacity-80">
-                {labTest.status === 'unpaid' ? 'UNPAID' : 'PAID'}
-              </div>
-            </div>
+            {/* Payment-status stamp removed for the same reason as on the
+                thermal slip: the receipt is printed before payment is taken, so
+                the stamp would be wrong for most of its life. Note the old
+                markup drew UNPAID in the green PAID styling regardless. */}
 
             {/* Footer */}
             <div className="mt-auto pt-8 border-t border-gray-200 text-center text-xs text-gray-500">

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Patient;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class PatientController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function index(Request $request)
     {
         $query = Patient::query();
@@ -67,9 +70,11 @@ class PatientController extends Controller
         // Pagination is retained so no single query/response is huge; clients that
         // need the full list page through it. The ceiling is only a memory guard.
         $perPage = max(1, min($request->integer('per_page', 25), 1000));
-        // id tiebreaker: ordering by name alone is non-deterministic for duplicate
-        // names, which can drop or repeat rows across page boundaries.
-        $patients = $query->orderBy('name')->orderBy('id')->paginate($perPage);
+        // Newest registration first: the patient a receptionist just entered is
+        // the one they are about to act on, and alphabetical order buried it.
+        // id tiebreaker because created_at alone is non-deterministic for rows
+        // saved in the same second, which can drop or repeat them across pages.
+        $patients = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($perPage);
         $patients->setCollection(
             $patients->getCollection()->map(fn ($patient) => $this->withMediaUrls($patient))
         );
@@ -176,6 +181,9 @@ class PatientController extends Controller
             ],
             'name' => ['required', 'string', 'max:255'],
             'age' => ['nullable', 'integer', 'min:0', 'max:150'],
+            // The unit the number was given in. Stored as said rather than
+            // converted, so "15 months" stays 15 months everywhere it appears.
+            'age_unit' => ['nullable', 'in:year,month,day'],
             'gender' => ['required', 'in:male,female,other'],
             'phone' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:500'],
@@ -183,8 +191,10 @@ class PatientController extends Controller
             'image' => ['nullable', 'image', 'max:2048'],
         ]);
 
-        return $data;
+        return $this->upperCaseNames($data, ['name']);
     }
+
+
 
     private function withMediaUrls(Patient $patient): Patient
     {

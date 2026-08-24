@@ -187,6 +187,7 @@ class LabOrderController extends Controller
             $walkInPatientId = null;
             $patientName = '';
             $patientAge = 0;
+            $patientAgeUnit = 'year';
             $patientGender = 'male';
 
             if ($isWalkIn) {
@@ -194,6 +195,7 @@ class LabOrderController extends Controller
                     'hospital_id' => $hospitalId,
                     'name' => $data['walk_in_patient']['name'],
                     'age' => $data['walk_in_patient']['age'],
+                    'age_unit' => $data['walk_in_patient']['age_unit'] ?? 'year',
                     'gender' => $data['walk_in_patient']['gender'],
                     'phone' => $data['walk_in_patient']['phone'] ?? null,
                     'created_by' => $request->user()?->name,
@@ -201,12 +203,14 @@ class LabOrderController extends Controller
                 $walkInPatientId = $walkIn->id;
                 $patientName = $walkIn->name;
                 $patientAge = $walkIn->age;
+                $patientAgeUnit = $walkIn->age_unit ?? 'year';
                 $patientGender = $walkIn->gender;
             } else {
                 $patient = Patient::findOrFail($data['patient_id']);
                 $patientId = $patient->id;
                 $patientName = $patient->name;
                 $patientAge = $patient->age;
+                $patientAgeUnit = $patient->age_unit ?? 'year';
                 $patientGender = $patient->gender;
             }
 
@@ -219,6 +223,7 @@ class LabOrderController extends Controller
                 'is_walk_in' => $isWalkIn,
                 'patient_name' => $patientName,
                 'patient_age' => $patientAge,
+                'patient_age_unit' => $patientAgeUnit,
                 'patient_gender' => $patientGender,
                 'doctor_id' => $data['doctor_id'],
                 'doctor_name' => $doctor->name,
@@ -403,6 +408,7 @@ class LabOrderController extends Controller
                 $labOrder->is_walk_in = false;
                 $labOrder->patient_name = $patient->name;
                 $labOrder->patient_age = $patient->age;
+                $labOrder->patient_age_unit = $patient->age_unit ?? 'year';
                 $labOrder->patient_gender = $patient->gender;
             }
 

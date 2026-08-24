@@ -6,11 +6,14 @@ use App\Models\Appointment;
 use App\Models\Manufacturer;
 use App\Models\Medicine;
 use App\Models\MedicineType;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class MedicineController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -227,7 +230,7 @@ class MedicineController extends Controller
     {
         $hospitalId = $request->integer('hospital_id') ?: $defaultHospitalId ?: $request->user()->hospital_id;
 
-        return $request->validate([
+        return $this->upperCaseNames($request->validate([
             'hospital_id' => [$request->user()->role === 'super_admin' ? 'required' : 'sometimes', 'exists:hospitals,id'],
             'manufacturer_id' => ['required', 'exists:manufacturers,id'],
             'medicine_type_id' => ['required', 'exists:medicine_types,id'],
@@ -265,7 +268,7 @@ class MedicineController extends Controller
             ],
             'barcode_type' => ['nullable', Rule::in(['manual', 'manufacturer', 'system'])],
             'status' => ['required', 'in:active,inactive'],
-        ]);
+        ]), ['brand_name', 'generic_name']);
     }
 
     /**

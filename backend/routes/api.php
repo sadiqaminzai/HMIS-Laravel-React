@@ -7,6 +7,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\PaymentCollectionController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\ShiftController;
@@ -94,6 +95,19 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('appointments', [AppointmentController::class, 'store'])->middleware('permission:add_appointments,schedule_appointments,manage_appointments');
 	Route::match(['PUT', 'PATCH'], 'appointments/{appointment}', [AppointmentController::class, 'update'])->middleware('permission:edit_appointments,manage_appointments,update_appointment_status');
 	Route::delete('appointments/{appointment}', [AppointmentController::class, 'destroy'])->middleware('permission:delete_appointments,manage_appointments');
+	// Collecting the fee is its own right, so a cashier can take money without
+	// being able to edit the appointment, and a clerk can book without taking it.
+	// COLLECT keeps a fallback so nobody is locked out mid-deploy. REVERSE does
+	// NOT: undoing a payment is how cash gets taken and the trace erased, so it
+	// is granted explicitly or not at all.
+	// The money collector's desk: every unpaid charge across the revenue
+	// modules, filtered to the ones this user may actually settle. Read-only
+	// -- collecting still goes to each module's own payment endpoint, so the
+	// per-module permission and collector attribution are unchanged.
+	Route::get('payment-collection/pending', [PaymentCollectionController::class, 'pending']);
+
+	Route::post('appointments/{appointment}/payment', [AppointmentController::class, 'processPayment'])->middleware('permission:manage_appointment_payments,manage_appointments');
+	Route::post('appointments/{appointment}/payment/reverse', [AppointmentController::class, 'reversePayment'])->middleware('permission:reverse_appointment_payment');
 
 	// Room management and booking
 	Route::get('rooms', [RoomController::class, 'index'])->middleware('permission:view_rooms,manage_rooms');
@@ -108,6 +122,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('room-bookings', [RoomBookingController::class, 'store'])->middleware('permission:add_room_bookings,manage_room_bookings');
 	Route::match(['PUT', 'PATCH'], 'room-bookings/{roomBooking}', [RoomBookingController::class, 'update'])->middleware('permission:edit_room_bookings,manage_room_bookings');
 	Route::delete('room-bookings/{roomBooking}', [RoomBookingController::class, 'destroy'])->middleware('permission:delete_room_bookings,manage_room_bookings');
+	Route::post('room-bookings/{roomBooking}/payment', [RoomBookingController::class, 'processPayment'])->middleware('permission:manage_room_booking_payments,manage_room_bookings');
+	Route::post('room-bookings/{roomBooking}/payment/reverse', [RoomBookingController::class, 'reversePayment'])->middleware('permission:reverse_room_booking_payment');
 
 	// Surgery management
 	Route::get('surgery-types', [SurgeryTypeController::class, 'index'])->middleware('permission:view_surgery_types,manage_surgery_types');
@@ -128,6 +144,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::match(['PUT', 'PATCH'], 'patient-surgeries/{patientSurgery}', [PatientSurgeryController::class, 'update'])->middleware('permission:edit_patient_surgeries,manage_patient_surgeries');
 	Route::post('patient-surgeries/{patientSurgery}/toggle-payment-status', [PatientSurgeryController::class, 'togglePaymentStatus'])->middleware('permission:edit_patient_surgeries,manage_patient_surgeries');
 	Route::delete('patient-surgeries/{patientSurgery}', [PatientSurgeryController::class, 'destroy'])->middleware('permission:delete_patient_surgeries,manage_patient_surgeries');
+	Route::post('patient-surgeries/{patientSurgery}/payment', [PatientSurgeryController::class, 'processPayment'])->middleware('permission:manage_surgery_payments,manage_patient_surgeries');
+	Route::post('patient-surgeries/{patientSurgery}/payment/reverse', [PatientSurgeryController::class, 'reversePayment'])->middleware('permission:reverse_surgery_payment');
 
 	Route::get('manufacturers', [ManufacturerController::class, 'index'])->middleware('permission:view_manufacturers,manage_manufacturers');
 	Route::get('manufacturers/{manufacturer}', [ManufacturerController::class, 'show'])->middleware('permission:view_manufacturers,manage_manufacturers');

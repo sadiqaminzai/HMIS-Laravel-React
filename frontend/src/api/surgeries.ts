@@ -82,7 +82,26 @@ export async function deletePatientSurgery(id: string) {
   return res.data;
 }
 
+/**
+ * @deprecated Superseded by collect/reversePatientSurgeryPayment.
+ *
+ * The toggle is guarded by "can edit surgeries", so it cannot be granted to a
+ * cashier alone or withheld from the clerk who schedules the operation. It is
+ * kept only for callers that have not moved across yet.
+ */
 export async function togglePatientSurgeryPaymentStatus(id: string) {
   const res = await api.post(`/patient-surgeries/${id}/toggle-payment-status`);
   return res.data;
+}
+
+/** Take payment. Carries its own permission and records the collector. */
+export async function collectPatientSurgeryPayment(id: string, paymentMethod = 'cash') {
+  const res = await api.post(`/patient-surgeries/${id}/payment`, { payment_method: paymentMethod });
+  return res.data?.data ?? res.data;
+}
+
+/** Reverse a payment. A separate right from taking one. */
+export async function reversePatientSurgeryPayment(id: string) {
+  const res = await api.post(`/patient-surgeries/${id}/payment/reverse`);
+  return res.data?.data ?? res.data;
 }

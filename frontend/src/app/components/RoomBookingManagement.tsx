@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Pencil, Trash2, Search, X, Printer, Eye, CalendarCheck } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms, getRoomBookingAvailability } from '../../api/rooms';
+import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms, getRoomBookingAvailability, collectRoomBookingPayment, reverseRoomBookingPayment } from '../../api/rooms';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useHospitals } from '../context/HospitalContext';
@@ -14,6 +14,8 @@ import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
 import { poweredByHtml } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
+import { SearchableSelect } from './SearchableSelect';
+import { printName } from '../utils/printName';
 
 interface RoomBookingManagementProps {
   hospital: Hospital;
@@ -114,6 +116,11 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const canAdd = hasPermission('add_room_bookings') || hasPermission('manage_room_bookings');
   const canEdit = hasPermission('edit_room_bookings') || hasPermission('manage_room_bookings');
   const canDelete = hasPermission('delete_room_bookings') || hasPermission('manage_room_bookings');
+  // Taking the fee is its own right, so it is checked on its own rather than
+  // inferred from being able to edit the booking.
+  const canCollectBookingFee = hasPermission('manage_room_booking_payments') || hasPermission('manage_room_bookings');
+  // No fallback on reverse -- see AppointmentManagement.
+  const canReverseBookingFee = hasPermission('reverse_room_booking_payment');
 
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [roomOptions, setRoomOptions] = useState<RoomOption[]>([]);
@@ -427,6 +434,30 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
     }
   };
 
+  /**
+   * Take or reverse the booking fee.
+   *
+   * Goes through the payment endpoints rather than PUTting the whole booking
+   * back: the till action then needs only the collection permission, and the
+   * ledger records who took the cash instead of who last saved the record.
+   */
+  const handlePaymentToggle = async (item: BookingItem) => {
+    const isPaid = String(item.paymentStatus) === 'paid';
+    try {
+      const updated = isPaid
+        ? await reverseRoomBookingPayment(item.id)
+        : await collectRoomBookingPayment(item.id);
+      const normalized = mapBooking(updated);
+      setBookings((prev) => prev.map((b) => (b.id === normalized.id ? normalized : b)));
+      toast.success(isPaid ? 'Payment reversed' : 'Payment collected');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message
+        || (error?.response?.status === 403
+          ? 'You do not have permission to change payment on room bookings.'
+          : 'Failed to update payment'));
+    }
+  };
+
   const quickStatusUpdate = async (item: BookingItem, status: BookingItem['status']) => {
     try {
       await updateRoomBooking(item.id, {
@@ -455,6 +486,21 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const filteredPatients = patients.filter((p) => p.hospitalId === form.hospitalId);
   const filteredDoctors = doctors.filter((d) => d.hospitalId === form.hospitalId);
   const filteredRooms = roomOptions.filter((r) => r.hospitalId === form.hospitalId);
+
+  // The second line is searched as well as shown, so a clerk can find a patient
+  // by the ID on their card or the phone number they read out, not only by a
+  // name they may be spelling differently.
+  const patientOptions = filteredPatients.map((p) => ({
+    value: p.id,
+    label: p.name,
+    meta: [p.patientId, p.phone].filter(Boolean).join(' · '),
+  }));
+
+  const doctorOptions = filteredDoctors.map((d) => ({
+    value: d.id,
+    label: d.name,
+    meta: [d.specialization, d.registrationNumber].filter(Boolean).join(' · '),
+  }));
 
   const openPrintReceipt = (item: BookingItem) => {
     // Straight to the printer using the configured size -- no size prompt, and
@@ -639,7 +685,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         <h1 class="title">Room Booking Receipt</h1>
       </div>
       
-      ${!isCompactReceipt && item.patientName ? `<div class="row" style="border: none; padding: 0;"><div class="val" style="text-align: center; color: var(--brand-color); font-size: 14px;">Patient: ${item.patientName}</div></div>` : ''}
+      ${!isCompactReceipt && item.patientName ? `<div class="row" style="border: none; padding: 0;"><div class="val" style="text-align: center; color: var(--brand-color); font-size: 14px;">Patient: ${printName(item.patientName)}</div></div>` : ''}
       
       <div class="content">
         <div class="frow">
@@ -647,8 +693,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
           <div class="fcell r"><span class="k">Date</span><span class="v">${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })}</span></div>
         </div>
         <div class="frow">
-          <div class="fcell"><span class="k">Patient</span><span class="v">${item.patientName}</span></div>
-          <div class="fcell r"><span class="k">Doctor</span><span class="v">${item.doctorName || 'N/A'}</span></div>
+          <div class="fcell"><span class="k">Patient</span><span class="v">${printName(item.patientName)}</span></div>
+          <div class="fcell r"><span class="k">Doctor</span><span class="v">${printName(item.doctorName) || 'N/A'}</span></div>
         </div>
         <div class="frow">
           <div class="fcell"><span class="k">Room No</span><span class="v">${item.roomNumber || 'N/A'}</span></div>
@@ -779,7 +825,36 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   <td className="px-4 py-2">
                     <div className="flex flex-col gap-1">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 w-fit">{item.status}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 w-fit">{item.paymentStatus}</span>
+                      {/* The fee was previously collectable only by opening the
+                          edit form, which meant taking money required the right
+                          to change the booking. This switch calls the payment
+                          endpoints instead, so a cashier needs nothing more. */}
+                      {(() => {
+                        const isPaid = String(item.paymentStatus) === 'paid';
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 w-fit">{item.paymentStatus}</span>
+                            {canCollectBookingFee && (
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isPaid}
+                                disabled={isPaid ? !canReverseBookingFee : !canCollectBookingFee}
+                                title={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
+                                aria-label={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
+                                onClick={() => handlePaymentToggle(item)}
+                                className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  isPaid ? 'bg-emerald-500' : 'bg-amber-400'
+                                }`}
+                              >
+                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                  isPaid ? 'translate-x-4' : 'translate-x-0.5'
+                                }`} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-4 py-2 text-center">
@@ -852,17 +927,24 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label>
-                <select title={t('ui.patient')} value={form.patientId} onChange={(e) => setForm((p) => ({ ...p, patientId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
-                  <option value="">Select patient</option>
-                  {filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form.patientId}
+                  options={patientOptions}
+                  onChange={(patientId) => setForm((p) => ({ ...p, patientId }))}
+                  placeholder={t('ui.selectPatient')}
+                  title={t('ui.patient')}
+                  required
+                />
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label>
-                <select title={t('ui.doctor')} value={form.doctorId} onChange={(e) => setForm((p) => ({ ...p, doctorId: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
-                  <option value="">None</option>
-                  {filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form.doctorId}
+                  options={doctorOptions}
+                  onChange={(doctorId) => setForm((p) => ({ ...p, doctorId }))}
+                  placeholder={t('ui.selectDoctor')}
+                  title={t('ui.doctor')}
+                />
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Booking Date</label>
@@ -900,7 +982,7 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   <option value="Cancelled">Cancelled</option>
                 </select>
               </div>
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label>
                 <select title="Payment status" value={form.paymentStatus} onChange={(e) => setForm((p) => ({ ...p, paymentStatus: e.target.value as BookingItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="pending">pending</option>
@@ -909,7 +991,7 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   <option value="cancelled">cancelled</option>
                 </select>
               </div>
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Remarks</label>
                 <input title="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>

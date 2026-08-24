@@ -9,6 +9,7 @@ export interface LabOrderApi {
   is_walk_in?: boolean;
   patient_name: string;
   patient_age: number;
+  patient_age_unit?: 'year' | 'month' | 'day';
   patient_gender: string;
   doctor_id: number;
   doctor_name: string;

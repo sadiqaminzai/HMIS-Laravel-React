@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Surgery;
 use App\Models\SurgeryType;
 use App\Services\SurgeryService;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 
 class SurgeryController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function __construct(private readonly SurgeryService $surgeryService)
     {
     }
@@ -118,7 +121,7 @@ class SurgeryController extends Controller
             $data['hospital_id'] = $hospitalId;
         }
 
-        return $data;
+        return $this->upperCaseNames($data, ['name']);
     }
 
     private function assertTypeScope(int $typeId, int $hospitalId): void

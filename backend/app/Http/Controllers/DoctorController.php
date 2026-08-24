@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Http\Controllers\Concerns\StoresNamesInUpperCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class DoctorController extends Controller
 {
+    use StoresNamesInUpperCase;
+
     public function index(Request $request)
     {
         $query = User::query()->where('role', 'doctor');
@@ -188,7 +191,7 @@ class DoctorController extends Controller
             }
         }
 
-        return $data;
+        return $this->upperCaseNames($data, ['name']);
     }
 
     private function withMediaUrls(User $doctor): User

@@ -22,6 +22,7 @@ const mapPatient = (p: any): Patient => ({
   patientId: p.patient_id ?? '',
   name: p.name,
   age: Number(p.age ?? 0),
+  ageUnit: (p.age_unit ?? 'year') as 'year' | 'month' | 'day',
   gender: (p.gender ?? 'other') as Patient['gender'],
   phone: p.phone ?? '',
   address: p.address ?? '',
@@ -82,6 +83,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     if (payload.patientId) formData.append('patient_id', payload.patientId);
     if (payload.name) formData.append('name', payload.name);
     if (payload.age !== undefined && payload.age !== null) formData.append('age', String(payload.age));
+    if (payload.ageUnit) formData.append('age_unit', String(payload.ageUnit));
     if (payload.gender) formData.append('gender', payload.gender);
     if (payload.phone) formData.append('phone', payload.phone);
     if (payload.address) formData.append('address', payload.address);

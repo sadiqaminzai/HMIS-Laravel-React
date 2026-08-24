@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
+import { formatAge, formatAgeLong } from '../utils/age';
 
 interface PrescriptionListProps {
   hospital: Hospital;
@@ -789,7 +790,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     } else {
       drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row1);
     }
-    drawField("Age / Gender", `${prescription.patientAge} Y / ${prescription.patientGender}`, pX, row2);
+    drawField("Age / Gender", `${formatAge(prescription.patientAge, prescription.patientAgeUnit)} / ${prescription.patientGender}`, pX, row2);
     if (showPrescriptionListMetaForPrint) {
       drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row2);
     } else {
@@ -1266,7 +1267,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-xs font-medium text-gray-900 dark:text-white">{prescription.patientName}</div>
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400">{prescription.patientAge}Y • {prescription.patientGender}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400">{formatAge(prescription.patientAge, prescription.patientAgeUnit, { compact: true })} • {prescription.patientGender}</div>
                       {patientPhone && (
                         <div className="text-[10px] text-gray-500 dark:text-gray-400">{patientPhone}</div>
                       )}

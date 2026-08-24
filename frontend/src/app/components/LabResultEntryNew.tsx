@@ -1,7 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save } from 'lucide-react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
 import { LabTest, TestTemplate, TestResult } from '../types';
+import { formatAge, formatAgeLong } from '../utils/age';
+
+/**
+ * Remarks are prose a technician writes for a clinician to read -- an ordered
+ * list of observations, an emphasised caveat -- so they get the same editor the
+ * prescription and ultrasound reports use, and print with that formatting.
+ * Headings are left out on purpose: this is a note inside a report, not a
+ * document with its own section structure.
+ */
+const REMARKS_EDITOR_MODULES = {
+  toolbar: [
+    ['bold', 'italic', 'underline'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ align: [] }],
+    ['clean'],
+  ],
+};
+
+/** Quill leaves this behind when everything is deleted; it is not content. */
+const isBlankHtml = (html: string) => !html || html.replace(/<[^>]*>/g, '').trim() === '';
 
 interface LabResultEntryNewProps {
   test: LabTest;
@@ -73,7 +95,9 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
       return;
     }
     
-    onSubmit(results, remarks);
+    // Store an empty string rather than Quill's "<p><br></p>", so the report can
+    // keep testing remarks for truthiness to decide whether to print the block.
+    onSubmit(results, isBlankHtml(remarks) ? '' : remarks);
   };
 
   // Group results by test
@@ -93,7 +117,7 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
           <div>
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Lab Result Entry</h2>
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-              {test.testNumber} • {test.patientName} ({test.patientAge}Y, {test.patientGender})
+              {test.testNumber} • {test.patientName} ({formatAge(test.patientAge, test.patientAgeUnit, { compact: true })}, {test.patientGender})
             </p>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
@@ -172,13 +196,15 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               Overall Lab Technician Remarks
             </label>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              placeholder="Enter overall remarks, observations, or recommendations..."
-            />
+            <div className="custom-quill-editor [&_.ql-editor]:min-h-[110px] [&_.ql-editor]:text-xs">
+              <ReactQuill
+                value={remarks}
+                onChange={setRemarks}
+                theme="snow"
+                modules={REMARKS_EDITOR_MODULES}
+                placeholder="Enter overall remarks, observations, or recommendations..."
+              />
+            </div>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Transaction, TransactionDetail } from '../types';
+import { SaleUnit, Transaction, TransactionDetail } from '../types';
 import api from '../../api/axios';
 import { fetchAllPages } from '../utils/fetchAllPages';
 import { toast } from 'sonner';
@@ -23,7 +23,9 @@ const mapDetail = (d: any): TransactionDetail => ({
   batchNo: d.batch_no ?? undefined,
   expiryDate: d.expiry_date ? new Date(d.expiry_date) : undefined,
   qtty: Number(d.qtty ?? 0),
-  saleUnit: (d.sale_unit === 'pack' ? 'pack' : 'piece') as 'piece' | 'pack',
+  // Strip is a tier of its own: collapsing it into piece here would re-price a
+  // strip line as a single tablet the moment an invoice is reopened.
+  saleUnit: (d.sale_unit === 'pack' || d.sale_unit === 'strip' ? d.sale_unit : 'piece') as SaleUnit,
   packSizeSnapshot: Number(d.pack_size_snapshot ?? 1),
   baseQtty: Number(d.base_qtty ?? d.qtty ?? 0),
   bonus: d.bonus !== undefined && d.bonus !== null ? Number(d.bonus) : undefined,
@@ -127,8 +129,9 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
         batch_no: d.batchNo ?? null,
         expiry_date: d.expiryDate ? d.expiryDate.toISOString().slice(0, 10) : null,
         qtty: d.qtty,
-        // Backend converts pack -> pieces and snapshots the pack size.
-        sale_unit: d.saleUnit === 'pack' ? 'pack' : 'piece',
+        // Backend converts pack/strip -> pieces and snapshots the conversion. It
+        // rejects anything outside these three, so send the tier verbatim.
+        sale_unit: d.saleUnit === 'pack' || d.saleUnit === 'strip' ? d.saleUnit : 'piece',
         bonus: d.bonus ?? 0,
         price: d.price,
         discount: d.discount ?? 0,
