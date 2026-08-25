@@ -163,28 +163,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   // record_finance_payments. Settling afterwards from the finance list is a
   // different act with its own permission.
   const canRecordPayment = hasPermission('record_finance_payments') || hasPermission('manage_finance');
+  const canApplyPaymentDefault = canRecordPayment || hasPermission('edit_finance_payment_status');
   const { loadHospitalSetting, getPrintColumnSettings, getShowOutOfStockMedicinesForPharmacy, getPrintPaperSize,
           getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults,
-          getBarcodeScanningEnabled, getInvoiceFields } = useSettings();
-
-  // Master switch from Settings > Barcodes; hides the scan field entirely.
-  const barcodeScanningEnabled = getBarcodeScanningEnabled(currentHospital.id);
-
-  // Which customer options this sale screen offers = hospital setting AND the
-  // user's own permission. A user without pharmacy_walk_in_sales never sees the
-  // walk-in option, even where the hospital enables it.
-  const pharmacyCustomerMode = getPharmacyCustomerMode(currentHospital.id);
+          getPharmacyWalkInFields, getBarcodeScanningEnabled, getInvoiceFields,
+          getDefaultPaymentStatuses } = useSettings();
   const mayUseWalkIn = hasPermission('pharmacy_walk_in_sales') || hasPermission('manage_transactions');
-  const walkInAllowed = pharmacyCustomerMode !== 'patient_only' && mayUseWalkIn;
-  const patientAllowed = pharmacyCustomerMode !== 'walk_in_only';
-  // If the hospital is walk-in only but this user lacks the permission, fall back
-  // to the patient option so the screen is never left with no way to sell.
-  const showCustomerToggle = walkInAllowed && patientAllowed;
-  const defaultIsWalkIn = walkInAllowed
-    && (getPharmacyDefaultCustomer(currentHospital.id) === 'walk_in' || !patientAllowed);
-  // Configured once per hospital; pre-fills a new walk-in sale so a retail
-  // counter is not retyped on every invoice.
-  const walkInDefaults = getPharmacyWalkInDefaults(currentHospital.id);
   const canAdd = hasPermission('add_transactions') || hasPermission('manage_transactions');
   const canEdit = hasPermission('edit_transactions') || hasPermission('manage_transactions');
   const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
@@ -231,6 +215,48 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [highlightedMedicineIndex, setHighlightedMedicineIndex] = useState<Record<number, number>>({});
 
   const [formData, setFormData] = useState(() => buildInitialFormData(currentHospital.id));
+  // Customer and barcode behaviour must come from the hospital that owns this
+  // invoice. This matters especially in Super Admin's "All Hospitals" view.
+  const invoiceHospitalId = formData.hospitalId || currentHospital.id;
+  const pharmacyCustomerMode = getPharmacyCustomerMode(invoiceHospitalId);
+  const walkInAllowed = pharmacyCustomerMode !== 'patient_only' && mayUseWalkIn;
+  const patientAllowed = pharmacyCustomerMode !== 'walk_in_only';
+  const showCustomerToggle = walkInAllowed && patientAllowed;
+  const walkInDefaults = getPharmacyWalkInDefaults(invoiceHospitalId);
+  const walkInFields = getPharmacyWalkInFields(invoiceHospitalId);
+  // Master switch from Settings > Barcodes; hides the scan field entirely.
+  const barcodeScanningEnabled = getBarcodeScanningEnabled(invoiceHospitalId);
+  // The setting is consulted only while opening a new document. During an edit
+  // the existing paid amount is the source of truth, even if the setting has
+  // since changed.
+  const startsPaidByDefault = canApplyPaymentDefault
+    && getDefaultPaymentStatuses(formData.hospitalId)[formData.trxType] === 'paid';
+
+  // Settings may arrive just after the modal opens. Reconcile only a NEW sale
+  // when that happens; historical walk-in invoices remain editable even if the
+  // hospital later changes to registered-patients-only mode.
+  useEffect(() => {
+    if (!showAddModal || !['sales', 'sales_return'].includes(formData.trxType)) return;
+
+    if (pharmacyCustomerMode === 'patient_only' && formData.isWalkIn) {
+      setFormData((prev) => ({
+        ...prev,
+        isWalkIn: false,
+        walkInName: '',
+        walkInPhone: '',
+        walkInAddress: '',
+      }));
+    } else if (pharmacyCustomerMode === 'walk_in_only' && walkInAllowed && !formData.isWalkIn) {
+      setFormData((prev) => ({
+        ...prev,
+        isWalkIn: true,
+        patientId: '',
+        walkInName: prev.walkInName || walkInDefaults.name,
+        walkInPhone: prev.walkInPhone || walkInDefaults.phone,
+        walkInAddress: prev.walkInAddress || walkInDefaults.address,
+      }));
+    }
+  }, [showAddModal, formData.trxType, formData.isWalkIn, pharmacyCustomerMode, walkInAllowed, walkInDefaults]);
 
   const scopedTransactions = filterByHospital(transactions);
 
@@ -354,6 +380,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     transaction: Transaction | null = selectedTransaction,
     forceA4 = false,
     sizeOverride?: PrintPaperSize,
+    printWindowOverride?: Window | null,
   ) => {
     if (!transaction) return;
     const trx = transaction;
@@ -372,7 +399,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     const targetSize: PrintPaperSize = forceA4
       ? 'a4'
       : (sizeOverride ?? getPrintPaperSize(trx.hospitalId || currentHospital.id, printModuleFor(trx)));
-    const printWindow = window.open('', '_blank', 'width=1200,height=920');
+    // Ctrl+P opens a blank preview synchronously (while the keyboard event still
+    // has popup permission), then hands that window here after the API save.
+    const printWindow = printWindowOverride && !printWindowOverride.closed
+      ? printWindowOverride
+      : window.open('', '_blank', 'width=1200,height=920');
     if (!printWindow) {
       toast.error('Unable to open print preview. Please allow popups for this site.');
       return;
@@ -1090,12 +1121,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   };
 
   useEffect(() => {
-    if (selectedTransaction?.hospitalId) {
-      loadHospitalSetting(selectedTransaction.hospitalId);
-    } else if (selectedHospitalId) {
-      loadHospitalSetting(selectedHospitalId);
+    const hospitalId = selectedTransaction?.hospitalId
+      || (userRole === 'super_admin' && selectedHospitalId !== 'all' ? selectedHospitalId : invoiceHospitalId);
+    if (hospitalId && hospitalId !== 'all') {
+      loadHospitalSetting(hospitalId);
     }
-  }, [selectedTransaction?.hospitalId, selectedHospitalId, loadHospitalSetting]);
+  }, [selectedTransaction?.hospitalId, invoiceHospitalId, selectedHospitalId, userRole, loadHospitalSetting]);
 
   // Follow the paper size configured for THIS kind of invoice: sales receipts
   // normally go to the thermal mini printer while purchase invoices go to A4.
@@ -1539,7 +1570,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         // Expired tag instead, so the reason it cannot be sold is visible.
         return getAvailableStock(m.id, undefined, formData.hospitalId, { includeExpired: true }) > 0;
       })
-      .slice(0, 50);
+      // Show the complete eligible catalogue. The former 50-row cap made the
+      // empty dropdown stop partway through A-Z even though typing could still
+      // find products beyond that artificial limit.
+      .sort((a, b) => {
+        const byBrand = a.brandName.localeCompare(b.brandName, undefined, { sensitivity: 'base' });
+        return byBrand !== 0 ? byBrand : String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+      });
   };
 
   useEffect(() => {
@@ -1703,18 +1740,29 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     };
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const targetHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all'
       ? selectedHospitalId
       : currentHospital.id;
+    const targetSetting = await loadHospitalSetting(targetHospitalId);
+    if (!targetSetting) {
+      toast.error('Unable to load pharmacy settings for the selected hospital');
+      return;
+    }
+    const targetMode = targetSetting.pharmacyCustomerMode;
+    const targetWalkInAllowed = targetMode !== 'patient_only' && mayUseWalkIn;
+    const targetPatientAllowed = targetMode !== 'walk_in_only';
+    const targetDefaultIsWalkIn = targetWalkInAllowed
+      && (targetSetting.pharmacyDefaultCustomer === 'walk_in' || !targetPatientAllowed);
+    const targetWalkInDefaults = targetSetting.pharmacyWalkInDefaults;
     // New invoices open as the type the user is currently viewing.
     setFormData({
       ...buildInitialFormData(targetHospitalId),
       trxType: trxTypeFilter,
-      isWalkIn: defaultIsWalkIn,
-      walkInName: walkInDefaults.name,
-      walkInPhone: walkInDefaults.phone,
-      walkInAddress: walkInDefaults.address,
+      isWalkIn: targetDefaultIsWalkIn,
+      walkInName: targetWalkInDefaults.name,
+      walkInPhone: targetWalkInDefaults.phone,
+      walkInAddress: targetWalkInDefaults.address,
     });
     setSupplierSearch('');
     setPatientSearch('');
@@ -1852,6 +1900,16 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [scanValue, setScanValue] = useState('');
   const [scanning, setScanning] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const submitIntentRef = useRef<'save' | 'save_print'>('save');
+  const pendingPrintWindowRef = useRef<Window | null>(null);
+
+  const cancelPendingPrint = () => {
+    if (pendingPrintWindowRef.current && !pendingPrintWindowRef.current.closed) {
+      pendingPrintWindowRef.current.close();
+    }
+    pendingPrintWindowRef.current = null;
+    submitIntentRef.current = 'save';
+  };
 
   /**
    * An invoice is rarely one line, so the caret has to return to the scan box
@@ -1932,7 +1990,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   /**
    * Invoice-level keyboard shortcuts.
    *
-   * Ctrl+S saves and Escape closes. Both are safe wherever the cursor is: no
+   * Ctrl+S saves, Ctrl+P saves then prints, and Escape closes. These are safe wherever the cursor is: no
    * one types either into a medicine name, unlike the plain-letter shortcut
    * this replaced, which could never fire from inside a cell.
    */
@@ -1941,13 +1999,29 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     if (!showAddModal && !showEditModal) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      // Ctrl+S is the only save shortcut. Shift+S was removed: inside a text
-      // cell Shift+S is simply how the letter S is typed, so it could never
-      // fire where the cursor actually is, and two shortcuts for one action is
-      // one more than anyone needs to remember.
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 's') {
+      const commandKey = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (commandKey && !event.altKey && (key === 's' || key === 'p')) {
         event.preventDefault();
         if (submitting) return;
+
+        if (key === 'p') {
+          if (!canPrint) {
+            toast.error('You do not have permission to print invoices');
+            return;
+          }
+          const preview = window.open('', '_blank', 'width=1200,height=920');
+          if (!preview) {
+            toast.error('Unable to open print preview. Please allow popups for this site.');
+            return;
+          }
+          pendingPrintWindowRef.current = preview;
+          submitIntentRef.current = 'save_print';
+        } else {
+          submitIntentRef.current = 'save';
+        }
+
         // Routed through the form so validation and the submit guard both run,
         // exactly as if the Save button had been pressed.
         transactionFormRef.current?.requestSubmit();
@@ -1971,7 +2045,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [showAddModal, showEditModal, submitting, openMedicineDropdownIndex]);
+  }, [showAddModal, showEditModal, submitting, openMedicineDropdownIndex, canPrint]);
 
   const handleMedicineChange = (index: number, medicineId: string) => {
     // Adopt the medicine's configured default unit (Box for packaged products),
@@ -2004,6 +2078,44 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   };
 
   const itemListRef = useRef<HTMLDivElement>(null);
+  const medicineDropdownRef = useRef<HTMLDivElement>(null);
+  const activeMedicineHighlight = openMedicineDropdownIndex === null
+    ? -1
+    : (highlightedMedicineIndex[openMedicineDropdownIndex] ?? -1);
+
+  // Keep keyboard navigation and the visible list in sync. Arrow keys already
+  // changed the highlighted option, but the portalled menu never scrolled, so
+  // the highlight disappeared below (or above) the visible choices.
+  useEffect(() => {
+    if (openMedicineDropdownIndex === null || activeMedicineHighlight < 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      const container = medicineDropdownRef.current;
+      const option = container?.querySelector<HTMLElement>(
+        `[data-medicine-option-index="${activeMedicineHighlight}"]`,
+      );
+      if (!container || !option) return;
+
+      const optionTop = option.offsetTop;
+      const optionBottom = optionTop + option.offsetHeight;
+      if (optionTop < container.scrollTop) {
+        container.scrollTop = optionTop;
+      } else if (optionBottom > container.scrollTop + container.clientHeight) {
+        container.scrollTop = optionBottom - container.clientHeight;
+      }
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [openMedicineDropdownIndex, activeMedicineHighlight]);
+
+  const focusFirstMedicineInput = () => {
+    requestAnimationFrame(() => {
+      const input = itemListRef.current?.querySelector<HTMLInputElement>('[data-medicine-input]');
+      if (!input) return;
+      input.focus();
+      input.select();
+    });
+  };
 
   // A portalled list is positioned in page coordinates, so it has to be
   // re-measured whenever those coordinates move.
@@ -2236,10 +2348,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     e.preventDefault();
     if (!formData.items.length || formData.items.some((i) => !i.medicineId)) {
       toast.error('Please select medicines for all items');
+      cancelPendingPrint();
       return;
     }
     if ((formData.trxType === 'purchase' || formData.trxType === 'purchase_return') && !formData.supplierId) {
       toast.error('Please select a supplier');
+      cancelPendingPrint();
       return;
     }
     // A sale needs a party: either a registered patient or a named walk-in customer.
@@ -2247,14 +2361,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       if (formData.isWalkIn) {
         if (!formData.walkInName.trim()) {
           toast.error(t('ui.walkInNameRequired'));
+          cancelPendingPrint();
           return;
         }
       } else if (!formData.patientId) {
         toast.error('Please select a patient');
+        cancelPendingPrint();
         return;
       }
     }
     if (!validateSalesStock()) {
+      cancelPendingPrint();
       return;
     }
     setSubmitting(true);
@@ -2262,7 +2379,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       const grandTotal = calculateTotals(formData.items);
       const paidAmount = Number(formData.paidAmount || 0);
       const dueAmount = Math.max(0, Number(formData.dueAmount || 0));
-      await addTransaction({
+      const savedTransaction = await addTransaction({
         hospitalId: formData.hospitalId,
         supplierId: formData.supplierId || undefined,
         patientId: formData.isWalkIn ? undefined : (formData.patientId || undefined),
@@ -2270,8 +2387,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         walkInCustomer: formData.isWalkIn
           ? {
               name: formData.walkInName.trim(),
-              phone: formData.walkInPhone.trim() || undefined,
-              address: formData.walkInAddress.trim() || undefined,
+              phone: walkInFields.showPhone ? (formData.walkInPhone.trim() || undefined) : undefined,
+              address: walkInFields.showAddress ? (formData.walkInAddress.trim() || undefined) : undefined,
             }
           : undefined,
         trxType: formData.trxType,
@@ -2280,10 +2397,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         dueAmount: Math.min(grandTotal, dueAmount),
         details: formData.items,
       });
+      const shouldPrint = submitIntentRef.current === 'save_print';
+      const printWindow = pendingPrintWindowRef.current;
+      submitIntentRef.current = 'save';
+      pendingPrintWindowRef.current = null;
       closeTransactionModal();
       toast.success('Transaction added successfully.');
       void Promise.all([refreshMedicines(), refreshStocks()]);
+      if (shouldPrint) {
+        await handlePrintInvoice(savedTransaction, false, undefined, printWindow);
+      }
     } catch (err: any) {
+      cancelPendingPrint();
       toast.error(err?.response?.data?.message || 'Failed to add transaction');
     } finally {
       setSubmitting(false);
@@ -2292,13 +2417,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTransaction) return;
+    if (!selectedTransaction) {
+      cancelPendingPrint();
+      return;
+    }
     if (!formData.items.length || formData.items.some((i) => !i.medicineId)) {
       toast.error('Please select medicines for all items');
+      cancelPendingPrint();
       return;
     }
     if ((formData.trxType === 'purchase' || formData.trxType === 'purchase_return') && !formData.supplierId) {
       toast.error('Please select a supplier');
+      cancelPendingPrint();
       return;
     }
     // A sale needs a party: either a registered patient or a named walk-in customer.
@@ -2306,14 +2436,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       if (formData.isWalkIn) {
         if (!formData.walkInName.trim()) {
           toast.error(t('ui.walkInNameRequired'));
+          cancelPendingPrint();
           return;
         }
       } else if (!formData.patientId) {
         toast.error('Please select a patient');
+        cancelPendingPrint();
         return;
       }
     }
     if (!validateSalesStock()) {
+      cancelPendingPrint();
       return;
     }
     setSubmitting(true);
@@ -2321,7 +2454,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       const grandTotal = calculateTotals(formData.items);
       const paidAmount = Number(formData.paidAmount || 0);
       const dueAmount = Math.max(0, Number(formData.dueAmount || 0));
-      await updateTransaction({
+      const savedTransaction = await updateTransaction({
         id: selectedTransaction.id,
         hospitalId: formData.hospitalId,
         supplierId: formData.supplierId || undefined,
@@ -2330,8 +2463,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         walkInCustomer: formData.isWalkIn
           ? {
               name: formData.walkInName.trim(),
-              phone: formData.walkInPhone.trim() || undefined,
-              address: formData.walkInAddress.trim() || undefined,
+              phone: walkInFields.showPhone ? (formData.walkInPhone.trim() || undefined) : undefined,
+              address: walkInFields.showAddress ? (formData.walkInAddress.trim() || undefined) : undefined,
             }
           : undefined,
         trxType: formData.trxType,
@@ -2340,10 +2473,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         dueAmount: Math.min(grandTotal, dueAmount),
         details: formData.items,
       });
+      const shouldPrint = submitIntentRef.current === 'save_print';
+      const printWindow = pendingPrintWindowRef.current;
+      submitIntentRef.current = 'save';
+      pendingPrintWindowRef.current = null;
       closeTransactionModal();
       toast.success('Transaction updated successfully.');
       void Promise.all([refreshMedicines(), refreshStocks()]);
+      if (shouldPrint) {
+        await handlePrintInvoice(savedTransaction, false, undefined, printWindow);
+      }
     } catch (err: any) {
+      cancelPendingPrint();
       toast.error(err?.response?.data?.message || 'Failed to update transaction');
     } finally {
       setSubmitting(false);
@@ -2384,7 +2525,15 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   useEffect(() => {
     const nextTotal = calculateTotals(formData.items);
     if (['sales', 'purchase', 'purchase_return', 'sales_return'].includes(formData.trxType) && lastEditedTotal === 'auto') {
-      setFormData((prev) => ({ ...prev, paidAmount: nextTotal, dueAmount: 0 }));
+      // On a new document, apply the hospital's configured default. On an
+      // edit, keep the amount already recorded and only recalculate its due
+      // balance; the default must never rewrite an existing payment.
+      setFormData((prev) => {
+        const paid = showEditModal
+          ? Math.max(0, Number(prev.paidAmount || 0))
+          : (startsPaidByDefault ? nextTotal : 0);
+        return { ...prev, paidAmount: paid, dueAmount: Math.max(0, nextTotal - paid) };
+      });
       return;
     }
     if (lastEditedTotal === 'due') {
@@ -2398,15 +2547,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
         setFormData((prev) => ({ ...prev, dueAmount: nextDue }));
       }
     }
-  }, [formData.items, formData.paidAmount, formData.dueAmount, lastEditedTotal, formData.trxType]);
+  }, [formData.items, formData.paidAmount, formData.dueAmount, lastEditedTotal, formData.trxType, formData.hospitalId, showEditModal, startsPaidByDefault]);
 
   useEffect(() => {
     const total = calculateTotals(formData.items);
     if (['sales', 'purchase', 'purchase_return', 'sales_return'].includes(formData.trxType)) {
       setLastEditedTotal('auto');
-      setFormData((prev) => ({ ...prev, paidAmount: total, dueAmount: 0 }));
+      setFormData((prev) => {
+        const paid = showEditModal
+          ? Math.max(0, Number(prev.paidAmount || 0))
+          : (startsPaidByDefault ? total : 0);
+        return { ...prev, paidAmount: paid, dueAmount: Math.max(0, total - paid) };
+      });
     }
-  }, [formData.trxType]);
+  }, [formData.trxType, formData.hospitalId, showEditModal, startsPaidByDefault]);
 
   useEffect(() => {
     if (!showAddModal && !showEditModal) return;
@@ -3144,6 +3298,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
               ref={transactionFormRef}
               className="p-4 space-y-4 flex-1 min-h-0 overflow-visible flex flex-col"
               onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}
+              onInvalidCapture={cancelPendingPrint}
               /**
                * A form with a submit button files itself when Enter is pressed in
                * any input. In a grid that means the invoice is saved partway
@@ -3188,15 +3343,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         <button
                           key={String(val)}
                           type="button"
-                          onClick={() => setFormData((prev) => ({
-                            ...prev,
-                            isWalkIn: val as boolean,
-                            // Clear the other party so a sale never carries both.
-                            patientId: val ? '' : prev.patientId,
-                            walkInName: val ? prev.walkInName : '',
-                            walkInPhone: val ? prev.walkInPhone : '',
-                            walkInAddress: val ? prev.walkInAddress : '',
-                          }))}
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              isWalkIn: val as boolean,
+                              // Clear the other party so a sale never carries both.
+                              patientId: val ? '' : prev.patientId,
+                              // Reapply the configured values when returning to
+                              // Walk-in after the registered-patient tab cleared them.
+                              walkInName: val ? (prev.walkInName || walkInDefaults.name) : '',
+                              walkInPhone: val ? (prev.walkInPhone || walkInDefaults.phone) : '',
+                              walkInAddress: val ? (prev.walkInAddress || walkInDefaults.address) : '',
+                            }));
+                            if (val) focusFirstMedicineInput();
+                          }}
                           className={`px-2.5 py-1.5 rounded-md border text-[10px] font-medium transition-colors h-8 ${
                             formData.isWalkIn === val
                               ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200'
@@ -3220,11 +3380,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         type="text"
                         value={formData.walkInName}
                         onChange={(e) => setFormData({ ...formData, walkInName: e.target.value })}
+                        disabled={!walkInFields.nameEditable}
                         placeholder={t('ui.customerName')}
-                        title={t('ui.customerName')}
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
+                        title={walkInFields.nameEditable ? t('ui.customerName') : 'Fixed by pharmacy settings'}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8 disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed dark:disabled:bg-gray-900"
                       />
                     </div>
+                    {walkInFields.showPhone && (
                     <div className="space-y-1 min-w-[130px] max-w-[160px]">
                       <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">{t('ui.phone')}</label>
                       <input
@@ -3236,6 +3398,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                       />
                     </div>
+                    )}
+                    {walkInFields.showAddress && (
                     <div className="space-y-1 min-w-[130px] max-w-[190px]">
                       <label className="text-[10px] font-medium text-gray-700 dark:text-gray-200">{t('ui.address')}</label>
                       <input
@@ -3247,6 +3411,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] h-8"
                       />
                     </div>
+                    )}
                   </>
                 )}
 
@@ -3294,6 +3459,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                               setPatientSearch(getPatientOptionDisplay(selected));
                               setOpenPatientDropdown(false);
                               setHighlightedPatientIndex(-1);
+                              focusFirstMedicineInput();
                             }
                           } else if (e.key === 'Escape') {
                             setOpenPatientDropdown(false);
@@ -3317,6 +3483,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                   setPatientSearch(getPatientOptionDisplay(p));
                                   setOpenPatientDropdown(false);
                                   setHighlightedPatientIndex(-1);
+                                  focusFirstMedicineInput();
                                 }}
                               >
                                 <div className="font-medium text-gray-900 dark:text-gray-100">{p.name} {p.patientId ? `(${p.patientId})` : ''}</div>
@@ -3647,6 +3814,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         />
                         {openMedicineDropdownIndex === index && dropdownRect && createPortal(
                           <div
+                            ref={medicineDropdownRef}
                             style={{
                               position: 'fixed',
                               left: dropdownRect.left,
@@ -3673,6 +3841,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                   <button
                                     key={m.id}
                                     type="button"
+                                    data-medicine-option-index={optionIndex}
                                     className={`w-full text-left px-2 py-1.5 text-xs ${highlightedMedicineIndex[index] === optionIndex ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                                     onMouseEnter={() => setHighlightedMedicineIndex((prev) => ({ ...prev, [index]: optionIndex }))}
                                     onMouseDown={() => {
@@ -3939,6 +4108,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <span><kbd className="trx-kbd">&#8592;&#8594;</kbd> cell</span>
                   <span><kbd className="trx-kbd">Enter</kbd> next / new row</span>
                   <span><kbd className="trx-kbd">Ctrl</kbd>+<kbd className="trx-kbd">S</kbd> save</span>
+                  {canPrint && <span><kbd className="trx-kbd">Ctrl</kbd>+<kbd className="trx-kbd">P</kbd> save + print</span>}
                   <span><kbd className="trx-kbd">Esc</kbd> close</span>
                 </div>
                 <div className="flex items-center gap-1.5 ml-auto">

@@ -8,8 +8,8 @@ import { useAuth } from './AuthContext';
 interface TransactionContextType {
   transactions: Transaction[];
   refresh: () => Promise<void>;
-  addTransaction: (payload: Partial<Transaction>) => Promise<void>;
-  updateTransaction: (payload: Partial<Transaction> & { id: string }) => Promise<void>;
+  addTransaction: (payload: Partial<Transaction>) => Promise<Transaction>;
+  updateTransaction: (payload: Partial<Transaction> & { id: string }) => Promise<Transaction>;
   deleteTransaction: (id: string) => Promise<void>;
   loading: boolean;
 }
@@ -125,6 +125,9 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     if (payload.updatedBy !== undefined) body.updated_by = payload.updatedBy;
     if (payload.details) {
       body.items = payload.details.map((d) => ({
+        // Preserve the server line id on edits so the API can reuse the
+        // original pack/strip conversion snapshot. It is omitted for new lines.
+        ...(d.id ? { id: d.id } : {}),
         medicine_id: d.medicineId,
         batch_no: d.batchNo ?? null,
         expiry_date: d.expiryDate ? d.expiryDate.toISOString().slice(0, 10) : null,
@@ -145,6 +148,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     const { data } = await api.post('/transactions', serializePayload(payload));
     const created = mapTransaction(data);
     setTransactions((prev) => sortByCreatedDesc([created, ...prev.filter((t) => t.id !== created.id)]));
+    return created;
   };
 
   const updateTransaction = async (payload: Partial<Transaction> & { id: string }) => {
@@ -157,6 +161,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
       return sortByCreatedDesc(next);
     });
+    return updated;
   };
 
   const deleteTransaction = async (id: string) => {
@@ -178,8 +183,8 @@ export function useTransactions() {
     return {
       transactions: [],
       refresh: async () => {},
-      addTransaction: async () => {},
-      updateTransaction: async () => {},
+      addTransaction: async () => { throw new Error('TransactionProvider is unavailable'); },
+      updateTransaction: async () => { throw new Error('TransactionProvider is unavailable'); },
       deleteTransaction: async () => {},
       loading: false,
     };

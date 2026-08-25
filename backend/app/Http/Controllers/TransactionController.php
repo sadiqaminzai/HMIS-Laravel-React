@@ -87,15 +87,16 @@ class TransactionController extends Controller
             // posted value is only accepted from record_finance_payments -- the
             // same rule that disables the field in the UI.
             //
-            // Applying the hospital's configured default is not the user's
-            // claim, it is the hospital's standing policy, so the pharmacy
-            // counter's edit_finance_payment_status is enough for that.
             $mayTypePayment = $request->user()?->hasAnyPermission([
                 'record_finance_payments',
                 'manage_finance',
             ]) ?? false;
 
-            $maySettleByDefault = $mayTypePayment || ($request->user()?->hasPermission('edit_finance_payment_status') ?? false);
+            // A configured "starts as Paid" default is applied only when the
+            // invoice is created and only for a user who is authorised to
+            // settle payment. It never participates in the update path.
+            $maySettleByDefault = $mayTypePayment
+                || ($request->user()?->hasPermission('edit_finance_payment_status') ?? false);
 
             if (!$mayTypePayment) {
                 unset($data['paid_amount']);
@@ -104,13 +105,11 @@ class TransactionController extends Controller
             $data['grand_total'] = $data['grand_total'] ?? $this->calculateGrandTotal($items);
 
             if (!array_key_exists('paid_amount', $data) || $data['paid_amount'] === null) {
-                // Falls back to the hospital's configured default for this
-                // document type, so a counter that always takes cash up front
-                // is not settling every invoice by hand afterwards.
                 $defaults = HospitalSetting::where('hospital_id', $data['hospital_id'] ?? null)
                     ->value('default_payment_statuses');
                 $defaults = is_string($defaults) ? json_decode($defaults, true) : $defaults;
-                $startsPaid = ($defaults[$data['trx_type'] ?? ''] ?? 'pending') === 'paid';
+                $startsPaid = is_array($defaults)
+                    && ($defaults[$data['trx_type'] ?? ''] ?? 'pending') === 'paid';
 
                 $data['paid_amount'] = ($startsPaid && $maySettleByDefault)
                     ? (float) $data['grand_total']
@@ -183,8 +182,12 @@ class TransactionController extends Controller
         $actor = $request->user()->name ?? null;
 
         $transaction = DB::transaction(function () use ($data, $transaction, $request, $actor) {
-            // Convert pack lines into base pieces before anything touches stock.
-            $items = $this->withSaleUnits($data['items'] ?? []);
+            // Load the old lines before converting the submitted units. When an
+            // existing pack/strip line is edited after the medicine's packaging
+            // configuration changed, conversion must use the line's stored
+            // snapshot or the edit will silently add/remove the wrong pieces.
+            $transaction->load('details');
+            $items = $this->withSaleUnits($data['items'] ?? [], $transaction);
             unset($data['items']);
 
             $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
@@ -195,10 +198,22 @@ class TransactionController extends Controller
                 $data['paid_amount'] = $transaction->paid_amount;
             }
 
+            // A pharmacist may edit the stock/invoice lines, but may not alter
+            // the cash record. The disabled input in the UI is only a usability
+            // guard; enforce the same rule server-side and keep the existing
+            // payment amount while the new total recalculates the due balance.
+            $mayTypePayment = $request->user()?->hasAnyPermission([
+                'record_finance_payments',
+                'manage_finance',
+            ]) ?? false;
+            if (!$mayTypePayment) {
+                $data['paid_amount'] = $transaction->paid_amount;
+                unset($data['due_amount']);
+            }
+
             $data['grand_total'] = $data['grand_total'] ?? $this->calculateGrandTotal($items);
             $data['due_amount'] = $data['due_amount'] ?? max(0, (float) $data['grand_total'] - (float) $data['paid_amount']);
 
-            $transaction->load('details');
             $previousDetails = $transaction->details->map(function ($detail) {
                 return [
                     'medicine_id' => $detail->medicine_id,
@@ -382,6 +397,7 @@ class TransactionController extends Controller
             'created_by' => ['nullable', 'string', 'max:255'],
             'updated_by' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['sometimes', 'integer', 'exists:transaction_details,id'],
             'items.*.medicine_id' => ['required', 'exists:medicines,id'],
             'items.*.batch_no' => ['nullable', 'string', 'max:255'],
             'items.*.expiry_date' => ['nullable', 'date'],
@@ -402,7 +418,7 @@ class TransactionController extends Controller
      * untouched, and the pack size is snapshotted onto the line so that editing a
      * medicine's pack size later never rewrites past invoices.
      */
-    private function withSaleUnits(array $items): array
+    private function withSaleUnits(array $items, ?Transaction $existingTransaction = null): array
     {
         $medicineIds = array_values(array_unique(array_filter(array_map(
             fn ($item) => (int) ($item['medicine_id'] ?? 0),
@@ -416,7 +432,10 @@ class TransactionController extends Controller
             ->get(['id', 'brand_name', 'pack_size', 'pieces_per_strip', 'sellable_units'])
             ->keyBy('id');
 
-        return array_map(function (array $item, int $index) use ($packaging) {
+        $existingDetails = $existingTransaction?->details
+            ?->keyBy('id') ?? collect();
+
+        return array_map(function (array $item, int $index) use ($packaging, $existingDetails) {
             $medicineId = (int) ($item['medicine_id'] ?? 0);
             $saleUnit = (string) ($item['sale_unit'] ?? 'piece');
 
@@ -457,6 +476,18 @@ class TransactionController extends Controller
                 'strip' => $perStrip,
                 default => 1,
             };
+
+            // A line id is only meaningful during an update. Trust the
+            // server-side snapshot, never a client-supplied quantity, and only
+            // when the medicine and sale tier are unchanged. New lines or lines
+            // whose tier/product changed use today's configuration.
+            $existing = !empty($item['id']) ? $existingDetails->get((int) $item['id']) : null;
+            if ($existing
+                && (int) $existing->medicine_id === $medicineId
+                && (string) ($existing->sale_unit ?: 'piece') === $saleUnit
+            ) {
+                $factor = max(1, (int) ($existing->pack_size_snapshot ?? $factor));
+            }
 
             $item['sale_unit'] = $saleUnit;
             // Snapshot the pieces-per-unit actually used, so later packaging edits

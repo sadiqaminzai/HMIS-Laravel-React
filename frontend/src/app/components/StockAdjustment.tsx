@@ -4,7 +4,7 @@ import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
-import { SlidersHorizontal, RefreshCcw, Save } from 'lucide-react';
+import { SlidersHorizontal, RefreshCcw, Save, Search } from 'lucide-react';
 import api from '../../api/axios';
 
 interface StockAdjustmentProps {
@@ -19,7 +19,20 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
   
   const canReconcile = hasPermission('edit_stocks') || hasPermission('manage_stocks');
   
+  /**
+   * Has this batch actually been counted?
+   *
+   * Blank is not zero. A row nobody has reached yet must be excluded from the
+   * payload entirely, because the endpoint writes whatever quantity it is given.
+   */
+  const isCounted = (row: any) =>
+    (row.physical_qty !== null && row.physical_qty !== undefined && row.physical_qty !== '')
+    || (row.physical_bonus !== null && row.physical_bonus !== undefined && row.physical_bonus !== '');
+
   const [reconcileDate, setReconcileDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [search, setSearch] = useState('');
+  /** medicine::batch of the row currently being written, so only it spins. */
+  const [savingRow, setSavingRow] = useState<string | null>(null);
   const [reconcileRows, setReconcileRows] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(false);
 
@@ -45,6 +58,63 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
     }
   };
 
+  /**
+   * Correct one batch.
+   *
+   * The same endpoint as the bulk save, given a single item. Correcting one
+   * product is the common case -- a breakage, a miscount noticed at the shelf --
+   * and it should not require thinking about what else is on the sheet.
+   */
+  const saveRow = async (row: any) => {
+    const hospitalId = isAllHospitals ? null : selectedHospitalId || currentHospital.id;
+    if (!hospitalId) {
+      toast.error('Please select a hospital for stock adjustment');
+      return;
+    }
+    if (!isCounted(row)) {
+      toast.error('Enter the physical quantity for this batch first.');
+      return;
+    }
+
+    const qty = Number(row.physical_qty || 0);
+    const bonus = Number(row.physical_bonus || 0);
+    const variance = (qty + bonus) - Number(row.system_total || 0);
+
+    const confirmed = window.confirm(
+      `${row.medicine_name}${row.batch_no ? ` (batch ${row.batch_no})` : ''}
+
+`
+      + `System: ${row.system_total}   Counted: ${qty + bonus}
+`
+      + `Change: ${variance > 0 ? '+' : ''}${variance} pieces
+
+`
+      + 'Apply this correction?'
+    );
+    if (!confirmed) return;
+
+    const key = `${row.medicine_id}::${row.batch_no || ''}`;
+    setSavingRow(key);
+    try {
+      await api.post('/stock-reconciliation', {
+        date: reconcileDate,
+        hospital_id: hospitalId,
+        items: [{
+          medicine_id: row.medicine_id,
+          batch_no: row.batch_no || null,
+          physical_qty: qty,
+          physical_bonus: bonus,
+        }],
+      });
+      toast.success(`${row.medicine_name} corrected (${variance > 0 ? '+' : ''}${variance})`);
+      await loadReconciliation();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to apply the correction');
+    } finally {
+      setSavingRow(null);
+    }
+  };
+
   const saveReconciliation = async () => {
     const hospitalId = isAllHospitals ? null : selectedHospitalId || currentHospital.id;
     if (!hospitalId) {
@@ -53,18 +123,51 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
     }
     try {
       setLoading(true);
+      // ONLY counted batches are sent.
+      //
+      // This used to post every row on screen, defaulting an untouched box to
+      // 0 -- and the endpoint sets stock to whatever figure it receives. So
+      // pressing Save after counting three products wrote every other batch in
+      // the hospital down to zero. A blank box means "not counted", and an
+      // uncounted batch must never be part of the payload.
+      const items = reconcileRows
+        .filter((row) => isCounted(row))
+        .map((row) => ({
+          medicine_id: row.medicine_id,
+          batch_no: row.batch_no || null,
+          physical_qty: Number(row.physical_qty || 0),
+          physical_bonus: Number(row.physical_bonus || 0),
+        }));
+
+      if (items.length === 0) {
+        toast.error('Nothing counted yet. Enter the physical quantity for at least one batch.');
+        return;
+      }
+
+      const net = reconcileRows
+        .filter((row) => isCounted(row))
+        .reduce((sum, row) => sum
+          + (Number(row.physical_qty || 0) + Number(row.physical_bonus || 0))
+          - Number(row.system_total || 0), 0);
+
+      const confirmed = window.confirm(
+        `Apply the counted figures to ${items.length} batch(es)?
+
+`
+        + `Net change: ${net > 0 ? '+' : ''}${net} pieces.
+`
+        + 'Batches you did not count are left untouched.'
+      );
+      if (!confirmed) return;
+
       await api.post('/stock-reconciliation', {
         date: reconcileDate,
         hospital_id: hospitalId,
-        items: reconcileRows.map((row) => ({
-          medicine_id: row.medicine_id,
-          batch_no: row.batch_no || null,
-          physical_qty: row.physical_qty ?? 0,
-          physical_bonus: row.physical_bonus ?? 0,
-        })),
+        items,
       });
 
-      toast.success('Stock adjustment saved successfully');
+      toast.success(`Stock adjustment saved for ${items.length} batch(es)`);
+      await loadReconciliation();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to save stock adjustment');
     } finally {
@@ -95,6 +198,19 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
             </div>
           )}
           
+          {/* Type-to-filter across the loaded sheet. A hospital carries hundreds
+              of batches and a counter works from a shelf, not from row order. */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Find medicine or batch..."
+              aria-label="Find medicine or batch"
+              className="w-56 pl-7 pr-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+            />
+          </div>
+
           <input
             type="date"
             value={reconcileDate}
@@ -115,7 +231,7 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
-              Save Adjustments
+              Save all counted ({reconcileRows.filter(isCounted).length})
             </button>
           )}
         </div>
@@ -135,22 +251,34 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                 <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalQty')}</th>
                 <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalBonus')}</th>
                 <th className="px-4 py-3 font-medium text-right">{t('table.variance')}</th>
+                {canReconcile && <th className="px-4 py-3 font-medium text-right w-20">{t('table.actions')}</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {reconcileRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={canReconcile ? 10 : 9} className="px-4 py-8 text-center text-gray-500">
                     <p>No adjustment records found.</p>
                     <p className="mt-1 opacity-70">Click Refresh to load system stock values for adjustment.</p>
                   </td>
                 </tr>
               ) : (
-                reconcileRows.map((row, idx) => {
-                  const safePhysicalQty = Number(row.physical_qty || 0);
-                  const safePhysicalBonus = Number(row.physical_bonus || 0);
-                  const physicalTotal = safePhysicalQty + safePhysicalBonus;
-                  const variance = physicalTotal - Number(row.system_total || 0);
+                reconcileRows
+                  .map((row, idx) => ({ row, idx }))
+                  .filter(({ row }) => {
+                    const term = search.trim().toLowerCase();
+                    if (!term) return true;
+                    return String(row.medicine_name ?? '').toLowerCase().includes(term)
+                      || String(row.batch_no ?? '').toLowerCase().includes(term);
+                  })
+                  // idx is the row's position in the FULL list, so editing a
+                  // filtered view still writes back to the correct batch.
+                  .map(({ row, idx }) => {
+                  // An uncounted row has no variance to show -- it is not a
+                  // shortfall of everything on the shelf, it is simply unknown.
+                  const counted = isCounted(row);
+                  const physicalTotal = Number(row.physical_qty || 0) + Number(row.physical_bonus || 0);
+                  const variance = counted ? physicalTotal - Number(row.system_total || 0) : null;
                   
                   return (
                     <tr key={`${row.medicine_id}-${row.batch_no || 'n/a'}-${idx}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
@@ -165,7 +293,8 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                         <input
                           type="number"
                           min={0}
-                          value={row.physical_qty ?? 0}
+                          value={row.physical_qty ?? ''}
+                          placeholder="—"
                           onChange={(e) => {
                             const value = e.target.value === '' ? '' : Number(e.target.value);
                             setReconcileRows((prev) => {
@@ -183,7 +312,8 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                         <input
                           type="number"
                           min={0}
-                          value={row.physical_bonus ?? 0}
+                          value={row.physical_bonus ?? ''}
+                          placeholder="—"
                           onChange={(e) => {
                             const value = e.target.value === '' ? '' : Number(e.target.value);
                             setReconcileRows((prev) => {
@@ -198,9 +328,33 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                         />
                       </td>
                       
-                      <td className={`px-4 py-2 text-right font-medium ${variance < 0 ? 'text-rose-600' : variance > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                        {variance > 0 ? '+' : ''}{variance}
+                      <td className={`px-4 py-2 text-right font-medium ${
+                        variance === null ? 'text-gray-300'
+                          : variance < 0 ? 'text-rose-600'
+                          : variance > 0 ? 'text-emerald-600'
+                          : 'text-gray-500'
+                      }`}>
+                        {variance === null ? '—' : `${variance > 0 ? '+' : ''}${variance}`}
                       </td>
+                      {canReconcile && (
+                        <td className="px-4 py-2 text-right">
+                          {/* Disabled until this batch has a count, so the button
+                              can never write a zero nobody typed. */}
+                          <button
+                            type="button"
+                            onClick={() => saveRow(row)}
+                            disabled={!counted || savingRow !== null}
+                            title={counted
+                              ? 'Apply this batch only'
+                              : 'Enter the physical quantity first'}
+                            aria-label={`Save adjustment for ${row.medicine_name}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Save className="w-3 h-3" />
+                            {savingRow === `${row.medicine_id}::${row.batch_no || ''}` ? '...' : t('ui.save')}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })

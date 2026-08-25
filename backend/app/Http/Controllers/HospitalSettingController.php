@@ -57,6 +57,9 @@ class HospitalSettingController extends Controller
             'pharmacy_walk_in_default_name' => ['sometimes', 'nullable', 'string', 'max:191'],
             'pharmacy_walk_in_default_phone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'pharmacy_walk_in_default_address' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'pharmacy_walk_in_show_phone' => ['sometimes', 'boolean'],
+            'pharmacy_walk_in_show_address' => ['sometimes', 'boolean'],
+            'pharmacy_walk_in_name_editable' => ['sometimes', 'boolean'],
             'pharmacy_default_barcode_type' => ['sometimes', Rule::in(['manual', 'manufacturer', 'system'])],
             'pharmacy_default_sale_unit' => ['sometimes', Rule::in(['piece', 'strip', 'pack'])],
             'barcode_scanning_enabled' => ['sometimes', 'boolean'],
@@ -96,6 +99,9 @@ class HospitalSettingController extends Controller
             'pharmacy_walk_in_default_name',
             'pharmacy_walk_in_default_phone',
             'pharmacy_walk_in_default_address',
+            'pharmacy_walk_in_show_phone',
+            'pharmacy_walk_in_show_address',
+            'pharmacy_walk_in_name_editable',
             'pharmacy_default_barcode_type',
             'pharmacy_default_sale_unit',
             'barcode_scanning_enabled',
@@ -249,21 +255,14 @@ class HospitalSettingController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        $permissionNames = method_exists($user, 'permissionNames')
-            ? $user->permissionNames()
-            : [];
-
         if ($write) {
+            $permissionNames = method_exists($user, 'permissionNames')
+                ? $user->permissionNames()
+                : [];
             if (!in_array('edit_hospital_settings', $permissionNames, true)
                 && !in_array('manage_hospital_settings', $permissionNames, true)) {
                 abort(403, 'Not allowed to update settings');
             }
-            return;
-        }
-
-        if (!in_array('view_hospital_settings', $permissionNames, true)
-            && !in_array('manage_hospital_settings', $permissionNames, true)) {
-            abort(403, 'Unauthorized');
         }
     }
 

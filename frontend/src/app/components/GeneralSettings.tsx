@@ -59,7 +59,7 @@ type SettingsTab = 'general' | 'reception' | 'pharmacy' | 'laboratory' | 'prescr
 
 export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const { t } = useTranslation();
-  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults, getDefaultBarcodeType, getDefaultSaleUnit, getBarcodeLabel, getBarcodeScanningEnabled, getLabDefaultPaymentStatus, getDefaultPaymentStatuses, getAllInvoiceFields, getReportModuleOwners, generatePatientId } = useSettings();
+  const { loadHospitalSetting, saveHospitalSetting, getDefaultDoctorId, getDefaultToWalkIn, getDefaultPrescriptionNextVisit, getPatientIdConfig, getPrintColumnSettings, getPrescriptionPrintAssetSettings, getShowOutOfStockMedicines, getShowOutOfStockMedicinesForPharmacy, getShowPrescriptionListMeta, getPrintPaperSizes, getPharmacyCustomerMode, getPharmacyDefaultCustomer, getPharmacyWalkInDefaults, getPharmacyWalkInFields, getDefaultBarcodeType, getDefaultSaleUnit, getBarcodeLabel, getBarcodeScanningEnabled, getLabDefaultPaymentStatus, getDefaultPaymentStatuses, getAllInvoiceFields, getReportModuleOwners, generatePatientId } = useSettings();
   const { hasPermission } = useAuth();
   const canManagePrintSettings = hasPermission('manage_print_settings');
   // Which columns an invoice offers is pharmacy behaviour, so it shares the
@@ -90,6 +90,9 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   
   // Hospital selection state for super_admin
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>(hospital.id);
+  useEffect(() => {
+    setSelectedHospitalId(hospital.id);
+  }, [hospital.id]);
   const selectedHospital = userRole === 'super_admin'
     ? hospitals.find(h => h.id === selectedHospitalId) || hospital
     : hospital;
@@ -117,6 +120,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const [pharmacyCustomerMode, setPharmacyCustomerModeState] = useState<PharmacyCustomerMode>('both');
   const [pharmacyDefaultCustomer, setPharmacyDefaultCustomerState] = useState<PharmacyDefaultCustomer>('patient');
   const [walkInDefaults, setWalkInDefaults] = useState({ name: '', phone: '', address: '' });
+  const [walkInFields, setWalkInFields] = useState({ showPhone: true, showAddress: true, nameEditable: true });
   const [defaultBarcodeType, setDefaultBarcodeType] = useState<BarcodeType>('manual');
   const [defaultSaleUnit, setDefaultSaleUnit] = useState<DefaultSaleUnit>('pack');
   const [barcodeLabel, setBarcodeLabel] = useState({ widthMm: 50, heightMm: 25 });
@@ -152,33 +156,34 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
 
   useEffect(() => {
-    loadHospitalSetting(selectedHospital.id).then(() => {
-      const defaultDoctor = getDefaultDoctorId(selectedHospital.id);
-      setSelectedDoctorId(defaultDoctor || '');
-
-      const config = getPatientIdConfig(selectedHospital.id);
-      setPatientIdConfigState(config);
-
-      const printConfig = getPrintColumnSettings(selectedHospital.id);
-      setPrintColumns(printConfig);
-      setPrintPaperSizes(getPrintPaperSizes(selectedHospital.id));
-      setPharmacyCustomerModeState(getPharmacyCustomerMode(selectedHospital.id));
-      setPharmacyDefaultCustomerState(getPharmacyDefaultCustomer(selectedHospital.id));
-      setWalkInDefaults(getPharmacyWalkInDefaults(selectedHospital.id));
-      setDefaultBarcodeType(getDefaultBarcodeType(selectedHospital.id));
-      setDefaultSaleUnit(getDefaultSaleUnit(selectedHospital.id));
-      setBarcodeLabel(getBarcodeLabel(selectedHospital.id));
-      setBarcodeScanningEnabled(getBarcodeScanningEnabled(selectedHospital.id));
-      setLabDefaultPaid(getLabDefaultPaymentStatus(selectedHospital.id) === 'paid');
-      setPaymentDefaults({ ...getDefaultPaymentStatuses(selectedHospital.id) });
-      setInvoiceFields(getAllInvoiceFields(selectedHospital.id));
-      setReportOwners(getReportModuleOwners(selectedHospital.id));
-      const prescriptionPrintConfig = getPrescriptionPrintAssetSettings(selectedHospital.id);
-      setPrescriptionPrintAssetSettings(prescriptionPrintConfig);
-
-      setShowOutOfStockMedicines(getShowOutOfStockMedicines(selectedHospital.id));
-      setShowOutOfStockMedicinesForPharmacy(getShowOutOfStockMedicinesForPharmacy(selectedHospital.id));
-      setShowPrescriptionListMeta(getShowPrescriptionListMeta(selectedHospital.id));
+    loadHospitalSetting(selectedHospital.id).then((setting) => {
+      if (!setting) {
+        toast.error('Unable to load settings for the selected hospital');
+        return;
+      }
+      // Use the exact response that completed this request. Reading through
+      // the previous render's getter here returned fallback values on the first
+      // load and made Super Admin appear to be editing another hospital.
+      setSelectedDoctorId(setting.defaultDoctorId || '');
+      setPatientIdConfigState(setting.patientIdConfig);
+      setPrintColumns(setting.printColumns);
+      setPrintPaperSizes(setting.printPaperSizes);
+      setPharmacyCustomerModeState(setting.pharmacyCustomerMode);
+      setPharmacyDefaultCustomerState(setting.pharmacyDefaultCustomer);
+      setWalkInDefaults(setting.pharmacyWalkInDefaults);
+      setWalkInFields(setting.pharmacyWalkInFields);
+      setDefaultBarcodeType(setting.defaultBarcodeType);
+      setDefaultSaleUnit(setting.defaultSaleUnit);
+      setBarcodeLabel(setting.barcodeLabel);
+      setBarcodeScanningEnabled(setting.barcodeScanningEnabled);
+      setLabDefaultPaid(setting.labDefaultPaymentStatus === 'paid');
+      setPaymentDefaults({ ...setting.defaultPaymentStatuses });
+      setInvoiceFields(setting.invoiceFields);
+      setReportOwners(setting.reportModuleOwners);
+      setPrescriptionPrintAssetSettings(setting.prescriptionPrintAssetSettings);
+      setShowOutOfStockMedicines(setting.showOutOfStockMedicines);
+      setShowOutOfStockMedicinesForPharmacy(setting.showOutOfStockMedicinesForPharmacy);
+      setShowPrescriptionListMeta(setting.showPrescriptionListMeta);
 
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
@@ -210,10 +215,15 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   };
 
   const handleSavePharmacyCustomer = () => {
+    if (pharmacyCustomerMode !== 'patient_only' && !walkInFields.nameEditable && !walkInDefaults.name.trim()) {
+      toast.error('Enter a default walk-in name before locking the name field');
+      return;
+    }
     saveHospitalSetting(selectedHospital.id, {
       pharmacyCustomerMode,
       pharmacyDefaultCustomer,
       pharmacyWalkInDefaults: walkInDefaults,
+      pharmacyWalkInFields: walkInFields,
       defaultSaleUnit,
     })
       .then(() => toast.success('Pharmacy customer settings saved'))
@@ -418,8 +428,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 onClick={() =>
                   setPaymentDefaults((prev) => {
                     const next = prev[key] === 'paid' ? 'pending' : 'paid';
-                    // Confirms what the switch now means, since "starts as
-                    // Paid" reads the same in both positions at a glance.
                     toast.info(`${label} default set to ${next === 'paid' ? 'Paid' : 'Pending'}`);
                     return { ...prev, [key]: next };
                   })
@@ -1012,7 +1020,19 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Customer Name</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-300">Customer Name</label>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={walkInFields.nameEditable}
+                      title="Allow the walk-in name to be changed on an invoice"
+                      onClick={() => setWalkInFields((prev) => ({ ...prev, nameEditable: !prev.nameEditable }))}
+                      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${walkInFields.nameEditable ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${walkInFields.nameEditable ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={walkInDefaults.name}
@@ -1020,9 +1040,22 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                     placeholder="e.g. Walk-in Customer"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
                   />
+                  <p className="mt-1 text-[9px] text-gray-500">{walkInFields.nameEditable ? 'Editable on invoice' : 'Locked to this default'}</p>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Phone</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-300">Phone</label>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={walkInFields.showPhone}
+                      title="Show the walk-in phone field on an invoice"
+                      onClick={() => setWalkInFields((prev) => ({ ...prev, showPhone: !prev.showPhone }))}
+                      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${walkInFields.showPhone ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${walkInFields.showPhone ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={walkInDefaults.phone}
@@ -1030,9 +1063,22 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                     placeholder="Optional"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
                   />
+                  <p className="mt-1 text-[9px] text-gray-500">{walkInFields.showPhone ? 'Shown on invoice' : 'Hidden on invoice'}</p>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Address</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-medium text-gray-700 dark:text-gray-300">Address</label>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={walkInFields.showAddress}
+                      title="Show the walk-in address field on an invoice"
+                      onClick={() => setWalkInFields((prev) => ({ ...prev, showAddress: !prev.showAddress }))}
+                      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${walkInFields.showAddress ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${walkInFields.showAddress ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={walkInDefaults.address}
@@ -1040,6 +1086,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                     placeholder="Optional"
                     className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs"
                   />
+                  <p className="mt-1 text-[9px] text-gray-500">{walkInFields.showAddress ? 'Shown on invoice' : 'Hidden on invoice'}</p>
                 </div>
               </div>
             </div>

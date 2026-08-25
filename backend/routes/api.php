@@ -379,7 +379,10 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Any authenticated user may report their own print/export activity.
 	Route::post('audit-logs/events', [AuditLogController::class, 'storeClientEvent']);
 
-	Route::get('hospital-settings/{hospital}', [HospitalSettingController::class, 'show'])->middleware('permission_or_doctor:view_hospital_settings,manage_hospital_settings');
+	// Operational screens need read-only hospital preferences (customer mode,
+	// print layout, barcode behaviour, etc.). The controller scopes this to the
+	// user's own hospital; write access remains separately permission-protected.
+	Route::get('hospital-settings/{hospital}', [HospitalSettingController::class, 'show']);
 	Route::put('hospital-settings/{hospital}', [HospitalSettingController::class, 'update'])->middleware('permission:edit_hospital_settings,manage_hospital_settings');
 
 	Route::get('users', [UserController::class, 'index'])->middleware('permission:view_users,manage_users');

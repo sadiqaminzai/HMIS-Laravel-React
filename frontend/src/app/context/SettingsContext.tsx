@@ -219,6 +219,8 @@ export interface HospitalSetting {
   pharmacyDefaultCustomer: PharmacyDefaultCustomer;
   /** Pre-filled on every new walk-in sale so the counter is not retyped daily. */
   pharmacyWalkInDefaults: { name: string; phone: string; address: string };
+  /** Which walk-in fields are shown and whether the default name may be changed. */
+  pharmacyWalkInFields: { showPhone: boolean; showAddress: boolean; nameEditable: boolean };
   /** Barcode type a new medicine starts on, and the label size for the barcode printer. */
   defaultBarcodeType: BarcodeType;
   defaultSaleUnit: DefaultSaleUnit;
@@ -261,6 +263,7 @@ interface SettingsContextType {
   getPharmacyCustomerMode: (hospitalId: string) => PharmacyCustomerMode;
   getPharmacyDefaultCustomer: (hospitalId: string) => PharmacyDefaultCustomer;
   getPharmacyWalkInDefaults: (hospitalId: string) => { name: string; phone: string; address: string };
+  getPharmacyWalkInFields: (hospitalId: string) => HospitalSetting['pharmacyWalkInFields'];
   getDefaultBarcodeType: (hospitalId: string) => BarcodeType;
   getDefaultSaleUnit: (hospitalId: string) => DefaultSaleUnit;
   getBarcodeScanningEnabled: (hospitalId: string) => boolean;
@@ -268,7 +271,7 @@ interface SettingsContextType {
   getDefaultPaymentStatuses: (hospitalId: string) => HospitalSetting['defaultPaymentStatuses'];
   getBarcodeLabel: (hospitalId: string) => { widthMm: number; heightMm: number };
   generatePatientId: (hospitalId: string, currentCount: number) => string;
-  loadHospitalSetting: (hospitalId: string) => Promise<void>;
+  loadHospitalSetting: (hospitalId: string) => Promise<HospitalSetting | undefined>;
   saveHospitalSetting: (hospitalId: string, payload: Partial<HospitalSetting>) => Promise<void>;
 }
 
@@ -366,6 +369,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getPharmacyCustomerMode: () => 'both' as PharmacyCustomerMode,
   getPharmacyDefaultCustomer: () => 'patient' as PharmacyDefaultCustomer,
   getPharmacyWalkInDefaults: () => ({ name: '', phone: '', address: '' }),
+  getPharmacyWalkInFields: () => ({ showPhone: true, showAddress: true, nameEditable: true }),
   getDefaultBarcodeType: () => 'manual' as BarcodeType,
   getDefaultSaleUnit: () => 'pack' as DefaultSaleUnit,
   getBarcodeScanningEnabled: () => true,
@@ -379,7 +383,7 @@ const SettingsContext = createContext<SettingsContextType>({
   }),
   getBarcodeLabel: () => ({ widthMm: 29, heightMm: 18 }),
   generatePatientId: () => 'P0001',
-  loadHospitalSetting: async () => {},
+  loadHospitalSetting: async () => undefined,
   saveHospitalSetting: async () => {}
 });
 
@@ -425,16 +429,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settingsByHospital, setSettingsByHospital] = useState<Record<string, HospitalSetting>>({});
 
   const loadHospitalSetting = async (hospitalId: string) => {
-    if (!hospitalId) return;
-    if (settingsByHospital[hospitalId]) return;
+    if (!hospitalId) return undefined;
+    if (settingsByHospital[hospitalId]) return settingsByHospital[hospitalId];
     try {
       const { data } = await api.get(`/hospital-settings/${hospitalId}`);
+      const normalized = normalizeSetting(data);
       setSettingsByHospital((prev) => ({
         ...prev,
-        [hospitalId]: normalizeSetting(data)
+        [hospitalId]: normalized
       }));
+      return normalized;
     } catch (error) {
       console.error('Failed to load hospital setting', error);
+      return undefined;
     }
   };
 
@@ -479,6 +486,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.pharmacy_walk_in_default_name = payload.pharmacyWalkInDefaults.name;
       body.pharmacy_walk_in_default_phone = payload.pharmacyWalkInDefaults.phone;
       body.pharmacy_walk_in_default_address = payload.pharmacyWalkInDefaults.address;
+    }
+    if (payload.pharmacyWalkInFields !== undefined) {
+      body.pharmacy_walk_in_show_phone = payload.pharmacyWalkInFields.showPhone;
+      body.pharmacy_walk_in_show_address = payload.pharmacyWalkInFields.showAddress;
+      body.pharmacy_walk_in_name_editable = payload.pharmacyWalkInFields.nameEditable;
     }
     if (payload.defaultBarcodeType !== undefined) {
       body.pharmacy_default_barcode_type = payload.defaultBarcodeType;
@@ -554,6 +566,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         phone: raw.pharmacy_walk_in_default_phone ?? '',
         address: raw.pharmacy_walk_in_default_address ?? '',
       },
+      pharmacyWalkInFields: {
+        showPhone: raw.pharmacy_walk_in_show_phone !== undefined
+          ? Boolean(raw.pharmacy_walk_in_show_phone) : true,
+        showAddress: raw.pharmacy_walk_in_show_address !== undefined
+          ? Boolean(raw.pharmacy_walk_in_show_address) : true,
+        nameEditable: raw.pharmacy_walk_in_name_editable !== undefined
+          ? Boolean(raw.pharmacy_walk_in_name_editable) : true,
+      },
       defaultBarcodeType: (['manual','manufacturer','system'].includes(String(raw.pharmacy_default_barcode_type))
         ? raw.pharmacy_default_barcode_type : 'manual') as BarcodeType,
       defaultSaleUnit: (['piece','strip','pack'].includes(String(raw.pharmacy_default_sale_unit))
@@ -593,6 +613,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       pharmacyCustomerMode: 'both',
       pharmacyDefaultCustomer: 'patient',
       pharmacyWalkInDefaults: { name: '', phone: '', address: '' },
+      pharmacyWalkInFields: { showPhone: true, showAddress: true, nameEditable: true },
       defaultBarcodeType: 'manual',
       defaultSaleUnit: 'pack',
       labDefaultPaymentStatus: 'unpaid',
@@ -677,6 +698,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).pharmacyWalkInDefaults ?? { name: '', phone: '', address: '' };
   };
 
+  const getPharmacyWalkInFields = (hospitalId: string) => {
+    return getHospitalSetting(hospitalId).pharmacyWalkInFields
+      ?? { showPhone: true, showAddress: true, nameEditable: true };
+  };
+
   const getDefaultBarcodeType = (hospitalId: string): BarcodeType => {
     return getHospitalSetting(hospitalId).defaultBarcodeType ?? 'manual';
   };
@@ -723,6 +749,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getPharmacyCustomerMode,
       getPharmacyDefaultCustomer,
       getPharmacyWalkInDefaults,
+      getPharmacyWalkInFields,
       getDefaultBarcodeType,
       getDefaultSaleUnit,
       getBarcodeScanningEnabled,

@@ -45,6 +45,13 @@ export function HospitalSelector({
 export function useHospitalFilter(hospital: Hospital, userRole: UserRole) {
   const { hospitals } = useHospitals();
   const [selectedHospitalId, setSelectedHospitalId] = React.useState<string>(hospital.id);
+
+  // The header hospital selector is the application-wide source of truth.
+  // Route components stay mounted while Super Admin changes it, so state that
+  // was initialized only once otherwise keeps pointing at the previous client.
+  React.useEffect(() => {
+    setSelectedHospitalId(hospital.id);
+  }, [hospital.id]);
   
   const currentHospital = userRole === 'super_admin' && selectedHospitalId !== 'all'
     ? hospitals.find(h => h.id === selectedHospitalId) || hospital

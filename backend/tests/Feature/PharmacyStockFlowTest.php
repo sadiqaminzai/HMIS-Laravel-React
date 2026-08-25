@@ -196,6 +196,46 @@ test('purchase transaction increases stock and medicine totals', function () {
         ->and((int) $medicine->stock)->toBe(15);
 });
 
+test('pharmacist-created pharmacy invoices remain pending even when a paid amount is posted', function () {
+    $setup = pharmacySetupCoreData();
+    $pharmacist = pharmacyTestUser($setup['hospital']->id, 'pharmacist', 'pharmacist-payment.test');
+    $controller = app(TransactionController::class);
+
+    $response = $controller->store(
+        pharmacyRequest('POST', pharmacySalesPayload($setup, 2), $pharmacist)
+    );
+
+    expect($response->getStatusCode())->toBe(201);
+
+    $transaction = Transaction::query()->latest('id')->firstOrFail();
+    expect((float) $transaction->paid_amount)->toBe(0.0)
+        ->and((float) $transaction->due_amount)->toBe(40.0)
+        ->and($transaction->payment_status)->toBe('pending');
+});
+
+test('pharmacist invoice edits cannot change the recorded payment amount', function () {
+    $setup = pharmacySetupCoreData();
+    $pharmacist = pharmacyTestUser($setup['hospital']->id, 'pharmacist', 'pharmacist-edit-payment.test');
+    $controller = app(TransactionController::class);
+
+    $controller->store(pharmacyRequest('POST', pharmacySalesPayload($setup, 2), $pharmacist));
+    $transaction = Transaction::query()->latest('id')->firstOrFail();
+
+    $payload = pharmacySalesPayload($setup, 2);
+    $payload['paid_amount'] = 40;
+    $response = $controller->update(
+        pharmacyRequest('PUT', $payload, $pharmacist),
+        $transaction
+    );
+
+    expect($response->getStatusCode())->toBe(200);
+
+    $transaction->refresh();
+    expect((float) $transaction->paid_amount)->toBe(0.0)
+        ->and((float) $transaction->due_amount)->toBe(40.0)
+        ->and($transaction->payment_status)->toBe('pending');
+});
+
 test('sales transaction decreases stock and records stock movement', function () {
     $setup = pharmacySetupCoreData();
     $controller = app(TransactionController::class);
@@ -297,6 +337,71 @@ test('update sales transaction reverses previous quantities and applies new quan
 
     $stock = Stock::query()->where('medicine_id', $setup['medicine']->id)->where('batch_no', 'BATCH-001')->firstOrFail();
     expect((int) $stock->stock_qty)->toBe(7);
+});
+
+test('editing an old pack transaction keeps its original piece conversion', function () {
+    $setup = pharmacySetupCoreData();
+    $supplier = pharmacyCreateSupplier($setup['hospital']->id);
+    $controller = app(TransactionController::class);
+
+    $setup['medicine']->update([
+        'pack_size' => 10,
+        'sellable_units' => ['piece', 'pack'],
+    ]);
+
+    $createRequest = pharmacyRequest('POST', [
+        'hospital_id' => $setup['hospital']->id,
+        'trx_type' => 'purchase',
+        'supplier_id' => $supplier->id,
+        'paid_amount' => 20,
+        'items' => [[
+            'medicine_id' => $setup['medicine']->id,
+            'batch_no' => 'BATCH-001',
+            'qtty' => 1,
+            'bonus' => 0,
+            'sale_unit' => 'pack',
+            'price' => 20,
+            'discount' => 0,
+            'tax' => 0,
+        ]],
+    ], $setup['admin']);
+
+    expect($controller->store($createRequest)->getStatusCode())->toBe(201);
+
+    $transaction = Transaction::query()->latest('id')->firstOrFail();
+    $detail = $transaction->details()->firstOrFail();
+    expect((int) $detail->base_qtty)->toBe(10);
+
+    // Changing today's packaging must not rewrite the historical line.
+    $setup['medicine']->update(['pack_size' => 20]);
+
+    $updateRequest = pharmacyRequest('PUT', [
+        'hospital_id' => $setup['hospital']->id,
+        'trx_type' => 'purchase',
+        'supplier_id' => $supplier->id,
+        'paid_amount' => 20,
+        'items' => [[
+            'id' => $detail->id,
+            'medicine_id' => $setup['medicine']->id,
+            'batch_no' => 'BATCH-001',
+            'qtty' => 1,
+            'bonus' => 0,
+            'sale_unit' => 'pack',
+            'price' => 20,
+            'discount' => 0,
+            'tax' => 0,
+        ]],
+    ], $setup['admin']);
+
+    expect($controller->update($updateRequest, $transaction)->getStatusCode())->toBe(200);
+
+    $stock = Stock::query()
+        ->where('medicine_id', $setup['medicine']->id)
+        ->where('batch_no', 'BATCH-001')
+        ->firstOrFail();
+
+    // Initial 10 pieces + the original 10-piece pack, not a new 20-piece pack.
+    expect((int) $stock->stock_qty)->toBe(20);
 });
 
 test('delete sales transaction restores stock to previous balance', function () {
