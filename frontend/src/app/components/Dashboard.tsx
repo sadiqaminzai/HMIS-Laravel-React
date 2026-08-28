@@ -126,6 +126,8 @@ interface DashboardSummary {
     total_sales_invoice_amount: number;
     total_sales_paid_amount?: number;
     total_sales_due_amount?: number;
+    total_sales_return_amount?: number;
+    total_net_medicine_sale?: number;
     total_other_income?: number;
     total_income: number;
     total_expenses: number;
@@ -213,6 +215,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     total_surgery_fees: 0,
     total_room_fees: 0,
     total_sales_invoice_amount: 0,
+    total_sales_return_amount: 0,
+    total_net_medicine_sale: 0,
     total_other_income: 0,
     total_income: 0,
     total_expenses: 0,
@@ -315,9 +319,12 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'medicine_sale',
-        label: 'Medicine Sale',
-        value: formatMoney(dailyFinancials.total_sales_invoice_amount),
-        helper: 'Total medicine invoices for selected period',
+        label: 'Medicine Net Sale',
+        // Sales invoices less sales returns. The gross invoice total is still
+        // sent as total_sales_invoice_amount for anyone who needs it.
+        value: formatMoney(dailyFinancials.total_net_medicine_sale
+          ?? (dailyFinancials.total_sales_invoice_amount - (dailyFinancials.total_sales_return_amount ?? 0))),
+        helper: 'Medicine invoices less sales returns for selected period',
         icon: <Package className="w-4 h-4" />,
         color: 'bg-blue-500',
         visible: showPanel('medicine_sale', 'view_transactions', 'manage_transactions'),
@@ -418,6 +425,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     dailyFinancials.total_surgery_fees,
     dailyFinancials.total_room_fees,
     dailyFinancials.total_sales_invoice_amount,
+    dailyFinancials.total_sales_return_amount,
+    dailyFinancials.total_net_medicine_sale,
     dailyFinancials.total_other_income,
     formatMoney,
     hasPermission,
@@ -1129,6 +1138,13 @@ export function Dashboard({ role, hospital }: DashboardProps) {
                 Collected <span className="font-semibold text-green-700 dark:text-green-400">{formatMoney(dailyFinancials.total_sales_paid_amount ?? 0)}</span>
                 {' · '}
                 Due <span className="font-semibold text-red-700 dark:text-red-400">{formatMoney(dailyFinancials.total_sales_due_amount ?? 0)}</span>
+              </p>
+              {/* Shown next to the gross invoice figure so the Net Sale tile
+                  above can be reconciled without opening a report. */}
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                Returns <span className="font-semibold text-orange-700 dark:text-orange-400">{formatMoney(dailyFinancials.total_sales_return_amount ?? 0)}</span>
+                {' · '}
+                Net <span className="font-semibold text-blue-700 dark:text-blue-400">{formatMoney(dailyFinancials.total_net_medicine_sale ?? 0)}</span>
               </p>
             </div>
           )}

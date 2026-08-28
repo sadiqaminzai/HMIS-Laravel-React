@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\PatientSurgery;
 use App\Models\Surgery;
+use App\Services\DiscountService;
 use App\Services\LedgerPostingService;
 use App\Services\SurgeryService;
 use App\Http\Controllers\Concerns\RecordsPaymentCollection;
@@ -16,7 +17,8 @@ class PatientSurgeryController extends Controller
 
     public function __construct(
         private readonly SurgeryService $surgeryService,
-        private readonly LedgerPostingService $ledgerPostingService
+        private readonly LedgerPostingService $ledgerPostingService,
+        private readonly DiscountService $discountService
     )
     {
     }
@@ -107,6 +109,7 @@ class PatientSurgeryController extends Controller
             $this->assertScopedSurgery($surgery, (int) $data['hospital_id']);
 
             $data['cost'] = $this->surgeryService->resolveCost($surgery, $data['cost'] ?? null);
+            $this->applyDiscountRules($data);
             $patientSurgery = PatientSurgery::create($data);
             $this->ledgerPostingService->upsertPatientSurgerySnapshot($patientSurgery);
 
@@ -140,6 +143,7 @@ class PatientSurgeryController extends Controller
             $this->assertScopedSurgery($surgery, (int) $data['hospital_id']);
 
             $data['cost'] = $this->surgeryService->resolveCost($surgery, $data['cost'] ?? null);
+            $this->applyDiscountRules($data);
 
             $patientSurgery->update($data);
 
@@ -268,6 +272,51 @@ class PatientSurgeryController extends Controller
         if (!$can('edit_surgery_payment_status')) {
             $data['payment_status'] = $existing->payment_status ?? 'pending';
         }
+
+        // Same rights that govern an appointment discount, so a hospital
+        // configures "who may discount" once rather than per module.
+        $canDiscount = in_array('add_discounts', $held, true)
+            || in_array('edit_discounts', $held, true)
+            || in_array('manage_discounts', $held, true)
+            || in_array('manage_patient_surgeries', $held, true);
+
+        if (!$canDiscount) {
+            // Keep whatever was already stored; never accept a new discount.
+            $data['discount_enabled'] = (bool) ($existing->discount_enabled ?? false);
+            $data['discount_percentage'] = (float) ($existing->discount_percentage ?? 0);
+            $data['discount_amount'] = (float) ($existing->discount_amount ?? 0);
+        }
+    }
+
+    /**
+     * Turn the announced percentage into the money actually owed.
+     *
+     * `cost` stays the list price so a discounted operation is still
+     * distinguishable from a cheap one; `net_amount` is what is billed.
+     */
+    private function applyDiscountRules(array &$data): void
+    {
+        $computed = $this->discountService->computeFeeTotals([
+            'original_fee_amount' => $data['cost'] ?? 0,
+            'discount_enabled' => $data['discount_enabled'] ?? false,
+            'discount_percentage' => array_key_exists('discount_percentage', $data)
+                && $data['discount_percentage'] !== null
+                && $data['discount_percentage'] !== ''
+                ? $data['discount_percentage']
+                : null,
+            'discount_amount' => $data['discount_amount'] ?? 0,
+        ]);
+
+        $gross = $computed['original_fee_amount'];
+        $data['cost'] = $gross;
+        $data['discount_enabled'] = (bool) ($data['discount_enabled'] ?? false);
+        $data['discount_amount'] = $computed['discount_amount'];
+        $data['net_amount'] = $computed['total_amount'];
+        // Recomputed from the amount rather than trusted from the request, so
+        // the two can never disagree on a record.
+        $data['discount_percentage'] = $gross > 0
+            ? round(($computed['discount_amount'] / $gross) * 100, 2)
+            : 0.0;
     }
 
     private function validatePayload(Request $request, ?int $existingHospitalId = null): array
@@ -292,6 +341,12 @@ class PatientSurgeryController extends Controller
             'status' => ['required', 'in:scheduled,in_progress,completed,cancelled'],
             'payment_status' => ['required', 'in:pending,paid,partial,cancelled'],
             'cost' => ['nullable', 'numeric', 'min:0'],
+            // Campaign discounts are announced as a percentage ("30% off
+            // caesareans"), so that is what the form sends; the amount is
+            // derived from it server-side and stored for reporting.
+            'discount_enabled' => ['nullable', 'boolean'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'is_active' => ['sometimes', 'boolean'],
         ]);

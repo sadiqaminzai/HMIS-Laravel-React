@@ -165,7 +165,7 @@ export const DEFAULT_INVOICE_FIELDS: InvoiceFieldSettings = {
  */
 export type ReportDesk = 'reception' | 'pharmacy' | 'laboratory' | 'radiology';
 export type ReportIncomeModule =
-  | 'pharmacy' | 'appointments' | 'laboratory' | 'radiology' | 'surgery' | 'room_booking';
+  | 'pharmacy' | 'appointments' | 'laboratory' | 'radiology' | 'xray' | 'surgery' | 'room_booking';
 
 export const REPORT_DESKS: { key: ReportDesk; label: string }[] = [
   { key: 'reception', label: 'Reception / Finance' },
@@ -178,7 +178,8 @@ export const REPORT_INCOME_MODULES: { key: ReportIncomeModule; label: string }[]
   { key: 'pharmacy', label: 'Medicine Sale' },
   { key: 'appointments', label: 'Appointment Fees' },
   { key: 'laboratory', label: 'Laboratory Fees' },
-  { key: 'radiology', label: 'Ultrasound / Radiology Fees' },
+  { key: 'radiology', label: 'Ultrasound Fees' },
+  { key: 'xray', label: 'X-Ray Fees' },
   { key: 'surgery', label: 'Surgery Fees' },
   { key: 'room_booking', label: 'Room Booking Fees' },
 ];
@@ -191,6 +192,7 @@ export const DEFAULT_REPORT_MODULE_OWNERS: ReportModuleOwners = {
   appointments: 'reception',
   laboratory: 'reception',
   radiology: 'reception',
+  xray: 'reception',
   surgery: 'reception',
   room_booking: 'reception',
 };

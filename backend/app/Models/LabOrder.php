@@ -109,9 +109,23 @@ class LabOrder extends Model
         return $this->items()->sum('price');
     }
 
-    // Check if all items are completed
+    /**
+     * Check if all items are completed.
+     *
+     * Tests whose template is marked as not requiring a result are skipped:
+     * their report comes off the analyser, so they would otherwise hold the
+     * whole order open forever waiting for an entry that never arrives.
+     */
     public function allItemsCompleted(): bool
     {
-        return $this->items()->where('status', '!=', 'completed')->count() === 0;
+        return $this->items()
+            ->where('status', '!=', 'completed')
+            ->where(function ($q) {
+                // Mirrors LabOrderItem::requiresResult(): an item whose template
+                // has since been removed still counts as needing a result.
+                $q->whereHas('template', fn ($t) => $t->where('requires_result', true))
+                    ->orWhereDoesntHave('template');
+            })
+            ->count() === 0;
     }
 }

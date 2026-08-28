@@ -43,6 +43,10 @@ const mapOrderStatus = (orderStatus: string, paymentStatus: string): LabTest['st
 
 const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients: Patient[]): LabTest => {
   const selectedTests: string[] = [];
+  // Tests the laboratory still has to key a result for. Analyser-reported
+  // tests are billed and printed but never appear in the technician's queue.
+  const resultTestIds: string[] = [];
+  const resultTestNames: string[] = [];
   const testNames: string[] = [];
   const testTypes: string[] = [];
   const testResults: TestResult[] = [];
@@ -107,10 +111,21 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
       remarks: r.remarks || undefined,
     }));
 
+    // The template is authoritative, so flipping the switch also clears tests
+    // already sitting in the queue; the order item's own flag is the fallback
+    // for a template the catalogue no longer lists.
+    const requiresResult = template
+      ? template.requiresResult !== false
+      : (item as any).requiresResult !== false;
+
     selectedTests.push(String(item.testTemplateId));
     testNames.push(effectiveTestName);
+    if (requiresResult) {
+      resultTestIds.push(String(item.testTemplateId));
+      resultTestNames.push(effectiveTestName);
+    }
     if (effectiveTestType && !testTypes.includes(effectiveTestType)) testTypes.push(effectiveTestType);
-    orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), parameters, results });
+    orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), requiresResult, parameters, results });
   });
 
   const patient = patients.find(p => String(p.id) === String(order.patientId));
@@ -135,6 +150,8 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     doctorId: order.doctorId,
     doctorName: order.doctorName,
     selectedTests,
+    resultTestIds,
+    resultTestName: resultTestNames.join(', '),
     testName: testNames.join(', '),
     testType: testTypes.join(', '),
     instructions: order.clinicalNotes || undefined,
@@ -449,6 +466,10 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       return test.status !== 'cancelled';
     }
     if (activeStage === 'processing') {
+      // An order made up entirely of analyser-reported tests has nothing for
+      // the technician to do, so it never enters this queue -- it is still
+      // billed, listed and printed from the other two tabs.
+      if ((test.resultTestIds?.length ?? 0) === 0) return false;
       return test.status !== 'unpaid' && test.status !== 'cancelled';
     }
     return true;
@@ -1092,8 +1113,16 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                       </td>
                       <td className="px-4 py-2">
                         <div>
-                          <div className="text-xs font-medium text-gray-900 dark:text-white">{test.testName}</div>
-                          <div className="text-[10px] text-gray-500 dark:text-gray-400">{test.selectedTests?.length || 0} test(s)</div>
+                          {/* Processing lists only what the laboratory reports
+                              itself; the other tabs show the full invoice. */}
+                          <div className="text-xs font-medium text-gray-900 dark:text-white">
+                            {activeStage === 'processing' ? (test.resultTestName || test.testName) : test.testName}
+                          </div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {activeStage === 'processing'
+                              ? (test.resultTestIds?.length ?? test.selectedTests?.length ?? 0)
+                              : (test.selectedTests?.length || 0)} test(s)
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-2">

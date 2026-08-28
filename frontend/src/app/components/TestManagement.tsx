@@ -78,6 +78,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
     sampleType: '',
     price: '',
     status: 'active' as 'active' | 'inactive',
+    requiresResult: true,
     hospitalId: currentHospital.id // Add hospital selection
   });
 
@@ -93,6 +94,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       sampleType: '',
       price: '',
       status: 'active',
+      requiresResult: true,
       hospitalId: currentHospital.id // Add hospital selection
     });
     setParameters([{ parameterName: '', unit: '', normalRange: '', description: '' }]);
@@ -119,6 +121,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       sampleType: test.sampleType,
       price: test.price.toString(),
       status: test.status,
+      requiresResult: test.requiresResult !== false,
       hospitalId: test.hospitalId // Add hospital selection
     });
     setParameters(test.parameters.length > 0 ? test.parameters : [{ parameterName: '', unit: '', normalRange: '', description: '' }]);
@@ -155,6 +158,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
       duration: '24 hours',
       instructions: '',
       status: formData.status,
+      requiresResult: formData.requiresResult,
     };
 
     try {
@@ -444,6 +448,15 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                       }`}>
                         {test.status === 'active' ? (currentLanguage === 'en' ? 'Active' : 'فعال') : (currentLanguage === 'en' ? 'Inactive' : 'غیرفعال')}
                       </span>
+                      {/* Only flagged when off, so the common case stays quiet. */}
+                      {test.requiresResult === false && (
+                        <span
+                          className="ml-1 inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium border bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                          title={currentLanguage === 'en' ? 'Billed at reception, reported by the analyser — no result entry in the lab' : ''}
+                        >
+                          {currentLanguage === 'en' ? 'No result entry' : currentLanguage === 'ps' ? 'پایله نه ثبتیږي' : currentLanguage === 'fa' ? 'بدون ثبت نتیجه' : 'بدون إدخال نتيجة'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -666,6 +679,31 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                       <option value="active">{currentLanguage === 'en' ? 'Active' : 'فعال'}</option>
                       <option value="inactive">{currentLanguage === 'en' ? 'Inactive' : 'غیرفعال'}</option>
                     </select>
+                  </div>
+                  {/* Distinct from Status: an inactive test vanishes from
+                      reception's order form as well, so it cannot be used for a
+                      test that is still sold but reported off the analyser. */}
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                      {currentLanguage === 'en' ? 'Result Entry' : currentLanguage === 'ps' ? 'د پایلې ثبت' : currentLanguage === 'fa' ? 'ثبت نتیجه' : 'إدخال النتيجة'}
+                    </label>
+                    <select
+                      value={formData.requiresResult ? 'required' : 'not_required'}
+                      onChange={(e) => setFormData({ ...formData, requiresResult: e.target.value === 'required' })}
+                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="required">{currentLanguage === 'en' ? 'Required in lab' : currentLanguage === 'ps' ? 'په لابراتوار کې اړین' : currentLanguage === 'fa' ? 'در آزمایشگاه لازم است' : 'مطلوب في المختبر'}</option>
+                      <option value="not_required">{currentLanguage === 'en' ? 'Machine printed — skip' : currentLanguage === 'ps' ? 'ماشین چاپوي — پرېږده' : currentLanguage === 'fa' ? 'چاپ دستگاه — نادیده' : 'يطبعه الجهاز — تخطي'}</option>
+                    </select>
+                    <p className="mt-0.5 text-[9px] leading-tight text-gray-500 dark:text-gray-400">
+                      {currentLanguage === 'en'
+                        ? 'Still billed at reception; only hidden from lab result entry.'
+                        : currentLanguage === 'ps'
+                          ? 'بیل یې لاهم اخیستل کیږي؛ یوازې د پایلې له ثبت پټ دی.'
+                          : currentLanguage === 'fa'
+                            ? 'همچنان در پذیرش صورتحساب می‌شود؛ فقط از ثبت نتیجه پنهان است.'
+                            : 'تُحتسب في الاستقبال؛ مخفية فقط عن إدخال النتائج.'}
+                    </p>
                   </div>
                 </div>
               </div>

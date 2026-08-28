@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2, Search, X, Printer, Eye, CalendarCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Printer, Eye, CalendarCheck, BedDouble } from 'lucide-react';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { listRoomBookings, createRoomBooking, updateRoomBooking, deleteRoomBooking, listRooms, getRoomBookingAvailability, collectRoomBookingPayment, reverseRoomBookingPayment } from '../../api/rooms';
@@ -14,6 +14,27 @@ import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
 import { poweredByHtml } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
+import {
+  CellNumber,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  DeleteIcon,
+  EditIcon,
+  RowIcon,
+  TableAction,
+  TableActions,
+  TableEmpty,
+  TableLoading,
+  TablePill,
+  Th,
+  Tr,
+  ViewIcon,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 import { SearchableSelect } from './SearchableSelect';
 import { printName } from '../utils/printName';
 
@@ -125,7 +146,6 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [roomOptions, setRoomOptions] = useState<RoomOption[]>([]);
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [loading, setLoading] = useState(false);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
@@ -231,21 +251,14 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
     );
   }, [bookings, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const paginatedBookings = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(startIndex, startIndex + itemsPerPage);
-  }, [filtered, currentPage]);
+  // Newest first by default: a booking desk works on what has just been made,
+  // and the list previously came back in whatever order the API returned.
+  const sort = useTableSort(filtered, 'checkInDate', 'desc');
+  const { page, setPage, totalPages, pageRows: paginatedBookings } = usePagination(sort.rows, itemsPerPage);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedHospitalId]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+    setPage(1);
+  }, [search, selectedHospitalId, setPage]);
 
   const resetForm = () => {
     setEditing(null);
@@ -788,77 +801,101 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
         Workflow: Pending to Confirmed to Checked-in to Checked-out. Final cost is calculated by server based on room price, bed count, stay duration, and discount.
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
-              <tr>
-                <th className="px-4 py-2">{t('table.room')}</th>
-                <th className="px-4 py-2">{t('table.patient')}</th>
-                <th className="px-4 py-2">{t('table.dates')}</th>
-                <th className="px-4 py-2">{t('table.nights')}</th>
-                <th className="px-4 py-2">{t('table.beds')}</th>
-                <th className="px-4 py-2">{t('table.bedNumbers')}</th>
-                <th className="px-4 py-2">{t('table.cost')}</th>
-                <th className="px-4 py-2">{t('table.status')}</th>
-                <th className="px-4 py-2 text-center">{t('table.actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
-                <tr><td className="px-4 py-6" colSpan={9}>Loading...</td></tr>
-              ) : paginatedBookings.length === 0 ? (
-                <tr><td className="px-4 py-6 text-center" colSpan={9}>No bookings found</td></tr>
-              ) : paginatedBookings.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{item.roomNumber}</td>
-                  <td className="px-4 py-2">{item.patientName}</td>
-                  <td className="px-4 py-2">{item.checkInDate} {item.checkOutDate ? `to ${item.checkOutDate}` : ''}</td>
+      <DataTableCard
+        total={filtered.length}
+        shown={paginatedBookings.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        noun="bookings"
+        maxHeight={embedded ? 'calc(100vh - 340px)' : 'calc(100vh - 260px)'}
+      >
+        <DataTableHead>
+          <Th sort={sort} field="roomNumber">{t('table.room')}</Th>
+          <Th sort={sort} field="patientName">{t('table.patient')}</Th>
+          <Th sort={sort} field="checkInDate">{t('table.dates')}</Th>
+          <Th align="center">{t('table.nights')}</Th>
+          <Th sort={sort} field="bedsToBook" align="center">{t('table.beds')}</Th>
+          <Th>{t('table.bedNumbers')}</Th>
+          <Th sort={sort} field="totalCost">{t('table.cost')}</Th>
+          <Th sort={sort} field="status">{t('table.status')}</Th>
+          <Th align="center">{t('table.actions')}</Th>
+        </DataTableHead>
+        <DataTableBody>
+          {loading ? (
+            <TableLoading colSpan={9} />
+          ) : paginatedBookings.length === 0 ? (
+            <TableEmpty colSpan={9} message="No bookings found" icon={<BedDouble className="w-6 h-6 text-gray-400" />} />
+          ) : (
+            paginatedBookings.map((item) => {
+              const nights = item.checkOutDate
+                ? Math.max(1, Math.ceil((new Date(item.checkOutDate).getTime() - new Date(item.checkInDate).getTime()) / (1000 * 60 * 60 * 24)))
+                : 1;
+              const isPaid = String(item.paymentStatus) === 'paid';
+
+              return (
+                <Tr key={item.id}>
                   <td className="px-4 py-2">
-                    {item.checkOutDate
-                      ? Math.max(1, Math.ceil((new Date(item.checkOutDate).getTime() - new Date(item.checkInDate).getTime()) / (1000 * 60 * 60 * 24)))
-                      : 1}
+                    <div className="flex items-center gap-3">
+                      <RowIcon tone="blue">
+                        <BedDouble className="w-4 h-4" />
+                      </RowIcon>
+                      <CellStack primary={item.roomNumber} secondary={item.bedNumber || undefined} />
+                    </div>
                   </td>
-                  <td className="px-4 py-2">{item.bedsToBook}</td>
-                  <td className="px-4 py-2 text-[11px]">{item.bedNumber || '-'}</td>
-                  <td className="px-4 py-2">{item.totalCost.toFixed(2)}</td>
+                  <td className="px-4 py-2">
+                    <CellStack primary={item.patientName} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <CellText>
+                      {item.checkInDate}
+                      {item.checkOutDate ? ` to ${item.checkOutDate}` : ''}
+                    </CellText>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <CellNumber>{nights}</CellNumber>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <CellNumber>{item.bedsToBook}</CellNumber>
+                  </td>
+                  <td className="px-4 py-2">
+                    <CellText>{item.bedNumber || '-'}</CellText>
+                  </td>
+                  <td className="px-4 py-2">
+                    <CellNumber tone="money">{item.totalCost.toFixed(2)}</CellNumber>
+                  </td>
                   <td className="px-4 py-2">
                     <div className="flex flex-col gap-1">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 w-fit">{item.status}</span>
+                      <TablePill tone="blue">{item.status}</TablePill>
                       {/* The fee was previously collectable only by opening the
                           edit form, which meant taking money required the right
                           to change the booking. This switch calls the payment
                           endpoints instead, so a cashier needs nothing more. */}
-                      {(() => {
-                        const isPaid = String(item.paymentStatus) === 'paid';
-                        return (
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 w-fit">{item.paymentStatus}</span>
-                            {canCollectBookingFee && (
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={isPaid}
-                                disabled={isPaid ? !canReverseBookingFee : !canCollectBookingFee}
-                                title={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
-                                aria-label={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
-                                onClick={() => handlePaymentToggle(item)}
-                                className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  isPaid ? 'bg-emerald-500' : 'bg-amber-400'
-                                }`}
-                              >
-                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                                  isPaid ? 'translate-x-4' : 'translate-x-0.5'
-                                }`} />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      <div className="flex items-center gap-1.5">
+                        <TablePill tone={isPaid ? 'green' : 'amber'}>{item.paymentStatus}</TablePill>
+                        {canCollectBookingFee && (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isPaid}
+                            disabled={isPaid ? !canReverseBookingFee : !canCollectBookingFee}
+                            title={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
+                            aria-label={isPaid ? 'Reverse payment to pending' : 'Mark fee collected'}
+                            onClick={() => handlePaymentToggle(item)}
+                            className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                              isPaid ? 'bg-emerald-500' : 'bg-amber-400'
+                            }`}
+                          >
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                              isPaid ? 'translate-x-4' : 'translate-x-0.5'
+                            }`} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-2 text-center">
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-1.5">
                       {item.status === 'Pending' && (
                         <button onClick={() => quickStatusUpdate(item, 'Confirmed')} className="px-2 py-1 text-[10px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200" title="Confirm booking">Confirm</button>
                       )}
@@ -868,33 +905,30 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                       {item.status === 'Checked-in' && (
                         <button onClick={() => quickStatusUpdate(item, 'Checked-out')} className="px-2 py-1 text-[10px] rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200" title="Check out">Check-out</button>
                       )}
-                      <button onClick={() => openPrintReceipt(item)} className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded-md" title="Print receipt"><Printer className="w-4 h-4" /></button>
-                      <button onClick={() => setViewing(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title={t('ui.view')}><Eye className="w-4 h-4" /></button>
-                      {canEdit && (<button onClick={() => openEdit(item)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title={t('ui.edit')}><Pencil className="w-4 h-4" /></button>)}
-                      {canDelete && (<button onClick={() => removeBooking(item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title={t('ui.delete')}><Trash2 className="w-4 h-4" /></button>)}
+                      <TableAction tone="primary" title="Print receipt" onClick={() => openPrintReceipt(item)}>
+                        <Printer className="w-3.5 h-3.5" />
+                      </TableAction>
+                      <TableAction tone="view" title={t('ui.view')} onClick={() => setViewing(item)}>
+                        <ViewIcon />
+                      </TableAction>
+                      {canEdit && (
+                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => openEdit(item)}>
+                          <EditIcon />
+                        </TableAction>
+                      )}
+                      {canDelete && (
+                        <TableAction tone="delete" title={t('ui.delete')} onClick={() => removeBooking(item.id)}>
+                          <DeleteIcon />
+                        </TableAction>
+                      )}
                     </div>
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
-          <span>Page {currentPage} of {totalPages}</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.prev')}</button>
-            <button
-              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.next')}</button>
-          </div>
-        </div>
-      </div>
+                </Tr>
+              );
+            })
+          )}
+        </DataTableBody>
+      </DataTableCard>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">

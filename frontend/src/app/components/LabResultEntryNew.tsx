@@ -41,7 +41,11 @@ export function LabResultEntryNew({ test, testTemplates, onClose, onSubmit }: La
   useEffect(() => {
     const initialResults: TestResult[] = [];
     
-    test.selectedTests?.forEach(testId => {
+    // Analyser-reported tests are excluded upstream, in `resultTestIds`. The
+    // fallback keeps an order mapped by older code working unchanged.
+    const entryTestIds = test.resultTestIds ?? test.selectedTests ?? [];
+
+    entryTestIds.forEach(testId => {
       const template = testTemplates.find(t => t.id === testId);
       const orderItem = test.orderItems?.find(item => String(item.testTemplateId) === String(testId));
       const sourceParams = (template?.parameters && template.parameters.length > 0)

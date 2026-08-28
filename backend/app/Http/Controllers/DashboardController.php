@@ -408,6 +408,19 @@ class DashboardController extends Controller
             ->where('entry_direction', 'income')
             ->sum('net_amount'), 2);
 
+        $salesInvoiceAmount = round((float) (clone $dailyLedgerQuery)
+            ->where('module', 'pharmacy')
+            ->where('category', 'sales')
+            ->sum('net_amount'), 2);
+
+        // A sales return is posted on the expense side (cash back to the
+        // customer, stock back on the shelf), so it has to be subtracted here
+        // rather than summed with the invoices.
+        $salesReturnAmount = round((float) (clone $dailyLedgerQuery)
+            ->where('module', 'pharmacy')
+            ->where('category', 'sales_return')
+            ->sum('net_amount'), 2);
+
         $dailyFinancials = [
             'report_date' => $financialStart->toDateString(),
             'report_period_start' => $financialStart->toDateString(),
@@ -430,10 +443,13 @@ class DashboardController extends Controller
                 ->where('module', 'room_booking')
                 ->where('entry_direction', 'income')
                 ->sum('net_amount'), 2),
-            'total_sales_invoice_amount' => round((float) (clone $dailyLedgerQuery)
-                ->where('module', 'pharmacy')
-                ->where('category', 'sales')
-                ->sum('net_amount'), 2),
+            'total_sales_invoice_amount' => $salesInvoiceAmount,
+            'total_sales_return_amount' => $salesReturnAmount,
+            // What the pharmacy actually kept: invoices less goods handed back.
+            // The gross invoice figure alone overstated takings on any day a
+            // customer returned medicine, because the refund went out through
+            // the expense side and never came off the sales tile.
+            'total_net_medicine_sale' => round($salesInvoiceAmount - $salesReturnAmount, 2),
             'total_sales_paid_amount' => round((float) (clone $dailyLedgerQuery)
                 ->where('module', 'pharmacy')
                 ->where('category', 'sales')
@@ -537,6 +553,10 @@ class DashboardController extends Controller
             'appointments' => ['label' => 'Registration / OPD Fees', 'module' => 'appointments', 'permission' => 'view_dashboard_appointment_fees'],
             'laboratory' => ['label' => 'Laboratory Fees', 'module' => 'laboratory', 'permission' => 'view_dashboard_lab_orders_amount'],
             'radiology' => ['label' => 'Ultrasound Fees', 'module' => 'radiology', 'permission' => 'view_dashboard_ultrasound_fees'],
+            // X-Ray posts to its own module (see LedgerPostingService), so it
+            // needs its own line or its takings would be missing from the
+            // day-end sheet entirely.
+            'xray' => ['label' => 'X-Ray Fees', 'module' => 'xray', 'permission' => 'view_dashboard_xray_fees'],
             'surgery' => ['label' => 'Surgery Fees', 'module' => 'surgery', 'permission' => 'view_dashboard_surgery_fees'],
             'room_booking' => ['label' => 'Room Booking Fees', 'module' => 'room_booking', 'permission' => 'view_dashboard_room_booking_fees'],
             'pharmacy' => ['label' => 'Pharmacy Sales', 'module' => 'pharmacy', 'category' => 'sales', 'permission' => 'view_dashboard_medicine_sale'],
@@ -707,6 +727,8 @@ class DashboardController extends Controller
             'total_sales_invoice_amount' => 'medicine_sale',
             'total_sales_paid_amount' => 'medicine_sale',
             'total_sales_due_amount' => 'medicine_sale',
+            'total_sales_return_amount' => 'medicine_sale',
+            'total_net_medicine_sale' => 'medicine_sale',
             'total_fees' => 'appointment_fees',
             'total_lab_fees' => 'lab_orders_amount',
             'total_surgery_fees' => 'surgery_fees',

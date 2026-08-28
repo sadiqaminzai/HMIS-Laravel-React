@@ -48,6 +48,7 @@ use App\Http\Controllers\SurgeryController;
 use App\Http\Controllers\SurgeryTypeController;
 use App\Http\Controllers\TestTemplateController;
 use App\Http\Controllers\UltrasoundExamController;
+use App\Http\Controllers\XrayReceiptController;
 use App\Http\Controllers\UltrasoundTypeController;
 use App\Http\Controllers\ShifaaScriptController;
 use App\Http\Controllers\UserController;
@@ -370,6 +371,18 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('ultrasound-exams/{ultrasoundExam}/payment', [UltrasoundExamController::class, 'processPayment'])->middleware('permission:manage_ultrasound_payments,manage_ultrasound_exams');
 	Route::post('ultrasound-exams/{ultrasoundExam}/reverse-payment', [UltrasoundExamController::class, 'reversePayment'])->middleware('permission:reverse_ultrasound_payment');
 	Route::get('ultrasound-exams/{ultrasoundExam}/receipt', [UltrasoundExamController::class, 'receipt'])->middleware('permission:print_ultrasound_receipt,manage_ultrasound_payments,manage_ultrasound_exams');
+
+	// Radiology - X-Ray receipts (a cash desk only: the film is reported
+	// outside ShifaaScript, so there is no exam or template counterpart).
+	Route::get('xray-receipts', [XrayReceiptController::class, 'index'])->middleware('permission:view_xray_receipts,manage_xray_receipts');
+	Route::get('xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'show'])->middleware('permission:view_xray_receipts,manage_xray_receipts');
+	Route::post('xray-receipts', [XrayReceiptController::class, 'store'])->middleware('permission:add_xray_receipts,manage_xray_receipts');
+	Route::match(['PUT', 'PATCH'], 'xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'update'])->middleware('permission:edit_xray_receipts,manage_xray_receipts');
+	Route::delete('xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'destroy'])->middleware('permission:delete_xray_receipts,manage_xray_receipts');
+	Route::post('xray-receipts/{xrayReceipt}/payment', [XrayReceiptController::class, 'processPayment'])->middleware('permission:manage_xray_payments,manage_xray_receipts');
+	// Reversal stands alone: collecting must not imply being able to undo.
+	Route::post('xray-receipts/{xrayReceipt}/reverse-payment', [XrayReceiptController::class, 'reversePayment'])->middleware('permission:reverse_xray_payment');
+	Route::get('xray-receipts/{xrayReceipt}/receipt', [XrayReceiptController::class, 'receipt'])->middleware('permission:print_xray_receipt,manage_xray_payments,manage_xray_receipts');
 
 	// Audit Log (read-only; entries are written by the application itself)
 	Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:view_audit_logs,manage_audit_logs');

@@ -9,6 +9,28 @@ import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/Mod
 import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
 import { AddButton } from './AddButton';
+import {
+  ActivePill,
+  CellNumber,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  DeleteIcon,
+  EditIcon,
+  RowIcon,
+  TableAction,
+  TableActions,
+  TableEmpty,
+  TableLoading,
+  TablePill,
+  Th,
+  Tr,
+  ViewIcon,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 
 interface RoomManagementProps {
   hospital: Hospital;
@@ -61,7 +83,6 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
 
   const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<RoomItem | null>(null);
@@ -102,23 +123,15 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
     return rooms.filter((r) => r.roomNumber.toLowerCase().includes(q) || r.type.toLowerCase().includes(q));
   }, [rooms, search]);
 
-  const itemsPerPage = 10;
-  const totalPages = Math.max(1, Math.ceil(filteredRooms.length / itemsPerPage));
-
-  const paginatedRooms = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredRooms.slice(start, start + itemsPerPage);
-  }, [filteredRooms, currentPage]);
+  // Column sorting and paging now come from the shared table, so this list
+  // behaves the same as Doctor Management rather than being sorted only by
+  // whatever order the API happened to return.
+  const sort = useTableSort(filteredRooms, 'roomNumber');
+  const { page, setPage, totalPages, pageRows: paginatedRooms } = usePagination(sort.rows);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedHospitalId]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+    setPage(1);
+  }, [search, selectedHospitalId, setPage]);
 
   const resetForm = () => {
     setEditing(null);
@@ -215,7 +228,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                setCurrentPage(1);
+                setPage(1);
               }}
               placeholder="Search rooms..."
               aria-label="Search rooms"
@@ -240,86 +253,83 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
         />
       )}
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
-              <tr>
-                <th className="px-4 py-2">{t('table.room')}</th>
-                <th className="px-4 py-2">{t('table.type')}</th>
-                <th className="px-4 py-2">{t('table.beds')}</th>
-                <th className="px-4 py-2">{t('table.bedNumbers')}</th>
-                <th className="px-4 py-2">{t('table.costPerBed')}</th>
-                <th className="px-4 py-2">{t('table.status')}</th>
-                <th className="px-4 py-2 text-center">{t('table.actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
-                <tr><td className="px-4 py-6" colSpan={7}>Loading...</td></tr>
-              ) : filteredRooms.length === 0 ? (
-                <tr><td className="px-4 py-6 text-center" colSpan={7}>No rooms found</td></tr>
-              ) : paginatedRooms.map((room) => (
-                <tr key={room.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{room.roomNumber}</td>
-                  <td className="px-4 py-2">{room.type}</td>
-                  <td className="px-4 py-2">{room.availableBeds} / {room.totalBeds}</td>
-                  <td className="px-4 py-2">
-                    <div className="text-[11px] text-gray-600 dark:text-gray-300">
-                      {generateRoomBeds(room.totalBeds).slice(0, 5).join(', ')}
-                      {room.totalBeds > 5 ? ` +${room.totalBeds - 5} more` : ''}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2">{room.costPerBed.toFixed(2)}</td>
-                  <td className="px-4 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${room.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
-                      {room.isActive ? t('ui.active') : t('ui.inactive')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => setViewing(room)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title={t('ui.view')}>
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      {canEdit && (
-                        <button onClick={() => openEdit(room)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title={t('ui.edit')}>
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button onClick={() => removeRoom(room.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title={t('ui.delete')}>
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {!loading && filteredRooms.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
-            <span>Showing {paginatedRooms.length} of {filteredRooms.length} rooms</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >{t('ui.prev')}</button>
-              <span>Page {currentPage} of {totalPages}</span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >{t('ui.next')}</button>
-            </div>
-          </div>
-        )}
-      </div>
+      <DataTableCard
+        total={filteredRooms.length}
+        shown={paginatedRooms.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        noun="rooms"
+        maxHeight={embedded ? 'calc(100vh - 300px)' : 'calc(100vh - 220px)'}
+      >
+        <DataTableHead>
+          <Th sort={sort} field="roomNumber">{t('table.room')}</Th>
+          <Th sort={sort} field="type">{t('table.type')}</Th>
+          <Th sort={sort} field="availableBeds">{t('table.beds')}</Th>
+          <Th>{t('table.bedNumbers')}</Th>
+          <Th sort={sort} field="costPerBed">{t('table.costPerBed')}</Th>
+          <Th sort={sort} field="isActive">{t('table.status')}</Th>
+          <Th align="center">{t('table.actions')}</Th>
+        </DataTableHead>
+        <DataTableBody>
+          {loading ? (
+            <TableLoading colSpan={7} />
+          ) : paginatedRooms.length === 0 ? (
+            <TableEmpty colSpan={7} message="No rooms found" icon={<BedDouble className="w-6 h-6 text-gray-400" />} />
+          ) : (
+            paginatedRooms.map((room) => (
+              <Tr key={room.id}>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-3">
+                    <RowIcon tone="blue">
+                      <BedDouble className="w-4 h-4" />
+                    </RowIcon>
+                    <CellStack
+                      primary={room.roomNumber}
+                      secondary={`${room.availableBeds} of ${room.totalBeds} free`}
+                    />
+                  </div>
+                </td>
+                <td className="px-4 py-2">
+                  <TablePill tone="purple">{room.type}</TablePill>
+                </td>
+                <td className="px-4 py-2">
+                  <CellNumber>{room.availableBeds} / {room.totalBeds}</CellNumber>
+                </td>
+                <td className="px-4 py-2">
+                  <CellText>
+                    {generateRoomBeds(room.totalBeds).slice(0, 5).join(', ')}
+                    {room.totalBeds > 5 ? ` +${room.totalBeds - 5} more` : ''}
+                  </CellText>
+                </td>
+                <td className="px-4 py-2">
+                  <CellNumber tone="money">{room.costPerBed.toFixed(2)}</CellNumber>
+                </td>
+                <td className="px-4 py-2">
+                  <ActivePill active={room.isActive} />
+                </td>
+                <td className="px-4 py-2 text-center">
+                  <TableActions>
+                    <TableAction tone="view" title={t('ui.view')} onClick={() => setViewing(room)}>
+                      <ViewIcon />
+                    </TableAction>
+                    {canEdit && (
+                      <TableAction tone="edit" title={t('ui.edit')} onClick={() => openEdit(room)}>
+                        <EditIcon />
+                      </TableAction>
+                    )}
+                    {canDelete && (
+                      <TableAction tone="delete" title={t('ui.delete')} onClick={() => removeRoom(room.id)}>
+                        <DeleteIcon />
+                      </TableAction>
+                    )}
+                  </TableActions>
+                </td>
+              </Tr>
+            ))
+          )}
+        </DataTableBody>
+      </DataTableCard>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">

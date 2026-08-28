@@ -295,6 +295,14 @@ class LabOrderController extends Controller
                 $totals['paid_by'] = $request->user()?->name;
             }
 
+            // An order made up entirely of analyser-reported tests has no work
+            // for the laboratory, so nothing would ever move it off 'pending'.
+            // Close it here rather than leaving it open forever.
+            if ($order->items()->count() > 0 && $order->allItemsCompleted()) {
+                $totals['status'] = 'completed';
+                $totals['completed_at'] = now();
+            }
+
             $order->update($totals);
             $this->ledgerPostingService->upsertLabOrderSnapshot($order);
 
@@ -720,6 +728,15 @@ class LabOrderController extends Controller
 
         if ($order->payment_status !== 'paid') {
             return response()->json(['message' => 'Payment must be completed first'], 422);
+        }
+
+        // The screens hide these tests, but the endpoint is what actually
+        // enforces it -- a result keyed against a machine-printed test would
+        // contradict the report the analyser already produced.
+        if (!$labOrderItem->requiresResult()) {
+            return response()->json([
+                'message' => 'This test is reported directly by the analyser and does not take results here.',
+            ], 422);
         }
 
         $validator = Validator::make($request->all(), [

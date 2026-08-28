@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, LayoutTemplate, ShieldCheck, BadgeDollarSign, Wallet } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, ShieldCheck, BadgeDollarSign, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
@@ -98,35 +98,35 @@ const menuItems: MenuItem[] = [
     anyPermissions: [
       'view_radiology_menu',
       'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
-      'view_ultrasound_types', 'manage_ultrasound_types'
+      'view_ultrasound_types', 'manage_ultrasound_types',
+      'view_xray_receipts', 'add_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt'
     ],
     subItems: [
       {
-        // Reception's side of ultrasound. Its own entry because it belongs to a
-        // different desk than the reporting screens -- a receptionist should
-        // reach the bill without passing through the clinical list.
-        id: '/ultrasound/receipts',
-        translationKey: 'nav.ultrasoundReceipts',
-        icon: <Receipt className="w-3.5 h-3.5" />,
-        // Gated on the receipt/payment rights alone. It used to accept
-        // manage_ultrasound_exams too, so a sonographer given the exam list
-        // silently gained the cash desk beside it.
-        anyPermissions: ['manage_ultrasound_payments', 'print_ultrasound_receipt']
-      },
-      {
-        id: '/ultrasound/exams',
+        // Receipts, Exams and Report Templates are now tabs inside this one
+        // page rather than three sidebar entries, so Radiology reads as two
+        // modalities rather than as a flat list of ultrasound screens. Each
+        // tab is still gated on its own rights inside the page.
+        id: '/ultrasound',
         translationKey: 'nav.ultrasound',
         icon: <ScanLine className="w-3.5 h-3.5" />,
         anyPermissions: [
+          'manage_ultrasound_payments', 'print_ultrasound_receipt',
           'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams',
-          'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams'
+          'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams',
+          'view_ultrasound_types', 'manage_ultrasound_types'
         ]
       },
       {
-        id: '/ultrasound/templates',
-        translationKey: 'nav.ultrasoundTemplates',
-        icon: <LayoutTemplate className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_ultrasound_types', 'manage_ultrasound_types']
+        // X-Ray is a cash desk only -- the film is read outside ShifaaScript,
+        // so there is nothing to report on and the module is one tab.
+        id: '/xray',
+        translationKey: 'nav.xray',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_xray_receipts', 'add_xray_receipts', 'edit_xray_receipts', 'delete_xray_receipts',
+          'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt'
+        ]
       }
     ]
   },
@@ -487,9 +487,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
 
     // If navigating away from radiology and its menu is expanded, collapse it
     const isRadiologySubItem = [
-      '/ultrasound/exams',
-      '/ultrasound/receipts',
-      '/ultrasound/templates',
+      '/ultrasound',
+      '/xray',
     ].includes(path);
     if (!isRadiologySubItem && path !== 'radiology' && expandedMenus.includes('radiology')) {
       setExpandedMenus(prev => prev.filter(id => id !== 'radiology'));

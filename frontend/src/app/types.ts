@@ -484,9 +484,20 @@ export interface LabTest {
   discountAmount?: number;
   totalAmount?: number;
   paidAmount?: number;
+  /**
+   * The subset of `selectedTests` the laboratory actually keys results for.
+   *
+   * Tests reported straight off an analyser are billed and printed like any
+   * other but never reach result entry, so the technician's queue works from
+   * this list while ordering and invoicing keep using `selectedTests`.
+   */
+  resultTestIds?: string[];
+  /** `testName` narrowed to `resultTestIds`, for the lab's own screens. */
+  resultTestName?: string;
   orderItems?: Array<{
     id: string;
     testTemplateId: string;
+    requiresResult?: boolean;
     parameters?: Array<{
       parameterName: string;
       resultId?: string | number;
@@ -537,6 +548,15 @@ export interface TestTemplate {
   duration: string; // Expected turnaround time (e.g., "24 hours", "2-3 days")
   instructions?: string; // Pre-test instructions for patients
   status: 'active' | 'inactive';
+  /**
+   * Whether the laboratory keys a result for this test in ShifaaScript.
+   *
+   * False for tests the analyser reports directly -- a CBC counter prints all
+   * 21 parameters itself, so re-typing them here is duplicate work. Reception
+   * still orders and invoices the test as normal, which is why this is not
+   * `status: 'inactive'`: that would hide it from the order form too.
+   */
+  requiresResult?: boolean;
   createdAt: Date;
   createdBy: string;
   updatedAt?: Date;

@@ -50,6 +50,7 @@ export interface LabOrderItemResponse {
   sample_type: string;
   price: string;
   status: 'pending' | 'processing' | 'completed';
+  requires_result?: boolean;
   started_at: string | null;
   completed_at: string | null;
   completed_by: string | null;
@@ -134,6 +135,8 @@ export interface LabOrderItem {
   sampleType: string;
   price: number;
   status: 'pending' | 'processing' | 'completed';
+  /** False for tests the analyser reports itself -- see TestTemplate.requiresResult. */
+  requiresResult: boolean;
   startedAt: Date | null;
   completedAt: Date | null;
   completedBy: string | null;
@@ -191,6 +194,8 @@ function transformItemToFrontend(item: LabOrderItemResponse): LabOrderItem {
     sampleType: item.sample_type,
     price: parseFloat(item.price) || 0,
     status: item.status,
+    // Absent on an older backend, where every test took a result.
+    requiresResult: item.requires_result !== false,
     startedAt: item.started_at ? new Date(item.started_at) : null,
     completedAt: item.completed_at ? new Date(item.completed_at) : null,
     completedBy: item.completed_by,

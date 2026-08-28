@@ -33,7 +33,10 @@ return [
         'pharmacy' => 'Medicine Sale',
         'appointments' => 'Appointment Fees',
         'laboratory' => 'Laboratory Fees',
-        'radiology' => 'Ultrasound / Radiology Fees',
+        'radiology' => 'Ultrasound Fees',
+        // Its own module rather than part of radiology: the cash desk keys the
+        // source document off the module, so the two cannot share one.
+        'xray' => 'X-Ray Fees',
         'surgery' => 'Surgery Fees',
         'room_booking' => 'Room Booking Fees',
     ],
@@ -47,6 +50,7 @@ return [
         'appointments' => 'reception',
         'laboratory' => 'reception',
         'radiology' => 'reception',
+        'xray' => 'reception',
         'surgery' => 'reception',
         'room_booking' => 'reception',
     ],

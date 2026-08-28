@@ -13,6 +13,7 @@ use App\Models\PatientSurgery;
 use App\Models\RoomBooking;
 use App\Models\Transaction;
 use App\Models\UltrasoundExam;
+use App\Models\XrayReceipt;
 
 class LedgerPostingService
 {
@@ -156,7 +157,14 @@ class LedgerPostingService
 
     public function upsertPatientSurgerySnapshot(PatientSurgery $patientSurgery): LedgerEntry
     {
-        $netAmount = (float) ($patientSurgery->cost ?? 0);
+        // `cost` is the list price; what the hospital is owed is the price
+        // less any announced campaign discount. Rows written before surgery
+        // discounts existed have net_amount backfilled from cost.
+        $grossAmount = (float) ($patientSurgery->cost ?? 0);
+        $discountAmount = min($grossAmount, max(0.0, (float) ($patientSurgery->discount_amount ?? 0)));
+        $netAmount = $patientSurgery->net_amount !== null
+            ? (float) $patientSurgery->net_amount
+            : max(0.0, $grossAmount - $discountAmount);
         [$paidAmount, $dueAmount] = $this->resolveUntrackedPaymentSplit($netAmount, (string) ($patientSurgery->payment_status ?? 'pending'));
 
         return $this->upsertSnapshot(
@@ -170,8 +178,8 @@ class LedgerPostingService
                 'title' => 'Patient Surgery #' . (string) $patientSurgery->id,
                 'patient_id' => $patientSurgery->patient_id ? (int) $patientSurgery->patient_id : null,
                 'supplier_id' => null,
-                'amount' => $netAmount,
-                'discount_amount' => 0,
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
                 'tax_amount' => 0,
                 'net_amount' => $netAmount,
                 'paid_amount' => $paidAmount,
@@ -253,6 +261,70 @@ class LedgerPostingService
         $this->voidSnapshot((int) $exam->hospital_id, 'ultrasound_exam', (int) $exam->id, $actor);
     }
 
+    /**
+     * X-Ray income.
+     *
+     * Posted under its own `xray` module rather than sharing ultrasound's
+     * `radiology`. The cash desk and the day-end handover are keyed by module
+     * throughout -- one module cannot map to two source documents -- so
+     * sharing would have made every X-Ray charge invisible to the collector.
+     *
+     * The discount is posted rather than folded into the fee, so a campaign is
+     * visible in the ledger instead of looking like a cheaper price list.
+     */
+    public function upsertXrayReceiptSnapshot(XrayReceipt $receipt): LedgerEntry
+    {
+        $grossAmount = (float) ($receipt->fee ?? 0);
+        $discountAmount = min($grossAmount, max(0.0, (float) ($receipt->discount_amount ?? 0)));
+        $netAmount = $receipt->payableAmount();
+        $isSettled = $receipt->isPaid();
+
+        return $this->upsertSnapshot(
+            (int) $receipt->hospital_id,
+            'xray_receipt',
+            (int) $receipt->id,
+            [
+                'entry_direction' => 'income',
+                'module' => 'xray',
+                'category' => 'xray',
+                'title' => 'X-Ray #' . (string) ($receipt->sequence_id ?? $receipt->id),
+                'patient_id' => $receipt->patient_id ? (int) $receipt->patient_id : null,
+                'supplier_id' => null,
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
+                'tax_amount' => 0,
+                'net_amount' => $netAmount,
+                'paid_amount' => $isSettled ? (float) ($receipt->paid_amount ?? $netAmount) : 0,
+                'due_amount' => $isSettled ? 0 : $netAmount,
+                'status' => $isSettled ? 'paid' : 'pending',
+                'currency' => 'AFN',
+                // Paid_at where known, so takings land on the day collected.
+                'posted_at' => $receipt->paid_at ?? $receipt->performed_at ?? $receipt->created_at ?? now(),
+                'posted_by' => $receipt->updated_by ?? $receipt->created_by,
+                'collected_by' => $receipt->paid_by,
+                'collected_at' => $receipt->paid_at,
+                'voided_at' => null,
+                'metadata' => [
+                    'study_name' => $receipt->study_name,
+                    'doctor_id' => $receipt->doctor_id,
+                ],
+            ]
+        );
+    }
+
+    public function voidXrayReceiptSnapshot(XrayReceipt $receipt, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $receipt->hospital_id, 'xray_receipt', (int) $receipt->id, $actor);
+    }
+
+    /** Pharmacy document type => what the paper is actually called. */
+    private const TRANSACTION_TITLES = [
+        'sales' => 'Sales Invoice',
+        'purchase' => 'Purchase Invoice',
+        'sales_return' => 'Return In',
+        'purchase_return' => 'Return Out',
+    ];
+
     public function upsertTransactionSnapshot(Transaction $transaction): LedgerEntry
     {
         $direction = match ((string) $transaction->trx_type) {
@@ -273,7 +345,12 @@ class LedgerPostingService
                 'entry_direction' => $direction,
                 'module' => 'pharmacy',
                 'category' => (string) $transaction->trx_type,
-                'title' => 'Transaction #' . (string) ($transaction->serial_no ?? $transaction->id),
+                // "Transaction #789" told a cashier nothing about what the
+                // document is. The four pharmacy types are different pieces of
+                // paper with opposite money directions, and the reference is
+                // often all the desk has to match against a physical slip.
+                'title' => (self::TRANSACTION_TITLES[(string) $transaction->trx_type] ?? 'Transaction')
+                    . ' #' . (string) ($transaction->serial_no ?? $transaction->id),
                 'patient_id' => $transaction->patient_id ? (int) $transaction->patient_id : null,
                 'supplier_id' => $transaction->supplier_id ? (int) $transaction->supplier_id : null,
                 'amount' => (float) $transaction->grand_total,

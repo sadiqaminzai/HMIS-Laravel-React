@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText, Stethoscope, Scissors, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, RefreshCw, ToggleRight, Printer, FileText, Stethoscope, Scissors, Users, Layers, ClipboardList } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
@@ -32,6 +32,27 @@ import { poweredByHtml } from '../utils/receiptBranding';
 
 type TabKey = 'types' | 'surgeries' | 'patientSurgeries' | 'dischargeSummary';
 import { AddButton } from './AddButton';
+import {
+  ActivePill,
+  CellNumber,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  DeleteIcon,
+  EditIcon,
+  RowIcon,
+  TableAction,
+  TableActions,
+  TableEmpty,
+  TableLoading,
+  TablePill,
+  Th,
+  Tr,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 
 interface SurgeryManagementProps {
   hospital: Hospital;
@@ -69,7 +90,13 @@ interface PatientSurgeryItem {
   surgeryDate: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
   paymentStatus: 'pending' | 'paid' | 'partial' | 'cancelled';
+  /** List price of the operation, before any announced discount. */
   cost: number;
+  discountEnabled: boolean;
+  discountPercentage: number;
+  discountAmount: number;
+  /** What the patient actually owes: cost less discount. */
+  netAmount: number;
   notes?: string;
   dischargeDate?: string;
   dischargeSummary?: string;
@@ -110,6 +137,12 @@ const mapPatientSurgery = (item: any): PatientSurgeryItem => ({
   status: item.status,
   paymentStatus: item.payment_status ?? item.paymentStatus,
   cost: Number(item.cost || 0),
+  discountEnabled: Boolean(item.discount_enabled ?? item.discountEnabled ?? false),
+  discountPercentage: Number(item.discount_percentage ?? item.discountPercentage ?? 0),
+  discountAmount: Number(item.discount_amount ?? item.discountAmount ?? 0),
+  // Records written before surgery discounts existed carry no net, in which
+  // case the whole cost was owed.
+  netAmount: Number(item.net_amount ?? item.netAmount ?? item.cost ?? 0),
   notes: item.notes || undefined,
   dischargeDate: item.discharge_date ? String(item.discharge_date).slice(0, 10) : undefined,
   dischargeSummary: item.discharge_summary || undefined,
@@ -171,6 +204,13 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const canCollectSurgeryFee = hasPermission('manage_surgery_payments')
     || hasPermission('manage_patient_surgeries');
   const canReverseSurgeryFee = hasPermission('reverse_surgery_payment');
+  // Same rights that govern an appointment discount, so "who may discount" is
+  // configured once for the whole hospital. Re-checked in
+  // PatientSurgeryController -- a disabled input is a hint, not a control.
+  const canApplySurgeryDiscount = hasPermission('add_discounts')
+    || hasPermission('edit_discounts')
+    || hasPermission('manage_discounts')
+    || hasPermission('manage_patient_surgeries');
 
   const canAddSurgeries = hasPermission('add_surgeries') || hasPermission('manage_surgeries');
   const canEditSurgeries = hasPermission('edit_surgeries') || hasPermission('manage_surgeries');
@@ -184,7 +224,6 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   // data that is configured once.
   const [activeTab, setActiveTab] = useState<TabKey>('patientSurgeries');
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
 
   const [types, setTypes] = useState<SurgeryTypeItem[]>([]);
   const [surgeries, setSurgeries] = useState<SurgeryItem[]>([]);
@@ -222,6 +261,8 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     // patient pays, so pending was the wrong starting point for most entries.
     paymentStatus: 'paid' as PatientSurgeryItem['paymentStatus'],
     cost: '',
+    discountEnabled: false,
+    discountPercentage: '',
     notes: '',
     isActive: true,
   });
@@ -437,8 +478,17 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
 
               <div class="totals">
                 <div>
-                  <span>Total Amount:</span>
+                  <span>Surgery Fee:</span>
                   <span>${item.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                ${item.discountAmount > 0 ? `
+                <div>
+                  <span>Discount${item.discountPercentage > 0 ? ` (${item.discountPercentage}%)` : ''}:</span>
+                  <span>${item.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>` : ''}
+                <div>
+                  <span>Payable Total:</span>
+                  <span>${item.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
@@ -543,23 +593,19 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     return filteredPatientSurgeries;
   }, [activeTab, filteredTypes, filteredSurgeries, filteredPatientSurgeries, filteredDischargeSummaries]);
 
-  const itemsPerPage = 10;
-  const totalPages = Math.max(1, Math.ceil(selectedRows.length / itemsPerPage));
-
-  const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return selectedRows.slice(start, start + itemsPerPage);
-  }, [selectedRows, currentPage]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeTab, search, selectedHospitalId]);
+  // Each tab lists a different shape, so the default sort column follows the
+  // tab: catalogue tabs read alphabetically, the patient tabs newest first.
+  const defaultSortField = activeTab === 'types' || activeTab === 'surgeries' ? 'name' : 'surgeryDate';
+  const sort = useTableSort<any>(
+    selectedRows,
+    defaultSortField,
+    activeTab === 'types' || activeTab === 'surgeries' ? 'asc' : 'desc'
+  );
+  const { page, setPage, totalPages, pageRows: paginatedRows } = usePagination<any>(sort.rows);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+    setPage(1);
+  }, [activeTab, search, selectedHospitalId, setPage]);
 
   const currentHospitalId = userRole === 'super_admin' && selectedHospitalId !== 'all' ? selectedHospitalId : currentHospital.id;
 
@@ -626,6 +672,12 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
       status: patientSurgeryForm.status,
       payment_status: patientSurgeryForm.paymentStatus,
       cost: patientSurgeryForm.cost === '' ? undefined : Number(patientSurgeryForm.cost),
+      // The percentage is what the hospital announces; the backend derives the
+      // amount and the net from it so the two can never drift apart.
+      discount_enabled: patientSurgeryForm.discountEnabled,
+      discount_percentage: patientSurgeryForm.discountPercentage === ''
+        ? 0
+        : Number(patientSurgeryForm.discountPercentage),
       notes: patientSurgeryForm.notes || undefined,
       is_active: patientSurgeryForm.isActive,
     };
@@ -647,6 +699,8 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         status: 'scheduled',
         paymentStatus: 'pending',
         cost: '',
+        discountEnabled: false,
+        discountPercentage: '',
         notes: '',
         isActive: true,
       });
@@ -738,6 +792,21 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     setPatientSurgeryForm((prev) => ({ ...prev, cost: String(selected.cost ?? 0) }));
   }, [patientSurgeryForm.surgeryId, patientSurgeryForm.cost, surgeries]);
 
+  /**
+   * Mirrors DiscountService::computeFeeTotals so the modal shows the same
+   * numbers the server will store. The server still recomputes them -- this is
+   * a preview, not the source of truth.
+   */
+  const surgeryFeePreview = React.useMemo(() => {
+    const gross = Math.max(0, Number(patientSurgeryForm.cost || 0));
+    if (patientSurgeryForm.discountEnabled) {
+      return { gross, percent: gross > 0 ? 100 : 0, discount: gross, net: 0 };
+    }
+    const percent = Math.min(100, Math.max(0, Number(patientSurgeryForm.discountPercentage || 0)));
+    const discount = Math.min(gross, Math.round(((gross * percent) / 100) * 100) / 100);
+    return { gross, percent, discount, net: Math.max(0, Math.round((gross - discount) * 100) / 100) };
+  }, [patientSurgeryForm.cost, patientSurgeryForm.discountEnabled, patientSurgeryForm.discountPercentage]);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
@@ -781,7 +850,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search..."
               aria-label="Search surgeries"
               className="w-40 pl-8 pr-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -790,165 +859,253 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
           {activeTab === 'types' && canAddTypes && <AddButton onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} label={t('ui.addType')} />}
           {activeTab === 'surgeries' && canAddSurgeries && <AddButton onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} label="Add Surgery" />}
-          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'paid', cost: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'paid', cost: '', discountEnabled: false, discountPercentage: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
           {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <AddButton onClick={openNewDischargeModal} label="Add Discharge" />}
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
-              <tr>
-                {activeTab === 'types' && <><th className="px-4 py-2">{t('table.name')}</th><th className="px-4 py-2">{t('table.description')}</th><th className="px-4 py-2">{t('common.status')}</th></>}
-                {activeTab === 'surgeries' && <><th className="px-4 py-2">{t('table.name')}</th><th className="px-4 py-2">{t('table.type')}</th><th className="px-4 py-2">{t('table.cost')}</th><th className="px-4 py-2">{t('common.status')}</th></>}
-                {activeTab === 'patientSurgeries' && <><th className="px-4 py-2">{t('table.patient')}</th><th className="px-4 py-2">{t('table.surgery')}</th><th className="px-4 py-2">{t('table.date')}</th><th className="px-4 py-2">{t('common.status')}</th><th className="px-4 py-2">{t('table.payment')}</th><th className="px-4 py-2">{t('table.cost')}</th></>}
-                {activeTab === 'dischargeSummary' && <><th className="px-4 py-2">{t('table.patient')}</th><th className="px-4 py-2">{t('table.surgery')}</th><th className="px-4 py-2">{t('table.dischargeDate')}</th><th className="px-4 py-2">{t('table.createdBy')}</th><th className="px-4 py-2">{t('table.completedBy')}</th><th className="px-4 py-2">{t('table.summary')}</th></>}
-                <th className="px-4 py-2 text-center">{t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
-                <tr><td className="px-4 py-6" colSpan={7}>Loading...</td></tr>
-              ) : selectedRows.length === 0 ? (
-                <tr><td className="px-4 py-6 text-center" colSpan={7}>No records found</td></tr>
-              ) : (
-                <>
-                  {activeTab === 'types' && (paginatedRows as SurgeryTypeItem[]).map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
-                      <td className="px-4 py-2">{row.description || '-'}</td>
-                      <td className="px-4 py-2">{row.isActive ? t('ui.active') : t('ui.inactive')}</td>
-                      <td className="px-4 py-2 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {canEditTypes && (<button onClick={() => { setEditingType(row); setTypeForm({ name: row.name, description: row.description || '', isActive: row.isActive }); setIsTypeModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
-                          {canDeleteTypes && (<button onClick={async () => { try { await deleteSurgeryType(row.id); toast.success('Surgery type deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {activeTab === 'surgeries' && (paginatedRows as SurgeryItem[]).map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.name}</td>
-                      <td className="px-4 py-2">{row.typeName || row.typeId}</td>
-                      <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
-                      <td className="px-4 py-2">{row.isActive ? t('ui.active') : t('ui.inactive')}</td>
-                      <td className="px-4 py-2 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {canEditSurgeries && (<button onClick={() => { setEditingSurgery(row); setSurgeryForm({ name: row.name, typeId: row.typeId, cost: String(row.cost), description: row.description || '', isActive: row.isActive }); setIsSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
-                          {canDeleteSurgeries && (<button onClick={async () => { try { await deleteSurgery(row.id); toast.success('Surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {activeTab === 'patientSurgeries' && (paginatedRows as PatientSurgeryItem[]).map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.patientName}</td>
-                      <td className="px-4 py-2">{row.surgeryName}</td>
-                      <td className="px-4 py-2">{row.surgeryDate}</td>
-                      <td className="px-4 py-2"><StatusBadge value={row.status} /></td>
-                      <td className="px-4 py-2"><StatusBadge value={row.paymentStatus} /></td>
-                      <td className="px-4 py-2">{row.cost.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {canPrintPatientSurgeries && (<button onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-md" title={t('ui.printInvoice')}><Printer className="w-4 h-4" /></button>)}
-                          {/* A real sliding switch: the knob sits left on
-                              pending (amber) and right on paid (green), so the
-                              state is readable without opening the row. The old
-                              control was a fixed icon that never moved. */}
-                          {(canCollectSurgeryFee || canReverseSurgeryFee) && (() => {
-                            const isPaid = String(row.paymentStatus) === 'paid';
-                            const allowed = isPaid ? canReverseSurgeryFee : canCollectSurgeryFee;
-                            return (
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={isPaid}
-                                disabled={!allowed}
-                                title={isPaid
-                                  ? (canReverseSurgeryFee ? 'Reverse payment to pending' : 'Payment collected')
-                                  : (canCollectSurgeryFee ? 'Mark as paid' : 'Payment pending')}
-                                aria-label={isPaid ? 'Reverse payment to pending' : 'Mark as paid'}
-                                onClick={async () => {
-                                  try {
-                                    // Collecting and reversing are separate
-                                    // rights, so they are separate calls -- the
-                                    // old toggle rode on "can edit surgeries"
-                                    // and recorded no collector.
-                                    const updated = isPaid
-                                      ? await reversePatientSurgeryPayment(row.id)
-                                      : await collectPatientSurgeryPayment(row.id);
-                                    setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item));
-                                    toast.success(isPaid ? 'Payment reversed' : 'Payment collected');
-                                  } catch (e: any) {
-                                    toast.error(e?.response?.data?.message
-                                      || (e?.response?.status === 403
-                                        ? 'You do not have permission to change payment on surgeries.'
-                                        : 'Toggle failed'));
-                                  }
-                                }}
-                                className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  isPaid ? 'bg-emerald-500' : 'bg-amber-400'
-                                }`}
-                              >
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                                  isPaid ? 'translate-x-5' : 'translate-x-0.5'
-                                }`} />
-                              </button>
-                            );
-                          })()}
-                          {canEditPatientSurgeries && (<button onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="w-4 h-4" /></button>)}
-                          {canDeletePatientSurgeries && (<button onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-4 h-4" /></button>)}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {activeTab === 'dischargeSummary' && (paginatedRows as PatientSurgeryItem[]).map((row) => {
-                    const summaryPlain = (row.dischargeSummary || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-                    return (
-                      <tr key={row.id}>
-                        <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">{row.patientName}</td>
-                        <td className="px-4 py-2">{row.surgeryName}</td>
-                        <td className="px-4 py-2">{row.dischargeDate || '-'}</td>
-                        <td className="px-4 py-2">{row.dischargeCreatedBy || '-'}</td>
-                        <td className="px-4 py-2">{row.dischargeCompletedBy || '-'}</td>
-                        <td className="px-4 py-2 max-w-[320px] truncate" title={summaryPlain}>{summaryPlain || '-'}</td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => openDischargeModal(row)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md" title="Edit discharge summary"><Pencil className="w-4 h-4" /></button>
-                            <button onClick={() => printDischargeSummary(row)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Print discharge summary"><Printer className="w-4 h-4" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <DataTableCard
+        total={selectedRows.length}
+        shown={paginatedRows.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        maxHeight="calc(100vh - 300px)"
+      >
+        <DataTableHead>
+          {activeTab === 'types' && (
+            <>
+              <Th sort={sort} field="name">{t('table.name')}</Th>
+              <Th sort={sort} field="description">{t('table.description')}</Th>
+              <Th sort={sort} field="isActive">{t('common.status')}</Th>
+            </>
+          )}
+          {activeTab === 'surgeries' && (
+            <>
+              <Th sort={sort} field="name">{t('table.name')}</Th>
+              <Th sort={sort} field="typeName">{t('table.type')}</Th>
+              <Th sort={sort} field="cost">{t('table.cost')}</Th>
+              <Th sort={sort} field="isActive">{t('common.status')}</Th>
+            </>
+          )}
+          {activeTab === 'patientSurgeries' && (
+            <>
+              <Th sort={sort} field="patientName">{t('table.patient')}</Th>
+              <Th sort={sort} field="surgeryName">{t('table.surgery')}</Th>
+              <Th sort={sort} field="surgeryDate">{t('table.date')}</Th>
+              <Th sort={sort} field="status">{t('common.status')}</Th>
+              <Th sort={sort} field="paymentStatus">{t('table.payment')}</Th>
+              <Th sort={sort} field="netAmount">{t('table.cost')}</Th>
+            </>
+          )}
+          {activeTab === 'dischargeSummary' && (
+            <>
+              <Th sort={sort} field="patientName">{t('table.patient')}</Th>
+              <Th sort={sort} field="surgeryName">{t('table.surgery')}</Th>
+              <Th sort={sort} field="dischargeDate">{t('table.dischargeDate')}</Th>
+              <Th sort={sort} field="dischargeCreatedBy">{t('table.createdBy')}</Th>
+              <Th sort={sort} field="dischargeCompletedBy">{t('table.completedBy')}</Th>
+              <Th>{t('table.summary')}</Th>
+            </>
+          )}
+          <Th align="center">{t('common.actions')}</Th>
+        </DataTableHead>
+        <DataTableBody>
+          {loading ? (
+            <TableLoading colSpan={7} />
+          ) : selectedRows.length === 0 ? (
+            <TableEmpty colSpan={7} message="No records found" icon={<Scissors className="w-6 h-6 text-gray-400" />} />
+          ) : (
+            <>
+              {activeTab === 'types' && (paginatedRows as SurgeryTypeItem[]).map((row) => (
+                <Tr key={row.id}>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      <RowIcon tone="purple">
+                        <Layers className="w-4 h-4" />
+                      </RowIcon>
+                      <CellStack primary={row.name} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-2"><CellText>{row.description || '-'}</CellText></td>
+                  <td className="px-4 py-2"><ActivePill active={row.isActive} /></td>
+                  <td className="px-4 py-2 text-center">
+                    <TableActions>
+                      {canEditTypes && (
+                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => { setEditingType(row); setTypeForm({ name: row.name, description: row.description || '', isActive: row.isActive }); setIsTypeModalOpen(true); }}>
+                          <EditIcon />
+                        </TableAction>
+                      )}
+                      {canDeleteTypes && (
+                        <TableAction tone="delete" title={t('ui.delete')} onClick={async () => { try { await deleteSurgeryType(row.id); toast.success('Surgery type deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }}>
+                          <DeleteIcon />
+                        </TableAction>
+                      )}
+                    </TableActions>
+                  </td>
+                </Tr>
+              ))}
 
-        {!loading && selectedRows.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
-            <span>Showing {paginatedRows.length} of {selectedRows.length} rows</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >{t('ui.prev')}</button>
-              <span>Page {currentPage} of {totalPages}</span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-              >{t('ui.next')}</button>
-            </div>
-          </div>
-        )}
-      </div>
+              {activeTab === 'surgeries' && (paginatedRows as SurgeryItem[]).map((row) => (
+                <Tr key={row.id}>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      <RowIcon tone="blue">
+                        <Scissors className="w-4 h-4" />
+                      </RowIcon>
+                      <CellStack primary={row.name} secondary={row.description || undefined} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-2"><TablePill tone="purple">{row.typeName || row.typeId}</TablePill></td>
+                  <td className="px-4 py-2"><CellNumber tone="money">{row.cost.toFixed(2)}</CellNumber></td>
+                  <td className="px-4 py-2"><ActivePill active={row.isActive} /></td>
+                  <td className="px-4 py-2 text-center">
+                    <TableActions>
+                      {canEditSurgeries && (
+                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => { setEditingSurgery(row); setSurgeryForm({ name: row.name, typeId: row.typeId, cost: String(row.cost), description: row.description || '', isActive: row.isActive }); setIsSurgeryModalOpen(true); }}>
+                          <EditIcon />
+                        </TableAction>
+                      )}
+                      {canDeleteSurgeries && (
+                        <TableAction tone="delete" title={t('ui.delete')} onClick={async () => { try { await deleteSurgery(row.id); toast.success('Surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }}>
+                          <DeleteIcon />
+                        </TableAction>
+                      )}
+                    </TableActions>
+                  </td>
+                </Tr>
+              ))}
+
+              {activeTab === 'patientSurgeries' && (paginatedRows as PatientSurgeryItem[]).map((row) => (
+                <Tr key={row.id}>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      <RowIcon tone="blue">
+                        <Scissors className="w-4 h-4" />
+                      </RowIcon>
+                      <CellStack primary={row.patientName} secondary={row.doctorName || undefined} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-2"><CellText>{row.surgeryName}</CellText></td>
+                  <td className="px-4 py-2"><CellText>{row.surgeryDate}</CellText></td>
+                  <td className="px-4 py-2"><StatusBadge value={row.status} /></td>
+                  <td className="px-4 py-2"><StatusBadge value={row.paymentStatus} /></td>
+                  {/* The list price is kept visible beside the net so a
+                      discounted operation is not mistaken for a cheap one. */}
+                  <td className="px-4 py-2">
+                    <CellNumber tone="money">{row.netAmount.toFixed(2)}</CellNumber>
+                    {row.discountAmount > 0 && (
+                      <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-400">
+                        <span className="line-through">{row.cost.toFixed(2)}</span>
+                        {row.discountPercentage > 0 && ` −${row.discountPercentage}%`}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      {canPrintPatientSurgeries && (
+                        <TableAction tone="warning" title={t('ui.printInvoice')} onClick={() => { setEditingPatientSurgery(row); setShowInvoiceModal(true); }}>
+                          <Printer className="w-3.5 h-3.5" />
+                        </TableAction>
+                      )}
+                      {/* A real sliding switch: the knob sits left on
+                          pending (amber) and right on paid (green), so the
+                          state is readable without opening the row. The old
+                          control was a fixed icon that never moved. */}
+                      {(canCollectSurgeryFee || canReverseSurgeryFee) && (() => {
+                        const isPaid = String(row.paymentStatus) === 'paid';
+                        const allowed = isPaid ? canReverseSurgeryFee : canCollectSurgeryFee;
+                        return (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isPaid}
+                            disabled={!allowed}
+                            title={isPaid
+                              ? (canReverseSurgeryFee ? 'Reverse payment to pending' : 'Payment collected')
+                              : (canCollectSurgeryFee ? 'Mark as paid' : 'Payment pending')}
+                            aria-label={isPaid ? 'Reverse payment to pending' : 'Mark as paid'}
+                            onClick={async () => {
+                              try {
+                                // Collecting and reversing are separate
+                                // rights, so they are separate calls -- the
+                                // old toggle rode on "can edit surgeries"
+                                // and recorded no collector.
+                                const updated = isPaid
+                                  ? await reversePatientSurgeryPayment(row.id)
+                                  : await collectPatientSurgeryPayment(row.id);
+                                setPatientSurgeries((prev) => prev.map((item) => item.id === row.id ? mapPatientSurgery(updated) : item));
+                                toast.success(isPaid ? 'Payment reversed' : 'Payment collected');
+                              } catch (e: any) {
+                                toast.error(e?.response?.data?.message
+                                  || (e?.response?.status === 403
+                                    ? 'You do not have permission to change payment on surgeries.'
+                                    : 'Toggle failed'));
+                              }
+                            }}
+                            className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                              isPaid ? 'bg-emerald-500' : 'bg-amber-400'
+                            }`}
+                          >
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                              isPaid ? 'translate-x-4' : 'translate-x-0.5'
+                            }`} />
+                          </button>
+                        );
+                      })()}
+                      {canEditPatientSurgeries && (
+                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), discountEnabled: row.discountEnabled, discountPercentage: row.discountPercentage ? String(row.discountPercentage) : '', notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }}>
+                          <EditIcon />
+                        </TableAction>
+                      )}
+                      {canDeletePatientSurgeries && (
+                        <TableAction tone="delete" title={t('ui.delete')} onClick={async () => { try { await deletePatientSurgery(row.id); toast.success('Patient surgery deleted'); loadAll(); } catch (e: any) { toast.error(e?.response?.data?.message || 'Delete failed'); } }}>
+                          <DeleteIcon />
+                        </TableAction>
+                      )}
+                    </div>
+                  </td>
+                </Tr>
+              ))}
+
+              {activeTab === 'dischargeSummary' && (paginatedRows as PatientSurgeryItem[]).map((row) => {
+                const summaryPlain = (row.dischargeSummary || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                return (
+                  <Tr key={row.id}>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-3">
+                        <RowIcon tone="emerald">
+                          <ClipboardList className="w-4 h-4" />
+                        </RowIcon>
+                        <CellStack primary={row.patientName} secondary={row.surgeryName} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-2"><CellText>{row.surgeryName}</CellText></td>
+                    <td className="px-4 py-2"><CellText>{row.dischargeDate || '-'}</CellText></td>
+                    <td className="px-4 py-2"><CellText>{row.dischargeCreatedBy || '-'}</CellText></td>
+                    <td className="px-4 py-2"><CellText>{row.dischargeCompletedBy || '-'}</CellText></td>
+                    <td className="px-4 py-2 max-w-[320px]">
+                      <div className="truncate text-[10px] text-gray-600 dark:text-gray-400" title={summaryPlain}>
+                        {summaryPlain || '-'}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <TableActions>
+                        <TableAction tone="edit" title="Edit discharge summary" onClick={() => openDischargeModal(row)}>
+                          <EditIcon />
+                        </TableAction>
+                        <TableAction tone="success" title="Print discharge summary" onClick={() => printDischargeSummary(row)}>
+                          <Printer className="w-3.5 h-3.5" />
+                        </TableAction>
+                      </TableActions>
+                    </td>
+                  </Tr>
+                );
+              })}
+            </>
+          )}
+        </DataTableBody>
+      </DataTableCard>
 
       {isTypeModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
@@ -1001,6 +1158,54 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label><select value={patientSurgeryForm.status} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, status: e.target.value as PatientSurgeryItem['status'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="scheduled">scheduled</option><option value="in_progress">in_progress</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select></div>
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label><select value={patientSurgeryForm.paymentStatus} disabled={!canSetSurgeryPayment} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Cost (optional)</label><input type="number" min={0} step="0.01" value={patientSurgeryForm.cost} disabled={!canSetSurgeryCost} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, cost: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed" /></div>
+                            {/* Hospitals announce campaign discounts on operations ("30% off
+                  caesareans"), so the percentage is the input and the amount is
+                  derived -- entering it the other way round means recomputing
+                  the campaign by hand on every booking. */}
+              <div className="col-span-12 md:col-span-4">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Discount %</label>
+                <input
+                  title="Discount percentage"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={patientSurgeryForm.discountPercentage}
+                  disabled={patientSurgeryForm.discountEnabled || !canApplySurgeryDiscount}
+                  onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, discountPercentage: e.target.value }))}
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                {!canApplySurgeryDiscount && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">{t('ui.noDiscountPermission')}</p>
+                )}
+              </div>
+              <div className="col-span-12">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5 bg-gray-50 dark:bg-gray-700/30">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={patientSurgeryForm.discountEnabled}
+                      onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, discountEnabled: e.target.checked }))}
+                      disabled={!canApplySurgeryDiscount}
+                      className="disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                    Full waiver (100% discount)
+                  </label>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Surgery Fee <span className="font-semibold text-gray-900 dark:text-white">{surgeryFeePreview.gross.toFixed(2)}</span>
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Discount <span className="font-semibold text-orange-600 dark:text-orange-400">
+                        {surgeryFeePreview.discount.toFixed(2)} ({surgeryFeePreview.percent.toFixed(surgeryFeePreview.percent % 1 === 0 ? 0 : 2)}%)
+                      </span>
+                    </span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      Net: {surgeryFeePreview.net.toFixed(2)} AFN
+                    </span>
+                  </div>
+                </div>
+              </div>
               <div className="col-span-12"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.notes')}</label><input value={patientSurgeryForm.notes} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, notes: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
               {/* Same toggle used on the medicine form, so Active reads the
                   same way everywhere rather than as a bare checkbox. */}
@@ -1246,9 +1451,24 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
 
                 <div className="flex justify-end">
                   <div className="w-1/2 space-y-2 font-bold">
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Surgery Fee</span>
+                      <span>{editingPatientSurgery.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    {/* Only printed when there is one, so an undiscounted
+                        invoice reads exactly as it did before. */}
+                    {editingPatientSurgery.discountAmount > 0 && (
+                      <div className="flex justify-between text-sm text-orange-600">
+                        <span>
+                          Discount
+                          {editingPatientSurgery.discountPercentage > 0 && ` (${editingPatientSurgery.discountPercentage}%)`}
+                        </span>
+                        <span>{editingPatientSurgery.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-lg text-blue-900 pt-2 border-t-2 border-blue-900">
                       <span>{t('ui.totalAmount')}</span>
-                      <span>{editingPatientSurgery.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span>{editingPatientSurgery.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-sm text-green-600 capitalize italic">
                       <span>{t('ui.paymentStatus')}</span>

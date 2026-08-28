@@ -26,12 +26,14 @@ class TestTemplate extends Model
         'duration',
         'instructions',
         'status',
+        'requires_result',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
+        'requires_result' => 'boolean',
     ];
 
     public function hospital()

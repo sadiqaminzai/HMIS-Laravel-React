@@ -102,6 +102,7 @@ const OtherIncomeManagementLazy = lazy(() => import('./components/OtherIncomeMan
 const OtherIncomeReportLazy = lazy(() => import('./components/OtherIncomeReport').then((m) => ({ default: m.OtherIncomeReport })));
 const LedgerReportLazy = lazy(() => import('./components/LedgerReport'));
 const UltrasoundManagementLazy = lazy(() => import('./components/UltrasoundManagement').then((m) => ({ default: m.UltrasoundManagement })));
+const XrayReceiptsLazy = lazy(() => import('./components/XrayReceipts').then((m) => ({ default: m.XrayReceipts })));
 const AuditLogManagementLazy = lazy(() => import('./components/AuditLogManagement').then((m) => ({ default: m.AuditLogManagement })));
 const PharmacyFinanceLazy = lazy(() => import('./components/PharmacyFinance').then((m) => ({ default: m.PharmacyFinance })));
 
@@ -661,6 +662,30 @@ function AppContent() {
                 <RequirePermission anyOf={["view_finance_sales", "view_finance_purchases", "view_finance_sales_returns", "view_finance_purchase_returns", "record_finance_payments", "edit_finance_payment_status", "export_finance", "manage_finance"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <PharmacyFinanceLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* Radiology > Ultrasound: one page, three tabs. The three
+                /ultrasound/* paths below are kept so bookmarks and any link
+                still in the wild land on the right tab. */}
+            <Route
+              path="/ultrasound"
+              element={
+                <RequirePermission anyOf={["manage_ultrasound_payments", "print_ultrasound_receipt", "view_ultrasound_exams", "add_ultrasound_receipt", "submit_ultrasound_result", "delete_ultrasound_exams", "export_ultrasound_exams", "print_ultrasound_exams", "manage_ultrasound_exams", "view_ultrasound_types", "manage_ultrasound_types"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <UltrasoundManagementLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* Radiology > X-Ray: a cash desk only, so a single Receipt tab. */}
+            <Route
+              path="/xray"
+              element={
+                <RequirePermission anyOf={["view_xray_receipts", "add_xray_receipts", "edit_xray_receipts", "delete_xray_receipts", "manage_xray_receipts", "manage_xray_payments", "print_xray_receipt"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <XrayReceiptsLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }

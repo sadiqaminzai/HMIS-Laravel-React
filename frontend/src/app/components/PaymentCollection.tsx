@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Wallet, RefreshCw, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2 } from 'lucide-react';
+import { Search, Wallet, RefreshCw, X, ArrowUp, ArrowDown, ArrowUpDown, Undo2, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -10,9 +10,13 @@ import {
   settlePendingCharge,
   reversePendingCharge,
   PendingCharge,
+  GrandTotal,
   ModuleTally,
+  PharmacyBreakdown,
   SortColumn,
 } from '../../api/paymentCollection';
+import { useAuth } from '../context/AuthContext';
+import { buildReportHtml, dateTime, localStamp, money } from '../utils/paymentCollectionReport';
 
 interface PaymentCollectionProps {
   hospital: Hospital;
@@ -23,17 +27,72 @@ interface PaymentCollectionProps {
 // reachable by paging rather than being cut off.
 const PER_PAGE = 50;
 
-/** e.g. "18/08/2026 01:33 pm" -- date and time of day on one line. */
-const dateTime = (value: string) => {
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return '-';
-  const date = at.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
-  return `${date} ${time}`;
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return localStamp(d);
 };
 
-const money = (value: number) =>
-  Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const endOfToday = () => {
+  const d = new Date();
+  d.setHours(23, 59, 0, 0);
+  return localStamp(d);
+};
+
+/**
+ * One module's money, at a glance.
+ *
+ * The headline is what was billed; paid and due sit under it in small type
+ * because the collector's question is "how much, and how much of it is still
+ * owed" -- three equal-weight figures would make that harder to read, not
+ * easier.
+ */
+function StatPanel({
+  title,
+  meta,
+  total,
+  paid,
+  due,
+  note,
+  emphasis = false,
+}: {
+  title: string;
+  meta: string;
+  total: number;
+  paid: number;
+  due: number;
+  note?: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-2.5 py-1 min-w-[124px] ${
+        emphasis
+          ? 'border-blue-300 dark:border-blue-700 bg-blue-50/60 dark:bg-blue-900/20'
+          : 'border-gray-200 dark:border-gray-700'
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 truncate">
+          {title}
+        </span>
+        <span className="text-[8px] text-gray-400 whitespace-nowrap">{meta}</span>
+      </div>
+      <div className="text-sm font-semibold tabular-nums leading-tight text-gray-900 dark:text-white">
+        {money(total)}
+      </div>
+      <div className="text-[8px] leading-tight tabular-nums whitespace-nowrap">
+        <span className="text-emerald-600 dark:text-emerald-400">{money(paid)}</span>
+        <span className="text-gray-400"> paid · </span>
+        <span className="text-rose-600 dark:text-rose-400">{money(due)}</span>
+        <span className="text-gray-400"> due</span>
+      </div>
+      {note && (
+        <div className="text-[8px] leading-tight text-gray-400 tabular-nums whitespace-nowrap">{note}</div>
+      )}
+    </div>
+  );
+}
 
 /**
  * The money collector's desk.
@@ -50,11 +109,28 @@ const money = (value: number) =>
  */
 export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentCollectionProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
 
   const [charges, setCharges] = useState<PendingCharge[]>([]);
   const [modules, setModules] = useState<ModuleTally[]>([]);
-  const [summary, setSummary] = useState({ due_total: 0, entries: 0, collected_today: 0 });
+  const [summary, setSummary] = useState({
+    due_total: 0,
+    due_total_all: 0,
+    entries: 0,
+    collected_in_range: 0,
+    collected_today: 0,
+  });
+
+  // The window on screen, defaulting to the whole of today. A counter is
+  // reconciled per shift as often as per day, so both ends carry a time rather
+  // than a bare date -- and both are sent to the server, which decides the
+  // window and echoes back what it applied.
+  const [from, setFrom] = useState(() => startOfToday());
+  const [to, setTo] = useState(() => endOfToday());
+  const [breakdown, setBreakdown] = useState<PharmacyBreakdown | null>(null);
+  const [grandTotal, setGrandTotal] = useState<GrandTotal>({ entries: 0, total_amount: 0, paid_amount: 0, due_amount: 0 });
+  const [printing, setPrinting] = useState(false);
   const [activeModule, setActiveModule] = useState<string>('');
   const [search, setSearch] = useState('');
   // Newest first, and the API keeps unpaid rows above settled ones whatever
@@ -82,17 +158,21 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
         direction,
         per_page: PER_PAGE,
         page,
+        from,
+        to,
       });
       setCharges(res.data);
       setModules(res.modules);
       setSummary(res.summary);
+      setBreakdown(res.pharmacy_breakdown ?? null);
+      setGrandTotal(res.grand_total);
       setMeta(res.meta ?? { current_page: 1, last_page: 1, total: res.data.length });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to load pending payments');
     } finally {
       setLoading(false);
     }
-  }, [currentHospital.id, activeModule, search, sort, direction, page]);
+  }, [currentHospital.id, activeModule, search, sort, direction, page, from, to]);
 
   // Debounced so typing a patient name does not fire a request per keystroke.
   useEffect(() => {
@@ -105,7 +185,7 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
    * Amount and date open on descending -- the biggest debt and the newest
    * charge are what a collector looks for first.
    */
-  useEffect(() => { setPage(1); }, [activeModule, search, sort, direction, currentHospital.id]);
+  useEffect(() => { setPage(1); }, [activeModule, search, sort, direction, currentHospital.id, from, to]);
 
   const toggleSort = (column: SortColumn) => {
     if (sort === column) {
@@ -172,6 +252,68 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
     }
   };
 
+  /**
+   * The handover sheet.
+   *
+   * Every row in the range, not just the page on screen -- a report that stops
+   * at row 50 cannot be signed for. The list is re-fetched at full depth rather
+   * than printed from component state for that reason.
+   */
+  const printReport = async () => {
+    setPrinting(true);
+    try {
+      const rows: PendingCharge[] = [];
+      let pageNo = 1;
+      let lastPage = 1;
+      do {
+        const res = await listPendingPayments({
+          hospital_id: currentHospital.id,
+          module: activeModule || undefined,
+          search: search.trim() || undefined,
+          sort,
+          direction,
+          per_page: 200,
+          page: pageNo,
+          from,
+          to,
+        });
+        rows.push(...res.data);
+        lastPage = res.meta?.last_page ?? 1;
+        pageNo += 1;
+        // A malformed paginator must not spin forever.
+      } while (pageNo <= lastPage && pageNo <= 50);
+
+      const win = window.open('', '_blank', 'width=1000,height=700');
+      if (!win) {
+        toast.error('Please allow pop-ups for this site to print the report.');
+        return;
+      }
+      win.document.write(buildReportHtml({
+        hospital: currentHospital,
+        rows,
+        breakdown,
+        modules,
+        grandTotal,
+        from,
+        to,
+        submittedBy: user?.name || '—',
+        // Never "All modules": the figures cover exactly the modules this user
+        // may collect for, so the sheet has to name them. Someone signing a
+        // handover needs to know whether Lab and Ultrasound are in the total
+        // or not.
+        moduleLabel: activeModule
+          ? (modules.find((m) => m.module === activeModule)?.label ?? activeModule)
+          : (modules.map((m) => m.label).join(', ') || '—'),
+      }));
+      win.document.close();
+      win.focus();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not build the report');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
@@ -183,36 +325,119 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
             Every unpaid charge you are permitted to settle, in one place.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5">
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">Outstanding</div>
-            <div className="text-sm font-semibold text-rose-600 dark:text-rose-400">{money(summary.due_total)}</div>
-          </div>
-          {/* The figure the drawer is checked against, visible all day rather
-              than only on the closing report. */}
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5">
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">You collected today</div>
-            <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{money(summary.collected_today)}</div>
-          </div>
+        {/* The reconciliation figures, at the top right where the two summary
+            tiles used to be. Those tiles were dropped rather than moved: they
+            reported one module's outstanding and one collector's takings, which
+            these panels already cover per module and in more useful detail.
+
+            One panel per module the user may actually collect for, so the strip
+            is the shape of their own job rather than the hospital's whole
+            revenue. Pharmacy is the exception: its money is two opposite things
+            -- sales in, purchases out -- and a single figure spanning both is
+            not an amount anyone hands over. */}
+        <div className="flex flex-wrap items-stretch gap-1.5 justify-end">
+          <StatPanel
+            title="Totals"
+            meta={`${grandTotal.entries} doc${grandTotal.entries === 1 ? '' : 's'}`}
+            total={grandTotal.total_amount}
+            paid={grandTotal.paid_amount}
+            due={grandTotal.due_amount}
+            emphasis
+          />
+
+          {modules
+            // Pharmacy is represented by its own two panels below.
+            .filter((m) => !(m.module === 'pharmacy' && breakdown))
+            .map((m) => (
+              <StatPanel
+                key={m.module}
+                title={m.label}
+                meta={`${m.entries} doc${m.entries === 1 ? '' : 's'}`}
+                total={m.total_amount}
+                paid={m.paid_amount}
+                due={m.due_amount}
+              />
+            ))}
+
+          {breakdown && (['sales', 'purchase'] as const).map((family) => {
+            const t = breakdown.totals[family];
+            const invoice = breakdown.types.find((ty) => ty.family === family && ty.sign === 1);
+            const ret = breakdown.types.find((ty) => ty.family === family && ty.sign === -1);
+            return (
+              <StatPanel
+                key={family}
+                title={family === 'sales' ? 'Pharmacy Sales' : 'Pharmacy Purchase'}
+                meta={`${t.entries} doc${t.entries === 1 ? '' : 's'}`}
+                total={t.total_amount}
+                paid={t.paid_amount}
+                due={t.due_amount}
+                // Returns net off their own family, so the arithmetic behind the
+                // headline is visible without opening another screen.
+                note={`${money(invoice?.total_amount ?? 0)} − ${money(ret?.total_amount ?? 0)}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search patient name, code, phone or reference..."
+            className="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
+          />
+        </div>
+
+        {/* datetime-local, not date: the hour is the point. A shift that ends at
+            17:00 is not the same window as the calendar day around it. */}
+        <div>
+          <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-0.5" htmlFor="pc-from">From</label>
+          <input
+            id="pc-from"
+            type="datetime-local"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="px-2 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs text-gray-900 dark:text-white"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-0.5" htmlFor="pc-to">To</label>
+          <input
+            id="pc-to"
+            type="datetime-local"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="px-2 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs text-gray-900 dark:text-white"
+          />
+        </div>
+
+        {/* Beside the range they act on. The preset buttons that used to sit
+            here were removed: the window opens on today already, and any other
+            period is what the two inputs to the left are for. */}
+        <div className="flex items-center gap-1.5">
           <button
+            type="button"
+            onClick={printReport}
+            disabled={printing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 disabled:opacity-50"
+            title="Print the handover report for this date range"
+          >
+            <Printer className={`w-3.5 h-3.5 ${printing ? 'animate-pulse' : ''}`} />
+            {printing ? 'Preparing...' : 'Print Report'}
+          </button>
+          <button
+            type="button"
             onClick={load}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200"
             title={t('ui.refresh')}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             {t('ui.refresh')}
           </button>
         </div>
-      </div>
-
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search patient name, code, phone or reference..."
-          className="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs"
-        />
       </div>
 
       {/* Module chips: the per-module view, as a filter on one queue rather than
@@ -291,7 +516,16 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
                   className="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/20"
                 >
                   <td className="px-3 py-1.5 text-gray-500">{row.patient_code || '-'}</td>
-                  <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-white">{row.patient_name || '-'}</td>
+                  <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-white">
+                    {row.patient_name || '-'}
+                    {/* Flagged because it changes what the cashier can look up:
+                        a walk-in has no hospital record to cross-check. */}
+                    {row.is_walk_in && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                        Walk-in
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 text-gray-600 dark:text-gray-300">{row.patient_phone || '-'}</td>
                   <td className="px-3 py-1.5 text-gray-600 dark:text-gray-300">{row.reference}</td>
                   <td className="px-3 py-1.5">
@@ -312,7 +546,7 @@ export function PaymentCollection({ hospital, userRole = 'admin' }: PaymentColle
                     {isPending ? money(row.due_amount) : money(row.net_amount)}
                   </td>
                   <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
-                    {row.posted_at ? dateTime(row.posted_at) : '-'}
+                    {row.effective_at ?? row.posted_at ? dateTime((row.effective_at ?? row.posted_at)!) : '-'}
                   </td>
                   <td className="px-3 py-1.5 text-right">
                     {isPending ? (

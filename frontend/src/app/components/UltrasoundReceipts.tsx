@@ -1,9 +1,24 @@
 import React, { useMemo, useState } from 'react';
-import { Printer, Wallet, RotateCcw, Loader2 } from 'lucide-react';
+import { Printer, Wallet, RotateCcw, Loader2, Receipt, ScanLine } from 'lucide-react';
 import { Hospital } from '../types';
 import { UltrasoundExamApi, payUltrasoundExam, reverseUltrasoundPayment } from '../api/ultrasound';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
 import { formatOnlyDate } from '../utils/date';
+import {
+  CellNumber,
+  CellStack,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  RowIcon,
+  TableAction,
+  TableEmpty,
+  TablePill,
+  Th,
+  Tr,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 
 interface Props {
   hospital: Hospital;
@@ -20,11 +35,9 @@ const money = (value: number | string | null | undefined) =>
     Number(value ?? 0)
   );
 
-const paymentStyles: Record<string, string> = {
-  paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  partial: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  unpaid: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
-};
+/** Payment state to pill colour, shared with the X-Ray desk. */
+const paymentTone = (status: string): 'green' | 'amber' | 'red' =>
+  status === 'paid' ? 'green' : status === 'partial' ? 'amber' : 'red';
 
 /**
  * The reception counter's view of ultrasound.
@@ -53,6 +66,11 @@ export function UltrasoundReceipts({
     () => exams.filter((exam) => exam.payment_status !== 'paid').length,
     [exams]
   );
+
+  // Sorted and paged like every other listing. Newest first by default, which
+  // is what a counter wants: the receipt just raised is the one being settled.
+  const sort = useTableSort<any>(exams, 'examined_at', 'desc');
+  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows);
 
   const takePayment = async (exam: UltrasoundExamApi) => {
     setBusyId(exam.id);
@@ -178,112 +196,110 @@ export function UltrasoundReceipts({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-      {error && <p className="px-4 py-2 text-xs text-red-600">{error}</p>}
+    <div className="space-y-3">
+      {error && <p className="px-1 text-xs text-red-600">{error}</p>}
 
       {outstanding > 0 && (
-        <p className="px-4 py-2 text-xs text-amber-700 dark:text-amber-400 border-b border-gray-200 dark:border-gray-700">
+        <p className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
           {outstanding} exam{outstanding === 1 ? '' : 's'} awaiting payment.
         </p>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
-          <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
-            <tr>
-              <th className="px-4 py-2">Receipt / Date</th>
-              <th className="px-4 py-2">Patient</th>
-              <th className="px-4 py-2">Ultrasound Type</th>
-              <th className="px-4 py-2 text-right">Fee</th>
-              <th className="px-4 py-2">Payment</th>
-              <th className="px-4 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {exams.map((exam) => (
-              <tr key={exam.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                <td className="px-4 py-2">
-                  <div className="font-mono text-[10px] text-gray-400">
-                    {String(exam.receipt_number || exam.sequence_id || exam.id).replace(/^US-/, '')}
-                  </div>
-                  <div className="font-medium text-gray-900 dark:text-white">
-                    {formatOnlyDate(exam.examined_at, hospital.timezone, hospital.calendarType)}
-                  </div>
-                </td>
-                <td className="px-4 py-2">
-                  <div className="font-semibold text-gray-900 dark:text-white uppercase">
-                    {exam.patient?.name ?? '-'}
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {exam.patient?.age ?? '-'} Y / {exam.patient?.gender ?? '-'}
-                  </div>
-                </td>
-                <td className="px-4 py-2">{exam.ultrasound_type?.name ?? '-'}</td>
-                <td className="px-4 py-2 text-right font-semibold text-gray-900 dark:text-white">
-                  {money(exam.fee)}
-                </td>
-                <td className="px-4 py-2">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                      paymentStyles[exam.payment_status] ?? paymentStyles.unpaid
-                    }`}
-                  >
-                    {exam.payment_status}
-                  </span>
-                  {exam.paid_by && (
-                    <div className="text-[10px] text-gray-500 mt-0.5">by {exam.paid_by}</div>
+      <DataTableCard
+        total={exams.length}
+        shown={pageRows.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        noun="receipts"
+        maxHeight="calc(100vh - 320px)"
+      >
+        <DataTableHead>
+          <Th sort={sort} field="examined_at">Receipt / Date</Th>
+          <Th>Patient</Th>
+          <Th>Ultrasound Type</Th>
+          <Th sort={sort} field="fee" align="right">Fee</Th>
+          <Th sort={sort} field="payment_status">Payment</Th>
+          <Th align="center">Actions</Th>
+        </DataTableHead>
+        <DataTableBody>
+          {(pageRows as UltrasoundExamApi[]).map((exam) => (
+            <Tr key={exam.id}>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-3">
+                  <RowIcon tone="blue">
+                    <Receipt className="w-4 h-4" />
+                  </RowIcon>
+                  <CellStack
+                    primary={formatOnlyDate(exam.examined_at, hospital.timezone, hospital.calendarType)}
+                    secondary={`#${String(exam.receipt_number || exam.sequence_id || exam.id).replace(/^US-/, '')}`}
+                  />
+                </div>
+              </td>
+              <td className="px-4 py-2">
+                <CellStack
+                  primary={exam.patient?.name ?? '-'}
+                  secondary={`${exam.patient?.age ?? '-'} Y / ${exam.patient?.gender ?? '-'}`}
+                />
+              </td>
+              <td className="px-4 py-2">
+                <TablePill tone="purple">{exam.ultrasound_type?.name ?? '-'}</TablePill>
+              </td>
+              <td className="px-4 py-2 text-right">
+                <CellNumber tone="money">{money(exam.fee)}</CellNumber>
+              </td>
+              <td className="px-4 py-2">
+                <TablePill tone={paymentTone(exam.payment_status)}>{exam.payment_status}</TablePill>
+                {exam.paid_by && (
+                  <div className="text-[10px] text-gray-500 mt-0.5">by {exam.paid_by}</div>
+                )}
+              </td>
+              <td className="px-4 py-2 text-center">
+                <div className="flex items-center justify-center gap-1.5">
+                  {canTakePayment && exam.payment_status !== 'paid' && (
+                    <TableAction
+                      tone="success"
+                      title="Take payment"
+                      disabled={busyId === exam.id}
+                      onClick={() => setPayingExam(exam)}
+                    >
+                      {busyId === exam.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Wallet className="w-3.5 h-3.5" />
+                      )}
+                    </TableAction>
                   )}
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex items-center justify-end gap-1">
-                    {canTakePayment && exam.payment_status !== 'paid' && (
-                      <button
-                        onClick={() => setPayingExam(exam)}
-                        disabled={busyId === exam.id}
-                        className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
-                        title="Take payment"
-                      >
-                        {busyId === exam.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Wallet className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    )}
-                    {canPrintReceipt && (
-                      <button
-                        onClick={() => printReceipt(exam)}
-                        className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                        title="Print receipt"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {canReversePayment && exam.payment_status === 'paid' && (
-                      <button
-                        onClick={() => reverse(exam)}
-                        disabled={busyId === exam.id}
-                        className="p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-md transition-colors"
-                        title="Reverse payment"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  {canPrintReceipt && (
+                    <TableAction tone="edit" title="Print receipt" onClick={() => printReceipt(exam)}>
+                      <Printer className="w-3.5 h-3.5" />
+                    </TableAction>
+                  )}
+                  {canReversePayment && exam.payment_status === 'paid' && (
+                    <TableAction
+                      tone="delete"
+                      title="Reverse payment"
+                      disabled={busyId === exam.id}
+                      onClick={() => reverse(exam)}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </TableAction>
+                  )}
+                </div>
+              </td>
+            </Tr>
+          ))}
 
-            {exams.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                  No ultrasound receipts yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          {exams.length === 0 && (
+            <TableEmpty
+              colSpan={6}
+              message="No ultrasound receipts yet"
+              hint="Receipts appear here once reception raises one."
+              icon={<ScanLine className="w-6 h-6 text-gray-400" />}
+            />
+          )}
+        </DataTableBody>
+      </DataTableCard>
 
       {payingExam && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">

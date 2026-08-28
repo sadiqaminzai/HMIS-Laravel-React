@@ -281,6 +281,7 @@ const FINANCIAL_MODULE_ORDER: Array<{ key: string; label: string }> = [
   { key: 'appointments', label: 'Appointment Fees' },
   { key: 'laboratory', label: 'Laboratory Fees' },
   { key: 'radiology', label: 'Ultrasound Fees' },
+  { key: 'xray', label: 'X-Ray Fees' },
   { key: 'surgery', label: 'Surgery Fees' },
   { key: 'room_booking', label: 'Room Booking Fees' },
 ];
@@ -1143,6 +1144,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           medicineSales: number;
           surgeryFees: number;
           ultrasoundFees: number;
+          xrayFees: number;
           roomBookingFees: number;
           paid: number;
           due: number;
@@ -1159,6 +1161,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             medicineSales: 0,
             surgeryFees: 0,
             ultrasoundFees: 0,
+            xrayFees: 0,
             roomBookingFees: 0,
             paid: 0,
             due: 0,
@@ -1177,6 +1180,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
               medicineSales: 0,
               surgeryFees: 0,
               ultrasoundFees: 0,
+              xrayFees: 0,
               roomBookingFees: 0,
               paid: 0,
               due: 0,
@@ -1233,6 +1237,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             const module = String(entry.module || '').toLowerCase();
             if (entry.direction === 'income') {
               if (module === 'radiology') row.ultrasoundFees += entry.netAmount;
+              if (module === 'xray') row.xrayFees += entry.netAmount;
               if (module === 'room_booking') row.roomBookingFees += entry.netAmount;
             }
             row.paid += entry.paidAmount;
@@ -1243,7 +1248,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           .map((item) => ({
             ...item,
             totalFees: item.appointmentFees + item.labFees + item.medicineSales
-              + item.surgeryFees + item.ultrasoundFees + item.roomBookingFees,
+              + item.surgeryFees + item.ultrasoundFees + item.xrayFees + item.roomBookingFees,
           }))
           .sort((a, b) => b.totalFees - a.totalFees);
 
@@ -1264,6 +1269,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             { key: 'medicineSales', label: 'Medicine Sold', kind: 'currency' },
             { key: 'surgeryFees', label: t('ui.surgeryFees'), kind: 'currency' },
             { key: 'ultrasoundFees', label: 'Ultrasound Fees', kind: 'currency' },
+            { key: 'xrayFees', label: 'X-Ray Fees', kind: 'currency' },
             { key: 'roomBookingFees', label: 'Room Booking', kind: 'currency' },
             { key: 'totalFees', label: t('ui.totalFees'), kind: 'currency' },
             { key: 'paid', label: t('ui.paid'), kind: 'currency' },

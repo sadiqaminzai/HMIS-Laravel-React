@@ -8,8 +8,6 @@ import {
   X,
   Printer,
   FileText,
-  ChevronLeft,
-  ChevronRight,
   ScanLine,
   LayoutTemplate,
   Receipt,
@@ -17,6 +15,26 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
+import {
+  ActivePill,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  DeleteIcon,
+  EditIcon,
+  RowIcon,
+  TableAction,
+  TableActions,
+  TableEmpty,
+  TableLoading,
+  TablePill,
+  Th,
+  Tr,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 import ReactQuill from 'react-quill-new';
 import { UltrasoundReceipts } from './UltrasoundReceipts';
 import 'react-quill-new/dist/quill.snow.css';
@@ -107,7 +125,6 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   const [types, setTypes] = useState<UltrasoundTypeApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
 
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<UltrasoundExamApi | null>(null);
@@ -144,6 +161,12 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
 
   const canSetUltrasoundFee = hasPermission('set_ultrasound_fee');
 
+  // The exam list is the reporting desk's queue. Kept apart from the receipt
+  // rights so a cashier does not get the clinical list along with the till.
+  const canViewExamsTab = hasPermission('view_ultrasound_exams')
+    || hasPermission('export_ultrasound_exams')
+    || canCreateExams || canEditExams || canDeleteExams || canPrintExams || canManageExams;
+
   const canManageTypes = hasPermission('manage_ultrasound_types');
   const canViewTypes = hasPermission('view_ultrasound_types') || canManageTypes;
   const canCreateTypes = hasPermission('add_ultrasound_types') || canManageTypes;
@@ -155,12 +178,19 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
       setActiveTab(initialTab);
       return;
     }
+    // Land on the first tab this user may actually open. Defaulting to Exams
+    // unconditionally showed a template-only or cashier-only user an empty
+    // screen they had no way to leave except through the sidebar.
     if (canViewReceipts) {
       setActiveTab('receipts');
+    } else if (canViewExamsTab) {
+      setActiveTab('exams');
+    } else if (canViewTypes) {
+      setActiveTab('templates');
     }
     // Runs once the permissions are known; the tab is the user's to change after.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canViewReceipts, initialTab]);
+  }, [canViewReceipts, canViewExamsTab, canViewTypes, initialTab]);
 
   const receiptPaperSize = getPrintPaperSize(currentHospital.id, 'ultrasound_receipt');
 
@@ -190,10 +220,6 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, activeTab, selectedHospitalId]);
 
   /* ------------------------------- Derived data ------------------------------ */
 
@@ -302,12 +328,26 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
 
   const rows: Array<UltrasoundExamApi | UltrasoundTypeApi> =
     activeTab === 'exams' ? examQueue : filteredTypes;
-  const totalPages = Math.max(1, Math.ceil(rows.length / ITEMS_PER_PAGE));
+  // Sorted and paged through the shared table, so the column headers work here
+  // the same way they do on Doctor Management. Exams default to newest first;
+  // the template catalogue reads alphabetically.
+  const sort = useTableSort<any>(
+    rows,
+    activeTab === 'exams' ? 'examined_at' : 'name',
+    activeTab === 'exams' ? 'desc' : 'asc'
+  );
+  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows, ITEMS_PER_PAGE);
   // Paginates the same list the page counts, and the same list the paid filter
   // produced. Slicing filteredExams here meant the rows ignored that filter
   // entirely while the page count respected it.
-  const pagedExams = examQueue.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  const pagedTypes = filteredTypes.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const pagedExams = pageRows as UltrasoundExamApi[];
+  const pagedTypes = pageRows as UltrasoundTypeApi[];
+
+  // Declared after usePagination on purpose: referencing setPage in a hook
+  // above it would read the binding before it is initialised.
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, activeTab, selectedHospitalId, setPage]);
 
   /* --------------------------------- Exams ---------------------------------- */
 
@@ -525,6 +565,30 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
 
   return (
     <div className="space-y-3">
+      {/* Radiology is now two modalities in the sidebar rather than a flat list
+          of ultrasound screens, so the three desks live here as tabs. A tab the
+          user has no permission for is not offered at all. */}
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
+        {([
+          { key: 'receipts' as TabKey, label: t('nav.ultrasoundReceipts'), icon: <Receipt className="w-3.5 h-3.5" />, allowed: canViewReceipts },
+          { key: 'exams' as TabKey, label: t('nav.ultrasound'), icon: <ScanLine className="w-3.5 h-3.5" />, allowed: canViewExamsTab },
+          { key: 'templates' as TabKey, label: t('nav.ultrasoundTemplates'), icon: <LayoutTemplate className="w-3.5 h-3.5" />, allowed: canViewTypes },
+        ]).filter((tab) => tab.allowed).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveTab(tab.key); setPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -578,220 +642,153 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
         />
       ) : (
       <>
-      {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-600 dark:text-gray-300">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 uppercase font-medium text-gray-500 dark:text-gray-300">
-              {activeTab === 'exams' ? (
-                <tr>
-                  <th className="px-4 py-2">{t('auditLog.dateTime')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.patient')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.type')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.referredBy')}</th>
-                  <th className="px-4 py-2">{t('common.status')}</th>
-                  <th className="px-4 py-2 text-center">{t('common.actions')}</th>
-                </tr>
-              ) : (
-                <tr>
-                  <th className="px-4 py-2">{t('ultrasound.type')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.subtitle')}</th>
-                  <th className="px-4 py-2">{t('ultrasound.defaultTemplate')}</th>
-                  <th className="px-4 py-2">{t('common.status')}</th>
-                  <th className="px-4 py-2 text-center">{t('common.actions')}</th>
-                </tr>
-              )}
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    {t('common.loading')}
-                  </td>
-                </tr>
-              )}
+      <DataTableCard
+        total={rows.length}
+        shown={pageRows.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        maxHeight="calc(100vh - 300px)"
+      >
+        <DataTableHead>
+          {activeTab === 'exams' ? (
+            <>
+              <Th sort={sort} field="examined_at">{t('auditLog.dateTime')}</Th>
+              <Th>{t('ultrasound.patient')}</Th>
+              <Th>{t('ultrasound.type')}</Th>
+              <Th sort={sort} field="referred_by">{t('ultrasound.referredBy')}</Th>
+              <Th sort={sort} field="status">{t('common.status')}</Th>
+              <Th align="center">{t('common.actions')}</Th>
+            </>
+          ) : (
+            <>
+              <Th sort={sort} field="name">{t('ultrasound.type')}</Th>
+              <Th sort={sort} field="description">{t('ultrasound.subtitle')}</Th>
+              <Th>{t('ultrasound.defaultTemplate')}</Th>
+              <Th sort={sort} field="is_active">{t('common.status')}</Th>
+              <Th align="center">{t('common.actions')}</Th>
+            </>
+          )}
+        </DataTableHead>
+        <DataTableBody>
+          {loading && <TableLoading colSpan={6} />}
 
-              {!loading &&
-                activeTab === 'exams' &&
-                pagedExams.map((exam) => (
-                  <tr key={exam.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col">
-                        <span className="font-mono text-[10px] text-gray-400">
-                          {exam.sequence_id}
-                        </span>
-                        <span className="text-gray-900 dark:text-white font-medium">
-                          {format(new Date(exam.examined_at), 'MMM dd, yyyy')}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col max-w-[180px]">
-                        <span className="font-medium text-gray-900 dark:text-white truncate">
-                          {exam.patient?.name ?? '-'}
-                        </span>
-                        <span className="text-[10px] text-gray-500 truncate">
-                          {exam.patient?.age ? `${exam.patient.age} Y` : ''}
-                          {exam.patient?.gender ? ` / ${exam.patient.gender}` : ''}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">{exam.ultrasound_type?.name ?? '-'}</td>
-                    <td className="px-4 py-2">{exam.referred_by || exam.doctor?.name || '-'}</td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase ${
-                          statusStyles[exam.status] ?? statusStyles.draft
-                        }`}
-                      >
-                        {exam.status}
+          {!loading && activeTab === 'exams' && pagedExams.map((exam) => (
+            <Tr key={exam.id}>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-3">
+                  <RowIcon tone="blue">
+                    <ScanLine className="w-4 h-4" />
+                  </RowIcon>
+                  <CellStack
+                    primary={format(new Date(exam.examined_at), 'MMM dd, yyyy')}
+                    secondary={`#${exam.sequence_id}`}
+                  />
+                </div>
+              </td>
+              <td className="px-4 py-2">
+                <div className="max-w-[180px]">
+                  <CellStack
+                    primary={exam.patient?.name ?? '-'}
+                    secondary={`${exam.patient?.age ? `${exam.patient.age} Y` : ''}${exam.patient?.gender ? ` / ${exam.patient.gender}` : ''}`}
+                  />
+                </div>
+              </td>
+              <td className="px-4 py-2">
+                <TablePill tone="purple">{exam.ultrasound_type?.name ?? '-'}</TablePill>
+              </td>
+              <td className="px-4 py-2">
+                <CellText>{exam.referred_by || exam.doctor?.name || '-'}</CellText>
+              </td>
+              <td className="px-4 py-2">
+                <TablePill tone={exam.status === 'completed' ? 'green' : exam.status === 'cancelled' ? 'red' : 'amber'}>
+                  {exam.status}
+                </TablePill>
+              </td>
+              <td className="px-4 py-2 text-center">
+                <div className="flex items-center justify-center gap-1.5">
+                  {canPrintExams && (
+                    <TableAction tone="primary" title="Preview / Print Report" onClick={() => setPrintExam(exam)}>
+                      <Printer className="w-3.5 h-3.5" />
+                    </TableAction>
+                  )}
+                  {canEditExams && (
+                    <button
+                      onClick={() => openExamModal(exam)}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-md transition-colors"
+                      title={exam.status === 'completed' ? 'View / edit report' : 'Submit report'}
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">
+                        {exam.status === 'completed' ? 'Report' : 'Submit Report'}
                       </span>
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        {canPrintExams && (
-                          <button
-                            onClick={() => setPrintExam(exam)}
-                            className="p-1.5 text-indigo-600 hover:bg-indigo-100 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400 rounded-md transition-colors"
-                            title="Preview / Print Report"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
-                        )}
-                        {canEditExams && (
-                          <button
-                            onClick={() => openExamModal(exam)}
-                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-emerald-700 hover:bg-emerald-100 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-md transition-colors text-xs font-medium"
-                            title={exam.status === 'completed' ? 'View / edit report' : 'Submit report'}
-                          >
-                            <ClipboardCheck className="w-4 h-4" />
-                            <span className="hidden sm:inline">
-                              {exam.status === 'completed' ? 'Report' : 'Submit Report'}
-                            </span>
-                          </button>
-                        )}
-                        {canDeleteExams && (
-                          <button
-                            onClick={() => setExamToDelete(exam)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400 rounded-md transition-colors"
-                            title={t('ui.delete')}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                    </button>
+                  )}
+                  {canDeleteExams && (
+                    <TableAction tone="delete" title={t('ui.delete')} onClick={() => setExamToDelete(exam)}>
+                      <DeleteIcon />
+                    </TableAction>
+                  )}
+                </div>
+              </td>
+            </Tr>
+          ))}
 
-              {!loading &&
-                activeTab === 'templates' &&
-                pagedTypes.map((type) => (
-                  <tr key={type.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-gray-900 dark:text-white">{type.name}</span>
-                        <span className="font-mono text-[10px] text-gray-400">{type.code || '—'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 max-w-[260px] truncate" title={type.description ?? ''}>
-                      {type.description || '—'}
-                    </td>
-                    <td className="px-4 py-2">
-                      {type.default_template ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                          <FileText className="w-3.5 h-3.5" />
-                          Configured
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">Not set</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase ${
-                          type.is_active
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {type.is_active ? t('ui.active') : t('ui.inactive')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        {canEditTypes && (
-                          <button
-                            onClick={() => openTypeModal(type)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-md transition-colors"
-                            title="Edit Template"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                        )}
-                        {canDeleteTypes && (
-                          <button
-                            onClick={() => setTypeToDelete(type)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400 rounded-md transition-colors"
-                            title="Delete Template"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+          {!loading && activeTab === 'templates' && pagedTypes.map((type) => (
+            <Tr key={type.id}>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-3">
+                  <RowIcon tone="purple">
+                    <LayoutTemplate className="w-4 h-4" />
+                  </RowIcon>
+                  <CellStack primary={type.name} secondary={type.code || '—'} />
+                </div>
+              </td>
+              <td className="px-4 py-2 max-w-[260px]">
+                <div className="truncate text-[10px] text-gray-600 dark:text-gray-400" title={type.description ?? ''}>
+                  {type.description || '—'}
+                </div>
+              </td>
+              <td className="px-4 py-2">
+                {type.default_template ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                    <FileText className="w-3.5 h-3.5" />
+                    Configured
+                  </span>
+                ) : (
+                  <CellText>Not set</CellText>
+                )}
+              </td>
+              <td className="px-4 py-2">
+                <ActivePill active={type.is_active} />
+              </td>
+              <td className="px-4 py-2 text-center">
+                <TableActions>
+                  {canEditTypes && (
+                    <TableAction tone="edit" title="Edit Template" onClick={() => openTypeModal(type)}>
+                      <EditIcon />
+                    </TableAction>
+                  )}
+                  {canDeleteTypes && (
+                    <TableAction tone="delete" title="Delete Template" onClick={() => setTypeToDelete(type)}>
+                      <DeleteIcon />
+                    </TableAction>
+                  )}
+                </TableActions>
+              </td>
+            </Tr>
+          ))}
 
-              {!loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-2">
-                        <ScanLine className="w-5 h-5 text-gray-400" />
-                      </div>
-                      <p className="text-sm font-medium">
-                        {activeTab === 'exams' ? t('ultrasound.noExams') : t('ultrasound.noTemplates')}
-                      </p>
-                      <p className="text-xs mt-0.5">
-                        {searchTerm ? t('ui.tryAdjustingYourSearchTerms') : 'Create a new record to get started'}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/30">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Page {currentPage} of {totalPages} • {rows.length} records
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                title={t('ui.previousPage')}
-                aria-label={t('ui.previousPage')}
-                className="p-1 px-2 rounded hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
-              >
-                <ChevronLeft className="w-3 h-3 rtl:rotate-180" />
-              </button>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                title={t('ui.nextPage')}
-                aria-label={t('ui.nextPage')}
-                className="p-1 px-2 rounded hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
-              >
-                <ChevronRight className="w-3 h-3 rtl:rotate-180" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+          {!loading && rows.length === 0 && (
+            <TableEmpty
+              colSpan={6}
+              message={activeTab === 'exams' ? t('ultrasound.noExams') : t('ultrasound.noTemplates')}
+              hint={searchTerm ? t('ui.tryAdjustingYourSearchTerms') : 'Create a new record to get started'}
+              icon={<ScanLine className="w-6 h-6 text-gray-400" />}
+            />
+          )}
+        </DataTableBody>
+      </DataTableCard>
       </>
       )}
 

@@ -120,9 +120,22 @@ class TestTemplateController extends Controller
             'duration' => ['nullable', 'string', 'max:100'],
             'instructions' => ['nullable', 'string'],
             'status' => ['required', 'in:active,inactive'],
+            // Separate from `status` on purpose: an inactive test disappears
+            // from reception's order form too, which is not what a
+            // machine-printed test needs.
+            'requires_result' => ['nullable', 'boolean'],
         ]);
 
-        return $this->upperCaseNames($validator->validate(), ['test_name']);
+        $data = $this->upperCaseNames($validator->validate(), ['test_name']);
+        // Absent means "unchanged" on edit and "yes" on create, so older
+        // clients that do not send the field keep today's behaviour.
+        if (array_key_exists('requires_result', $data)) {
+            $data['requires_result'] = (bool) $data['requires_result'];
+        } elseif ($id === null) {
+            $data['requires_result'] = true;
+        }
+
+        return $data;
     }
 
     private function normalizeParameters(array $parameters): array

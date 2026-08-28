@@ -15,6 +15,7 @@ export interface TestTemplateResponse {
   duration: string | null;
   instructions: string | null;
   status: 'active' | 'inactive';
+  requires_result?: boolean;
   created_by: string | null;
   updated_by: string | null;
   created_at: string;
@@ -61,6 +62,9 @@ function transformToFrontend(item: TestTemplateResponse): TestTemplate {
     duration: item.duration || '',
     instructions: item.instructions || undefined,
     status: item.status,
+    // Older records predate the column; a missing value means the laboratory
+    // still enters results, which is what every existing test did.
+    requiresResult: item.requires_result !== false,
     createdAt: new Date(item.created_at),
     createdBy: item.created_by || 'system',
     updatedAt: item.updated_at ? new Date(item.updated_at) : undefined,
@@ -84,6 +88,7 @@ function transformToBackend(
     duration: template.duration || null,
     instructions: template.instructions || null,
     status: template.status || 'active',
+    requires_result: template.requiresResult !== false,
     parameters: (template.parameters || [])
       .filter((p) => p.parameterName?.trim())
       .map((p, index) => ({

@@ -13,12 +13,17 @@ export interface PendingCharge {
   patient_name: string | null;
   patient_code: string | null;
   patient_phone: string | null;
+  /** True for a retail pharmacy or lab customer with no hospital record. */
+  is_walk_in: boolean;
   net_amount: number;
   paid_amount: number;
   due_amount: number;
   currency: string;
   status: string;
   posted_at: string | null;
+  collected_at: string | null;
+  /** When settled, or when raised if not. What the range filters on. */
+  effective_at: string | null;
   supports_partial: boolean;
   can_reverse: boolean;
 }
@@ -27,14 +32,61 @@ export interface ModuleTally {
   module: string;
   label: string;
   entries: number;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+  /** Same as due_amount; the chips were written against this name. */
   due_total: number;
+}
+
+/** Every permitted module added together. Income only — see grandTotal(). */
+export interface GrandTotal {
+  entries: number;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+}
+
+/** One pharmacy document type inside the reconciliation sheet. */
+export interface PharmacyTypeTally {
+  category: 'sales' | 'sales_return' | 'purchase' | 'purchase_return';
+  label: string;
+  /** Returns are deducted from the family they belong to, never across it. */
+  family: 'sales' | 'purchase';
+  /** +1 for an invoice, -1 for a return. */
+  sign: 1 | -1;
+  entries: number;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+}
+
+export interface PharmacyBreakdown {
+  types: PharmacyTypeTally[];
+  totals: {
+    sales: { label: string; entries: number; total_amount: number; paid_amount: number; due_amount: number };
+    purchase: { label: string; entries: number; total_amount: number; paid_amount: number; due_amount: number };
+  };
 }
 
 export interface PendingResponse {
   data: PendingCharge[];
   meta: { current_page: number; last_page: number; total: number };
   modules: ModuleTally[];
-  summary: { due_total: number; entries: number; collected_today: number };
+  /** Echoed back so the inputs show the window the server actually applied. */
+  range: { from: string; to: string };
+  /** Null unless the user may collect pharmacy money. */
+  pharmacy_breakdown: PharmacyBreakdown | null;
+  grand_total: GrandTotal;
+  summary: {
+    /** Outstanding inside the chosen window. */
+    due_total: number;
+    /** Standing debt across all time, so a narrow window cannot hide it. */
+    due_total_all: number;
+    entries: number;
+    collected_in_range: number;
+    collected_today: number;
+  };
 }
 
 export type SortColumn = 'code' | 'name' | 'phone' | 'reference' | 'module' | 'status' | 'amount' | 'date';
@@ -48,6 +100,9 @@ export async function listPendingPayments(params: {
   direction?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
+  /** `YYYY-MM-DDTHH:mm`, as produced by a datetime-local input. */
+  from?: string;
+  to?: string;
 }): Promise<PendingResponse> {
   const res = await api.get('/payment-collection/pending', { params });
   return res.data;
@@ -61,7 +116,7 @@ export async function listPendingPayments(params: {
  * different times and do not agree on a request body. Appointments, surgery and
  * room bookings take only a method; lab and ultrasound require an explicit
  * paid_amount; pharmacy calls the same field `amount`. Rather than teach the
- * collection screen those six dialects, the difference is resolved here, once.
+ * collection screen those dialects, the difference is resolved here, once.
  */
 export async function settlePendingCharge(
   charge: PendingCharge,
@@ -97,6 +152,12 @@ export async function settlePendingCharge(
         payment_method: method,
       });
 
+    case 'xray_receipt':
+      return api.post(`/xray-receipts/${charge.source_id}/payment`, {
+        paid_amount: amount,
+        payment_method: method,
+      });
+
     case 'transaction':
       return api.post(`/pharmacy-finance/${charge.source_id}/payment`, {
         amount,
@@ -118,7 +179,7 @@ export async function settlePendingCharge(
  * pharmacy has no reverse route at all, only a status change that checks
  * reverse_finance_payment internally.
  *
- * Lab and ultrasound REQUIRE a reason -- reversing a collection is the one
+ * Lab, ultrasound and X-Ray REQUIRE a reason -- reversing a collection is the one
  * action on this screen that money can disappear through, so it is recorded
  * against the person who did it. The others accept it harmlessly, and
  * pharmacy keeps it as the finance note.
@@ -139,6 +200,9 @@ export async function reversePendingCharge(charge: PendingCharge, reason: string
 
     case 'ultrasound_exam':
       return api.post(`/ultrasound-exams/${charge.source_id}/reverse-payment`, { reason });
+
+    case 'xray_receipt':
+      return api.post(`/xray-receipts/${charge.source_id}/reverse-payment`, { reason });
 
     case 'transaction':
       return api.put(`/pharmacy-finance/${charge.source_id}/status`, { payment_status: 'pending', finance_note: reason });
