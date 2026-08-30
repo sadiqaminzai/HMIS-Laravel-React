@@ -306,7 +306,9 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     const newValue = !showPrescriptionListMeta;
     setShowPrescriptionListMeta(newValue);
     saveHospitalSetting(selectedHospital.id, { showPrescriptionListMeta: newValue })
-      .then(() => toast.success(newValue ? 'Prescription list Rx column and count details are visible' : 'Prescription list Rx column and count details are hidden'))
+      .then(() => toast.success(newValue
+        ? 'Rx and patient reference numbers are visible'
+        : 'Rx and patient reference numbers are hidden'))
       .catch((err) => {
         setShowPrescriptionListMeta(!newValue);
         toast.error(err?.response?.data?.message || 'Failed to update prescription list visibility');
@@ -897,9 +899,11 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
 
           <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
             <div className="flex-1">
-              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Show Rx column and count details</h3>
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Show Rx and patient reference numbers</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                When disabled, the Rx number column, result count, rows-per-page selector, and page text are hidden. Next and previous arrows still work.
+                When disabled, the Rx number and patient ID are hidden on the printed prescription, and the
+                prescription list drops its Rx column, result count, rows-per-page selector and page text.
+                Next and previous arrows still work.
               </p>
             </div>
             <button
@@ -933,8 +937,8 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 : 'text-gray-700 dark:text-gray-300'
             }`}>
               {showPrescriptionListMeta
-                ? 'Rx column and count details visible'
-                : 'Rx column and count details hidden'}
+                ? 'Rx and patient reference numbers visible'
+                : 'Rx and patient reference numbers hidden'}
             </p>
           </div>
         </div>

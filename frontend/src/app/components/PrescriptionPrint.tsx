@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { X, Phone, Mail, Printer } from 'lucide-react';
 import { Hospital, Patient, Doctor, PrescriptionMedicine } from '../types';
@@ -14,6 +14,81 @@ import { printName } from '../utils/printName';
 type ExtendedPrescriptionMedicine = PrescriptionMedicine & {
   genericName?: string;
   brandName?: string;
+};
+
+/**
+ * The letterhead palette, derived from the hospital's configured brand colour.
+ *
+ * Two hospitals on one installation should not hand out identical paper, so
+ * the masthead is built from Settings > Brand Colour rather than a fixed blue.
+ *
+ * Every stop is darkened until white text clears 4.5:1 against it. A hospital
+ * is free to pick a pale yellow as its brand; the prescription still has to be
+ * readable, and a patient-facing document is the wrong place to honour a colour
+ * choice literally at the cost of legibility.
+ */
+const BRAND_FALLBACK = '#1d4ed8';
+
+const hexToRgb = (hex: string): [number, number, number] | null => {
+  const clean = hex.trim().replace(/^#/, '');
+  const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  return [
+    parseInt(full.slice(0, 2), 16),
+    parseInt(full.slice(2, 4), 16),
+    parseInt(full.slice(4, 6), 16),
+  ];
+};
+
+const toHex = ([r, g, b]: [number, number, number]) =>
+  '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+const relativeLuminance = ([r, g, b]: [number, number, number]) => {
+  const f = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+
+const contrastWithWhite = (rgb: [number, number, number]) => 1.05 / (relativeLuminance(rgb) + 0.05);
+
+/** Mix toward black (amount < 0) or white (amount > 0). */
+const mix = (rgb: [number, number, number], amount: number): [number, number, number] => {
+  const target = amount < 0 ? 0 : 255;
+  const t = Math.abs(amount);
+  return rgb.map((c) => c + (target - c) * t) as [number, number, number];
+};
+
+/** Darken until white text on it clears the AA threshold for small text. */
+const ensureReadable = (rgb: [number, number, number]): [number, number, number] => {
+  let out = rgb;
+  for (let i = 0; i < 20 && contrastWithWhite(out) < 4.5; i += 1) {
+    out = mix(out, -0.08);
+  }
+  return out;
+};
+
+const buildBrandPalette = (brandColor?: string) => {
+  const base = hexToRgb(brandColor || '') ?? hexToRgb(BRAND_FALLBACK)!;
+  const mid = ensureReadable(base);
+  // Bright-to-dark across the band, as asked: a deeper shade of the brand on
+  // the left, the brand itself in the middle, a lifted tone on the right.
+  const dark = ensureReadable(mix(mid, -0.35));
+  const light = ensureReadable(mix(mid, 0.22));
+  return {
+    dark: toHex(dark),
+    mid: toHex(mid),
+    light: toHex(light),
+    // Strip: a wash of the brand with brand-dark text on it.
+    strip: toHex(mix(mid, 0.86)),
+    stripText: toHex(mix(mid, -0.45)),
+    // The body watermark, as a SOLID light tint rather than a low opacity.
+    // At 5% alpha the mark composited to roughly #f7f5fb, which printers
+    // simply do not lay ink down for -- it showed on screen and vanished on
+    // paper. A real colour prints predictably.
+    watermark: toHex(mix(mid, 0.87)),
+  };
 };
 
 interface PrescriptionPrintProps {
@@ -63,6 +138,15 @@ export function PrescriptionPrint({
       // Use fallback defaults from SettingsContext when load fails
     });
   }, [hospital?.id, loadHospitalSetting]);
+
+  // A hospital whose logo file has gone missing printed the broken-image icon
+  // and the words "Hospital Logo" onto a patient's prescription. The mark is a
+  // better answer than a broken asset.
+  const [logoFailed, setLogoFailed] = useState(false);
+  // Falls back to the drawn mark when the artwork has not been dropped into
+  // public/, so the prescription never prints a broken image.
+  const [watermarkFailed, setWatermarkFailed] = useState(false);
+  const brand = React.useMemo(() => buildBrandPalette(hospital.brandColor), [hospital.brandColor]);
 
   const printAssetSettings = getPrescriptionPrintAssetSettings(hospital.id);
   const showPrescriptionListMeta = getShowPrescriptionListMeta(hospital.id);
@@ -292,6 +376,52 @@ export function PrescriptionPrint({
       margin-top: 8mm !important;
     }
 
+    /* The band's colours are set inline from the hospital's brand, so the
+       print sheet only has to stop the browser dropping them. */
+    #prescription-print-content .rx-masthead,
+    #prescription-print-content .rx-watermark {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    /* Repeated for the print document, which does not inherit the component's
+       own <style> block. Without it the mark printed tiny. */
+    #prescription-print-content .rx-watermark svg,
+    #prescription-print-content .rx-watermark img {
+      width: 440px !important;
+      height: 440px !important;
+      display: block !important;
+    }
+
+    /* Flex, not block. This rule used to be shared with the watermark above,
+       whose display: block collapsed the strip's justify-between -- so Rx and
+       ID printed jammed against the title instead of out on the right. */
+    #prescription-print-content .rx-title-strip {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    /* Matches the sheet's own print padding (6mm top, 8mm sides) so the
+       masthead reaches the paper edge on all three sides. */
+    #prescription-print-content .rx-letterhead-bleed {
+      margin-top: -6mm !important;
+      margin-left: -8mm !important;
+      margin-right: -8mm !important;
+    }
+
+    #prescription-print-content .rx-letterhead-bleed .rx-masthead {
+      border-top-left-radius: 0 !important;
+      border-top-right-radius: 0 !important;
+    }
+
     #prescription-print-content .rx-print-logo {
       width: ${logoWidthPx}px !important;
       height: ${logoHeightPx}px !important;
@@ -337,7 +467,7 @@ export function PrescriptionPrint({
 
       if (startsNewGroup) {
         renderedRows.push(
-          <tr key={`group-${startIndex}-${index}`} className="bg-indigo-50/70">
+          <tr key={`group-${startIndex}-${index}`} className="bg-indigo-500/10">
             <td colSpan={6} className="px-2 py-1 border-b border-indigo-100 text-[10px] font-semibold text-indigo-700 uppercase tracking-wide">
               {med.groupLabel || 'Treatment Set'}
             </td>
@@ -345,8 +475,11 @@ export function PrescriptionPrint({
         );
       }
 
+      // Transparent, not white: the zebra fill was opaque and hid the
+      // watermark behind the table completely. The rule between rows is
+      // enough to follow a line across.
       renderedRows.push(
-        <tr key={`${startIndex}-${index}`} className={(startIndex + index) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+        <tr key={`${startIndex}-${index}`} className={(startIndex + index) % 2 === 0 ? '' : 'bg-gray-500/5'}>
           <td className="px-2 py-1 border-b border-gray-100 text-gray-400">{startIndex + index + 1}</td>
           <td className="px-2 py-1 border-b border-gray-100 font-medium break-words">
             {formatMedicineForPrint(med)}
@@ -371,37 +504,122 @@ export function PrescriptionPrint({
     return renderedRows;
   };
 
+  /**
+   * The letterhead.
+   *
+   * Modelled on a printed prescription pad rather than a web page: a coloured
+   * masthead carrying the practice's identity, the prescriber's credentials on
+   * the left where a reader looks first, and the clinic's contact details on
+   * the right. The plain black-on-white title and rule it replaces gave a
+   * patient-facing document the look of an internal report.
+   *
+   * Colour is safe here -- the print stylesheet already sets
+   * print-color-adjust: exact, so the band prints as it appears.
+   */
   const renderHospitalHeader = (extraClassName = 'mb-2') => (
-    <div className={`flex flex-row justify-between items-center gap-3 border-b-4 border-blue-600 pb-1 ${extraClassName}`}>
-      <div className="flex-1">
-        <h1 className="text-lg sm:text-2xl font-bold text-gray-900 mb-1">{hospital.name}</h1>
-        <div className="text-xs sm:text-sm text-gray-600 space-y-1">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <div className="flex items-center gap-2">
-              <Phone className="w-4 h-4 text-blue-600" />
-              {hospital.phone}
+    // rx-letterhead-bleed pulls the band out through the sheet's own padding so
+    // it meets the paper at the top and both sides, the way a printed pad's
+    // masthead does. The body below keeps its margins.
+    <div className={`rx-letterhead rx-letterhead-bleed ${extraClassName}`}>
+      <div
+        className="rx-masthead relative overflow-hidden rounded-t-md px-4 py-3"
+        style={{ background: `linear-gradient(135deg, ${brand.dark} 0%, ${brand.mid} 50%, ${brand.light} 100%)` }}
+      >
+        <div className="relative flex items-stretch justify-between gap-3">
+          {/* Prescriber, left: the credentials a pharmacist checks first. */}
+          <div className="min-w-0 flex-1">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/70">
+              Prescribed by
             </div>
-            <div className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-blue-600" />
-              {hospital.email}
+            <div className="truncate text-base sm:text-lg font-bold leading-tight text-white">
+              {printName(doctor.name)}
+            </div>
+            {/* Wraps rather than truncating: a doctor's qualifications run to a
+                full line or two ("MBBS MD RMP Kabul MUSP Ultrasound Specialist
+                ...") and an ellipsis on a letterhead loses the part that
+                establishes their standing. whitespace-pre-line keeps the line
+                breaks typed into the field. */}
+            {doctor.specialization && (
+              <div className="whitespace-pre-line break-words text-[11px] leading-snug text-white/85">
+                {doctor.specialization}
+              </div>
+            )}
+            {doctor.registrationNumber && (
+              <div className="text-[10px] text-white/70">Reg. No {doctor.registrationNumber}</div>
+            )}
+          </div>
+
+          {/* Logo on a light chip: a dark logo on the band would disappear, and
+              hospitals upload both kinds. Capped at 56px wide -- at its old
+              size it pushed the practice name into an ellipsis, and the name
+              matters more on a letterhead than the mark does. */}
+          <div className="flex shrink-0 items-center">
+            {hospital.logo && !logoFailed ? (
+              <span className="flex items-center justify-center rounded-md bg-white/95 p-1">
+                <img
+                  src={resolveAssetUrl(hospital.logo)}
+                  alt=""
+                  onError={() => setLogoFailed(true)}
+                  /* Size comes from Settings > Printing via .rx-print-logo;
+                     h-auto/w-auto used to sit here and fought that rule. */
+                  className="rx-print-logo"
+                  loading="eager"
+                  decoding="sync"
+                />
+              </span>
+            ) : (
+              <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/95 text-2xl font-bold leading-none" style={{ color: brand.mid }}>
+                ℞
+              </span>
+            )}
+          </div>
+
+          {/* Practice, right. Wraps to a second line rather than truncating:
+              a clinic whose name does not fit is not identified. */}
+          <div className="min-w-0 flex-[1.4] text-right">
+            <div className="text-sm sm:text-lg font-extrabold uppercase leading-tight tracking-wide text-white break-words">
+              {hospital.name}
+            </div>
+            {hospital.address && (
+              <div className="truncate text-[10px] text-white/80">{hospital.address}</div>
+            )}
+            <div className="mt-0.5 flex flex-col items-end gap-0.5 text-[10px] text-white/90">
+              {hospital.phone && (
+                <span className="flex items-center gap-1.5">
+                  <Phone className="h-3 w-3" />
+                  {hospital.phone}
+                </span>
+              )}
+              {hospital.email && (
+                <span className="flex items-center gap-1.5 truncate">
+                  <Mail className="h-3 w-3" />
+                  {hospital.email}
+                </span>
+              )}
             </div>
           </div>
         </div>
-        <div className="mt-1 text-blue-800 font-semibold text-[10px] sm:text-xs uppercase tracking-wide">
-          Patient Prescription
-        </div>
       </div>
-      <div className="flex flex-col items-end justify-start shrink-0">
-        {hospital.logo ? (
-          <img
-            src={resolveAssetUrl(hospital.logo)}
-            alt="Hospital Logo"
-            className="rx-print-logo max-h-32 sm:max-h-40 h-auto w-auto object-contain"
-            loading="eager"
-            decoding="sync"
-          />
-        ) : (
-          <span className="text-4xl sm:text-5xl font-bold text-blue-600 leading-none">℞</span>
+
+      {/* Title strip under the masthead, so the document says what it is
+          without spending a full line of the letterhead on it. */}
+      <div
+        className="rx-title-strip flex items-center justify-between rounded-b-md px-4 py-1"
+        style={{ background: brand.strip, borderTop: `2px solid ${brand.mid}` }}
+      >
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: brand.stripText }}>
+          Patient Prescription
+        </span>
+        {/* Rx # moved here from the doctor panel that this design removes.
+            The Prescription List Visibility switch governs the whole pair: with
+            it off the Rx number goes too, not just the patient ID. Leaving the
+            Rx behind meant a clinic that had chosen to print no reference
+            numbers still got one. */}
+        {showPrescriptionListMeta && (
+          <span className="text-[10px] font-semibold" style={{ color: brand.stripText }}>
+            Rx # <span className="font-mono font-bold">{prescriptionNumber}</span>
+            {patient.patientId ? ` · ID ${patient.patientId}` : ''}
+          </span>
         )}
       </div>
     </div>
@@ -431,6 +649,147 @@ export function PrescriptionPrint({
       {/* Robust Print Styles */}
       <style>
         {`
+          /* These live in the component's own <style>, not in the react-to-print
+             page style, so they apply to the preview as well. The masthead
+             previously rendered flat white on screen and coloured only on
+             paper, which made the preview useless for checking it. */
+          .rx-masthead,
+          .rx-title-strip {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          /* The dotted rule each patient field is written on. */
+          .rx-patient-line .rx-rule {
+            border-bottom: 1px dotted #9ca3af;
+            min-width: 0;
+            padding-bottom: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          /* Decoration behind the body. Positioned against the sheet, kept out
+             of the flow so it can never push content onto a second page. */
+          /* The sheet is the watermark's containing block. Without this it
+             was positioned on screen against the modal instead of the page,
+             so preview and print disagreed about where it sat. */
+          #prescription-print-content {
+            position: relative;
+          }
+
+          /* The sheet pads itself (p-4, sm:p-8); the masthead undoes that on
+             three sides so it runs to the paper edge. Kept as negative margins
+             rather than moving the band outside the padded container, so it
+             still scrolls and paginates with the rest of the document. */
+          .rx-letterhead-bleed {
+            margin-top: -1rem;
+            margin-left: -1rem;
+            margin-right: -1rem;
+          }
+
+          @media (min-width: 640px) {
+            .rx-letterhead-bleed {
+              margin-top: -2rem;
+              margin-left: -2rem;
+              margin-right: -2rem;
+            }
+          }
+
+          /* Square off the corners that now sit against the paper edge. */
+          .rx-letterhead-bleed .rx-masthead {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+          }
+
+          /* The configured logo size, applied on screen as well as in print so
+             the preview shows what will actually come out of the printer. */
+          .rx-print-logo {
+            width: ${logoWidthPx}px;
+            height: ${logoHeightPx}px;
+            object-fit: contain;
+          }
+
+          /* Sits directly above the footer, turned 45 degrees like a stamp.
+             bottom:100% is measured from the footer's own top edge, so the mark
+             tracks the footer wherever the prescription's length puts it. The
+             extra offset absorbs the overhang a 45-degree rotation adds (a
+             440px square occupies 622px once turned, hanging 91px past its own
+             box). It is not lowered further than this: at a 61px offset the
+             mark's edge reached the QR code, which has to stay scannable for
+             verification. 81px leaves roughly 20px of clearance. */
+          .rx-watermark {
+            position: absolute;
+            bottom: calc(100% + 81px);
+            left: 50%;
+            transform: translateX(-50%) rotate(-45deg);
+            transform-origin: center;
+            color: ${brand.watermark};
+            pointer-events: none;
+            z-index: 0;
+            line-height: 0;
+          }
+
+          /* Size lives here, not on the element's width/height attributes.
+             Presentation attributes were being dropped somewhere in the print
+             pipeline, so the mark came out at a fraction of the size it was
+             given; an explicit CSS rule survives. */
+          .rx-watermark svg,
+          .rx-watermark img {
+            width: 440px !important;
+            height: 440px !important;
+            display: block;
+          }
+
+          /* A photograph cannot take currentColor, so it is washed out with
+             filters instead. Deliberately not opacity: a low alpha composites
+             to something a printer will not lay ink down for -- the reason the
+             first version of this mark printed blank. brightness/contrast
+             produce real light pixels that print. */
+          .rx-watermark img {
+            filter: grayscale(1) brightness(1.45) contrast(0.32);
+            mix-blend-mode: multiply;
+          }
+
+          /* Everything real sits above the mark. The body block is also the
+             mark's containing block, so its position: relative is load-bearing
+             here, not only a stacking hint. */
+          .rx-patient-line,
+          .rx-letterhead,
+          .print-content-grow {
+            position: relative;
+            z-index: 1;
+          }
+
+          /* The footer is the mark's containing block, so it must be
+             positioned -- and must not clip a child that hangs above it.
+
+             z-index 0, deliberately: position + z-index makes this a stacking
+             context, and everything inside it paints at that level. At 1 it
+             tied with the body block and, coming later in the document, won
+             -- which is how the watermark ended up printed OVER the medicine
+             names in the preview. At 0 the whole footer layer, mark included,
+             sits under the content above it. */
+          #print-footer {
+            position: relative;
+            z-index: 0;
+            overflow: visible;
+          }
+
+          /* ...but the footer's own contents still have to clear the mark
+             inside their own stacking context. */
+          #print-footer > *:not(.rx-watermark) {
+            position: relative;
+            z-index: 1;
+          }
+
+          /* The columns paint above the mark; their own backgrounds stay clear
+             so it reads through the table. */
+          .print-content-grow > *:not(.rx-watermark) {
+            position: relative;
+            z-index: 1;
+          }
+
           /* Quill content spacing for diagnosis/advice (screen + print) */
           .rx-quill-content,
           .rx-quill-content p {
@@ -505,60 +864,40 @@ export function PrescriptionPrint({
             a second sheet; inline rows cut this block to roughly half the
             height while keeping every field.
           */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-1 mb-3">
-            {/* Patient Info */}
-            <div className="bg-gray-50 border border-gray-200 rounded-md px-2.5 py-1.5">
-              <h3 className="text-[10px] font-bold text-blue-900 uppercase tracking-wider border-b border-gray-200 pb-1 mb-1">Patient Information</h3>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Name</span>
-                  <span className="font-semibold text-gray-900 truncate">{printName(patient.name)}</span>
-                </div>
-                {showPrescriptionListMeta && (
-                  <div className="flex items-baseline gap-1 min-w-0">
-                    <span className="font-bold text-blue-900 shrink-0">ID</span>
-                    <span className="font-mono text-gray-900 truncate">{patient.patientId}</span>
-                  </div>
-                )}
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Age / Sex</span>
-                  <span className="text-gray-900 truncate">{patient.age} Y / {patient.gender}</span>
-                </div>
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Date</span>
-                  <span className="text-gray-900 truncate">{formatDate(prescriptionDate, hospital.timezone, hospital.calendarType)}</span>
-                </div>
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Next Visit</span>
-                  <span className="text-gray-900 truncate">{nextVisit ? formatDate(nextVisit, hospital.timezone, hospital.calendarType) : '-'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Doctor Info */}
-            <div className="bg-blue-50 border border-blue-100 rounded-md px-2.5 py-1.5">
-              <h3 className="text-[10px] font-bold text-blue-900 uppercase tracking-wider border-b border-blue-200 pb-1 mb-1">Doctor Information</h3>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] rx-info-grid">
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Doctor</span>
-                  <span className="font-semibold text-gray-900 truncate">{printName(doctor.name)}</span>
-                </div>
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Reg. No</span>
-                  <span className="text-gray-900 truncate">{doctor.registrationNumber || '-'}</span>
-                </div>
-                {/* Specialization can run long (multi-line qualifications), so it
-                    spans both columns and clamps instead of stretching the card. */}
-                <div className="col-span-2 flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Specialization</span>
-                  <span className="text-gray-900 truncate">{doctor.specialization}</span>
-                </div>
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="font-bold text-blue-900 shrink-0">Rx #</span>
-                  <span className="font-mono font-bold text-gray-900 truncate">{prescriptionNumber}</span>
-                </div>
-              </div>
-            </div>
+          {/* The patient line, written the way a paper pad writes it: one row of
+              labelled rules across the sheet. The two stacked cards this
+              replaces repeated the prescriber's details -- already in the
+              letterhead above -- and spent a third of the page saying so. */}
+          <div
+            className="rx-patient-line mt-2 mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 px-1 pb-2 text-[11px]"
+            style={{ borderBottom: `2px solid ${brand.mid}` }}
+          >
+            <span className="flex flex-1 min-w-[220px] items-baseline gap-1">
+              <span className="font-bold shrink-0" style={{ color: brand.stripText }}>Name</span>
+              <span className="rx-rule flex-1 font-semibold text-gray-900">{printName(patient.name)}</span>
+            </span>
+            <span className="flex w-[92px] items-baseline gap-1">
+              <span className="font-bold shrink-0" style={{ color: brand.stripText }}>Age</span>
+              <span className="rx-rule flex-1 text-gray-900">{patient.age} Y</span>
+            </span>
+            <span className="flex w-[110px] items-baseline gap-1">
+              <span className="font-bold shrink-0" style={{ color: brand.stripText }}>Sex</span>
+              <span className="rx-rule flex-1 text-gray-900 capitalize">{patient.gender}</span>
+            </span>
+            <span className="flex flex-1 min-w-[180px] items-baseline gap-1">
+              <span className="font-bold shrink-0" style={{ color: brand.stripText }}>Date</span>
+              <span className="rx-rule flex-1 text-gray-900">
+                {formatDate(prescriptionDate, hospital.timezone, hospital.calendarType)}
+              </span>
+            </span>
+            {nextVisit && (
+              <span className="flex flex-1 min-w-[160px] items-baseline gap-1">
+                <span className="font-bold shrink-0" style={{ color: brand.stripText }}>Next Visit</span>
+                <span className="rx-rule flex-1 text-gray-900">
+                  {formatDate(nextVisit, hospital.timezone, hospital.calendarType)}
+                </span>
+              </span>
+            )}
           </div>
 
           {/* Main Body Layout */}
@@ -603,7 +942,7 @@ export function PrescriptionPrint({
               </div>
               <div className="overflow-x-auto border-x border-b border-gray-200">
                 <table className="w-full border-collapse">
-                  <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase">
+                  <thead className="bg-gray-500/5 text-[10px] text-gray-500 uppercase">
                     <tr>
                       <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-8">#</th>
                       <th className="px-2 py-1 text-left font-semibold border-b border-gray-200">Medicine Name</th>
@@ -635,7 +974,7 @@ export function PrescriptionPrint({
                 </div>
                 <div className="overflow-x-auto border-x border-b border-gray-200">
                   <table className="w-full border-collapse">
-                    <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase">
+                    <thead className="bg-gray-500/5 text-[10px] text-gray-500 uppercase">
                       <tr>
                         <th className="px-2 py-1 text-left font-semibold border-b border-gray-200 w-8">#</th>
                         <th className="px-2 py-1 text-left font-semibold border-b border-gray-200">Medicine Name</th>
@@ -656,6 +995,33 @@ export function PrescriptionPrint({
 
           {/* Footer Section */}
           <div id="print-footer" className="mt-auto">
+            {/* The mark hangs off the top edge of the footer rather than
+                sitting inside the body block. The body is only as tall as the
+                prescription, so on a short one the mark landed on top of the
+                medicines table; anchoring to the footer puts it in the empty
+                space below the table however long the prescription runs.
+                Decoration only -- aria-hidden, no pointer. */}
+            <div className="rx-watermark" aria-hidden="true">
+              {watermarkFailed ? (
+                <svg viewBox="0 0 512 512" width="520" height="520" fill="none" stroke="currentColor" strokeWidth="30"
+                     strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M128 48v112a80 80 0 0 0 160 0V48" />
+                  <path d="M96 48h64M256 48h64" />
+                  <path d="M208 240v56a112 112 0 0 0 224 0v-40" />
+                  <circle cx="432" cy="216" r="40" />
+                </svg>
+              ) : (
+                <img
+                  src={`${import.meta.env.BASE_URL}watermark-stethoscope.png`}
+                  alt=""
+                  width={540}
+                  height={540}
+                  onError={() => setWatermarkFailed(true)}
+                  loading="eager"
+                  decoding="sync"
+                />
+              )}
+            </div>
             <div id="print-signatures" className="pt-6 sm:pt-8 border-t border-gray-200 flex flex-col sm:flex-row items-center sm:items-end justify-between gap-6 sm:gap-0">
               {/* QR Code */}
               <div className="flex flex-col items-center">
@@ -685,11 +1051,11 @@ export function PrescriptionPrint({
               </div>
             </div>
 
-            {/* Legal Footer */}
+            {/* Legal Footer. The practice name, address and licence used to be
+                repeated here; all three are in the letterhead at the top of the
+                same sheet, and the licence has no bearing on a prescription. */}
             <div className="text-center mt-8 pt-4 border-t border-gray-100 text-[10px] text-gray-400">
-              <p className="font-medium text-gray-500">{hospital.name} • {hospital.address}</p>
-              <p>License No: {hospital.license}</p>
-              <p className="mt-1 italic">{POWERED_BY_TEXT} - Kabul Afghanistan. +93 789 68 10 10 | +93 70 102 1319 | +93 78 979 5964 | softcareitsolutions.com</p>
+              <p className="italic">{POWERED_BY_TEXT}</p>
             </div>
           </div>
 

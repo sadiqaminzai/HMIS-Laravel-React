@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Check, Loader2 } from 'lucide-react';
+import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, Trash2, X, ShoppingCart, Receipt, Printer, TrendingUp, Undo2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, Check, Loader2, Tag, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Hospital, Patient, SaleUnit, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -43,21 +43,37 @@ function SortableTh({
   sortKey,
   sortState,
   onSort,
+  width,
+  align = 'left',
 }: {
   label: string;
   sortKey: SortKey;
   sortState: { key: SortKey; dir: 'asc' | 'desc' };
   onSort: (key: SortKey) => void;
+  /** Fixed share of the table, so the layout does not reflow per tab. */
+  width?: string;
+  align?: 'left' | 'right' | 'center';
 }) {
   const isActive = sortState.key === sortKey;
+  const justify = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : '';
   return (
-    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">
+    <th
+      style={width ? { width } : undefined}
+      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider ${
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
+      }`}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}
         aria-label={`Sort by ${label}`}
         aria-sort={isActive ? (sortState.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-        className="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+        /* The size and case utilities are repeated on the button on purpose:
+           theme.css sets `button { font-size: var(--text-base) }` in @layer
+           base, and a button's own font-size beats the one it would inherit
+           from the <th>. Without these the invoice headers rendered a third
+           larger than every other table in the app. */
+        className={`inline-flex w-full items-center gap-1 text-xs font-semibold uppercase tracking-wider leading-normal hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${justify}`}
       >
         {label}
         {isActive
@@ -153,7 +169,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { transactions, addTransaction, updateTransaction, deleteTransaction, loading } = useTransactions();
-  const { medicines, refresh: refreshMedicines, findByBarcode } = useMedicines();
+  const { medicines, refresh: refreshMedicines, findByBarcode, updateMedicine } = useMedicines();
   const { stocks, refresh: refreshStocks } = useStocks();
   const { suppliers } = useSuppliers();
   const { patients } = usePatients();
@@ -174,6 +190,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
   const canExport = hasPermission('export_transactions') || hasPermission('manage_transactions');
   const canPrint = hasPermission('print_transactions') || hasPermission('manage_transactions');
+  // Correcting a product's price from inside an invoice is still editing the
+  // product, so it is gated on the medicine right rather than the invoice one.
+  const canEditMedicinePrices = hasPermission('edit_medicines') || hasPermission('manage_medicines');
 
   const [searchTerm, setSearchTerm] = useState('');
   // Sales invoices are the day-to-day default tab.
@@ -187,7 +206,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       : { key, dir: key === 'date' ? 'desc' : 'asc' });
   };
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  // 50 rows: a pharmacy's invoice list runs to hundreds, and ten at a time
+  // meant 78 pages to reach the other end of a single day's sales.
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [medicineSearch, setMedicineSearch] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
   const [patientSearch, setPatientSearch] = useState('');
@@ -215,6 +236,20 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const [highlightedMedicineIndex, setHighlightedMedicineIndex] = useState<Record<number, number>>({});
 
   const [formData, setFormData] = useState(() => buildInitialFormData(currentHospital.id));
+
+  /**
+   * Fixing a product's price without leaving the invoice.
+   *
+   * Noticing a stale cost price mid-purchase used to mean closing this modal --
+   * losing every line already entered -- walking to Master Data, editing the
+   * product, and starting the invoice again. The two screens live on separate
+   * routes, so the draft cannot survive the trip.
+   */
+  const [priceEditor, setPriceEditor] = useState<
+    { medicineId: string; brandName: string; costPrice: string; salePrice: string } | null
+  >(null);
+  const [savingPrice, setSavingPrice] = useState(false);
+
   // Customer and barcode behaviour must come from the hospital that owns this
   // invoice. This matters especially in Super Admin's "All Hospitals" view.
   const invoiceHospitalId = formData.hospitalId || currentHospital.id;
@@ -1456,14 +1491,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   }, [filteredTransactions, sortState, patients, suppliers]);
 
   const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / itemsPerPage));
+  // Shown in the footer. Clamped to the row count so an empty list reads
+  // "0-0 of 0" rather than "1-50 of 0".
+  const rangeStart = sortedTransactions.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const rangeEnd = Math.min(currentPage * itemsPerPage, sortedTransactions.length);
   const paginatedTransactions = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return sortedTransactions.slice(startIndex, startIndex + itemsPerPage);
-  }, [sortedTransactions, currentPage]);
+  }, [sortedTransactions, currentPage, itemsPerPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, trxTypeFilter, selectedHospitalId]);
+  }, [searchTerm, trxTypeFilter, selectedHospitalId, itemsPerPage]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1775,6 +1814,121 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setShowAddModal(true);
   };
 
+  /**
+   * Escape for the price editor, which sits above the invoice.
+   *
+   * The invoice's own shortcut handler stands down while it is open (see
+   * above), so it needs its own -- otherwise Escape would do nothing at all
+   * and the only way out would be the mouse.
+   */
+  useEffect(() => {
+    if (!priceEditor) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPriceEditor(null);
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [priceEditor]);
+
+  /**
+   * How a product is named wherever it has to be recognised at a glance.
+   *
+   * The brand alone is ambiguous -- a pharmacy stocks the same brand as syrup,
+   * tablet and injection, at three different prices -- so strength and form
+   * ride along: "ZETRO 250MG Capsules".
+   */
+  const describeMedicine = (medicine: { brandName: string; strength?: string; type?: string }) =>
+    [medicine.brandName, medicine.strength, medicine.type].filter(Boolean).join(' ').trim();
+
+  /** Open the inline editor for the product on a line. */
+  const openPriceEditor = (medicineId: string) => {
+    const medicine = medicines.find((m) => String(m.id) === String(medicineId));
+    if (!medicine) return;
+    setPriceEditor({
+      medicineId: String(medicine.id),
+      brandName: describeMedicine(medicine),
+      costPrice: String(medicine.costPrice ?? 0),
+      salePrice: String(medicine.salePrice ?? 0),
+    });
+  };
+
+  /**
+   * Save the corrected prices against the product itself.
+   *
+   * manufacturer, type and brand ride along because MedicineController::update
+   * requires them; everything else it leaves untouched, so packaging and
+   * barcode configuration survive a price-only edit.
+   */
+  const submitPriceEditor = async () => {
+    if (!priceEditor || savingPrice) return;
+    const medicine = medicines.find((m) => String(m.id) === String(priceEditor.medicineId));
+    if (!medicine) return;
+
+    const cost = Number(priceEditor.costPrice);
+    const sale = Number(priceEditor.salePrice);
+    if (!Number.isFinite(cost) || cost < 0 || !Number.isFinite(sale) || sale < 0) {
+      toast.error('Prices must be zero or more.');
+      return;
+    }
+
+    setSavingPrice(true);
+    try {
+      await updateMedicine({
+        id: medicine.id,
+        hospitalId: medicine.hospitalId,
+        manufacturerId: medicine.manufacturerId,
+        medicineTypeId: medicine.medicineTypeId,
+        brandName: medicine.brandName,
+        // MedicineController::validatePayload marks status required, so a
+        // price-only edit still has to carry the product's existing one.
+        status: medicine.status,
+        costPrice: cost,
+        salePrice: sale,
+      });
+      // Push the corrected price straight onto every line for this product.
+      //
+      // The whole reason to open this editor mid-invoice is that the price on
+      // the line is wrong; leaving the user to retype it -- and asking again in
+      // a confirmation after saving -- was two extra steps for something they
+      // had already decided. A purchase takes the cost, a sale the sale price.
+      //
+      // `cost_price` and `sale_price` are quoted per PACK, while a line is
+      // priced per its own sale unit, so the figure is converted back down
+      // using the same factor TransactionController applies.
+      const perPack = ['purchase', 'purchase_return'].includes(formData.trxType) ? cost : sale;
+      const packSize = Math.max(1, Number(medicine.packSize ?? 1));
+      const perStrip = Math.max(1, Number(medicine.piecesPerStrip ?? 1));
+
+      let touched = 0;
+      setFormData((prev) => ({
+        ...prev,
+        items: prev.items.map((line) => {
+          if (String(line.medicineId) !== String(medicine.id)) return line;
+          const unit = String(line.saleUnit || 'piece');
+          const factor = unit === 'pack' ? packSize : unit === 'strip' ? perStrip : 1;
+          touched += 1;
+          return { ...line, price: Math.round(perPack * (factor / packSize) * 100) / 100 };
+        }),
+      }));
+
+      toast.success(
+        touched > 0
+          ? `${describeMedicine(medicine)} updated. Line price set to the new price.`
+          : `${describeMedicine(medicine)} prices updated.`
+      );
+      setPriceEditor(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not update the product prices.');
+    } finally {
+      setSavingPrice(false);
+    }
+  };
+
   const resetTransactionForm = (targetHospitalId?: string) => {
     const hospitalId = targetHospitalId || currentHospital.id;
     setFormData(buildInitialFormData(hospitalId));
@@ -1997,6 +2151,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   useEffect(() => {
     if (!showAddModal && !showEditModal) return;
+    // The price editor opens on top of the invoice and owns the keyboard.
+    // Without this, Escape in that dialog closed the invoice underneath it
+    // and threw away every line entered -- the exact loss it exists to avoid.
+    if (priceEditor) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       const commandKey = event.ctrlKey || event.metaKey;
@@ -2045,7 +2203,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [showAddModal, showEditModal, submitting, openMedicineDropdownIndex, canPrint]);
+  }, [showAddModal, showEditModal, submitting, openMedicineDropdownIndex, canPrint, priceEditor]);
 
   const handleMedicineChange = (index: number, medicineId: string) => {
     // Adopt the medicine's configured default unit (Box for packaged products),
@@ -2509,10 +2667,16 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const isCompactReceipt = receiptSize !== 'a4' && receiptSize !== 'a5';
   const invoiceNo = useMemo(() => {
     if (showEditModal && selectedTransaction?.serialNo) return selectedTransaction.serialNo;
-    const scoped = transactions.filter((t) => String(t.hospitalId) === String(formData.hospitalId));
+    // Serials run per document type, not per hospital: the unique key is
+    // (hospital_id, trx_type, serial_no). Scoping only by hospital showed the
+    // next SALES number on a purchase -- 790 beside a purchase book that had
+    // reached 35 -- so the preview never matched what was actually saved.
+    const scoped = transactions.filter((t) =>
+      String(t.hospitalId) === String(formData.hospitalId)
+      && String(t.trxType) === String(formData.trxType));
     const maxSerial = scoped.reduce((max, t) => Math.max(max, t.serialNo ?? 0), 0);
     return maxSerial + 1;
-  }, [formData.hospitalId, selectedTransaction?.serialNo, showEditModal, transactions]);
+  }, [formData.hospitalId, formData.trxType, selectedTransaction?.serialNo, showEditModal, transactions]);
   const printTotalsSummary = selectedTransaction
     ? calculateTotalsSummary(selectedTransaction.details || [])
     : { totalDiscount: 0, totalTax: 0, totalBonus: 0 };
@@ -2711,51 +2875,77 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
 
-      {/* One tab per invoice type; the list below shows only that type. */}
-      <div className="border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
-        <nav className="-mb-px flex gap-4 min-w-max" aria-label="Invoice types">
-          {INVOICE_TABS.map((tab) => {
-            const isActive = trxTypeFilter === tab.id;
-            const count = scopedTransactions.filter((t) => t.trxType === tab.id).length;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setTrxTypeFilter(tab.id)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`group inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-1 py-2.5 text-xs font-medium transition-colors ${
+      {/* One card per invoice type; the list below shows only that type.
+          These read as four distinct books -- sales, returns in, purchases,
+          returns out -- so they are now cards you pick from rather than a row
+          of underlined text that sat flat against the table and was easy to
+          miss entirely. The selected one is filled and lifted; the rest stay
+          quiet. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" role="tablist" aria-label="Invoice types">
+        {INVOICE_TABS.map((tab) => {
+          const isActive = trxTypeFilter === tab.id;
+          const count = scopedTransactions.filter((t) => t.trxType === tab.id).length;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setTrxTypeFilter(tab.id)}
+              className={`group flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all ${
+                isActive
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/25 dark:border-blue-500 shadow-sm ring-1 ring-blue-500/20'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/40'
+              }`}
+            >
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
                   isActive
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 group-hover:text-gray-600'
                 }`}
               >
-                <tab.icon className={`w-3.5 h-3.5 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                {tab.label}
-                <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                  isActive
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                }`}>
+                <tab.icon className="w-3.5 h-3.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`block truncate text-[11px] font-semibold leading-tight ${
+                    isActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-200'
+                  }`}
+                >
+                  {tab.label}
+                </span>
+                {/* The count is the number people actually scan for, so it is
+                    the larger of the two lines rather than a footnote pill. */}
+                <span
+                  className={`block text-sm font-bold leading-tight tabular-nums ${
+                    isActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-white'
+                  }`}
+                >
                   {count}
                 </span>
-              </button>
-            );
-          })}
-        </nav>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
         <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto">
-          <table className="w-full text-left border-collapse relative">
+          {/* table-fixed: the columns are the same width on every tab. Left to
+              size themselves, they snapped about as the content changed --
+              780 "Walk-In Customer" rows against 34 supplier names -- so the
+              whole grid jumped every time an invoice type was picked. */}
+          <table className="w-full text-left border-collapse relative table-fixed">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
               <tr>
-                <SortableTh label="S.No" sortKey="serial" sortState={sortState} onSort={toggleSort} />
-                <SortableTh label="Party" sortKey="party" sortState={sortState} onSort={toggleSort} />
-                <SortableTh label={t('ui.grandTotal')} sortKey="grandTotal" sortState={sortState} onSort={toggleSort} />
-                <SortableTh label={t('ui.paid')} sortKey="paid" sortState={sortState} onSort={toggleSort} />
-                <SortableTh label={t('ui.due')} sortKey="due" sortState={sortState} onSort={toggleSort} />
-                <SortableTh label="Inv Date" sortKey="date" sortState={sortState} onSort={toggleSort} />
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
+                <SortableTh label="S.No" sortKey="serial" sortState={sortState} onSort={toggleSort} width="8%" />
+                <SortableTh label="Party" sortKey="party" sortState={sortState} onSort={toggleSort} width="28%" />
+                <SortableTh label={t('ui.grandTotal')} sortKey="grandTotal" sortState={sortState} onSort={toggleSort} width="13%" />
+                <SortableTh label={t('ui.paid')} sortKey="paid" sortState={sortState} onSort={toggleSort} width="12%" />
+                <SortableTh label={t('ui.due')} sortKey="due" sortState={sortState} onSort={toggleSort} width="12%" />
+                <SortableTh label="Inv Date" sortKey="date" sortState={sortState} onSort={toggleSort} width="17%" />
+                <th style={{ width: '10%' }} className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-center">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -2764,15 +2954,18 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   <tr key={trx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">#{trx.serialNo ?? trx.id}</td>
                     <td className="px-4 py-2 text-xs">
-                      <div className="flex flex-col leading-tight">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">{getPartyName(trx)}</span>
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{getPartyMeta(trx)}</span>
+                      {/* Truncated rather than wrapped: with a fixed column a
+                          long supplier name would otherwise push the row to
+                          two lines and make the list ragged. */}
+                      <div className="flex flex-col leading-tight min-w-0">
+                        <span className="font-medium text-gray-900 dark:text-gray-100 truncate" title={getPartyName(trx)}>{getPartyName(trx)}</span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate" title={getPartyMeta(trx)}>{getPartyMeta(trx)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.grandTotal}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.paidAmount}</td>
                     <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.dueAmount}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{trx.createdAt ? new Date(trx.createdAt).toLocaleString() : '—'}</td>
+                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">{trx.createdAt ? new Date(trx.createdAt).toLocaleString() : '—'}</td>
                     <td className="px-4 py-2 text-xs text-center">
                       <div className="flex items-center justify-center gap-2">
                         {canPrint && (
@@ -2813,25 +3006,157 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <span>
-            Showing <strong>{filteredTransactions.length}</strong> of <strong>{scopedTransactions.length}</strong> transactions {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
-          </span>
-          <div className="flex items-center gap-2">
+        {/* Compact footer: which rows are on screen, how many per page, and the
+            pager. The old one spelled out a sentence on the left and three
+            loose bordered controls on the right, which read as heavier than
+            the table it belonged to. */}
+        <div className="px-3 py-1.5 text-[11px] text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            {/* The row range, not just a count: "51-100 of 780" answers where
+                you are in the list, which a bare total never did. */}
+            <span className="tabular-nums">
+              <strong className="text-gray-900 dark:text-gray-100">{rangeStart}&ndash;{rangeEnd}</strong>
+              {' of '}
+              <strong className="text-gray-900 dark:text-gray-100">{sortedTransactions.length}</strong>
+            </span>
+            <label className="flex items-center gap-1.5">
+              <span className="text-gray-500">Rows</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                aria-label="Rows per page"
+                className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] text-gray-700 dark:text-gray-200"
+              >
+                {[25, 50, 100, 200].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-0.5">
             <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              title="First page"
+              aria-label="First page"
+              className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronsLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+            </button>
+            <button
+              type="button"
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.prev')}</button>
-            <span>Page {currentPage} of {totalPages}</span>
+              title={t('ui.prev')}
+              aria-label={t('ui.prev')}
+              className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+            </button>
+            <span className="px-2 tabular-nums">
+              {currentPage}<span className="text-gray-400"> / {totalPages}</span>
+            </span>
             <button
+              type="button"
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.next')}</button>
+              title={t('ui.next')}
+              aria-label={t('ui.next')}
+              className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="w-3.5 h-3.5 rtl:rotate-180" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              title="Last page"
+              aria-label="Last page"
+              className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronsRight className="w-3.5 h-3.5 rtl:rotate-180" />
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Inline price editor. z-[60] so it sits above the invoice modal it is
+          opened from -- the invoice stays on screen behind it, which is the
+          whole point: nothing is lost and there is nowhere to navigate back
+          from. */}
+      {priceEditor && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-sm border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-[13px] font-semibold text-gray-800 dark:text-gray-100">Edit Product Price</h3>
+              <button
+                type="button"
+                onClick={() => setPriceEditor(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
+                title={t('ui.close')}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 space-y-3">
+              <div className="text-xs font-medium text-gray-900 dark:text-white">{priceEditor.brandName}</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5" htmlFor="pe-cost">
+                    Cost Price
+                  </label>
+                  <input
+                    id="pe-cost"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    autoFocus
+                    value={priceEditor.costPrice}
+                    onChange={(e) => setPriceEditor((prev) => (prev ? { ...prev, costPrice: e.target.value } : prev))}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5" htmlFor="pe-sale">
+                    Sale Price
+                  </label>
+                  <input
+                    id="pe-sale"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={priceEditor.salePrice}
+                    onChange={(e) => setPriceEditor((prev) => (prev ? { ...prev, salePrice: e.target.value } : prev))}
+                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-900 dark:text-white"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                Saved against the product itself. The line you are editing keeps the price you typed on it.
+              </p>
+            </div>
+            <div className="flex gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setPriceEditor(null)}
+                className="flex-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200"
+              >
+                {t('ui.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={submitPriceEditor}
+                disabled={savingPrice}
+                className="flex-1 px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium disabled:opacity-50"
+              >
+                {savingPrice ? 'Saving...' : 'Save Price'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View Modal */}
       <div className={`fixed inset-0 z-50 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>
@@ -3755,10 +4080,24 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <div>
                       <label className="sr-only">Medicine</label>
                       <div className="relative">
+                        {/* Sits inside the cell so it costs no column width.
+                            Only offered once a product is chosen -- there is
+                            nothing to price before that. */}
+                        {item.medicineId && canEditMedicinePrices && (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => openPriceEditor(item.medicineId)}
+                            title="Edit this product's cost and sale price"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                          >
+                            <Tag className="w-3 h-3" />
+                          </button>
+                        )}
                         <input
                           type="text"
                           data-medicine-input=""
-                          className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7"
+                          className="grid-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 pr-6 text-[11px] h-7"
                           title="Medicine"
                           placeholder="Type medicine name..."
                           value={medicineQueries[index] ?? (item.medicineId ? getMedicineDisplay(item.medicineId) : '')}

@@ -696,14 +696,21 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.specialization')}<span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
+                  {/* A textarea, not a single-line input: qualifications are
+                      a list, and the letterhead prints the line breaks typed
+                      here. Enter starts a new line rather than submitting. */}
+                  <textarea
                     value={formData.specialization}
                     onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full resize-y px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                    rows={3}
+                    maxLength={255}
                     required
-                    placeholder="Cardiology"
+                    placeholder={'Cardiology\nMBBS, MD — Kabul'}
                   />
+                  <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                    Press Enter for a new line. Up to 255 characters.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.registrationNumber')}<span className="text-red-500">*</span></label>

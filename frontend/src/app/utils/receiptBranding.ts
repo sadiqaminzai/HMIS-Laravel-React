@@ -6,7 +6,7 @@
  * Solutions", "SoftCare IT Solutions" and "ShifaaScript HMIS" on four
  * different documents from the same hospital. One constant, one spelling.
  */
-export const POWERED_BY_TEXT = 'Powered by: SoftCare IT Solutions';
+export const POWERED_BY_TEXT = 'Powered by: SoftCare IT Solutions  0772 502020 | 0788 502020';
 
 /**
  * Markup for the print surfaces that build their document as an HTML string.
