@@ -152,6 +152,19 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     selectedTests,
     resultTestIds,
     resultTestName: resultTestNames.join(', '),
+    // Editable while ANY test the lab reports on is still open to this user.
+    // The modal filters to the ones they may actually touch.
+    resultsEditable: (order.items || [])
+      .filter((item) => {
+        const tpl = templates.find((t) => String(t.id) === String(item.testTemplateId));
+        return tpl ? tpl.requiresResult !== false : (item as any).requiresResult !== false;
+      })
+      .some((item) => (item as any).isEditable !== false),
+    resultsCompletedBy: completedBy || undefined,
+    resultsCompletedAt: (order.items || [])
+      .map((item) => item.completedAt)
+      .filter(Boolean)
+      .sort((a, b) => (b as Date).getTime() - (a as Date).getTime())[0] ?? null,
     testName: testNames.join(', '),
     testType: testTypes.join(', '),
     instructions: order.clinicalNotes || undefined,
@@ -825,7 +838,11 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           setToast({ message: 'No valid results to submit for this test. Please ensure each parameter has an ID and value.', type: 'warning' });
           continue;
         }
-        await enterResults(itemId, payload);
+        // The overall note belongs to the report, not to one test, so it rides
+        // along with each item's submission and the server writes it to the
+        // order. It used to be collected by the modal and then dropped on the
+        // floor here -- typed, never sent, never printed.
+        await enterResults(itemId, payload, remarks ?? '');
       }
 
       await refreshLabOrders();
@@ -1309,16 +1326,32 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canEnterResults && activeStage === 'processing' && test.status === 'in_progress' && (
+                          {/* Offered while the result is unsubmitted, and again
+                              afterwards only for the person who entered it, on
+                              the same day -- the window the server enforces.
+                              Before this the button vanished the moment a result
+                              was saved, so a typo caught a minute later could
+                              not be corrected at all. */}
+                          {canEnterResults && activeStage === 'processing'
+                            && (test.status === 'in_progress'
+                              || (test.status === 'completed' && test.resultsEditable)) && (
                             <button
-                              onClick={() => { 
-                                setSelectedTest(test); 
-                                setShowResultModal(true); 
+                              onClick={() => {
+                                setSelectedTest(test);
+                                setShowResultModal(true);
                               }}
-                              className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-md transition-colors"
-                              title="Submit Result"
+                              className={`p-1.5 rounded-md transition-colors ${
+                                test.status === 'completed'
+                                  ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
+                                  : 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30'
+                              }`}
+                              title={test.status === 'completed'
+                                ? 'Correct result — open until the end of today'
+                                : 'Submit Result'}
                             >
-                              <Beaker className="w-3.5 h-3.5" />
+                              {test.status === 'completed'
+                                ? <Pencil className="w-3.5 h-3.5" />
+                                : <Beaker className="w-3.5 h-3.5" />}
                             </button>
                           )}
                           

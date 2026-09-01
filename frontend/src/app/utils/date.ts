@@ -64,6 +64,25 @@ export function formatOnlyDate(
   });
 }
 
+/**
+ * A calendar date with the month spelled out and no time at all.
+ *
+ * For appointments a patient reads and acts on -- "September 4, 2026". The
+ * time was never meaningful on these: a next visit is booked for a day, and
+ * printing 04:30 AM beside it invited people to turn up at half past four.
+ */
+export function formatVisitDate(
+  date: Date | string | undefined | null,
+  timezone: string = 'Asia/Kabul',
+  calendarType: 'gregorian' | 'shamsi' = 'gregorian'
+): string {
+  return formatDate(date, timezone, calendarType, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
 export function formatOnlyTime(
   date: Date | string | undefined | null,
   timezone: string = 'Asia/Kabul',

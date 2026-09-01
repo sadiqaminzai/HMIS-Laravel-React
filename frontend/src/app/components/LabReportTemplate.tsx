@@ -106,20 +106,60 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
   const verificationUrl = buildVerificationUrl('lab-report', test.verificationToken);
   const qrValue = verificationUrl || `LAB-${test.testNumber}-${patientIdentifier}`;
 
+  /**
+   * Which tests the laboratory actually reports on.
+   *
+   * A test marked "Machine printed - skip" in Test Management still has result
+   * placeholders stored against the order, so it was printing a full page of
+   * empty parameter rows -- the analyser had already produced that report on
+   * its own paper. `resultTestIds` is the subset the lab keys results for;
+   * when it is absent (an order mapped by older code) every test is printed,
+   * which is the previous behaviour.
+   */
+  const reportsResult = (templateId: string) =>
+    !test.resultTestIds || test.resultTestIds.length === 0
+      ? true
+      : test.resultTestIds.map(String).includes(String(templateId));
+
   // One page per test, in the order the tests were ordered in.
-  const groups: Array<{ testName: string; templateId: string; results: TestResult[] }> = [];
+  const groups: Array<{ testName: string; templateId: string; heading: string; results: TestResult[] }> = [];
   (test.testResults || []).forEach((result) => {
+    const templateId = String(result.testTemplateId ?? '');
+    if (!reportsResult(templateId)) return;
+
     const existing = groups.find((g) => g.testName === result.testName);
     if (existing) {
       existing.results.push(result);
     } else {
+      const tpl = testTemplates.find((t) => String(t.id) === templateId);
       groups.push({
         testName: result.testName,
-        templateId: String(result.testTemplateId ?? ''),
+        templateId,
+        // The test type -- Clinical Chemistry, Haematology, Serology -- not the
+        // category. Category is a workflow flag ("Routine", "Urgent") and every
+        // template in the catalogue carries the same value, so printing it put
+        // an identical, meaningless word above every test. Category remains the
+        // fallback only for a catalogue that left the type blank.
+        heading: (tpl?.testType || tpl?.category || 'Investigations').trim(),
         results: [result],
       });
     }
   });
+
+  /**
+   * Tests on this order that the analyser reports itself.
+   *
+   * Named on the sheet rather than dropped silently: the patient paid for them
+   * and a clinician reading this report needs to know they were done and that
+   * the figures are on another page.
+   */
+  const machineReportedTests = (test.orderItems || [])
+    .filter((item) => !reportsResult(String(item.testTemplateId)))
+    .map((item) => {
+      const tpl = testTemplates.find((t) => String(t.id) === String(item.testTemplateId));
+      return tpl?.testName || '';
+    })
+    .filter((name, index, all) => name && all.indexOf(name) === index);
 
   const collectionDate = formatDate(test.sampleCollectedAt, hospital?.timezone, hospital?.calendarType);
   const reportingDate = formatDate(test.reportedAt, hospital?.timezone, hospital?.calendarType);
@@ -291,8 +331,26 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
               </div>
             </div>
 
-            {/* ---------- Test title, centred ---------- */}
+            {/* ---------- Category, then test title, centred ---------- */}
             <div style={{ textAlign: 'center', margin: '14px 0 8px' }}>
+              {/* The department the test belongs to -- Haematology, Serology,
+                  Clinical Chemistry. Printed above the name so a multi-test
+                  report reads as a set of sections rather than a run of
+                  tables. */}
+              {group.heading && (
+                <div
+                  style={{
+                    fontSize: '9.5px',
+                    fontWeight: 700,
+                    letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                    color: accent,
+                    marginBottom: '2px',
+                  }}
+                >
+                  {group.heading}
+                </div>
+              )}
               <div
                 style={{
                   display: 'inline-block',
@@ -377,6 +435,17 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
               <div style={{ marginTop: '12px', fontSize: '9.5px', color: BRAND.muted, lineHeight: 1.55 }}>
                 <div style={{ fontWeight: 700, color: BRAND.navy, marginBottom: '2px' }}>Description:</div>
                 <div style={{ whiteSpace: 'pre-wrap' }}>{description}</div>
+              </div>
+            )}
+
+            {/* Named, not silently dropped: the patient paid for these and a
+                clinician has to know they were done and that the numbers are on
+                the analyser's own printout. */}
+            {isLast && machineReportedTests.length > 0 && (
+              <div style={{ marginTop: '14px', fontSize: '10px', color: BRAND.ink }}>
+                <span style={{ fontWeight: 700, color: BRAND.navy }}>Also ordered: </span>
+                {machineReportedTests.join(', ')}
+                <span style={{ color: BRAND.muted }}> — reported separately by the analyser.</span>
               </div>
             )}
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
-import { Search, X, Plus, Save, Printer, Trash2, Pill } from 'lucide-react';
+import { Search, X, Plus, Save, Printer, Trash2, Pill, ChevronDown } from 'lucide-react';
 import { Hospital, Patient, Medicine, Doctor, UserRole, PrescriptionMedicine, MedicineSet } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import api from '../../api/axios';
@@ -171,14 +171,14 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   };
 
   const insertDiagnosisTemplate = () => {
-    const doctorName = selectedDoctor?.name ? ` ${selectedDoctor.name}` : '';
+    // No Doctor line: the prescribing doctor is already on the letterhead, so
+    // repeating the name inside the diagnosis only spent a line.
     const template = [
       '<strong>H/O</strong>',
       '<strong>Vital Signs</strong>',
       '<strong>C/C</strong>',
       '<strong>BP</strong>',
-      '<strong>Weight</strong>',
-      `<strong>Doctor</strong>${doctorName}`
+      '<strong>Weight</strong>'
     ].join('<br/>');
     insertDiagnosisBlock(template);
   };
@@ -585,6 +585,116 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     setHasNextVisit(true);
     setNextVisitQuickKey(quickKey);
     setNextVisitDate(toDateInputValue(next));
+  };
+
+  /** Focusable cells of one row, left to right. */
+  const rowCells = (row: Element | null): HTMLElement[] =>
+    row
+      ? Array.from(row.querySelectorAll<HTMLElement>(
+          'input:not([type="hidden"]):not([disabled]), select:not([disabled])'
+        ))
+      : [];
+
+  const focusCell = (rowIndex: number, colIndex: number): boolean => {
+    const row = medicinesScrollRef.current?.querySelector(`[data-grid-row="${rowIndex}"]`) ?? null;
+    const cells = rowCells(row);
+    if (!cells.length) return false;
+
+    // Clamp: a row may legitimately have fewer cells than the one moved from.
+    const cell = cells[Math.min(colIndex, cells.length - 1)];
+    cell?.focus();
+    if (cell instanceof HTMLInputElement) cell.select?.();
+    return Boolean(cell);
+  };
+
+  /**
+   * Spreadsheet keys for the medicine grid.
+   *
+   * The same map the pharmacy invoice uses, because the same people work both
+   * screens: up and down walk a column, left and right step between cells once
+   * the caret reaches the edge of the text, and Enter moves down -- adding a
+   * row when there is none below -- rather than submitting.
+   */
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>, index: number) => {
+    // The medicine box owns its own arrows and Enter while its list is open.
+    if (event.defaultPrevented) return;
+    if (event.altKey || event.metaKey) return;
+
+    const target = event.target as HTMLElement;
+
+    // Ctrl+Up/Down walks rows from anywhere, including out of a dropdown whose
+    // plain arrows are busy changing its value.
+    if (event.ctrlKey) {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      const ctrlRow = target.closest('[data-grid-row]');
+      const ctrlCol = rowCells(ctrlRow).indexOf(target);
+      if (ctrlCol === -1) return;
+      event.preventDefault();
+      focusCell(index + (event.key === 'ArrowDown' ? 1 : -1), ctrlCol);
+      return;
+    }
+
+    if (target.tagName === 'BUTTON') return;
+
+    const row = target.closest('[data-grid-row]');
+    const cells = rowCells(row);
+    const col = cells.indexOf(target);
+    if (col === -1) return;
+
+    const lastRow = medicines.length - 1;
+    const input = target as HTMLInputElement;
+    const isTextCell = target.tagName === 'INPUT' && input.type !== 'number';
+
+    // selectionStart throws on number inputs in some browsers, so it is only
+    // consulted for the text cells that actually need caret awareness.
+    const atStart = !isTextCell || (input.selectionStart === 0 && input.selectionEnd === 0);
+    const atEnd = !isTextCell
+      || (input.selectionStart === input.value.length && input.selectionEnd === input.value.length);
+
+    const isSelect = target.tagName === 'SELECT';
+
+    switch (event.key) {
+      case 'ArrowDown':
+        if (isSelect) return;
+        event.preventDefault();
+        focusCell(index + 1, col);
+        return;
+
+      case 'ArrowUp':
+        if (isSelect) return;
+        event.preventDefault();
+        focusCell(index - 1, col);
+        return;
+
+      case 'ArrowLeft':
+        if (!atStart || col === 0) return;
+        event.preventDefault();
+        cells[col - 1]?.focus();
+        if (cells[col - 1] instanceof HTMLInputElement) (cells[col - 1] as HTMLInputElement).select?.();
+        return;
+
+      case 'ArrowRight':
+        if (!atEnd || col === cells.length - 1) return;
+        event.preventDefault();
+        cells[col + 1]?.focus();
+        if (cells[col + 1] instanceof HTMLInputElement) (cells[col + 1] as HTMLInputElement).select?.();
+        return;
+
+      case 'Enter':
+        // Never submits. A grid that saves on Enter files the prescription
+        // halfway through writing it.
+        event.preventDefault();
+        if (index === lastRow) {
+          addMedicineRow();
+          // The new row renders after this tick.
+          window.setTimeout(() => focusCell(index + 1, 0), 0);
+        } else {
+          focusCell(index + 1, col);
+        }
+        return;
+
+      default:
+    }
   };
 
   const addMedicineRow = () => {
@@ -1094,6 +1204,45 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }
   };
 
+  /**
+   * Document shortcuts: Ctrl+S saves, Ctrl+P saves and prints.
+   *
+   * The same two the pharmacy invoice uses -- the prescribers here also work
+   * that screen, and a key that means "save" on one and nothing on the other
+   * is worse than no shortcut at all. Safe wherever the cursor is: nobody
+   * types either into a medicine name.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const commandKey = event.ctrlKey || event.metaKey;
+      if (!commandKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key !== 's' && key !== 'p') return;
+
+      event.preventDefault();
+      if (isSaving) return;
+
+      if (key === 'p') {
+        if (!canPrintPrescription) {
+          toast.error('You are not authorized to print prescriptions');
+          return;
+        }
+        handlePrint();
+        return;
+      }
+
+      if (!canSavePrescription) {
+        toast.error('You are not authorized to save prescriptions');
+        return;
+      }
+      void handleSave();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  });
+
   return (
     <div className="space-y-2 max-w-[95%] mx-auto">
       {/* Header with Title and Actions - Sticky */}
@@ -1112,7 +1261,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
             >
               <Save className="w-3 h-3" />
-              {isSaving ? 'Saving...' : isEditMode ? 'Update Prescription' : 'Save Prescription'}
+              {isSaving ? 'Saving...' : isEditMode ? 'Update' : 'Save'}
             </button>
           )}
           {canPrintPrescription && (
@@ -1151,41 +1300,38 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         />
       )}
 
-      {/* Patient Information - Two Column Compact Layout */}
-      <div className="grid grid-cols-[35%_65%] gap-2">
+      {/* Patient and diagnosis: two compact toolbars, not two tall panels. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[40%_60%] gap-2">
         {/* LEFT COLUMN - Patient Selection or Walk-in */}
-        <div className="bg-white border border-gray-200 rounded-lg p-1.5">
-          {/* Toggle between Search Patient and Walk-in Patient */}
-          <div className="flex gap-1 mb-1.5 bg-gray-100 rounded-md p-0.5">
-            <button
-              onClick={() => handleTogglePatientType('existing')}
-              className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                !isWalkIn
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Search Patient
-            </button>
-            <button
-              onClick={() => handleTogglePatientType('walkin')}
-              className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                isWalkIn
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Walk-in Patient
-            </button>
-          </div>
+        <div className="bg-white border border-gray-200 rounded-md px-2 py-1.5">
+          {/* Three rows: the patient type, then the identity fields, then
+              Confirm. Stacked rather than strung along one line -- this column
+              has the height to spare, and the fields get their full width. */}
+          <div className="space-y-1.5">
+            {/* Row 1: which kind of patient. */}
+            <div className="flex bg-gray-100 rounded p-0.5">
+              <button
+                onClick={() => handleTogglePatientType('existing')}
+                className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
+                  !isWalkIn ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Existing (Registered)
+              </button>
+              <button
+                onClick={() => handleTogglePatientType('walkin')}
+                className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
+                  isWalkIn ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Walk-in
+              </button>
+            </div>
 
-          {!isWalkIn ? (
-            /* Search Existing Patient */
-            <div className="relative">
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">{t('ui.patient')}<span className="text-red-500">*</span>
-              </label>
+            {!isWalkIn ? (
+              /* Row 2 for a registered patient: the one field that identifies them. */
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
                   ref={patientInputRef}
                   type="text"
@@ -1204,104 +1350,96 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     setHighlightedPatientIndex(-1);
                   }, 200)}
                   onKeyDown={handlePatientSearchKeyDown}
-                  className="w-full pl-9 pr-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Type patient name, ID, or phone..."
+                  aria-label="Patient"
+                  className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Patient name, ID or phone..."
                 />
-              </div>
-              
-              {/* Patient Dropdown */}
-              {showPatientDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {filteredPatients.length > 0 ? (
-                    filteredPatients.map((patient, index) => (
-                      <div
-                        key={patient.id}
-                        onMouseEnter={() => setHighlightedPatientIndex(index)}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          handlePatientSelect(patient);
-                        }}
-                        className={`px-3 py-2 cursor-pointer transition-colors ${
-                          index === highlightedPatientIndex
-                            ? 'bg-blue-50 border-l-2 border-blue-500'
-                            : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="font-medium text-sm text-gray-900">{patient.name}</div>
-                        <div className="text-xs text-gray-500">
-                          {patient.patientId} • Age: {patient.age} • {patient.gender}
-                        </div>
-                        {patient.phone && (
-                          <div className="text-xs text-gray-500">{patient.phone}</div>
-                        )}
+            {/* Patient Dropdown */}
+            {showPatientDropdown && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {filteredPatients.length > 0 ? (
+                  filteredPatients.map((patient, index) => (
+                    <div
+                      key={patient.id}
+                      onMouseEnter={() => setHighlightedPatientIndex(index)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handlePatientSelect(patient);
+                      }}
+                      className={`px-3 py-2 cursor-pointer transition-colors ${
+                        index === highlightedPatientIndex
+                          ? 'bg-blue-50 border-l-2 border-blue-500'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium text-sm text-gray-900">{patient.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {patient.patientId} • Age: {patient.age} • {patient.gender}
                       </div>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-xs text-gray-500">
-                      No scheduled patients found
+                      {patient.phone && (
+                        <div className="text-xs text-gray-500">{patient.phone}</div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Walk-in Patient Form */
-            <div className="space-y-1.5">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">{t('ui.name')}<span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={walkInPatient.name}
-                  onChange={(e) => setWalkInPatient({ ...walkInPatient, name: e.target.value })}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter patient name"
-                  aria-label="Walk-in patient name"
-                />
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-gray-500">
+                    No scheduled patients found
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">{t('ui.age')}<span className="text-red-500">*</span>
-                  </label>
+            )}
+              </div>
+            ) : (
+              <>
+                {/* Row 2: who the patient is. */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={walkInPatient.name}
+                    onChange={(e) => setWalkInPatient({ ...walkInPatient, name: e.target.value })}
+                    className="flex-1 min-w-0 px-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="Patient name *"
+                    aria-label="Walk-in patient name"
+                  />
                   <input
                     type="number"
                     value={walkInPatient.age}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, age: e.target.value })}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder={t('ui.age')}
+                    className="w-16 shrink-0 px-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="Age *"
                     aria-label="Walk-in patient age"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">{t('ui.gender')}<span className="text-red-500">*</span>
-                  </label>
                   <select
                     value={walkInPatient.gender}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, gender: e.target.value })}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-20 shrink-0 px-1 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     aria-label="Walk-in patient gender"
                   >
                     <option value="male">{t('ui.male')}</option>
                     <option value="female">{t('ui.female')}</option>
                   </select>
                 </div>
-              </div>
-              <button
-                onClick={handleWalkInConfirm}
-                className="w-full px-2 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Confirm & Continue
-              </button>
-            </div>
-          )}
+                {/* Row 3: the commit. */}
+                <button
+                  onClick={handleWalkInConfirm}
+                  className="w-full px-2.5 h-7 bg-blue-600 text-white text-[11px] font-medium rounded hover:bg-blue-700 transition-colors"
+                >
+                  Confirm &amp; Continue
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* RIGHT COLUMN - Diagnosis */}
-        <div className="bg-white border border-gray-200 rounded-lg p-1.5">
-          <label className="block text-xs font-medium text-gray-700 mb-0.5">Diagnosis / Chief Complaint</label>
-          <div ref={diagnosisTemplateContainerRef} className="relative mb-1">
+        <div className="bg-white border border-gray-200 rounded-md px-2 py-1.5">
+          {/* Label, template picker and the quick-insert chips share one line:
+              they are all shortcuts into the same editor below. */}
+          <div className="flex items-center gap-2 mb-1">
+          <span className="shrink-0 text-[11px] font-semibold text-gray-700">Diagnosis / C.C.</span>
+          <div ref={diagnosisTemplateContainerRef} className="relative w-56 shrink-0">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
               <input
                 type="text"
                 value={diagnosisTemplateSearch}
@@ -1317,8 +1455,8 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   setHighlightedDiagnosisTemplateIndex(0);
                 }}
                 onKeyDown={handleDiagnosisTemplateSearchKeyDown}
-                className="w-full pl-8 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Search diagnosis template..."
+                className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Template..."
                 title="Search diagnosis template"
               />
             </div>
@@ -1346,54 +1484,50 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-1 mb-1">
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={insertDiagnosisTemplate}
-              className="px-2 py-0.5 text-[11px] rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+              className="px-1.5 h-6 text-[10px] rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
             >
               Insert Template
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('H/O')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               H/O
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('Vital Signs')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               Vital Signs
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('C/C')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               C/C
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('BP')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               BP
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('Weight')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               Weight
             </button>
-            <button
-              type="button"
-              onClick={() => insertDiagnosisLabel('Doctor', selectedDoctor?.name || '')}
-              className="px-2 py-0.5 text-[11px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
-            >{t('ui.doctor')}</button>
+          </div>
           </div>
           <ReactQuill
             value={diagnosis}
@@ -1415,7 +1549,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       {selectedPatient && (
         <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1.5 relative ${openMedicineDropdownRowId ? 'z-30' : 'z-10'}`}>
           <div className="flex items-center justify-between mb-1.5">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Medicines</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-200">Medicines</h2>
             <div className="flex items-center gap-2">
               <div ref={treatmentSetContainerRef} className="relative min-w-[220px]">
                 <div className="relative">
@@ -1435,7 +1569,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                       setHighlightedMedicineSetIndex(0);
                     }}
                     onKeyDown={handleMedicineSetSearchKeyDown}
-                    className="w-full pl-8 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="Search treatment set..."
                     title="Search treatment set"
                   />
@@ -1464,20 +1598,20 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               <button
                 onClick={addMedicineSetRows}
                 disabled={!selectedMedicineSetId || isLoadingMedicineSets}
-                className="px-2.5 py-1.5 flex items-center justify-center bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                className="px-2.5 h-7 flex items-center justify-center bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-[11px] font-medium"
                 title="Add selected treatment set"
               >
                 Add Set
               </button>
               <button
                 onClick={addTemporaryMedicineRow}
-                className="px-2.5 py-1.5 flex items-center justify-center bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors text-xs font-medium"
+                className="px-2.5 h-7 flex items-center justify-center bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors text-[11px] font-medium"
                 title="Add Temporary Medicine"
               >
                 <Pill className="w-3.5 h-3.5 mr-1" />{t('ui.manual')}</button>
               <button
                 onClick={addMedicineRow}
-                className="w-7 h-7 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
+                className="w-7 h-7 flex items-center justify-center bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                 title={t('ui.addMedicine')}
               >
                 <Plus className="w-4 h-4" />
@@ -1485,22 +1619,47 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
             </div>
           </div>
 
+          <style>{`
+            /* Cells sit flush and share a single hairline, the way a spreadsheet
+               draws its grid -- the old rounded, individually-outlined boxes put
+               gutters between every value and made a six-column row read as six
+               separate little forms. */
+            .rx-cell { border-radius: 0; }
+            .rx-cell:focus { outline: 2px solid rgb(37 99 235); outline-offset: -2px; position: relative; z-index: 1; }
+            .rx-row td { padding: 0; }
+            .rx-gutter { width: 2rem; background: rgb(243 244 246); border-right: 1px solid rgb(229 231 235);
+                         border-bottom: 1px solid rgb(229 231 235); }
+            /* The row under the cursor, findable at a glance on a long script. */
+            .rx-row:focus-within .rx-cell { background: rgb(239 246 255); }
+            .rx-row:focus-within .rx-gutter { background: rgb(191 219 254); color: rgb(30 64 175); font-weight: 600; }
+            .rx-row:hover .rx-cell:not(:focus) { background: rgb(249 250 251); }
+            /* Number spinners steal width a quantity column cannot spare. */
+            .rx-cell[type=number]::-webkit-inner-spin-button,
+            .rx-cell[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+            .rx-kbd { display:inline-block; min-width:1.1rem; padding:0 3px; border:1px solid rgb(203 213 225);
+                      border-bottom-width:2px; border-radius:3px; background:#fff; color:rgb(71 85 105);
+                      font:inherit; font-size:9px; line-height:14px; text-align:center; }
+          `}</style>
           {/* Scrollable table container - only show scrollbar when 5+ medicines */}
           <div ref={medicinesScrollRef} className={`border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto ${
             medicines.length >= 5
               ? `${openMedicineDropdownRowId ? 'max-h-[420px]' : 'max-h-[240px]'} overflow-y-auto`
               : 'overflow-y-visible'
           }`}>
-            <table className="w-full">
-              <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900 z-10">
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[25%]">{t('table.medicineName')}</th>
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[10%]">{t('table.strength')}</th>
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[15%]">{t('table.dose')}</th>
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[15%]">{t('table.duration')}</th>
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[15%]">{t('table.instruction')}</th>
-                  <th className="text-left py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-gray-300 w-[10%]">{t('table.qty')}</th>
-                  <th className="py-1.5 px-2 w-[10%]"></th>
+            <table className="w-full table-fixed border-collapse">
+              <thead className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-10">
+                <tr>
+                  {/* Strength has no column of its own: the medicine name
+                      already carries it ("Capsules Zetro (Azithromycin) 250mg"),
+                      so a separate box repeated the same value and cost the
+                      name the width it needed. */}
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-0 text-center w-8">#</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-1.5 text-left w-[36%]">{t('table.medicineName')}</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-1.5 text-left w-[15%]">{t('table.dose')}</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-1.5 text-left w-[15%]">{t('table.duration')}</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-1.5 text-left w-[19%]">{t('table.instruction')}</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-1.5 text-right w-[9%]">{t('table.qty')}</th>
+                  <th className="py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600 px-0 w-9"><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800">
@@ -1517,6 +1676,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     onRemove={removeMedicineRow}
                     onMedicineSearch={handleMedicineSearch}
                     onAddNew={addMedicineRow}
+                    onRowKeyDown={handleRowKeyDown}
                     onDropdownToggle={(open) =>
                       setOpenMedicineDropdownRowId(open ? medicine.rowId : null)
                     }
@@ -1532,6 +1692,16 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               <p className="text-xs">No medicines added yet. Click + to start.</p>
             </div>
           )}
+
+          <div className="hidden md:flex items-center gap-3 mt-1.5 pt-1.5 border-t border-gray-200 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400">
+            <span><kbd className="rx-kbd">&#8593;&#8595;</kbd> row</span>
+            <span><kbd className="rx-kbd">&#8592;&#8594;</kbd> cell</span>
+            <span><kbd className="rx-kbd">&#8595;</kbd> opens Dose / Duration / Instruction list</span>
+            <span><kbd className="rx-kbd">Ctrl</kbd>+<kbd className="rx-kbd">&#8593;&#8595;</kbd> row from a list</span>
+            <span><kbd className="rx-kbd">Enter</kbd> next / new row</span>
+            {canSavePrescription && <span><kbd className="rx-kbd">Ctrl</kbd>+<kbd className="rx-kbd">S</kbd> save</span>}
+            {canPrintPrescription && <span><kbd className="rx-kbd">Ctrl</kbd>+<kbd className="rx-kbd">P</kbd> save + print</span>}
+          </div>
         </div>
       )}
 
@@ -1644,6 +1814,218 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
 }
 
 // Medicine Row Component with keyboard navigation
+/**
+ * A dropdown cell for the medicine grid: Dose, Duration, Instruction.
+ *
+ * These were native <datalist> inputs, which look like a dropdown but cannot be
+ * opened from the keyboard -- the arrow key fell through to the grid and moved
+ * the cursor to the next row instead, so the list was reachable only by mouse.
+ * This is the same combobox pattern the medicine name cell already uses:
+ * ArrowDown opens it, the arrows walk it, Enter takes the highlighted option,
+ * Escape closes it. Free text is still allowed; the list is a shortcut, not a
+ * constraint, because prescribers write doses the list has never seen.
+ */
+interface GridComboProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+  ariaLabel: string;
+  /** Widen the list beyond the cell when the options are long sentences. */
+  wide?: boolean;
+}
+
+function GridCombo({ value, onChange, options, placeholder, ariaLabel, wide }: GridComboProps) {
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  // Typing filters the list, but only once the text differs from a value that
+  // was already chosen -- otherwise re-opening a filled cell would show a list
+  // of exactly one option, its own value.
+  const [typed, setTyped] = useState<string | null>(null);
+  const filter = typed ?? '';
+  const shown = filter
+    ? options.filter((option) => option.toLowerCase().includes(filter.toLowerCase()))
+    : options;
+
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const place = () => {
+    const box = inputRef.current?.getBoundingClientRect();
+    if (!box) return;
+    const width = wide ? Math.max(box.width, 240) : box.width;
+    const belowRoom = window.innerHeight - box.bottom;
+    const height = Math.min(240, shown.length * 26 + 8);
+    // Flip above when the cell is near the foot of the window: a grid this
+    // dense usually has its last rows there.
+    const top = belowRoom < height + 12 ? box.top - height - 2 : box.bottom + 2;
+    const left = Math.min(box.left, window.innerWidth - width - 8);
+    // Returning the same object when nothing moved: this runs on every render,
+    // and a fresh object each time would re-render forever.
+    setRect((current) =>
+      current && current.top === top && current.left === left && current.width === width
+        ? current
+        : { top, left, width }
+    );
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const reposition = () => place();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [open, highlighted]);
+
+  const openList = () => {
+    setTyped(null);
+    setHighlighted(Math.max(0, options.indexOf(value)));
+    setOpen(true);
+  };
+
+  const commit = (option: string) => {
+    onChange(option);
+    setTyped(null);
+    setOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.ctrlKey || event.metaKey) return; // Ctrl+arrows still walk rows.
+
+    if (!open) {
+      // Opening is the whole point: without this the grid handler sees the
+      // arrow and jumps a row.
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        openList();
+      }
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        setHighlighted((current) => (shown.length ? (current + 1) % shown.length : 0));
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        setHighlighted((current) => (shown.length ? (current - 1 + shown.length) % shown.length : 0));
+        return;
+      case 'Enter':
+        // Only swallow Enter when there is something to take. On an empty
+        // filter it falls through to the grid, which moves to the next row.
+        if (shown[highlighted]) {
+          event.preventDefault();
+          commit(shown[highlighted]);
+        } else {
+          setOpen(false);
+        }
+        return;
+      case 'Tab':
+        if (shown[highlighted] && typed) commit(shown[highlighted]);
+        setOpen(false);
+        return;
+      case 'Escape':
+        event.preventDefault();
+        setOpen(false);
+        setTyped(null);
+        return;
+      default:
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={typed ?? value}
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        autoComplete="off"
+        role="combobox"
+        aria-expanded={open}
+        onChange={(event) => {
+          setTyped(event.target.value);
+          onChange(event.target.value);
+          setHighlighted(0);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (blurTimer.current) window.clearTimeout(blurTimer.current);
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => {
+            setOpen(false);
+            setTyped(null);
+          }, 150);
+        }}
+        onKeyDown={handleKeyDown}
+        className="rx-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pl-1.5 pr-5 py-0.5 text-[11px] h-7 text-gray-900 dark:text-white placeholder-gray-400"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={"Open " + ariaLabel + " list"}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          if (open) {
+            setOpen(false);
+          } else {
+            inputRef.current?.focus();
+            openList();
+          }
+        }}
+        className="absolute right-0 top-0 h-7 w-5 flex items-center justify-center text-gray-400 hover:text-gray-600"
+      >
+        <ChevronDown className="w-3 h-3" />
+      </button>
+
+      {open && rect && shown.length > 0 && createPortal(
+        <div
+          ref={listRef}
+          className="fixed z-[99999] bg-white dark:bg-gray-800 border border-blue-500 rounded shadow-xl overflow-y-auto max-h-[240px] py-0.5"
+          style={{ top: rect.top, left: rect.left, width: rect.width }}
+        >
+          {shown.map((option, idx) => (
+            <button
+              key={option}
+              type="button"
+              data-active={idx === highlighted}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                commit(option);
+              }}
+              onMouseEnter={() => setHighlighted(idx)}
+              className={`w-full px-2 py-0.5 text-left text-[11px] ${
+                idx === highlighted
+                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-900 dark:text-blue-100'
+                  : 'text-gray-700 dark:text-gray-200'
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 interface MedicineRowProps {
   medicine: MedicineRow;
   index: number;
@@ -1656,9 +2038,11 @@ interface MedicineRowProps {
   onMedicineSearch: (rowId: string, searchTerm: string) => void;
   onAddNew: () => void;
   onDropdownToggle: (open: boolean) => void;
+  /** Spreadsheet keys, owned by the parent so every row shares one map. */
+  onRowKeyDown?: (event: React.KeyboardEvent<HTMLTableRowElement>, index: number) => void;
 }
 
-function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hideOutOfStock, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew, onDropdownToggle }: MedicineRowProps) {
+function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hideOutOfStock, onUpdate, onUpdateBatch, onRemove, onMedicineSearch, onAddNew, onDropdownToggle, onRowKeyDown }: MedicineRowProps) {
   const { t } = useTranslation();
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState(medicine.brandName);
@@ -1891,6 +2275,8 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
     }, 100);
   };
 
+  const instructionLabels = useMemo(() => instructionOptions.map((opt) => opt.label), []);
+
   const getInstructionLabel = (value: string) => {
     return instructionOptions.find((opt) => opt.value === value)?.label || value;
   };
@@ -1901,8 +2287,17 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
   };
 
   return (
-    <tr className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-      <td className="py-0.5 px-2">
+    <tr
+      data-grid-row={index}
+      onKeyDown={(event) => onRowKeyDown?.(event, index)}
+      className="rx-row"
+    >
+      {/* Row number, the way a spreadsheet numbers its rows -- it also gives
+          the eye a fixed left edge to track along a long prescription. */}
+      <td className="rx-gutter text-center text-[10px] tabular-nums text-gray-400 select-none">
+        {index + 1}
+      </td>
+      <td className="p-0">
         <div className="relative">
           {medicine.isTemporary && (
             <span className="absolute -top-2 right-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800">{t('ui.manual')}</span>
@@ -1948,7 +2343,7 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
             onKeyDown={(e) => handleKeyDown(e, 'medicine')}
             placeholder="Type medicine name..."
             aria-label="Medicine search"
-            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            className="rx-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             autoComplete="off"
           />
           {showMedicineDropdown && createPortal(
@@ -1994,72 +2389,50 @@ function MedicineRowComponent({ medicine, index, hospital, medicineOptions, hide
           )}
         </div>
       </td>
-      <td className="py-0.5 px-2">
-        <input
-          type="text"
-          value={medicine.strength}
-          onChange={(e) => onUpdate(medicine.rowId, 'strength', e.target.value)}
-          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white"
-          placeholder="Auto-filled or enter"
-        />
-      </td>
-      <td className="py-0.5 px-2">
-        <input
-          list={`dose-options-${medicine.rowId}`}
+      <td className="p-0">
+        <GridCombo
           value={medicine.dose}
-          onChange={(e) => onUpdate(medicine.rowId, 'dose', e.target.value)}
-          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          placeholder="Select/Type"
+          onChange={(value) => onUpdate(medicine.rowId, 'dose', value)}
+          options={doseOptions}
+          ariaLabel="Dose"
+          placeholder="Dose"
         />
-        <datalist id={`dose-options-${medicine.rowId}`}>
-          {doseOptions.map(dose => (
-            <option key={dose} value={dose} />
-          ))}
-        </datalist>
       </td>
-      <td className="py-0.5 px-2">
-        <input
-          list={`duration-options-${medicine.rowId}`}
+      <td className="p-0">
+        <GridCombo
           value={medicine.duration}
-          onChange={(e) => onUpdate(medicine.rowId, 'duration', e.target.value)}
-          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          placeholder="Select/Type"
+          onChange={(value) => onUpdate(medicine.rowId, 'duration', value)}
+          options={durationOptions}
+          ariaLabel="Duration"
+          placeholder="Duration"
         />
-        <datalist id={`duration-options-${medicine.rowId}`}>
-          {durationOptions.map(duration => (
-            <option key={duration} value={duration} />
-          ))}
-        </datalist>
       </td>
-      <td className="py-0.5 px-2">
-        <input
-          list={`instruction-options-${medicine.rowId}`}
+      <td className="p-0">
+        <GridCombo
           value={getInstructionLabel(medicine.instruction)}
-          onChange={(e) => onUpdate(medicine.rowId, 'instruction', normalizeInstructionValue(e.target.value) as any)}
-          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          aria-label="Medicine instruction"
-          placeholder="Select/Type"
+          onChange={(value) => onUpdate(medicine.rowId, 'instruction', normalizeInstructionValue(value) as any)}
+          options={instructionLabels}
+          ariaLabel="Instruction"
+          placeholder="Instruction"
+          wide
         />
-        <datalist id={`instruction-options-${medicine.rowId}`}>
-          {instructionOptions.map(inst => (
-            <option key={inst.value} value={inst.label} />
-          ))}
-        </datalist>
       </td>
-      <td className="py-0.5 px-2">
+      <td className="p-0">
         <input
           type="number"
           value={medicine.quantity}
           onChange={(e) => onUpdate(medicine.rowId, 'quantity', parseInt(e.target.value) || 0)}
           onKeyDown={(e) => handleKeyDown(e, 'quantity')}
           aria-label="Medicine quantity"
-          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="rx-cell w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] h-7 text-right tabular-nums text-gray-900 dark:text-white"
         />
       </td>
-      <td className="py-0.5 px-2 text-center">
+      <td className="p-0 text-center">
         <button
+          type="button"
+          tabIndex={-1}
           onClick={() => onRemove(medicine.rowId)}
-          className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+          className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
           title="Remove medicine"
         >
           <Trash2 className="w-3.5 h-3.5" />

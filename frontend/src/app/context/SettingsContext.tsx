@@ -23,6 +23,18 @@ export interface PrescriptionPrintAssetSettings {
   signatureHeight: number;
 }
 
+/** Which image is printed faintly behind the body of a prescription. */
+export type PrescriptionWatermarkSource = 'stethoscope' | 'logo' | 'custom';
+
+export interface PrescriptionWatermarkSettings {
+  enabled: boolean;
+  source: PrescriptionWatermarkSource;
+  /** Read-only: set by uploading, and served by the backend as a full URL. */
+  url: string | null;
+  /** Rendered width in px; the image keeps its own aspect ratio. */
+  width: number;
+}
+
 /** Which customer options the pharmacy sale screen offers for this hospital. */
 export type PharmacyCustomerMode = 'patient_only' | 'walk_in_only' | 'both';
 export type PharmacyDefaultCustomer = 'patient' | 'walk_in';
@@ -205,6 +217,7 @@ export interface HospitalSetting {
   patientIdConfig: PatientIdConfig;
   printColumns: PrintColumnSettings;
   prescriptionPrintAssetSettings: PrescriptionPrintAssetSettings;
+  prescriptionWatermark: PrescriptionWatermarkSettings;
   showOutOfStockMedicines: boolean;
   showOutOfStockMedicinesForPharmacy: boolean;
   showPrescriptionListMeta: boolean;
@@ -254,6 +267,7 @@ interface SettingsContextType {
   getPatientIdConfig: (hospitalId: string) => PatientIdConfig;
   getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
   getPrescriptionPrintAssetSettings: (hospitalId: string) => PrescriptionPrintAssetSettings;
+  getPrescriptionWatermark: (hospitalId: string) => PrescriptionWatermarkSettings;
   getShowOutOfStockMedicines: (hospitalId: string) => boolean;
   getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
   getShowPrescriptionListMeta: (hospitalId: string) => boolean;
@@ -295,6 +309,15 @@ const defaultPrescriptionPrintAssetSettings: PrescriptionPrintAssetSettings = {
   logoHeight: 160,
   signatureWidth: 200,
   signatureHeight: 112,
+};
+
+// Matches what every prescription printed before the setting existed, so a
+// hospital that never opens the tab sees no change.
+const defaultPrescriptionWatermark: PrescriptionWatermarkSettings = {
+  enabled: true,
+  source: 'stethoscope',
+  url: null,
+  width: 440,
 };
 
 const defaultSettings: Settings = {
@@ -360,6 +383,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getPatientIdConfig: () => defaultPatientIdConfig,
   getPrintColumnSettings: () => defaultPrintColumns,
   getPrescriptionPrintAssetSettings: () => defaultPrescriptionPrintAssetSettings,
+  getPrescriptionWatermark: () => defaultPrescriptionWatermark,
   getShowOutOfStockMedicines: () => false,
   getShowOutOfStockMedicinesForPharmacy: () => false,
   getShowPrescriptionListMeta: () => true,
@@ -469,6 +493,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.prescription_signature_width = payload.prescriptionPrintAssetSettings.signatureWidth;
       body.prescription_signature_height = payload.prescriptionPrintAssetSettings.signatureHeight;
     }
+    if (payload.prescriptionWatermark) {
+      body.prescription_watermark_enabled = payload.prescriptionWatermark.enabled;
+      body.prescription_watermark_source = payload.prescriptionWatermark.source;
+      body.prescription_watermark_width = payload.prescriptionWatermark.width;
+      // url is deliberately not sent: it is set by uploading a file, and a
+      // stale one echoed back here would overwrite a newer upload.
+    }
     if (payload.showOutOfStockMedicines !== undefined) {
       body.show_out_of_stock_medicines_to_doctors = payload.showOutOfStockMedicines;
     }
@@ -553,6 +584,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         signatureWidth: toPositiveInt(raw.prescription_signature_width, defaultPrescriptionPrintAssetSettings.signatureWidth),
         signatureHeight: toPositiveInt(raw.prescription_signature_height, defaultPrescriptionPrintAssetSettings.signatureHeight),
       },
+      prescriptionWatermark: {
+        enabled: Boolean(raw.prescription_watermark_enabled ?? defaultPrescriptionWatermark.enabled),
+        source: (['stethoscope', 'logo', 'custom'].includes(String(raw.prescription_watermark_source))
+          ? String(raw.prescription_watermark_source)
+          : defaultPrescriptionWatermark.source) as PrescriptionWatermarkSource,
+        url: raw.prescription_watermark_url ? String(raw.prescription_watermark_url) : null,
+        width: toPositiveInt(raw.prescription_watermark_width, defaultPrescriptionWatermark.width),
+      },
       showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
       showPrescriptionListMeta: Boolean(raw.show_prescription_list_meta ?? true),
@@ -606,6 +645,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       patientIdConfig: { ...defaultPatientIdConfig },
       printColumns: { ...defaultPrintColumns },
       prescriptionPrintAssetSettings: { ...defaultPrescriptionPrintAssetSettings },
+      prescriptionWatermark: { ...defaultPrescriptionWatermark },
       showOutOfStockMedicines: false,
       showOutOfStockMedicinesForPharmacy: false,
       showPrescriptionListMeta: true,
@@ -649,6 +689,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const getPrintColumnSettings = (hospitalId: string): PrintColumnSettings => {
     return getHospitalSetting(hospitalId).printColumns;
+  };
+
+  const getPrescriptionWatermark = (hospitalId: string): PrescriptionWatermarkSettings => {
+    return getHospitalSetting(hospitalId).prescriptionWatermark;
   };
 
   const getPrescriptionPrintAssetSettings = (hospitalId: string): PrescriptionPrintAssetSettings => {
@@ -743,6 +787,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getPatientIdConfig,
       getPrintColumnSettings,
       getPrescriptionPrintAssetSettings,
+      getPrescriptionWatermark,
       getShowOutOfStockMedicines,
       getShowOutOfStockMedicinesForPharmacy,
       getShowPrescriptionListMeta,

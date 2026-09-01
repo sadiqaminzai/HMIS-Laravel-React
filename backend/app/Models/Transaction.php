@@ -54,7 +54,10 @@ class Transaction extends Model
         'total_tax' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
-        'payment_due_date' => 'date',
+        // 'date:Y-m-d', not 'date'. A plain date cast serialises through UTC, so
+        // midnight in Kabul (+04:30) leaves as "...T19:30:00Z" and a client
+        // reading the first ten characters gets the PREVIOUS day.
+        'payment_due_date' => 'date:Y-m-d',
         'last_payment_at' => 'datetime',
     ];
 

@@ -42,6 +42,17 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
+  // A file upload must not inherit the instance's JSON content type. With it
+  // set, axios serialises the FormData as JSON and sends "{}" -- the request
+  // arrives with no file at all and the server rejects it as missing. Clearing
+  // the header lets the browser write multipart/form-data with the boundary
+  // that actually delimits the parts.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers = config.headers || {};
+    delete (config.headers as Record<string, unknown>)['Content-Type'];
+    delete (config.headers as Record<string, unknown>)['content-type'];
+  }
+
   return config;
 });
 

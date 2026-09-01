@@ -397,6 +397,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	// user's own hospital; write access remains separately permission-protected.
 	Route::get('hospital-settings/{hospital}', [HospitalSettingController::class, 'show']);
 	Route::put('hospital-settings/{hospital}', [HospitalSettingController::class, 'update'])->middleware('permission:edit_hospital_settings,manage_hospital_settings');
+	Route::post('hospital-settings/{hospital}/watermark', [HospitalSettingController::class, 'uploadWatermark'])->middleware('permission:edit_hospital_settings,manage_hospital_settings');
 
 	Route::get('users', [UserController::class, 'index'])->middleware('permission:view_users,manage_users');
 	Route::get('users/{user}', [UserController::class, 'show'])->middleware('permission:view_users,manage_users');

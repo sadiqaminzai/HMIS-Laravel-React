@@ -494,6 +494,16 @@ export interface LabTest {
   resultTestIds?: string[];
   /** `testName` narrowed to `resultTestIds`, for the lab's own screens. */
   resultTestName?: string;
+  /**
+   * Whether this user may still key or correct results on this order.
+   *
+   * A submitted result may be corrected only by the person who entered it, on
+   * the day they entered it. The server decides; this carries its answer.
+   */
+  resultsEditable?: boolean;
+  /** Who submitted, and when -- for the tooltip when editing is closed. */
+  resultsCompletedBy?: string;
+  resultsCompletedAt?: Date | null;
   orderItems?: Array<{
     id: string;
     testTemplateId: string;

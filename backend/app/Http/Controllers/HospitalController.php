@@ -118,8 +118,19 @@ class HospitalController extends Controller
 
     private function validatePayload(Request $request, ?int $hospitalId = null): array
     {
+        // Creating a hospital needs the whole record; editing one does not.
+        // These rules are shared with store(), where both are genuinely
+        // required -- but on an update they forced every caller to resend the
+        // entire hospital to change one field, so saving just the timezone
+        // failed with "The name field is required".
+        // 'sometimes' alone would accept an empty string, because the field IS
+        // present -- it is 'required' that rejects blank. Both are needed:
+        // "if you send it, it must be a real value".
+        $isUpdate = $hospitalId !== null;
+        $mustHave = $isUpdate ? ['sometimes', 'required'] : ['required'];
+
         return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => [...$mustHave, 'string', 'max:255'],
             'slug' => ['sometimes', 'string', 'max:255', 'unique:hospitals,slug,' . ($hospitalId ?? 'NULL')],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
@@ -131,8 +142,12 @@ class HospitalController extends Controller
             'license' => ['nullable', 'string', 'max:255'],
             'license_issue_date' => ['nullable', 'date'],
             'license_expiry_date' => ['nullable', 'date'],
-            'status' => ['required', 'in:active,suspended'],
+            'status' => [...$mustHave, 'in:active,suspended'],
             'brand_color' => ['nullable', 'string', 'max:32'],
+            // The clock and calendar the site actually runs on. Every date the
+            // client formats or defaults is resolved against these.
+            'timezone' => ['nullable', 'string', 'max:64'],
+            'calendar_type' => ['nullable', 'in:gregorian,shamsi'],
         ]);
     }
 

@@ -1282,6 +1282,42 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return units && units.length ? units : ['piece'];
   };
 
+  /**
+   * What the dropdown shows beside a medicine: "12 (42)".
+   *
+   * The first figure is the batch that must be sold next -- the nearest expiry,
+   * FEFO -- and is the most you can put on this line before moving to another
+   * batch. The bracketed figure is everything on the shelf. Showing only the
+   * total, as this did, invited a quantity the earliest batch could not cover.
+   *
+   * Both are converted from pieces into the product's own selling unit, because
+   * "12" means twelve of whatever the counter actually hands over: twelve packs
+   * for a boxed product, twelve strips for a stripped one.
+   */
+  const getStockDisplay = (medicineId: string) => {
+    const totalPieces = getAvailableStock(medicineId, undefined, formData.hospitalId);
+    const preferred = getPreferredBatchForMedicine(medicineId);
+    const batchPieces = preferred?.batchNo
+      ? getAvailableStock(medicineId, preferred.batchNo, formData.hospitalId)
+      : totalPieces;
+
+    // The unit the product is sold in, falling back to whatever it does allow.
+    const allowed = sellableUnitsFor(medicineId);
+    const configured = (getMedicineById(medicineId)?.defaultSaleUnit ?? 'piece') as SaleUnit;
+    const unit: SaleUnit = allowed.includes(configured) ? configured : allowed[0];
+    const factor = Math.max(1, piecesPerUnit(medicineId, unit));
+
+    // Floored: a part-pack cannot be handed over as a pack.
+    return {
+      batch: Math.floor(batchPieces / factor),
+      total: Math.floor(totalPieces / factor),
+      unit,
+      unitLabel: unitLabelFor(medicineId, unit),
+      batchNo: preferred?.batchNo || '',
+      totalPieces,
+    };
+  };
+
   const getPackLabel = (id?: string) => unitLabelFor(id, 'pack');
 
   /**
@@ -2215,8 +2251,26 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       ? configuredDefault
       : (allowed.includes(currentUnit) ? currentUnit : allowed[0]);
     const price = getMedicinePrice(medicineId, formData.trxType, effectiveUnit);
-    let expiryDate = formData.items[index]?.expiryDate;
-    const batchNo = formData.items[index]?.batchNo || '';
+    /**
+     * Changing the product on a row clears the batch that belonged to the old
+     * one.
+     *
+     * Batch numbers are per product -- only 13 of 389 in this catalogue are
+     * shared -- so carrying one across to a different medicine asks the server
+     * for stock in a batch that product has never had. It answers 0 and the
+     * sale is refused as out of stock even though the shelf is full: the exact
+     * "insufficient stock on a product that clearly has stock" the counter was
+     * hitting. Deleting the line and re-adding it worked because a fresh row
+     * starts with no batch, which is why it only ever happened on a row whose
+     * product had been picked twice.
+     *
+     * A re-pick of the SAME product keeps whatever batch the user chose.
+     */
+    const previousMedicineId = formData.items[index]?.medicineId || '';
+    const medicineChanged = String(previousMedicineId) !== String(medicineId);
+
+    let expiryDate = medicineChanged ? undefined : formData.items[index]?.expiryDate;
+    const batchNo = medicineChanged ? '' : (formData.items[index]?.batchNo || '');
     let nextBatchNo = batchNo;
     if (formData.trxType === 'sales' || formData.trxType === 'sales_return') {
       if (!batchNo) {
@@ -4170,9 +4224,10 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                             {medicineOptions
                               .map((m, optionIndex) => {
                                 const display = `${m.brandName} ${m.genericName ? `(${m.genericName})` : ''} ${m.strength || ''} ${m.type || ''}`.replace(/\s+/g, ' ').trim();
-                                const available = ['sales', 'purchase_return'].includes(formData.trxType)
-                                  ? getAvailableStock(m.id, undefined, formData.hospitalId)
+                                const stock = ['sales', 'purchase_return'].includes(formData.trxType)
+                                  ? getStockDisplay(m.id)
                                   : null;
+                                const available = stock ? stock.totalPieces : null;
                                 // Nothing sellable, yet cartons on the shelf: every batch has lapsed.
                                 const expiredOnly = available === 0
                                   && getAvailableStock(m.id, undefined, formData.hospitalId, { includeExpired: true }) > 0;
@@ -4199,8 +4254,22 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                                               Expired
                                             </span>
                                           )}
-                                          <span className={`text-[10px] font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                            {available}
+                                          {/* "12 (42) pack" -- sell twelve from the
+                                              earliest batch first, forty-two on
+                                              the shelf altogether. */}
+                                          <span
+                                            className={`text-[10px] font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                                            title={stock && stock.batchNo
+                                              ? `${stock.batch} ${stock.unitLabel} in batch ${stock.batchNo} (sell first) · ${stock.total} ${stock.unitLabel} in total`
+                                              : `${stock?.total ?? 0} ${stock?.unitLabel ?? ''} in total`}
+                                          >
+                                            {stock?.batch ?? 0}
+                                            {stock && stock.total !== stock.batch && (
+                                              <span className="font-normal text-gray-500 dark:text-gray-400">
+                                                {' '}({stock.total})
+                                              </span>
+                                            )}
+                                            <span className="ml-1 font-normal text-gray-400">{stock?.unitLabel}</span>
                                           </span>
                                         </span>
                                       )}

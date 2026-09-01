@@ -27,8 +27,11 @@ class SalaryStructure extends Model
     ];
 
     protected $casts = [
-        'effective_from' => 'date',
-        'effective_to' => 'date',
+        // 'date:Y-m-d', not 'date'. A plain date cast serialises through UTC, so
+        // midnight in Kabul (+04:30) leaves as "...T19:30:00Z" and a client
+        // reading the first ten characters gets the PREVIOUS day.
+        'effective_from' => 'date:Y-m-d',
+        'effective_to' => 'date:Y-m-d',
         'base_salary' => 'decimal:2',
         'allowances_total' => 'decimal:2',
         'deductions_total' => 'decimal:2',

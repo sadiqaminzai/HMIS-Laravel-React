@@ -5,6 +5,22 @@ import { Hospital, Stock, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useStocks } from '../context/StockContext';
 import { useMedicines } from '../context/MedicineContext';
+import { formatQuantityInSaleUnit, medicineDisplayName } from '../utils/medicineUnits';
+import {
+  CellNumber,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  RowIcon,
+  TableEmpty,
+  TableLoading,
+  Th,
+  Tr,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
 import jsPDF from 'jspdf';
@@ -30,7 +46,6 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
   const canReconcile = hasPermission('edit_stocks') || hasPermission('manage_stocks');
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedMedicineId, setSelectedMedicineId] = useState('all');
   const [batchFilter, setBatchFilter] = useState('');
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -42,7 +57,17 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
 
   const getHospital = (id: string) => hospitals.find((h) => h.id === id);
   const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
-  const getMedicineName = (id: string) => medicines.find((m) => m.id === id)?.brandName || 'Unknown';
+  const getMedicineById = (id: string) => medicines.find((m) => String(m.id) === String(id));
+  /**
+   * Brand + strength + form. The stock list showed the brand alone, so three
+   * different products could appear as the same line and there was no way to
+   * tell which one a batch belonged to.
+   */
+  const getMedicineName = (id: string) => medicineDisplayName(getMedicineById(id));
+
+  /** Piece counts shown in the unit the pharmacy actually handles. */
+  const inSaleUnit = (pieces: number, medicineId: string) =>
+    formatQuantityInSaleUnit(pieces, getMedicineById(medicineId));
 
   const loadImageAsDataUrl = async (url?: string) => {
     if (!url) return undefined;
@@ -122,23 +147,39 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
     });
   }, [scopedStocks, searchTerm, selectedMedicineId, batchFilter, medicines]);
 
-  const itemsPerPage = 10;
-  const totalPages = Math.max(1, Math.ceil(filteredStocks.length / itemsPerPage));
+  /**
+   * Rows shaped for sorting.
+   *
+   * The sortable values are precomputed rather than read off the raw stock row,
+   * because the columns show a derived product name and quantities converted
+   * into the selling unit -- sorting the underlying piece counts would order
+   * the list differently from what is on screen.
+   */
+  const sortableStocks = useMemo(() => filteredStocks.map((stock) => {
+    const medicine = getMedicineById(stock.medicineId);
+    const stockPieces = Number(stock.stockQty || 0);
+    const bonusPieces = Number(stock.bonusQty || 0);
+    return {
+      stock,
+      medicineName: medicine ? medicineDisplayName(medicine) : (stock.medicineName || 'Unknown'),
+      batchNo: stock.batchNo || '',
+      hospitalName: getHospitalName(stock.hospitalId),
+      stockQty: formatQuantityInSaleUnit(stockPieces, medicine).value,
+      bonusQty: formatQuantityInSaleUnit(bonusPieces, medicine).value,
+      totalQty: formatQuantityInSaleUnit(stockPieces + bonusPieces, medicine).value,
+      stockPieces,
+      bonusPieces,
+      totalPieces: stockPieces + bonusPieces,
+    };
+  }), [filteredStocks, medicines]);
 
-  const paginatedStocks = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredStocks.slice(start, start + itemsPerPage);
-  }, [filteredStocks, currentPage]);
+  const sort = useTableSort<any>(sortableStocks, 'medicineName');
+  const { page, setPage, totalPages, pageRows: paginatedStocks } = usePagination<any>(sort.rows, 25);
 
   React.useEffect(() => {
-    setCurrentPage(1);
+    setPage(1);
   }, [searchTerm, selectedMedicineId, batchFilter, selectedHospitalId]);
 
-  React.useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
 
   const totalStockQty = useMemo(() => {
     return filteredStocks.reduce((sum, s) => sum + Number(s.stockQty || 0) + Number(s.bonusQty || 0), 0);
@@ -202,7 +243,7 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
-                setCurrentPage(1);
+                setPage(1);
               }}
               placeholder="Search stock..."
               className="w-48 pl-8 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -216,7 +257,7 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
           >
             <option value="all">All Medicines</option>
             {medicines.map((m) => (
-              <option key={m.id} value={m.id}>{m.brandName}</option>
+              <option key={m.id} value={m.id}>{medicineDisplayName(m)}</option>
             ))}
           </select>
           <input
@@ -247,72 +288,57 @@ export function StockManagement({ hospital, userRole = 'admin' }: StockManagemen
 
       <HospitalSelector userRole={userRole} selectedHospitalId={selectedHospitalId} onHospitalChange={setSelectedHospitalId} />
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-        <div className="overflow-x-auto rounded-t-lg max-h-[calc(100vh-220px)] overflow-y-auto">
-          <table className="w-full text-left border-collapse relative">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.medicine')}</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.batch')}</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.stockQty')}</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.bonusQty')}</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.totalQty')}</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider">{t('table.hospital')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredStocks.length > 0 ? (
-                paginatedStocks.map((stock: Stock) => (
-                  <tr key={stock.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-amber-100 dark:bg-amber-900/30 rounded-md flex items-center justify-center border border-amber-200 dark:border-amber-800">
-                          <Box className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                        </div>
-                        <span className="text-xs font-semibold text-gray-900 dark:text-white">{stock.medicineName || getMedicineName(stock.medicineId)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.batchNo || '—'}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.stockQty}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{stock.bonusQty ?? 0}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{Number(stock.stockQty || 0) + Number(stock.bonusQty || 0)}</td>
-                    <td className="px-4 py-2 text-xs text-gray-700 dark:text-gray-300">{getHospitalName(stock.hospitalId)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                    {loading ? 'Loading stocks...' : 'No stocks found'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-2 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <span>
-            Showing <strong>{paginatedStocks.length}</strong> of <strong>{filteredStocks.length}</strong> stock rows {isAllHospitals ? '(all hospitals)' : `for ${currentHospital.name}`}
-          </span>
-          <div className="flex items-center gap-3">
-            <span>
-              Total Stock Qty (incl. bonus): <strong>{totalStockQty}</strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.prev')}</button>
-            <span>Page {currentPage} of {totalPages}</span>
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >{t('ui.next')}</button>
-          </div>
-        </div>
-      </div>
+      <DataTableCard
+        total={filteredStocks.length}
+        shown={paginatedStocks.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        noun="stock rows"
+        maxHeight="calc(100vh - 300px)"
+      >
+        <DataTableHead>
+          <Th sort={sort} field="medicineName">{t('table.medicine')}</Th>
+          <Th sort={sort} field="batchNo">{t('table.batch')}</Th>
+          <Th sort={sort} field="stockQty">{t('table.stockQty')}</Th>
+          <Th sort={sort} field="bonusQty">{t('table.bonusQty')}</Th>
+          <Th sort={sort} field="totalQty">{t('table.totalQty')}</Th>
+          <Th sort={sort} field="hospitalName">{t('table.hospital')}</Th>
+        </DataTableHead>
+        <DataTableBody>
+          {loading ? (
+            <TableLoading colSpan={6} />
+          ) : paginatedStocks.length === 0 ? (
+            <TableEmpty colSpan={6} message="No stocks found" icon={<Box className="w-6 h-6 text-gray-400" />} />
+          ) : (
+            paginatedStocks.map((row: any) => (
+              <Tr key={row.stock.id}>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-3">
+                    <RowIcon tone="amber">
+                      <Box className="w-4 h-4" />
+                    </RowIcon>
+                    <CellStack primary={row.medicineName} />
+                  </div>
+                </td>
+                <td className="px-4 py-2"><CellText mono>{row.batchNo || '—'}</CellText></td>
+                {/* Counted in the product's own selling unit; the raw piece
+                    figure the database holds is on hover. */}
+                <td className="px-4 py-2" title={`${row.stockPieces} pieces`}>
+                  <CellNumber>{formatQuantityInSaleUnit(row.stockPieces, getMedicineById(row.stock.medicineId)).text}</CellNumber>
+                </td>
+                <td className="px-4 py-2" title={`${row.bonusPieces} pieces`}>
+                  <CellNumber tone="muted">{formatQuantityInSaleUnit(row.bonusPieces, getMedicineById(row.stock.medicineId)).text}</CellNumber>
+                </td>
+                <td className="px-4 py-2" title={`${row.totalPieces} pieces`}>
+                  <CellNumber tone="money">{formatQuantityInSaleUnit(row.totalPieces, getMedicineById(row.stock.medicineId)).text}</CellNumber>
+                </td>
+                <td className="px-4 py-2"><CellText>{row.hospitalName}</CellText></td>
+              </Tr>
+            ))
+          )}
+        </DataTableBody>
+      </DataTableCard>
 
       {/* Print Modal */}
       <div className={`fixed inset-0 z-50 ${showPrintModal && canPrint ? 'flex' : 'hidden'} items-center justify-center bg-black/40 backdrop-blur-sm p-4`}>

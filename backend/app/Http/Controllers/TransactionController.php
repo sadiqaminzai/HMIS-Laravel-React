@@ -557,8 +557,26 @@ class TransactionController extends Controller
                 $medicine = Medicine::find($medicineId);
                 $name = $medicine?->brand_name ?? 'Medicine';
                 $batchLabel = $batchNo !== '__all__' ? " (Batch: {$batchNo})" : '';
+
+                // A batch the product has never carried reads as "out of stock"
+                // even when the shelf is full, which sent the counter hunting
+                // for a phantom shortage. Say so explicitly: the fix is to pick
+                // the batch again, not to reorder the product.
+                $hint = '';
+                if ($batchNo !== '__all__' && $available === 0) {
+                    $acrossAllBatches = (int) Stock::query()
+                        ->where('hospital_id', $hospitalId)
+                        ->where('medicine_id', $medicineId)
+                        ->sum(DB::raw('stock_qty + COALESCE(bonus_qty, 0)'));
+
+                    if ($acrossAllBatches >= $required) {
+                        $hint = " This product has {$acrossAllBatches} in stock under other batches"
+                            . " -- batch \"{$batchNo}\" does not belong to it. Re-select the batch on that line.";
+                    }
+                }
+
                 throw ValidationException::withMessages([
-                    'items' => "Insufficient stock for {$name}{$batchLabel}. Available: {$available}, Required: {$required}.",
+                    'items' => "Insufficient stock for {$name}{$batchLabel}. Available: {$available}, Required: {$required}.{$hint}",
                 ]);
             }
         }

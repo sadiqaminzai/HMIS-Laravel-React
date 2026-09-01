@@ -119,10 +119,19 @@ class LabOrderController extends Controller
         $orders = $query->orderByDesc('id')->paginate($request->integer('per_page', 25));
 
         // Ensure doctor name is always the latest user name (not a stale snapshot).
-        $orders->getCollection()->transform(function (LabOrder $order) {
+        $orders->getCollection()->transform(function (LabOrder $order) use ($user) {
             if ($order->relationLoaded('doctor') && $order->doctor) {
                 $order->doctor_name = $order->doctor->name;
             }
+
+            // Same flag getForResultEntry() sets, computed from the one rule in
+            // LabOrderItem::isEditableBy(). The list needs it too: the Edit
+            // Result button lives there, and a UI that re-derived "same user,
+            // same day" for itself would drift from what the server enforces.
+            $order->items->each(function (LabOrderItem $item) use ($user) {
+                $item->setAttribute('is_editable', $item->isEditableBy($user));
+            });
+
             return $order;
         });
 
@@ -739,18 +748,39 @@ class LabOrderController extends Controller
             ], 422);
         }
 
+        // A submitted result is the shift's record. The technician who entered
+        // it may correct it the same day; after that it is closed, to everyone.
+        // Enforced here rather than only in the UI -- a closed record that a
+        // crafted request can still rewrite is not closed.
+        if (!$labOrderItem->isEditableBy($request->user())) {
+            $who = $labOrderItem->completed_by ?: 'another user';
+            $when = optional($labOrderItem->completed_at)->format('d M Y');
+
+            return response()->json([
+                'message' => "This result was submitted by {$who} on {$when} and can no longer be changed."
+                    . ' Results may only be corrected by the person who entered them, on the same day.'
+                    . ' A supervisor holding "Correct A Closed Lab Result" can still amend it.',
+            ], 403);
+        }
+
+        $usedOverride = $labOrderItem->requiresLockOverride($request->user());
+
         $validator = Validator::make($request->all(), [
             'results' => ['required', 'array'],
             'results.*.result_id' => ['required', 'exists:lab_order_results,id'],
             'results.*.result_value' => ['required', 'string', 'max:255'],
             'results.*.remarks' => ['nullable', 'string'],
+            // The technician's overall note for the report, distinct from the
+            // per-parameter remarks above. 'sometimes' so a caller that does
+            // not manage it cannot blank a note someone else wrote.
+            'order_remarks' => ['sometimes', 'nullable', 'string'],
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        DB::transaction(function () use ($request, $labOrderItem, $order) {
+        DB::transaction(function () use ($request, $labOrderItem, $order, $usedOverride) {
             foreach ($request->results as $resultData) {
                 $result = LabOrderResult::findOrFail($resultData['result_id']);
 
@@ -764,25 +794,44 @@ class LabOrderController extends Controller
             }
 
             // Update item status
+            // A correction outside the normal window is attributed to whoever
+            // made it, on top of the original submitter -- so the record shows
+            // both who reported the result and who later amended it.
+            if ($usedOverride) {
+                $labOrderItem->forceFill([
+                    'remarks' => trim(($labOrderItem->remarks ? $labOrderItem->remarks . ' | ' : '')
+                        . 'Corrected by ' . ($request->user()?->name ?? 'unknown')
+                        . ' on ' . now()->format('d M Y H:i')),
+                ])->save();
+            }
+
             $labOrderItem->update([
                 'status' => 'completed',
-                'completed_at' => now(),
-                'completed_by' => $request->user()?->name,
+                // Deliberately NOT refreshed on a correction: the edit window is
+                // measured from the original submission, so re-saving cannot
+                // roll it forward and keep the record open indefinitely.
+                'completed_at' => $labOrderItem->completed_at ?? now(),
+                'completed_by' => $labOrderItem->completed_by ?? $request->user()?->name,
+                'completed_by_id' => $labOrderItem->completed_by_id ?? $request->user()?->id,
             ]);
+
+            // The overall note lives on the order, not the item -- it covers the
+            // whole report. Written here so it is saved in the same transaction
+            // as the results it describes.
+            $orderAttributes = ['updated_by' => $request->user()?->name];
+            if ($request->has('order_remarks')) {
+                $orderAttributes['remarks'] = $request->input('order_remarks') ?: null;
+            }
 
             // Check if all items are completed
             if ($order->allItemsCompleted()) {
-                $order->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                    'updated_by' => $request->user()?->name,
-                ]);
+                $orderAttributes['status'] = 'completed';
+                $orderAttributes['completed_at'] = now();
             } else {
-                $order->update([
-                    'status' => 'processing',
-                    'updated_by' => $request->user()?->name,
-                ]);
+                $orderAttributes['status'] = 'processing';
             }
+
+            $order->update($orderAttributes);
         });
 
         return response()->json([
@@ -794,11 +843,17 @@ class LabOrderController extends Controller
     /**
      * Get order for result entry (Lab Technician view)
      */
-    public function getForResultEntry(LabOrder $labOrder)
+    public function getForResultEntry(Request $request, LabOrder $labOrder)
     {
-        return response()->json([
-            'data' => $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor'])
-        ]);
+        $labOrder->load(['items.results', 'patient', 'walkInPatient', 'doctor']);
+
+        // The UI cannot work the rule out for itself -- it does not know who
+        // submitted what, or when -- so the server states it per item.
+        $labOrder->items->each(function (LabOrderItem $item) use ($request) {
+            $item->setAttribute('is_editable', $item->isEditableBy($request->user()));
+        });
+
+        return response()->json(['data' => $labOrder]);
     }
 
     /**

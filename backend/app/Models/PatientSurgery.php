@@ -41,8 +41,10 @@ class PatientSurgery extends Model
 
     protected $casts = [
         'paid_at' => 'datetime',
-        'surgery_date' => 'date',
-        'discharge_date' => 'date',
+        // See RoomBooking: a plain 'date' cast serialises through UTC and the
+        // day walks backwards on every save from a date input.
+        'surgery_date' => 'date:Y-m-d',
+        'discharge_date' => 'date:Y-m-d',
         'cost' => 'decimal:2',
         'discount_enabled' => 'boolean',
         'discount_percentage' => 'decimal:2',

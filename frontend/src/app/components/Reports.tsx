@@ -213,6 +213,8 @@ interface NormalizedLedgerEntry {
 interface NormalizedMedicine {
   id: string;
   brandName: string;
+  /** Brand + strength + form, e.g. "Risek 20mg Capsules". */
+  displayName: string;
   manufacturerName: string;
   costPrice: number;
   salePrice: number;
@@ -531,13 +533,23 @@ const normalizeLedger = (entry: LedgerEntryApi): NormalizedLedgerEntry => {
   };
 };
 
-const normalizeMedicine = (item: any): NormalizedMedicine => ({
-  id: String(item.id),
-  brandName: String(item.brand_name ?? item.brandName ?? `Medicine ${item.id}`),
-  manufacturerName: String(item.manufacturer?.name ?? item.manufacturer_name ?? '-'),
-  costPrice: toNumber(item.cost_price ?? item.costPrice),
-  salePrice: toNumber(item.sale_price ?? item.salePrice),
-});
+const normalizeMedicine = (item: any): NormalizedMedicine => {
+  const brandName = String(item.brand_name ?? item.brandName ?? `Medicine ${item.id}`);
+  const strength = String(item.strength ?? '').trim();
+  const form = String(item.medicine_type?.name ?? item.medicineType?.name ?? item.type ?? '').trim();
+
+  return {
+    id: String(item.id),
+    brandName,
+    // The brand alone is ambiguous: a pharmacy stocks the same brand as syrup,
+    // tablet and injection at three strengths and three prices, and a stock
+    // report listing them all as "Risek" cannot be counted against the shelf.
+    displayName: [brandName, strength, form].filter(Boolean).join(' '),
+    manufacturerName: String(item.manufacturer?.name ?? item.manufacturer_name ?? '-'),
+    costPrice: toNumber(item.cost_price ?? item.costPrice),
+    salePrice: toNumber(item.sale_price ?? item.salePrice),
+  };
+};
 
 const normalizeStock = (item: any): NormalizedStock => ({
   id: String(item.id),
@@ -1642,7 +1654,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         const rowsForStock = normalizedStocks.map((stock) => {
           const medicine = medicinesById.get(stock.medicineId);
           const company = medicine?.manufacturerName || '-';
-          const product = medicine?.brandName || stock.medicineName;
+          const product = medicine?.displayName || medicine?.brandName || stock.medicineName;
           const costPrice = stock.purchasePrice > 0 ? stock.purchasePrice : medicine?.costPrice || 0;
           const salePrice = stock.salePrice > 0 ? stock.salePrice : medicine?.salePrice || 0;
 
@@ -1797,7 +1809,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           .map((item) => {
             const medicine = medicinesById.get(item.medicineId);
             const company = medicine?.manufacturerName || '-';
-            const product = medicine?.brandName || item.medicineName;
+            const product = medicine?.displayName || medicine?.brandName || item.medicineName;
             const daysLeft = item.expiryDate ? differenceInCalendarDays(item.expiryDate, new Date()) : 0;
             const status = daysLeft < 0 ? 'Expired' : daysLeft <= 60 ? 'Near Expiry' : 'Safe';
             const unitCost = item.purchasePrice > 0 ? item.purchasePrice : medicine?.costPrice || 0;

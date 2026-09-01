@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3 } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3, Image as ImageIcon, Upload } from 'lucide-react';
 import {
   useSettings,
   PRINT_PAPER_SIZES,
@@ -26,11 +26,13 @@ import {
   type ReportModuleOwners,
   type ReportIncomeModule,
   type ReportDesk,
+  type PrescriptionWatermarkSettings,
 } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useDoctors } from '../context/DoctorContext';
 import { Hospital, UserRole } from '../types';
+import api from '../../api/axios';
 import { toast } from 'sonner';
 
 interface GeneralSettingsProps {
@@ -84,7 +86,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     { key: 'printing', label: 'Printing' },
     { key: 'reports', label: 'Reports' },
   ];
-  const { hospitals } = useHospitals();
+  const { hospitals, updateHospital } = useHospitals();
   const { doctors } = useDoctors();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
   
@@ -148,6 +150,14 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     signatureHeight: 112,
   });
 
+  const [watermark, setWatermark] = useState<PrescriptionWatermarkSettings>({
+    enabled: true,
+    source: 'stethoscope',
+    url: null,
+    width: 440,
+  });
+  const [uploadingWatermark, setUploadingWatermark] = useState(false);
+
   const [showOutOfStockMedicines, setShowOutOfStockMedicines] = useState(false);
   const [showOutOfStockMedicinesForPharmacy, setShowOutOfStockMedicinesForPharmacy] = useState(false);
   const [showPrescriptionListMeta, setShowPrescriptionListMeta] = useState(true);
@@ -184,6 +194,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       setShowOutOfStockMedicines(setting.showOutOfStockMedicines);
       setShowOutOfStockMedicinesForPharmacy(setting.showOutOfStockMedicinesForPharmacy);
       setShowPrescriptionListMeta(setting.showPrescriptionListMeta);
+      setWatermark(setting.prescriptionWatermark);
 
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
@@ -270,7 +281,11 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   };
 
   const handleSaveTimezone = () => {
-    toast.warning('Timezone/Calendar settings not yet wired to backend');
+    // Stored on the hospital itself, which is where the rest of the app already
+    // reads it from -- so saving here reaches every date on every screen.
+    updateHospital({ id: selectedHospital.id, timezone, calendarType })
+      .then(() => toast.success('Timezone and calendar saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save timezone'));
   };
 
   const handleWalkInToggle = () => {
@@ -300,6 +315,51 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
         setShowOutOfStockMedicinesForPharmacy(!newValue);
         toast.error(err?.response?.data?.message || 'Failed to update pharmacy medicine visibility');
       });
+  };
+
+  /**
+   * Saving writes the whole group, so the toggle, the source and the size
+   * persist together -- a half-saved watermark (off but resized) means nothing.
+   */
+  const saveWatermark = (next: PrescriptionWatermarkSettings, message: string) => {
+    const previous = watermark;
+    setWatermark(next);
+    saveHospitalSetting(selectedHospital.id, { prescriptionWatermark: next })
+      .then(() => toast.success(message))
+      .catch((err) => {
+        setWatermark(previous);
+        toast.error(err?.response?.data?.message || 'Failed to update the watermark');
+      });
+  };
+
+  const handleWatermarkUpload = (file: File | undefined) => {
+    if (!file) return;
+    // Matches the backend rule, checked here too so the user is told before a
+    // 2MB round trip fails.
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Watermark image must be 2MB or smaller');
+      return;
+    }
+
+    const body = new FormData();
+    body.append('watermark', file);
+    setUploadingWatermark(true);
+    api.post('/hospital-settings/' + selectedHospital.id + '/watermark', body)
+      .then((response) => {
+        const raw = response.data || {};
+        // Take the server's own view back: it decides the stored URL, and it
+        // switches the source to 'custom' as part of accepting the file.
+        setWatermark((current) => ({
+          ...current,
+          enabled: true,
+          source: 'custom',
+          url: raw.prescription_watermark_url || current.url,
+        }));
+        loadHospitalSetting(selectedHospital.id);
+        toast.success('Watermark image uploaded');
+      })
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to upload the watermark'))
+      .finally(() => setUploadingWatermark(false));
   };
 
   const handlePrescriptionListMetaToggle = () => {
@@ -941,6 +1001,158 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
                 : 'Rx and patient reference numbers hidden'}
             </p>
           </div>
+        </div>
+        )}
+
+        {/* Prescription watermark */}
+        {settingsTab === 'prescription' && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <ImageIcon className="w-4 h-4 text-violet-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription Watermark</h2>
+          </div>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Print a watermark</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                The faint image behind the body of the printed prescription. Turn it off for a plain sheet.
+              </p>
+            </div>
+            <button
+              onClick={() => saveWatermark(
+                { ...watermark, enabled: !watermark.enabled },
+                !watermark.enabled ? 'Watermark will be printed' : 'Watermark turned off'
+              )}
+              aria-label="Toggle prescription watermark"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2 ${
+                watermark.enabled ? 'bg-violet-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                watermark.enabled ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+
+          {watermark.enabled && (
+            <>
+              {/* Which image */}
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Image</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {([
+                    { key: 'stethoscope', label: 'Stethoscope', hint: 'The built-in medical mark' },
+                    { key: 'logo', label: 'Hospital logo', hint: 'Your uploaded logo, faded' },
+                    { key: 'custom', label: 'Custom image', hint: 'An image you upload below' },
+                  ] as const).map((option) => {
+                    // Neither of the other two can be chosen without the file
+                    // they depend on, so say so rather than printing nothing.
+                    const missingLogo = option.key === 'logo' && !selectedHospital.logo;
+                    const missingCustom = option.key === 'custom' && !watermark.url;
+                    const disabled = missingLogo || missingCustom;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => saveWatermark(
+                          { ...watermark, source: option.key },
+                          'Watermark image set to ' + option.label.toLowerCase()
+                        )}
+                        className={`text-left p-2 rounded-lg border transition-colors ${
+                          watermark.source === option.key
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20'
+                            : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/40'
+                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span className="block text-xs font-semibold text-gray-900 dark:text-white">{option.label}</span>
+                        <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          {missingLogo ? 'No hospital logo uploaded' : missingCustom ? 'Upload an image first' : option.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Upload */}
+              <div className="mt-3 flex items-center gap-3">
+                <label className={`inline-flex items-center gap-2 px-3 h-8 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 ${
+                  uploadingWatermark ? 'opacity-60 pointer-events-none' : ''
+                }`}>
+                  <Upload className="w-3.5 h-3.5" />
+                  {uploadingWatermark ? 'Uploading...' : 'Upload image'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      handleWatermarkUpload(e.target.files?.[0]);
+                      // Clear it, so re-picking the same file fires onChange again.
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  PNG, JPG, SVG or WebP, up to 2MB. A simple one-colour shape prints best.
+                </span>
+              </div>
+
+              {/* Size */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="watermark-size" className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Size
+                  </label>
+                  <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">{watermark.width} px</span>
+                </div>
+                <input
+                  id="watermark-size"
+                  type="range"
+                  min={200}
+                  max={900}
+                  step={20}
+                  value={watermark.width}
+                  // Dragging fires continuously; only the release is saved.
+                  onChange={(e) => setWatermark({ ...watermark, width: Number(e.target.value) })}
+                  onMouseUp={() => saveWatermark(watermark, 'Watermark size saved')}
+                  onTouchEnd={() => saveWatermark(watermark, 'Watermark size saved')}
+                  onKeyUp={() => saveWatermark(watermark, 'Watermark size saved')}
+                  className="w-full accent-violet-600"
+                />
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>Small</span>
+                  <span>Large</span>
+                </div>
+              </div>
+
+              {/* Preview, at the same wash the printed sheet applies, so the
+                  choice can be judged without printing a test page. */}
+              <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900/40 flex items-center justify-center overflow-hidden h-32">
+                {(() => {
+                  const preview = watermark.source === 'custom'
+                    ? watermark.url
+                    : watermark.source === 'logo'
+                      ? selectedHospital.logo
+                      : `${import.meta.env.BASE_URL}watermark-stethoscope.png`;
+                  return preview ? (
+                    <img
+                      src={preview}
+                      alt="Watermark preview"
+                      style={{
+                        width: Math.round(watermark.width / 6),
+                        filter: 'grayscale(1) brightness(1.45) contrast(0.32)',
+                      }}
+                      className="max-h-28 object-contain"
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-400">Nothing to preview yet</span>
+                  );
+                })()}
+              </div>
+            </>
+          )}
         </div>
         )}
 

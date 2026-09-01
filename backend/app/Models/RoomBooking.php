@@ -36,9 +36,14 @@ class RoomBooking extends Model
 
     protected $casts = [
         'paid_at' => 'datetime',
-        'booking_date' => 'date',
-        'check_in_date' => 'date',
-        'check_out_date' => 'date',
+        // 'date:Y-m-d', not 'date'. A plain date cast serialises through UTC,
+        // so midnight in Kabul (+04:30) leaves as "2026-08-30T19:30:00Z" and a
+        // client reading the first ten characters gets the PREVIOUS day. That
+        // is the check-in landing a day early, and it walked back another day
+        // each time a booking was opened and saved.
+        'booking_date' => 'date:Y-m-d',
+        'check_in_date' => 'date:Y-m-d',
+        'check_out_date' => 'date:Y-m-d',
         'beds_to_book' => 'integer',
         'total_cost' => 'decimal:2',
         'discount_amount' => 'decimal:2',

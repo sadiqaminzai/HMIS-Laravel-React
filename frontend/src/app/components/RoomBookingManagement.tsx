@@ -12,6 +12,7 @@ import { useSettings } from '../context/SettingsContext';
 import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
 import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
+import { getISODateInTimeZone } from '../utils/date';
 import { poweredByHtml } from '../utils/receiptBranding';
 import { AddButton } from './AddButton';
 import {
@@ -128,6 +129,16 @@ const mapBooking = (b: any): BookingItem => ({
 export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagementProps) {
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
+
+  /**
+   * Today on the HOSPITAL's clock, not the browser's.
+   *
+   * A workstation can be set to any timezone -- or simply be wrong -- and a
+   * booking dated from it lands on the wrong day. The hospital's configured
+   * timezone is the one the ward actually runs on. Same pattern as
+   * AppointmentManagement.
+   */
+  const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
   const { getPrintPaperSize, loadHospitalSetting } = useSettings();
   const { hospitals } = useHospitals();
   const { patients } = usePatients();
@@ -172,8 +183,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
     roomId: '',
     patientId: '',
     doctorId: '',
-    bookingDate: new Date().toISOString().slice(0, 10),
-    checkInDate: new Date().toISOString().slice(0, 10),
+    bookingDate: today(),
+    checkInDate: today(),
     checkOutDate: '',
     bedNumber: '',
     bedsToBook: '1',
@@ -267,8 +278,8 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       roomId: '',
       patientId: '',
       doctorId: '',
-      bookingDate: new Date().toISOString().slice(0, 10),
-      checkInDate: new Date().toISOString().slice(0, 10),
+      bookingDate: today(),
+      checkInDate: today(),
       checkOutDate: '',
       bedNumber: '',
       bedsToBook: '1',
@@ -487,7 +498,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
         bed_number: item.bedNumber,
         remarks: item.remarks,
         is_active: item.isActive,
-        check_out_date: status === 'Checked-out' ? (toDateInputValue(item.checkOutDate) || new Date().toISOString().slice(0, 10)) : toDateInputValue(item.checkOutDate),
+        check_out_date: status === 'Checked-out' ? (toDateInputValue(item.checkOutDate) || today()) : toDateInputValue(item.checkOutDate),
       } as any);
       toast.success(`Booking marked as ${status}`);
       loadBookings();
@@ -932,7 +943,10 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
+          {/* max-w-3xl, not max-w-md: at 448px every field wrapped to its own
+              row and the form ran taller than the viewport. Three columns of
+              fields fit the same content in about a third of the height. */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">{editing ? 'Edit Booking' : 'Add Booking'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
@@ -952,14 +966,14 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   </select>
                 </div>
               )}
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Room</label>
                 <select title="Room" value={form.roomId} onChange={(e) => setForm((p) => ({ ...p, roomId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all">
                   <option value="">Select room</option>
                   {filteredRooms.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
                 </select>
               </div>
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label>
                 <SearchableSelect
                   value={form.patientId}
@@ -970,7 +984,7 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   required
                 />
               </div>
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label>
                 <SearchableSelect
                   value={form.doctorId}
@@ -980,7 +994,7 @@ const printWindow = window.open('', '_blank', 'width=900,height=700');
                   title={t('ui.doctor')}
                 />
               </div>
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Booking Date</label>
                 <input title="Booking date" type="date" value={form.bookingDate} onChange={(e) => setForm((p) => ({ ...p, bookingDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
               </div>

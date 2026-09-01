@@ -25,6 +25,8 @@ class Hospital extends Model
         'subscription_status',
         'status',
         'brand_color',
+        'timezone',
+        'calendar_type',
     ];
 
     protected $casts = [

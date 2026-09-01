@@ -6,7 +6,7 @@ import { PrescriptionPrint } from './PrescriptionPrint';
 import { Toast } from './Toast';
 import { instructionOptions } from '../data/mockData';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { formatDate } from '../utils/date';
+import { formatDate, formatVisitDate } from '../utils/date';
 import QRCode from 'qrcode';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -395,7 +395,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       p.patientName.toLowerCase().includes(search) ||
       patientPhone.includes(search) ||
       p.doctorName.toLowerCase().includes(search) ||
-      (p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType).toLowerCase().includes(search) : false) ||
+      (p.nextVisit ? formatVisitDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType).toLowerCase().includes(search) : false) ||
       (showNextVisitOnly && previous?.prescriptionNumber ? previous.prescriptionNumber.toLowerCase().includes(search) : false);
 
     return matchesStatus && matchesDoctor && matchesDateRange && matchesSearch;
@@ -531,7 +531,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
       'Gender': prescription.patientGender,
       'Doctor': prescription.doctorName,
       'Date': formatDate(prescription.createdAt, currentHospital.timezone, currentHospital.calendarType),
-      'Next Visit': prescription.nextVisit ? formatDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+      'Next Visit': prescription.nextVisit ? formatVisitDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
       'Last Prescription #': previousPrescriptionById.get(prescription.id)?.prescriptionNumber || '-',
       'Last Prescription Date': previousPrescriptionById.get(prescription.id)?.createdAt
         ? formatDate(previousPrescriptionById.get(prescription.id).createdAt, currentHospital.timezone, currentHospital.calendarType)
@@ -577,7 +577,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
         if (showNextVisitOnly) {
           return [
             p.patientName,
-            p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+            p.nextVisit ? formatVisitDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
             previous?.prescriptionNumber || '-',
             previous?.createdAt ? formatDate(previous.createdAt, currentHospital.timezone, currentHospital.calendarType) : '-',
             p.doctorName,
@@ -589,7 +589,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
           p.patientName,
           p.doctorName,
           formatDate(p.createdAt, currentHospital.timezone, currentHospital.calendarType),
-          p.nextVisit ? formatDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
+          p.nextVisit ? formatVisitDate(p.nextVisit, currentHospital.timezone, currentHospital.calendarType) : '-',
           p.medicines.length,
         ];
       }),
@@ -794,7 +794,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
     if (showPrescriptionListMetaForPrint) {
       drawField("Date", formatDate(prescription.createdAt, hospitalInfo.timezone, hospitalInfo.calendarType), pCol2, row2);
     } else {
-      drawField("Next Visit", prescription.nextVisit ? formatDate(prescription.nextVisit, hospitalInfo.timezone, hospitalInfo.calendarType) : '-', pCol2, row2);
+      drawField("Next Visit", prescription.nextVisit ? formatVisitDate(prescription.nextVisit, hospitalInfo.timezone, hospitalInfo.calendarType) : '-', pCol2, row2);
     }
 
     // Doctor Data (Grid + Wrap)
@@ -1259,7 +1259,7 @@ export function PrescriptionList({ hospital, userRole, currentUser }: Prescripti
                       {prescription.nextVisit ? (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded border ${isTodayVisit ? 'border-amber-300 text-amber-800 bg-amber-100 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300 font-semibold' : 'border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300'}`}>
                           {isTodayVisit && <span className="mr-1">Today:</span>}
-                          {formatDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType)}
+                          {formatVisitDate(prescription.nextVisit, currentHospital.timezone, currentHospital.calendarType)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>

@@ -51,6 +51,7 @@ export interface LabOrderItemResponse {
   price: string;
   status: 'pending' | 'processing' | 'completed';
   requires_result?: boolean;
+  is_editable?: boolean;
   started_at: string | null;
   completed_at: string | null;
   completed_by: string | null;
@@ -137,6 +138,13 @@ export interface LabOrderItem {
   status: 'pending' | 'processing' | 'completed';
   /** False for tests the analyser reports itself -- see TestTemplate.requiresResult. */
   requiresResult: boolean;
+  /**
+   * Whether this user may still key or correct the result.
+   *
+   * Decided by the server (LabOrderItem::isEditableBy) so the screen and the
+   * endpoint cannot disagree about who may reopen a submitted result.
+   */
+  isEditable: boolean;
   startedAt: Date | null;
   completedAt: Date | null;
   completedBy: string | null;
@@ -196,6 +204,7 @@ function transformItemToFrontend(item: LabOrderItemResponse): LabOrderItem {
     status: item.status,
     // Absent on an older backend, where every test took a result.
     requiresResult: item.requires_result !== false,
+    isEditable: item.is_editable !== false,
     startedAt: item.started_at ? new Date(item.started_at) : null,
     completedAt: item.completed_at ? new Date(item.completed_at) : null,
     completedBy: item.completed_by,
@@ -394,7 +403,13 @@ export interface ResultEntry {
 
 export async function enterResults(
   itemId: string | number,
-  results: ResultEntry[]
+  results: ResultEntry[],
+  /**
+   * The technician's overall note for the whole report, as opposed to the
+   * per-parameter remarks above. Optional: omitted entirely when not supplied,
+   * so a caller that does not manage it cannot blank an existing note.
+   */
+  orderRemarks?: string
 ): Promise<LabOrderItem> {
   const response = await api.post<{ data: LabOrderItemResponse }>(
     `/lab-order-items/${itemId}/results`,
@@ -404,6 +419,7 @@ export async function enterResults(
         result_value: r.resultValue,
         remarks: r.remarks || null,
       })),
+      ...(orderRemarks === undefined ? {} : { order_remarks: orderRemarks }),
     }
   );
   return transformItemToFrontend(response.data.data);

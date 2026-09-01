@@ -34,7 +34,10 @@ class StockMovement extends Model
         'bonus_change' => 'integer',
         'balance_qty' => 'integer',
         'balance_bonus' => 'integer',
-        'expiry_date' => 'date',
+        // 'date:Y-m-d', not 'date'. A plain date cast serialises through UTC, so
+        // midnight in Kabul (+04:30) leaves as "...T19:30:00Z" and a client
+        // reading the first ten characters gets the PREVIOUS day.
+        'expiry_date' => 'date:Y-m-d',
         'unit_price' => 'decimal:2',
         'is_reversal' => 'boolean',
     ];

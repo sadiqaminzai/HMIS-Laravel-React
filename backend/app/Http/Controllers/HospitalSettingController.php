@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Hospital;
 use App\Models\HospitalSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class HospitalSettingController extends Controller
@@ -23,6 +24,11 @@ class HospitalSettingController extends Controller
     private function presentSetting(HospitalSetting $setting): array
     {
         return array_merge($setting->toArray(), [
+            // The client cannot build this itself: the storage disk's URL is
+            // server configuration, and it differs between local and Hostinger.
+            'prescription_watermark_url' => $setting->prescription_watermark_path
+                ? url(Storage::url($setting->prescription_watermark_path))
+                : null,
             'print_paper_sizes' => $setting->resolvedPrintPaperSizes(),
             'print_paper_size_options' => (array) config('print.sizes', []),
             'invoice_fields' => $setting->resolvedInvoiceFields(),
@@ -83,6 +89,11 @@ class HospitalSettingController extends Controller
             'prescription_logo_height' => ['integer', 'min:40', 'max:800'],
             'prescription_signature_width' => ['integer', 'min:40', 'max:800'],
             'prescription_signature_height' => ['integer', 'min:40', 'max:800'],
+            'prescription_watermark_enabled' => ['boolean'],
+            'prescription_watermark_source' => [Rule::in(['stethoscope', 'logo', 'custom'])],
+            // 200-900px: below 200 it reads as a smudge, above 900 it runs off
+            // the sheet and the medicines sit on top of it.
+            'prescription_watermark_width' => ['integer', 'min:200', 'max:900'],
             'show_out_of_stock_medicines_to_doctors' => ['boolean'],
             'show_out_of_stock_medicines_to_pharmacy' => ['boolean'],
             'show_prescription_list_meta' => ['boolean'],
@@ -266,6 +277,43 @@ class HospitalSettingController extends Controller
         }
     }
 
+    /**
+     * Store a custom prescription watermark for this hospital.
+     *
+     * Separate from update() because that endpoint speaks JSON and this one
+     * carries a file. The image lands in storage/app/public/watermarks, the
+     * same disk the hospital logos already use, so it survives a frontend
+     * deploy and is picked up by whatever backs up storage/.
+     */
+    public function uploadWatermark(Request $request, Hospital $hospital)
+    {
+        $this->authorizeHospital($request->user(), $hospital, true);
+
+        $request->validate([
+            'watermark' => ['required', 'image', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
+        ]);
+
+        $setting = $this->getOrCreateSetting($hospital->id);
+        $previous = $setting->prescription_watermark_path;
+
+        $path = $request->file('watermark')->store('watermarks', 'public');
+
+        $setting->prescription_watermark_path = $path;
+        // Uploading one is the act of choosing it; making the user then pick
+        // "custom" from a list would leave the upload doing nothing.
+        $setting->prescription_watermark_source = 'custom';
+        $setting->prescription_watermark_enabled = true;
+        $setting->save();
+
+        // Only after the new one is safely recorded: a failed save would
+        // otherwise leave the hospital with no watermark at all.
+        if ($previous && $previous !== $path) {
+            Storage::disk('public')->delete($previous);
+        }
+
+        return response()->json($this->presentSetting($setting->fresh()));
+    }
+
     private function getOrCreateSetting(int $hospitalId): HospitalSetting
     {
         return HospitalSetting::firstOrCreate(
@@ -284,6 +332,9 @@ class HospitalSettingController extends Controller
                 'prescription_logo_height' => 160,
                 'prescription_signature_width' => 200,
                 'prescription_signature_height' => 112,
+                'prescription_watermark_enabled' => true,
+                'prescription_watermark_source' => 'stethoscope',
+                'prescription_watermark_width' => 440,
                 'show_out_of_stock_medicines_to_doctors' => false,
                 'show_out_of_stock_medicines_to_pharmacy' => false,
                 'show_prescription_list_meta' => true,

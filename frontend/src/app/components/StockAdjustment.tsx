@@ -1,9 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { useMedicines } from '../context/MedicineContext';
+import { formatQuantityInSaleUnit, medicineDisplayName } from '../utils/medicineUnits';
+import {
+  CellNumber,
+  CellStack,
+  CellText,
+  DataTableBody,
+  DataTableCard,
+  DataTableHead,
+  RowIcon,
+  TableEmpty,
+  TableLoading,
+  Th,
+  Tr,
+  usePagination,
+  useTableSort,
+} from './DataTable';
 import { SlidersHorizontal, RefreshCcw, Save, Search } from 'lucide-react';
 import api from '../../api/axios';
 
@@ -16,6 +33,7 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
   const { t } = useTranslation();
   const { selectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
   const { hasPermission } = useAuth();
+  const { medicines } = useMedicines();
   
   const canReconcile = hasPermission('edit_stocks') || hasPermission('manage_stocks');
   
@@ -35,6 +53,57 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [reconcileRows, setReconcileRows] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(false);
+
+  const getMedicineById = (id: any) => medicines.find((m) => String(m.id) === String(id));
+
+  /** Falls back to the name the endpoint sent when the product is not loaded. */
+  const displayNameFor = (row: any) => {
+    const medicine = getMedicineById(row.medicine_id);
+    return medicine ? medicineDisplayName(medicine) : (row.medicine_name || 'Unknown');
+  };
+
+  /** Piece counts expressed in the product's own selling unit. */
+  const inSaleUnit = (pieces: any, medicineId: any) =>
+    formatQuantityInSaleUnit(Number(pieces || 0), getMedicineById(medicineId)).text;
+
+  /**
+   * The sheet, sortable and searchable, with each row remembering its position
+   * in the full list.
+   *
+   * `idx` is that original position and is what the physical-count inputs write
+   * back to. Sorting or filtering the view must never renumber it, or a count
+   * typed against one batch would be saved against another.
+   */
+  const adjustmentRows = useMemo(() => reconcileRows.map((row, idx) => {
+    const medicine = getMedicineById(row.medicine_id);
+    return {
+      row,
+      idx,
+      medicineName: medicine ? medicineDisplayName(medicine) : (row.medicine_name || 'Unknown'),
+      batchNo: row.batch_no || '',
+      expiry: row.expiry_date || '',
+      // Sorted on the converted figure, so the order matches what is displayed.
+      systemQty: formatQuantityInSaleUnit(Number(row.system_qty || 0), medicine).value,
+      systemBonus: formatQuantityInSaleUnit(Number(row.system_bonus || 0), medicine).value,
+      systemTotal: formatQuantityInSaleUnit(Number(row.system_total || 0), medicine).value,
+    };
+  }), [reconcileRows, medicines]);
+
+  const searchedAdjustments = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return adjustmentRows;
+    return adjustmentRows.filter((entry) =>
+      entry.medicineName.toLowerCase().includes(term)
+      || String(entry.row.medicine_name ?? '').toLowerCase().includes(term)
+      || entry.batchNo.toLowerCase().includes(term));
+  }, [adjustmentRows, search]);
+
+  const sort = useTableSort<any>(searchedAdjustments, 'medicineName');
+  const { page, setPage, totalPages, pageRows: pagedAdjustments } = usePagination<any>(sort.rows, 50);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, reconcileDate, selectedHospitalId, setPage]);
 
   const loadReconciliation = async () => {
     const hospitalId = isAllHospitals ? null : selectedHospitalId || currentHospital.id;
@@ -57,6 +126,19 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
       setLoading(false);
     }
   };
+
+  /**
+   * Load as soon as the tab is opened.
+   *
+   * The sheet used to arrive empty with "Click Refresh to load" on it, which
+   * made an extra click mandatory before any work could start -- and looked
+   * like the screen was broken. Refresh stays, for re-reading after a change
+   * elsewhere, but is no longer the way in.
+   */
+  useEffect(() => {
+    loadReconciliation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHospitalId, currentHospital.id, reconcileDate, isAllHospitals]);
 
   /**
    * Correct one batch.
@@ -237,43 +319,44 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden flex flex-col">
-        <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead className="bg-gray-50/50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-gray-500 sticky top-0">
-              <tr>
-                <th className="px-4 py-3 font-medium">{t('table.medicine')}</th>
-                <th className="px-4 py-3 font-medium">{t('table.batch')}</th>
-                <th className="px-4 py-3 font-medium">{t('table.expiry')}</th>
-                <th className="px-4 py-3 font-medium">{t('table.systemQty')}</th>
-                <th className="px-4 py-3 font-medium">{t('table.systemBonus')}</th>
-                <th className="px-4 py-3 font-medium">{t('table.systemTotal')}</th>
-                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalQty')}</th>
-                <th className="px-4 py-3 font-medium bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalBonus')}</th>
-                <th className="px-4 py-3 font-medium text-right">{t('table.variance')}</th>
-                {canReconcile && <th className="px-4 py-3 font-medium text-right w-20">{t('table.actions')}</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {reconcileRows.length === 0 ? (
-                <tr>
-                  <td colSpan={canReconcile ? 10 : 9} className="px-4 py-8 text-center text-gray-500">
-                    <p>No adjustment records found.</p>
-                    <p className="mt-1 opacity-70">Click Refresh to load system stock values for adjustment.</p>
-                  </td>
-                </tr>
-              ) : (
-                reconcileRows
-                  .map((row, idx) => ({ row, idx }))
-                  .filter(({ row }) => {
-                    const term = search.trim().toLowerCase();
-                    if (!term) return true;
-                    return String(row.medicine_name ?? '').toLowerCase().includes(term)
-                      || String(row.batch_no ?? '').toLowerCase().includes(term);
-                  })
-                  // idx is the row's position in the FULL list, so editing a
-                  // filtered view still writes back to the correct batch.
-                  .map(({ row, idx }) => {
+      <DataTableCard
+        total={searchedAdjustments.length}
+        shown={pagedAdjustments.length}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        noun="batches"
+        maxHeight="calc(100vh - 320px)"
+      >
+        <DataTableHead>
+          {/* Only the settled columns sort. The physical-count inputs and the
+              variance derived from them deliberately do not: re-ordering rows
+              under a cursor mid-count is how a figure ends up on the wrong
+              batch. */}
+          <Th sort={sort} field="medicineName">{t('table.medicine')}</Th>
+          <Th sort={sort} field="batchNo">{t('table.batch')}</Th>
+          <Th sort={sort} field="expiry">{t('table.expiry')}</Th>
+          <Th sort={sort} field="systemQty">{t('table.systemQty')}</Th>
+          <Th sort={sort} field="systemBonus">{t('table.systemBonus')}</Th>
+          <Th sort={sort} field="systemTotal">{t('table.systemTotal')}</Th>
+          <Th className="bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalQty')}</Th>
+          <Th className="bg-indigo-50/50 dark:bg-indigo-900/10">{t('table.physicalBonus')}</Th>
+          <Th align="right">{t('table.variance')}</Th>
+          {canReconcile && <Th align="right">{t('table.actions')}</Th>}
+        </DataTableHead>
+        <DataTableBody>
+          {loading ? (
+            <TableLoading colSpan={canReconcile ? 10 : 9} />
+          ) : pagedAdjustments.length === 0 ? (
+            <TableEmpty
+              colSpan={canReconcile ? 10 : 9}
+              message="No adjustment records found"
+              hint={search ? undefined : 'Nothing to count for this hospital and date.'}
+              icon={<SlidersHorizontal className="w-6 h-6 text-gray-400" />}
+            />
+          ) : (
+            pagedAdjustments.map(({ row, idx }: any) => {
+
                   // An uncounted row has no variance to show -- it is not a
                   // shortfall of everything on the shelf, it is simply unknown.
                   const counted = isCounted(row);
@@ -281,13 +364,26 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                   const variance = counted ? physicalTotal - Number(row.system_total || 0) : null;
                   
                   return (
-                    <tr key={`${row.medicine_id}-${row.batch_no || 'n/a'}-${idx}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                      <td className="px-4 py-2 font-medium">{row.medicine_name}</td>
-                      <td className="px-4 py-2 text-gray-500">{row.batch_no || '—'}</td>
-                      <td className="px-4 py-2 text-gray-500">{row.expiry_date || '—'}</td>
-                      <td className="px-4 py-2">{row.system_qty}</td>
-                      <td className="px-4 py-2">{row.system_bonus}</td>
-                      <td className="px-4 py-2 font-medium">{row.system_total}</td>
+                    <Tr key={`${row.medicine_id}-${row.batch_no || 'n/a'}-${idx}`}>
+                      {/* Brand + strength + form, and counts in the unit the
+                          pharmacy handles -- the same figures the Stocks tab
+                          shows, so a count sheet and a stock list agree. */}
+                      {/* Brand + strength + form, and counts in the unit the
+                          pharmacy handles -- the same figures the Stocks tab
+                          shows, so a count sheet and a stock list agree. */}
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-3">
+                          <RowIcon tone="amber">
+                            <SlidersHorizontal className="w-4 h-4" />
+                          </RowIcon>
+                          <CellStack primary={displayNameFor(row)} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-2"><CellText mono>{row.batch_no || '—'}</CellText></td>
+                      <td className="px-4 py-2"><CellText>{row.expiry_date || '—'}</CellText></td>
+                      <td className="px-4 py-2" title={`${row.system_qty} pieces`}><CellNumber>{inSaleUnit(row.system_qty, row.medicine_id)}</CellNumber></td>
+                      <td className="px-4 py-2" title={`${row.system_bonus} pieces`}><CellNumber tone="muted">{inSaleUnit(row.system_bonus, row.medicine_id)}</CellNumber></td>
+                      <td className="px-4 py-2" title={`${row.system_total} pieces`}><CellNumber tone="money">{inSaleUnit(row.system_total, row.medicine_id)}</CellNumber></td>
                       
                       <td className="px-4 py-2 bg-indigo-50/20 dark:bg-indigo-900/5">
                         <input
@@ -355,14 +451,13 @@ export function StockAdjustment({ hospital, userRole = 'admin' }: StockAdjustmen
                           </button>
                         </td>
                       )}
-                    </tr>
+                    </Tr>
                   );
                 })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          )}
+        </DataTableBody>
+      </DataTableCard>
+
     </div>
   );
 }

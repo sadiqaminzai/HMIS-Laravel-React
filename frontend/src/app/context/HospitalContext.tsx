@@ -34,6 +34,10 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     status: (h.status ?? 'active') as Hospital['status'],
     logo: h.logo_url ?? h.logo_path ?? '',
     brandColor: h.brand_color ?? '#2563eb',
+    // Read by every date the app formats or defaults. Until these were stored
+    // they came back undefined and every screen silently fell back.
+    timezone: h.timezone ?? 'Asia/Kabul',
+    calendarType: (h.calendar_type ?? 'gregorian') as Hospital['calendarType'],
     createdAt: h.created_at ? new Date(h.created_at) : undefined,
   });
 
@@ -89,6 +93,8 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     if (payload.licenseExpiryDate) formData.append('license_expiry_date', payload.licenseExpiryDate);
     formData.append('status', payload.status || 'active');
     if (payload.brandColor) formData.append('brand_color', payload.brandColor);
+    if (payload.timezone) formData.append('timezone', payload.timezone);
+    if (payload.calendarType) formData.append('calendar_type', payload.calendarType);
     if (payload.logoFile) formData.append('logo', payload.logoFile);
 
     await api.post('/hospitals', formData, {

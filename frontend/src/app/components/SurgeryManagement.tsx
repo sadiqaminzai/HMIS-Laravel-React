@@ -6,6 +6,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import '../../styles/quill-custom.css';
 import { Hospital, UserRole } from '../types';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { SearchableSelect } from './SearchableSelect';
 import { DischargeSummaryPrint } from './DischargeSummaryPrint';
 import {
   listSurgeryTypes,
@@ -28,6 +29,7 @@ import { useDoctors } from '../context/DoctorContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { toast } from 'sonner';
+import { getISODateInTimeZone } from '../utils/date';
 import { poweredByHtml } from '../utils/receiptBranding';
 
 type TabKey = 'types' | 'surgeries' | 'patientSurgeries' | 'dischargeSummary';
@@ -183,6 +185,16 @@ function StatusBadge({ value }: { value?: string }) {
 export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps) {
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital } = useHospitalFilter(hospital, userRole);
+
+  /**
+   * Today on the HOSPITAL's clock, not the browser's.
+   *
+   * A workstation can be set to any timezone -- or simply be wrong -- and a
+   * booking dated from it lands on the wrong day. The hospital's configured
+   * timezone is the one the ward actually runs on. Same pattern as
+   * AppointmentManagement.
+   */
+  const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
   const { getPrintPaperSize, loadHospitalSetting } = useSettings();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -246,7 +258,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
   const [editingDischargeSurgery, setEditingDischargeSurgery] = useState<PatientSurgeryItem | null>(null);
   const [dischargeForm, setDischargeForm] = useState({
     patientSurgeryId: '',
-    dischargeDate: new Date().toISOString().slice(0, 10),
+    dischargeDate: today(),
     dischargeSummary: '',
     dischargeCreatedBy: '',
     dischargeCompletedBy: '',
@@ -255,7 +267,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     patientId: '',
     doctorId: '',
     surgeryId: '',
-    surgeryDate: new Date().toISOString().slice(0, 10),
+    surgeryDate: today(),
     status: 'scheduled' as PatientSurgeryItem['status'],
     // Paid by default: the receipt is normally raised at the counter when the
     // patient pays, so pending was the wrong starting point for most entries.
@@ -537,8 +549,50 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedHospitalId]);
 
-  const filteredPatients = patients.filter((p) => selectedHospitalId === 'all' || p.hospitalId === currentHospital.id || p.hospitalId === selectedHospitalId);
+  // Newest first: a surgery is almost always booked for someone registered
+  // moments ago, so the most recent record belongs at the top of the list.
+  const filteredPatients = useMemo(
+    () => patients
+      .filter((p) => selectedHospitalId === 'all' || p.hospitalId === currentHospital.id || p.hospitalId === selectedHospitalId)
+      .slice()
+      .sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (at !== bt) return bt - at;
+        // Falls back to id so records with no timestamp still order predictably.
+        return Number(b.id) - Number(a.id);
+      }),
+    [patients, selectedHospitalId, currentHospital.id]
+  );
   const filteredDoctors = doctors.filter((d) => selectedHospitalId === 'all' || d.hospitalId === currentHospital.id || d.hospitalId === selectedHospitalId);
+
+  /**
+   * Options for the type-to-filter selects on the patient surgery form.
+   *
+   * A native <select> cannot be searched, only scrolled -- unusable once a
+   * hospital has thousands of patients. `meta` is searched too, so a patient is
+   * findable by code or phone as well as by name.
+   */
+  const patientOptions = useMemo(
+    () => filteredPatients.map((p) => ({
+      value: p.id,
+      label: p.name,
+      meta: [p.patientId, p.phone].filter(Boolean).join(' · '),
+    })),
+    [filteredPatients]
+  );
+  const doctorOptions = useMemo(
+    () => filteredDoctors.map((d) => ({ value: d.id, label: d.name, meta: d.specialization })),
+    [filteredDoctors]
+  );
+  const surgeryOptions = useMemo(
+    () => surgeries.map((sx) => ({
+      value: sx.id,
+      label: sx.name,
+      meta: [sx.typeName, sx.cost ? sx.cost.toFixed(2) : ''].filter(Boolean).join(' · '),
+    })),
+    [surgeries]
+  );
 
   const filteredTypes = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -695,7 +749,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         patientId: '',
         doctorId: '',
         surgeryId: '',
-        surgeryDate: new Date().toISOString().slice(0, 10),
+        surgeryDate: today(),
         status: 'scheduled',
         paymentStatus: 'pending',
         cost: '',
@@ -715,7 +769,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     setEditingDischargeSurgery(row);
     setDischargeForm({
       patientSurgeryId: row.id,
-      dischargeDate: row.dischargeDate || new Date().toISOString().slice(0, 10),
+      dischargeDate: row.dischargeDate || today(),
       dischargeSummary: row.dischargeSummary || buildDischargeTemplate(row),
       dischargeCreatedBy: row.dischargeCreatedBy || user?.name || '',
       dischargeCompletedBy: row.dischargeCompletedBy || assignedDoctorName,
@@ -729,7 +783,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     setEditingDischargeSurgery(firstCase || null);
     setDischargeForm({
       patientSurgeryId: firstCase?.id || '',
-      dischargeDate: new Date().toISOString().slice(0, 10),
+      dischargeDate: today(),
       dischargeSummary: buildDischargeTemplate(firstCase),
       dischargeCreatedBy: user?.name || '',
       dischargeCompletedBy: assignedDoctorName,
@@ -859,7 +913,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
           {activeTab === 'types' && canAddTypes && <AddButton onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} label={t('ui.addType')} />}
           {activeTab === 'surgeries' && canAddSurgeries && <AddButton onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} label="Add Surgery" />}
-          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: new Date().toISOString().slice(0, 10), status: 'scheduled', paymentStatus: 'paid', cost: '', discountEnabled: false, discountPercentage: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: today(), status: 'scheduled', paymentStatus: 'paid', cost: '', discountEnabled: false, discountPercentage: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
           {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <AddButton onClick={openNewDischargeModal} label="Add Discharge" />}
         </div>
       </div>
@@ -1054,7 +1108,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
                         );
                       })()}
                       {canEditPatientSurgeries && (
-                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), discountEnabled: row.discountEnabled, discountPercentage: row.discountPercentage ? String(row.discountPercentage) : '', notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }}>
+                        <TableAction tone="edit" title={t('ui.edit')} onClick={() => { const normalizedDate = String(row.surgeryDate || '').slice(0, 10) || today(); setEditingPatientSurgery(row); setPatientSurgeryForm({ patientId: row.patientId, doctorId: row.doctorId || '', surgeryId: row.surgeryId, surgeryDate: normalizedDate, status: row.status, paymentStatus: row.paymentStatus, cost: String(row.cost), discountEnabled: row.discountEnabled, discountPercentage: row.discountPercentage ? String(row.discountPercentage) : '', notes: row.notes || '', isActive: true }); setIsPatientSurgeryModalOpen(true); }}>
                           <EditIcon />
                         </TableAction>
                       )}
@@ -1151,9 +1205,38 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
               <button onClick={() => setIsPatientSurgeryModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600" title={t('ui.close')}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={savePatientSurgery} className="p-5 grid grid-cols-12 gap-3">
-              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label><select value={patientSurgeryForm.patientId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, patientId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">Select patient</option>{filteredPatients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label><select value={patientSurgeryForm.doctorId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, doctorId: e.target.value }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">None</option>{filteredDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-              <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.surgery')}</label><select value={patientSurgeryForm.surgeryId} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryId: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="">Select surgery</option>{surgeries.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div className="col-span-12 md:col-span-6">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.patient')}</label>
+                <SearchableSelect
+                  value={patientSurgeryForm.patientId}
+                  options={patientOptions}
+                  onChange={(value) => setPatientSurgeryForm((p) => ({ ...p, patientId: value }))}
+                  placeholder="Search patient by name, code or phone..."
+                  emptyMessage="No patients found"
+                  required
+                />
+              </div>
+              <div className="col-span-12 md:col-span-6">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Doctor (optional)</label>
+                <SearchableSelect
+                  value={patientSurgeryForm.doctorId}
+                  options={doctorOptions}
+                  onChange={(value) => setPatientSurgeryForm((p) => ({ ...p, doctorId: value }))}
+                  placeholder="Search doctor..."
+                  emptyMessage="No doctors found"
+                />
+              </div>
+              <div className="col-span-12 md:col-span-6">
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.surgery')}</label>
+                <SearchableSelect
+                  value={patientSurgeryForm.surgeryId}
+                  options={surgeryOptions}
+                  onChange={(value) => setPatientSurgeryForm((p) => ({ ...p, surgeryId: value }))}
+                  placeholder="Search surgery..."
+                  emptyMessage="No surgeries found"
+                  required
+                />
+              </div>
               <div className="col-span-12 md:col-span-6"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Surgery Date</label><input type="date" value={patientSurgeryForm.surgeryDate} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, surgeryDate: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" /></div>
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.status')}</label><select value={patientSurgeryForm.status} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, status: e.target.value as PatientSurgeryItem['status'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"><option value="scheduled">scheduled</option><option value="in_progress">in_progress</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select></div>
               <div className="col-span-12 md:col-span-4"><label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.paymentStatus')}</label><select value={patientSurgeryForm.paymentStatus} disabled={!canSetSurgeryPayment} onChange={(e) => setPatientSurgeryForm((p) => ({ ...p, paymentStatus: e.target.value as PatientSurgeryItem['paymentStatus'] }))} className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"><option value="pending">pending</option><option value="paid">paid</option><option value="partial">partial</option><option value="cancelled">cancelled</option></select></div>

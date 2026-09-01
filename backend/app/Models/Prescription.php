@@ -40,7 +40,10 @@ class Prescription extends Model
     protected $casts = [
         'patient_age' => 'integer',
         'is_walk_in' => 'boolean',
-        'next_visit' => 'date',
+        // 'date:Y-m-d', not 'date'. A plain date cast serialises through UTC, so
+        // midnight in Kabul (+04:30) leaves as "...T19:30:00Z" and a client
+        // reading the first ten characters gets the PREVIOUS day.
+        'next_visit' => 'date:Y-m-d',
         'dispensed_at' => 'datetime',
         'dispensing_transaction_id' => 'integer',
     ];

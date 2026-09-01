@@ -641,13 +641,16 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                     <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
                       Full Address <span className="text-red-500">*</span>
                     </label>
+                    {/* Two rows and resizable, so it reads as the multi-line
+                        field it always was: Enter starts a new line here and
+                        the letterhead prints the breaks exactly as typed. */}
                     <textarea
                       required
                       value={formData.address}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      rows={1}
-                      className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
-                      placeholder="Building, Street, City, Country"
+                      rows={2}
+                      className="w-full resize-y px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder={'Building, Street, City, Country' + String.fromCharCode(10) + 'Second line if needed'}
                     />
                   </div>
 
