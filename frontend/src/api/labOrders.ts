@@ -295,6 +295,34 @@ export async function fetchLabOrders(
   };
 }
 
+/**
+ * Every lab order matching the filters, not just the first page.
+ *
+ * The lab screen does its own tab-splitting, searching, sorting and paging in
+ * the browser, so it needs the whole set to work from: given one page it showed
+ * 25 rows on all three tabs, counted 25 as the total, and offered no way to
+ * reach the rest. Fetching page by page rather than in one unbounded query
+ * keeps each request the same size the server already serves happily.
+ */
+export async function fetchAllLabOrders(
+  params: FetchLabOrdersParams = {}
+): Promise<{ data: LabOrder[]; total: number }> {
+  const perPage = params.perPage || 200;
+  const first = await fetchLabOrders({ ...params, page: 1, perPage });
+
+  const rows = [...first.data];
+  // A guard, not an expectation: a miscounted last_page should not spin here.
+  const lastPage = Math.min(first.lastPage || 1, 100);
+
+  for (let page = 2; page <= lastPage; page += 1) {
+    const next = await fetchLabOrders({ ...params, page, perPage });
+    rows.push(...next.data);
+    if (next.data.length === 0) break;
+  }
+
+  return { data: rows, total: first.total ?? rows.length };
+}
+
 export async function fetchLabOrder(id: string | number): Promise<LabOrder> {
   const response = await api.get<{ data: LabOrderResponse }>(`/lab-orders/${id}`);
   return transformToFrontend(response.data.data);

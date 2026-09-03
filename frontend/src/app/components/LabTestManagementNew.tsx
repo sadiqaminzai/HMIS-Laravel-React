@@ -14,7 +14,7 @@ import jsPDF from 'jspdf';
 import { toPng } from 'html-to-image';
 import autoTable from 'jspdf-autotable';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
-import { fetchLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
+import { fetchAllLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
 import { fetchTestTemplates } from '../../api/testTemplates';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -234,7 +234,9 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const [testTemplates, setTestTemplates] = useState<TestTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  // 50 by default. The old fixed 10 was moot anyway -- only 25 orders were
+  // ever fetched, so no tab could show more than that however it paged.
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -332,7 +334,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const refreshLabOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await fetchLabOrders({
+      const { data } = await fetchAllLabOrders({
         hospitalId: isAllHospitals ? undefined : currentHospital.id,
         doctorId: userRole === 'doctor' ? currentUserId : undefined,
       });
@@ -503,7 +505,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedHospitalId, sortField, sortDirection]);
+  }, [searchTerm, selectedHospitalId, sortField, sortDirection, itemsPerPage, activeStage]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1409,7 +1411,27 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
         <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-lg flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
           <span>Total Records: <span className="font-semibold text-gray-900 dark:text-white">{filteredLabTests.length}</span></span>
           <div className="flex items-center gap-3">
-            <span>Showing {filteredLabTests.length} of {labTests.length} tests</span>
+            {/* What is actually on screen, not the whole filtered set -- the old
+                wording said "showing N" while a page held at most itemsPerPage
+                of them. */}
+            <span>
+              Showing {filteredLabTests.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}
+              &ndash;{Math.min(currentPage * itemsPerPage, filteredLabTests.length)} of {filteredLabTests.length}
+              {filteredLabTests.length !== labTests.length && ` (${labTests.length} total)`}
+            </span>
+            <label className="flex items-center gap-1">
+              <span className="sr-only">Rows per page</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className="px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs"
+                title="Rows per page"
+              >
+                {[25, 50, 100, 200].map((size) => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </label>
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
