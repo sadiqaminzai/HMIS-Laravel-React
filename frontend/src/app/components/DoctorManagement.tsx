@@ -17,6 +17,38 @@ interface DoctorManagementProps {
   userRole?: UserRole;
 }
 
+/**
+ * The week a doctor starts with, and the only place it is written down.
+ *
+ * It used to be copy-pasted into three places, which is part of why the bug
+ * below survived: two of the copies were reachable and one was not.
+ */
+const DEFAULT_AVAILABILITY: DoctorAvailability[] = [
+  { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
+  { day: 'Sunday', startTime: '09:00', endTime: '17:00', isAvailable: true },
+  { day: 'Monday', startTime: '09:00', endTime: '17:00', isAvailable: true },
+  { day: 'Tuesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
+  { day: 'Wednesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
+  { day: 'Thursday', startTime: '09:00', endTime: '13:00', isAvailable: true },
+  { day: 'Friday', startTime: '00:00', endTime: '00:00', isAvailable: false },
+];
+
+/**
+ * The doctor's stored week, laid over the full seven days.
+ *
+ * A doctor saved with no schedule comes back as an empty array, not as null --
+ * and `stored || DEFAULTS` never fired for it, because [] is truthy. The form
+ * then rendered no rows at all: no day to tick, no way to add one, and saving
+ * wrote the emptiness back so the record could not recover. Building from the
+ * canonical week instead means every day is always present and settable, and a
+ * schedule missing a day gains it rather than hiding it.
+ */
+const withFullWeek = (stored?: DoctorAvailability[] | null): DoctorAvailability[] =>
+  DEFAULT_AVAILABILITY.map((fallback) => {
+    const match = (stored || []).find((slot) => slot.day === fallback.day);
+    return match ? { ...fallback, ...match } : { ...fallback };
+  });
+
 export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagementProps) {
   const { t } = useTranslation();
   // Hospital filtering for super_admin with "All Hospitals" support
@@ -52,15 +84,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     imageFile: null as File | null,
     signatureFile: null as File | null,
     hospitalId: currentHospital.id, // Add hospital selection
-    availability: [
-      { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-      { day: 'Sunday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-      { day: 'Monday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-      { day: 'Tuesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-      { day: 'Wednesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-      { day: 'Thursday', startTime: '09:00', endTime: '13:00', isAvailable: true },
-      { day: 'Friday', startTime: '00:00', endTime: '00:00', isAvailable: false },
-    ] as DoctorAvailability[]
+    availability: withFullWeek() as DoctorAvailability[]
   });
 
   // Scope doctors to selected hospital (or all if super admin)
@@ -216,15 +240,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       imageFile: null,
       signatureFile: null,
       hospitalId: currentHospital.id, // Add hospital selection
-      availability: [
-        { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Sunday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Monday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Tuesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Wednesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Thursday', startTime: '09:00', endTime: '13:00', isAvailable: true },
-        { day: 'Friday', startTime: '00:00', endTime: '00:00', isAvailable: false },
-      ]
+      availability: withFullWeek()
     });
     setImagePreview(null);
     setSignaturePreview(null);
@@ -255,15 +271,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
       imageFile: null,
       signatureFile: null,
       hospitalId: doctor.hospitalId,
-      availability: doctor.availability || [
-        { day: 'Saturday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Sunday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Monday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Tuesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Wednesday', startTime: '09:00', endTime: '17:00', isAvailable: true },
-        { day: 'Thursday', startTime: '09:00', endTime: '13:00', isAvailable: true },
-        { day: 'Friday', startTime: '00:00', endTime: '00:00', isAvailable: false },
-      ]
+      availability: withFullWeek(doctor.availability)
     });
     setImagePreview(doctor.image || null);
     setSignaturePreview(doctor.signature || null);
@@ -287,7 +295,10 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     }
     setFormSubmitting(true);
     const payload = {
-      hospitalId: currentHospital.id,
+      // The hospital picked in the dialog, not whichever one the page is
+      // filtered to. These are different controls, and reading the page filter
+      // meant the dialog's dropdown did nothing at all.
+      hospitalId: formData.hospitalId,
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
@@ -319,7 +330,9 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
     setFormSubmitting(true);
     const payload = {
       id: selectedDoctor.id,
-      hospitalId: selectedDoctor.hospitalId,
+      // Likewise: the dialog's dropdown, not the doctor's existing hospital,
+      // which made moving a doctor between hospitals impossible.
+      hospitalId: formData.hospitalId,
       name: formData.name,
       email: formData.email,
       phone: formData.phone,

@@ -49,8 +49,17 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Backend: /hospitals is guarded by permission:manage_hospitals
-    if (!hasPermission('manage_hospitals')) {
+    // The route is permission:view_hospitals,manage_hospitals -- read access is
+    // enough. Requiring manage here (the comment that used to sit on this line
+    // was simply out of date) left anyone with only view access holding an
+    // empty list, so the hospital's name, logo and address were missing from
+    // every receipt, invoice and prescription they printed. The only way to
+    // print was to grant manage, which also let them edit the hospital record.
+    //
+    // Loading the list grants nothing: the backend scopes non-super-admins to
+    // their own hospital, and add/edit/delete are gated separately on their own
+    // permissions in HospitalManagement.
+    if (!hasPermission('view_hospitals') && !hasPermission('manage_hospitals')) {
       setHospitals([]);
       return;
     }

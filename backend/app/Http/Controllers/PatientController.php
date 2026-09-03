@@ -24,7 +24,25 @@ class PatientController extends Controller
         }
 
         // Doctor scope: patients are linked to doctors via appointments.
-        if ($request->user()->role === 'doctor') {
+        //
+        // Unless the doctor has been granted patient access outright. Granting
+        // "Patients -> View" to a doctor role had no effect before: the
+        // appointment join below is applied independently of permissions, so a
+        // clinic whose patients have no appointments yet showed the doctor an
+        // empty list however the role was configured -- and a doctor writing a
+        // prescription needs to pick any registered patient, not only the ones
+        // already booked with them.
+        // roleGrantsPermission, not hasAnyPermission: the latter falls back to a
+        // built-in list in which 'doctor' already implies view_patients, so it
+        // is true for every doctor and would have lifted the restriction for
+        // all of them. This asks the narrower question -- did an administrator
+        // tick Patients -> View on this doctor's role -- which is exactly the
+        // act that should widen the scope.
+        $seesAllHospitalPatients = $request->user()->role === 'doctor'
+            && method_exists($request->user(), 'roleGrantsPermission')
+            && $request->user()->roleGrantsPermission(['view_patients', 'manage_patients']);
+
+        if ($request->user()->role === 'doctor' && !$seesAllHospitalPatients) {
             // `appointments.doctor_id` holds a users.id since the
             // *_doctor_fk_to_users migrations, but rows created before that
             // still hold the legacy doctors.id. Match either so a doctor sees

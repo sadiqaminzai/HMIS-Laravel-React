@@ -151,6 +151,39 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class, 'role_id');
     }
 
+    /**
+     * Does a role an administrator actually configured grant one of these?
+     *
+     * hasAnyPermission() falls back to a built-in list when a user has no role
+     * record -- 'doctor' implies view_patients there, for instance -- which is
+     * right for gating a screen but useless for telling a deliberate grant
+     * apart from a default. This answers only the narrower question, so a
+     * feature can key off "the admin ticked this box" rather than "the system
+     * role happens to imply it".
+     */
+    public function roleGrantsPermission(array $permissionNames): bool
+    {
+        $names = array_values(array_filter(array_map('trim', $permissionNames), fn ($v) => $v !== ''));
+        if (empty($names)) {
+            return false;
+        }
+
+        if ($this->roles()->exists()) {
+            return $this->spatieHasAnyPermission($names);
+        }
+
+        $role = $this->effectiveRoleRecord();
+        if (!$role) {
+            return false;
+        }
+
+        return $role
+            ->permissions()
+            ->where('permissions.status', 'active')
+            ->whereIn('permissions.name', $names)
+            ->exists();
+    }
+
     private function effectiveRoleRecord(): ?Role
     {
         if ($this->relationLoaded('roleRecord') && $this->roleRecord) {

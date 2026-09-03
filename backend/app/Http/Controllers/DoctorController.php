@@ -108,6 +108,15 @@ class DoctorController extends Controller
 
         $data = $this->validatePayload($request, $doctor->id);
 
+        // Only a super admin may move a doctor between hospitals; anyone else
+        // is pinned to their own, the same rule store() applies. Without this
+        // the field was simply dropped on update, so the hospital chosen in the
+        // dialog was silently ignored and the doctor never moved.
+        $hospitalId = $doctor->hospital_id;
+        if ($request->user()->role === 'super_admin') {
+            $hospitalId = $data['hospital_id'] ?? $doctor->hospital_id;
+        }
+
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('doctors/images', 'public');
         }
@@ -117,6 +126,7 @@ class DoctorController extends Controller
         }
 
         $doctor->update([
+            'hospital_id' => $hospitalId,
             'name' => $data['name'],
             'email' => $data['email'] ?? $doctor->email,
             'phone' => $data['phone'] ?? null,

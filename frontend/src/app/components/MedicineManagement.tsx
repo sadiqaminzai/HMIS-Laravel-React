@@ -397,8 +397,26 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
 
       let success = 0;
       let failed = 0;
+      let duplicates = 0;
+      // Why each row was rejected, so the summary can say more than a number.
+      const problems: string[] = [];
 
-      for (const row of rows) {
+      // Existing stock for this hospital, keyed the way a person would judge
+      // "the same medicine": brand, strength and type together. Brand alone is
+      // too coarse -- the same brand exists at several strengths.
+      const existingKeys = new Set(
+        medicines
+          .filter((m) => m.hospitalId === hospitalId)
+          .map((m) => [
+            (m.brandName || '').toLowerCase().trim(),
+            (m.strength || '').toLowerCase().trim(),
+            String(m.medicineTypeId || ''),
+          ].join('|'))
+      );
+
+      for (const [index, row] of rows.entries()) {
+        // Spreadsheet numbering: row 1 is the header, so the first record is 2.
+        const rowNo = index + 2;
         const brandName = readField(row, ['brand_name', 'brandname', 'brand']);
         const genericName = readField(row, ['generic_name', 'genericname', 'generic']);
         const strength = readField(row, ['strength']);
@@ -413,10 +431,38 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         const medicineTypeId = typeByName.get(medicineTypeName);
         const manufacturerId = manufacturerByName.get(manufacturerName);
 
+        // Name the missing thing. Silently dropping the row was the whole
+        // complaint: an import that takes one line of three and reports only a
+        // count leaves no way to find out what was wrong with the other two.
         if (!brandName || !medicineTypeId || !manufacturerId) {
+          const missing: string[] = [];
+          if (!brandName) missing.push('brand name is empty');
+          if (!medicineTypeId) {
+            missing.push(medicineTypeName
+              ? `medicine type "${readField(row, ['medicine_type', 'medicinetype', 'type'])}" does not exist at this hospital`
+              : 'medicine type is empty');
+          }
+          if (!manufacturerId) {
+            missing.push(manufacturerName
+              ? `manufacturer "${readField(row, ['manufacturer', 'manufacturer_name'])}" does not exist at this hospital`
+              : 'manufacturer is empty');
+          }
+          problems.push(`Row ${rowNo}${brandName ? ` (${brandName})` : ''}: ${missing.join('; ')}`);
           failed++;
           continue;
         }
+
+        // Already on file: skipped rather than added again, so re-importing a
+        // template that has grown by a few lines adds only the new ones.
+        const key = [brandName.toLowerCase().trim(), strength.toLowerCase().trim(), String(medicineTypeId)].join('|');
+        if (existingKeys.has(key)) {
+          duplicates++;
+          problems.push(`Row ${rowNo} (${brandName}): already exists, skipped`);
+          continue;
+        }
+        // Guards against the file itself repeating a medicine, not just
+        // against what is already stored.
+        existingKeys.add(key);
 
         try {
           await addMedicine({
@@ -437,10 +483,32 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         }
       }
 
+      // The counts, then the reasons -- a row that did not import is only
+      // actionable if the person is told which one and what was wrong with it.
+      const summary = [
+        `${success} imported`,
+        duplicates ? `${duplicates} already existed` : '',
+        failed ? `${failed} failed` : '',
+      ].filter(Boolean).join(', ');
+
+      if (problems.length) {
+        console.warn('[Medicine import] rows not imported:\n' + problems.join('\n'));
+      }
+
       if (success > 0) {
-        toast.success(`Medicines import completed. Success: ${success}${failed ? `, Failed: ${failed}` : ''}`);
+        toast.success(`Medicines import completed: ${summary}.`);
+      } else if (duplicates > 0 && failed === 0) {
+        toast.info(`Nothing to import: ${summary}.`);
       } else {
-        toast.error('No medicines were imported. Check template data, type names, and manufacturer names.');
+        toast.error(`No medicines were imported: ${summary}.`);
+      }
+
+      // Shown separately and left on screen longer: this is the part that says
+      // what to correct in the file.
+      if (problems.length) {
+        const shown = problems.slice(0, 4).join(' \u2022 ');
+        const more = problems.length > 4 ? ` \u2022 and ${problems.length - 4} more (see browser console)` : '';
+        toast.warning(`${shown}${more}`, { duration: 12000 });
       }
     } catch {
       toast.error('Failed to read import file. Please upload a valid CSV or XLSX file.');
