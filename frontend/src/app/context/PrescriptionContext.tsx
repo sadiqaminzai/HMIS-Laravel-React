@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Prescription, PrescriptionMedicine } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
@@ -36,6 +36,8 @@ interface DispensePrescriptionInput {
 }
 
 interface PrescriptionContextType {
+  /** Signals that a consumer needs this data; triggers the first load. */
+  markNeeded?: () => void;
   prescriptions: Prescription[];
   addPrescription: (input: AddPrescriptionInput) => Promise<Prescription>;
   updatePrescription: (input: UpdatePrescriptionInput) => Promise<void>;
@@ -154,14 +156,22 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  // Set by the hook below the first time a component consumes this
+  // context, so the fetch follows the need instead of preceding it.
+  const [needed, setNeeded] = useState(false);
+  const markNeeded = useCallback(() => setNeeded(true), []);
+
   useEffect(() => {
     if (!isAuthenticated || authLoading) {
       setPrescriptions([]);
       return;
     }
+    // Nothing has asked for this data yet. Loading the whole table at login
+    // cost every screen the wait, including screens that never read it.
+    if (!needed) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, needed]);
 
   const addPrescription = async (input: AddPrescriptionInput) => {
     const payload: any = {
@@ -306,7 +316,7 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
 
   return (
     <PrescriptionContext.Provider
-      value={{ prescriptions, addPrescription, updatePrescription, dispensePrescription, deletePrescription, refresh }}
+      value={{ markNeeded, prescriptions, addPrescription, updatePrescription, dispensePrescription, deletePrescription, refresh }}
     >
       {children}
     </PrescriptionContext.Provider>
@@ -315,6 +325,10 @@ export function PrescriptionProvider({ children }: { children: React.ReactNode }
 
 export function usePrescriptions() {
   const ctx = useContext(PrescriptionContext);
+  // Ask for the data on first use. Screens that never call this hook
+  // never trigger the download.
+  const markNeeded = ctx?.markNeeded;
+  useEffect(() => { markNeeded?.(); }, [markNeeded]);
   if (!ctx) {
     console.warn('usePrescriptions called outside PrescriptionProvider');
     return {

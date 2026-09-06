@@ -197,7 +197,12 @@ class UltrasoundExamController extends Controller
         $this->authorizeScope($request->user(), $ultrasoundExam);
 
         $this->ledgerPostingService->voidUltrasoundExamSnapshot($ultrasoundExam, $request->user()->name ?? null);
-        $ultrasoundExam->delete();
+        // forceDelete, matching every other module: a soft-deleted receipt left
+        // a row the UI could never reach again but that still occupied its
+        // receipt number, and reports reading the table directly would have
+        // counted it. The ledger entry is voided above, so the money is
+        // reversed before the record goes.
+        $ultrasoundExam->forceDelete();
 
         return response()->json(['message' => 'Ultrasound exam deleted']);
     }

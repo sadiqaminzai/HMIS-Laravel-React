@@ -123,9 +123,22 @@ class Transaction extends Model
         return $this->belongsTo(Patient::class);
     }
 
+    /**
+     * Invoice lines, in the order they were entered.
+     *
+     * Without an explicit order MySQL is free to return them however it likes,
+     * and it did -- a line added at the end of an invoice could reappear at the
+     * top on the next open or print. That matters here beyond tidiness: the
+     * invoice is typed from a handwritten prescription and then read back
+     * against it at the counter, so the two have to list the medicines in the
+     * same sequence.
+     *
+     * An edit deletes the lines and re-creates them in the order submitted, so
+     * ascending id is that order.
+     */
     public function details()
     {
-        return $this->hasMany(TransactionDetail::class, 'trx_id');
+        return $this->hasMany(TransactionDetail::class, 'trx_id')->orderBy('id');
     }
 
     public function walkInPatient()

@@ -20,6 +20,11 @@ class Appointment extends Model
         'appointment_number',
         'patient_name',
         'patient_age',
+        // Without this the unit was silently dropped by mass assignment: the
+        // frontend sent it, validation accepted it and the snapshot helper set
+        // it, but create() ignored the key and the column fell back to its
+        // default -- so a 20-month-old printed as "20 Years" on the fees card.
+        'patient_age_unit',
         'patient_gender',
         'appointment_date',
         'appointment_time',

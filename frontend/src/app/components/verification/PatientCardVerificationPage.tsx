@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatAge } from '../../utils/age';
 import { useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
 import api from '../../../api/axios';
@@ -124,7 +125,7 @@ export function PatientCardVerificationPage() {
                 </div>
                 <div>
                   <div className="text-[7px] text-black uppercase tracking-wider font-black">Age / Gender</div>
-                  <div className="text-xs font-bold text-black">{patient.age}Y / {formatPatientGender(patient.gender)}</div>
+                  <div className="text-xs font-bold text-black">{formatAge(patient.age, (patient as any).ageUnit ?? (patient as any).age_unit, { compact: true })} / {formatPatientGender(patient.gender)}</div>
                 </div>
               </div>
               <div className="mt-1.5">

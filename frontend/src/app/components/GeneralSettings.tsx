@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3, Image as ImageIcon, Upload } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3, Image as ImageIcon, Upload, Wallet } from 'lucide-react';
 import {
   useSettings,
   PRINT_PAPER_SIZES,
@@ -434,38 +434,47 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {settingsTab === 'reception' && canCollectAppointmentFees && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">OPD Fees</h2>
+          <div className="flex items-center gap-2 mb-2">
+            <Wallet className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Appointment Fee</h2>
           </div>
-          <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
-            <span className="text-xs text-gray-800 dark:text-gray-200">New appointments start as Paid</span>
+
+          {/* Same card as Walk-in Mode and Default Next Visit beside it: the
+              three answer the same kind of question and used to be dressed
+              three different ways. Saves on toggle -- a switch that needs a
+              separate button invites you to change it and walk away. */}
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">New appointments start as Paid</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                If disabled, a new appointment opens as Pending and the fee is collected later.
+              </p>
+            </div>
             <button
               type="button"
               role="switch"
               aria-checked={paymentDefaults.appointments === 'paid'}
               aria-label="New appointments start as paid"
-              onClick={() =>
-                setPaymentDefaults((prev) => {
-                  const next = prev.appointments === 'paid' ? 'pending' : 'paid';
-                  toast.info(`Appointment fees default to ${next === 'paid' ? 'Paid' : 'Pending'}`);
-                  return { ...prev, appointments: next };
-                })
-              }
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+              onClick={() => {
+                const next = paymentDefaults.appointments === 'paid' ? 'pending' : 'paid';
+                const updated = { ...paymentDefaults, appointments: next as 'paid' | 'pending' };
+                setPaymentDefaults(updated);
+                saveHospitalSetting(selectedHospital.id, { defaultPaymentStatuses: updated as any })
+                  .then(() => toast.success(`New appointments start as ${next === 'paid' ? 'Paid' : 'Pending'}`))
+                  .catch((err) => {
+                    setPaymentDefaults(paymentDefaults);
+                    toast.error(err?.response?.data?.message || 'Failed to save the appointment default');
+                  });
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2 ${
                 paymentDefaults.appointments === 'paid' ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
               }`}
             >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                paymentDefaults.appointments === 'paid' ? 'translate-x-4.5' : 'translate-x-0.5'
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                paymentDefaults.appointments === 'paid' ? 'translate-x-6' : 'translate-x-1'
               }`} />
             </button>
-          </label>
-          <button
-            onClick={handleSavePaymentDefaults}
-            className="mt-2 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-          >
-            Save OPD defaults
-          </button>
+          </div>
         </div>
         )}
 
@@ -592,89 +601,40 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
         </div>
         )}
 
-        {/* Patient ID Configuration - Compact */}
+        {/* Default Next Visit. Moved out of the Walk-in column and into a
+            column of its own, taking the place of Patient ID Configuration
+            -- patient numbers run from 1 with no prefix, so there was
+            nothing there to configure. */}
         {settingsTab === 'reception' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-2">
-            <Hash className="w-4 h-4 text-green-500" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Patient ID Configuration</h2>
+            <UserPlus className="w-4 h-4 text-purple-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Prescription Defaults</h2>
           </div>
-
-          {/* Patient ID Configuration Form */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={patientIdConfig.autoGenerate}
-                onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, autoGenerate: e.target.checked })}
-                aria-label="Auto-generate patient IDs"
-                className="w-3.5 h-3.5 text-green-600 dark:text-green-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 dark:focus:ring-green-600"
-              />
-              <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                Auto-generate Patient IDs
-              </label>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Prefix
-              </label>
-              <input
-                type="text"
-                value={patientIdConfig.prefix}
-                onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, prefix: e.target.value })}
-                aria-label="Patient ID prefix"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Start Number
-                </label>
-                <input
-                  type="number"
-                  value={patientIdConfig.startNumber}
-                  onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, startNumber: parseInt(e.target.value) })}
-                  aria-label="Patient ID start number"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Digits
-                </label>
-                <input
-                  type="number"
-                  value={patientIdConfig.digits}
-                  onChange={(e) => setPatientIdConfigState({ ...patientIdConfig, digits: parseInt(e.target.value) })}
-                  aria-label="Patient ID digits"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                />
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-              <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-0.5">
-                Preview:
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Current ID: <span className="font-mono font-semibold text-gray-900 dark:text-white">{previewPatientId}</span>
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Next ID: <span className="font-mono font-semibold text-gray-900 dark:text-white">{previewNextId}</span>
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Default Next Visit</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                If enabled, prescription form starts with Next Visit = Yes
               </p>
             </div>
-
-            {/* Save Button */}
             <button
-              onClick={handleSavePatientIdConfig}
-              className="w-full px-2 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+              onClick={handleDefaultNextVisitToggle}
+              aria-label="Toggle default next visit option"
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                ${defaultPrescriptionNextVisit
+                  ? 'bg-purple-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
             >
-              Save Patient ID Settings
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${defaultPrescriptionNextVisit ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
             </button>
           </div>
         </div>
@@ -783,64 +743,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               </button>
             </div>
 
-            {/* Status Display */}
-            <div className={`p-2 rounded-lg border ${
-              defaultToWalkIn
-                ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800'
-                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-            }`}>
-              <p className={`text-xs font-semibold ${
-                defaultToWalkIn
-                  ? 'text-purple-700 dark:text-purple-300'
-                  : 'text-blue-700 dark:text-blue-300'
-              }`}>
-                {defaultToWalkIn ? '✓ Walk-in Mode Active' : 'Search Patient Mode Active'}
-              </p>
-              <p className={`text-xs mt-1 ${
-                defaultToWalkIn
-                  ? 'text-purple-600 dark:text-purple-400'
-                  : 'text-blue-600 dark:text-blue-400'
-              }`}>
-                {defaultToWalkIn 
-                  ? 'Prescription form will open in walk-in patient mode'
-                  : 'Prescription form will open in search patient mode'
-                }
-              </p>
-            </div>
-
-            {/* Information Box */}
-            <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                <strong>Note:</strong> Users can still manually toggle between modes when creating prescriptions.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
-              <div className="flex-1">
-                <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Default Next Visit</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  If enabled, prescription form starts with Next Visit = Yes
-                </p>
-              </div>
-              <button
-                onClick={handleDefaultNextVisitToggle}
-                aria-label="Toggle default next visit option"
-                className={`
-                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
-                  ${defaultPrescriptionNextVisit
-                    ? 'bg-purple-600'
-                    : 'bg-gray-300 dark:bg-gray-600'
-                  }
-                `}
-              >
-                <span
-                  className={`
-                    inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                    ${defaultPrescriptionNextVisit ? 'translate-x-6' : 'translate-x-1'}
-                  `}
-                />
-              </button>
-            </div>
           </div>
         </div>
         )}

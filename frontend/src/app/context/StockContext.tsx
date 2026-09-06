@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Stock } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 
 interface StockContextType {
+  /** Signals that a consumer needs this data; triggers the first load. */
+  markNeeded?: () => void;
   stocks: Stock[];
   refresh: () => Promise<void>;
   loading: boolean;
@@ -59,17 +61,26 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Set by the hook below the first time a component consumes this
+  // context, so the fetch follows the need instead of preceding it.
+  const [needed, setNeeded] = useState(false);
+  const markNeeded = useCallback(() => setNeeded(true), []);
+
   useEffect(() => {
     if (!isAuthenticated || authLoading) {
       setStocks([]);
       return;
     }
+    // Nothing has asked for this data yet. Loading a whole table at
+    // login cost every screen the wait -- Lab Tests was downloading
+    // megabytes of records it never reads.
+    if (!needed) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, needed]);
 
   return (
-    <StockContext.Provider value={{ stocks, refresh, loading }}>
+    <StockContext.Provider value={{ markNeeded, stocks, refresh, loading }}>
       {children}
     </StockContext.Provider>
   );
@@ -77,6 +88,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
 export function useStocks() {
   const context = useContext(StockContext);
+  // Ask for the data on first use. Screens that never call this hook
+  // never trigger the download.
+  const markNeeded = context?.markNeeded;
+  useEffect(() => { markNeeded?.(); }, [markNeeded]);
   if (!context) {
     console.warn('useStocks called outside StockProvider');
     return {

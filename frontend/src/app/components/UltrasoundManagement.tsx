@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { formatAge } from '../utils/age';
 import { format } from 'date-fns';
 import {
   Plus,
@@ -149,6 +150,9 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   // manage_ultrasound_exams, which reception holds.
   const canEditExams = hasPermission('submit_ultrasound_result');
   const canDeleteExams = hasPermission('delete_ultrasound_exams');
+  // The narrow right: remove a receipt without also being able to edit every
+  // exam and its result, which is what Manage would have granted.
+  const canDeleteReceipt = hasPermission('delete_ultrasound_receipt');
   const canPrintExams = hasPermission('print_ultrasound_exams') || canManageExams;
 
   // Reception's side of the module. Kept separate from the exam permissions
@@ -267,7 +271,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   const selectedPatientLabel = useMemo(() => {
     if (!examForm.patientId) return '';
     const chosen = patientsForHospital.find((p) => String(p.id) === String(examForm.patientId));
-    return chosen ? `${chosen.name} — ${chosen.patientId} (${chosen.age} Y / ${chosen.gender})` : '';
+    return chosen ? `${chosen.name} — ${chosen.patientId} (${formatAge(chosen.age, chosen.ageUnit)} / ${chosen.gender})` : '';
   }, [examForm.patientId, patientsForHospital]);
 
   const doctorsForHospital = useMemo(
@@ -638,6 +642,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
           canTakePayment={canTakeUltrasoundPayment}
           canReversePayment={canReverseUltrasoundPayment}
           canPrintReceipt={canPrintUltrasoundReceipt}
+          canDelete={canDeleteReceipt || canDeleteExams || canManageExams}
           onChanged={loadData}
         />
       ) : (
@@ -690,7 +695,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 <div className="max-w-[180px]">
                   <CellStack
                     primary={exam.patient?.name ?? '-'}
-                    secondary={`${exam.patient?.age ? `${exam.patient.age} Y` : ''}${exam.patient?.gender ? ` / ${exam.patient.gender}` : ''}`}
+                    secondary={`${exam.patient?.age ? formatAge(exam.patient.age, (exam.patient as any)?.ageUnit) : ''}${exam.patient?.gender ? ` / ${exam.patient.gender}` : ''}`}
                   />
                 </div>
               </td>
@@ -795,7 +800,18 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
       {/* Exam modal */}
       {isExamModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[50] p-4">
-          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full ${isReceptionForm ? 'max-w-3xl' : 'max-w-4xl'} max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700`}>
+          {/* Narrower and taller: six short fields spread over a 4xl card
+              left every input stranded in white space and the whole form on
+              two shallow rows. Two per row down a narrow card reads as a form
+              rather than a toolbar. */}
+          {/* scrollbar-gutter reserves the scrollbar's track whether or not one
+              is showing. Without it, opening a dropdown made the card taller
+              than the viewport, the scrollbar appeared, and every field inside
+              jumped narrower by its width -- then back again on close. */}
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-xl max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700"
+            style={{ scrollbarGutter: 'stable' }}
+          >
             <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
               <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 {editingExam ? t('ultrasound.editExam') : t('ultrasound.newExam')}
@@ -855,10 +871,16 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                             setPatientSearch('');
                             setPatientListOpen(false);
                           }}
-                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white"
+                          className="w-full text-left px-3 py-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                         >
-                          <span className="font-medium">{p.name}</span>
-                          <span className="text-gray-500"> — {p.patientId} ({p.age} Y / {p.gender})</span>
+                          {/* Name on its own line; the details that tell two
+                              patients of the same name apart go quietly
+                              underneath rather than trailing off the row. */}
+                          <div className="text-xs font-medium text-gray-900 dark:text-white">{p.name}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                            ID {p.patientId} · {formatAge(p.age, p.ageUnit)} / {p.gender}
+                            {p.phone ? ` · ${p.phone}` : ''}
+                          </div>
                         </button>
                       </li>
                     ))}
@@ -894,10 +916,16 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                             setExamForm((prev) => ({ ...prev, referredBy: d.name }));
                             setReferrerListOpen(false);
                           }}
-                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white"
+                          className="w-full text-left px-3 py-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                         >
-                          <span className="font-medium">{d.name}</span>
-                          {d.specialization && <span className="text-gray-500"> — {d.specialization}</span>}
+                          <div className="text-xs font-medium text-gray-900 dark:text-white">{d.name}</div>
+                          {(d.specialization || d.registrationNumber) && (
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {[d.specialization, d.registrationNumber && `Reg. ${d.registrationNumber}`]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                          )}
                         </button>
                       </li>
                     ))}
@@ -905,7 +933,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 )}
               </div>
 
-              <div className={`col-span-12 ${isReceptionForm ? 'md:col-span-6' : 'md:col-span-4'}`}>
+              <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>
                   {t('ultrasound.type')} <span className="text-red-500">*</span>
                 </label>
@@ -929,7 +957,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                   allowed to decide what it costs. Without the permission the
                   price is inherited from the ultrasound type. */}
               {!isReceptionForm ? null : (
-              <div className="col-span-12 md:col-span-3">
+              <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>{t('ultrasound.fee')}</label>
                 <input
                   type="number"
@@ -944,7 +972,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               </div>
               )}
 
-              <div className={`col-span-12 ${isReceptionForm ? 'md:col-span-3' : 'md:col-span-4'}`}>
+              <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>
                   {t('ultrasound.examDate')} <span className="text-red-500">*</span>
                 </label>
@@ -960,7 +988,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               </div>
 
               {!isReceptionForm && (
-              <div className="col-span-12 md:col-span-3">
+              <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>
                   {t('common.status')} <span className="text-red-500">*</span>
                 </label>

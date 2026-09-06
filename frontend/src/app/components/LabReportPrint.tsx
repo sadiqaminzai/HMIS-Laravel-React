@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatAgeLong } from '../utils/age';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Hospital, LabTest } from '../types';
 import { buildVerificationUrl } from '../utils/verification';
@@ -74,7 +75,7 @@ export function LabReportPrint({ test, hospital }: LabReportPrintProps) {
           </div>
           <div>
             <div className="text-[8px] font-semibold text-gray-500 uppercase">Age</div>
-            <div className="text-[10px] text-gray-900 font-medium">{test.patientAge} Years</div>
+            <div className="text-[10px] text-gray-900 font-medium">{formatAgeLong(test.patientAge, (test as any).patientAgeUnit)}</div>
           </div>
           <div>
             <div className="text-[8px] font-semibold text-gray-500 uppercase">Gender</div>

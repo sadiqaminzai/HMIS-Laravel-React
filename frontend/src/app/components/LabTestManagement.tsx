@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatAge, formatAgeLong } from '../utils/age';
 import { useTranslation } from 'react-i18next';
 import { Beaker, Plus, Search, Clock, CheckCircle, XCircle, FileText, Printer, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, Eye } from 'lucide-react';
 import { Hospital, LabTest, UserRole } from '../types';
@@ -725,7 +726,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
                   >
                     <option value="">{t('ui.selectPatient')}</option>
                     {hospitalPatients.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.age}Y, {p.gender})</option>
+                      <option key={p.id} value={p.id}>{p.name} ({formatAge(p.age, p.ageUnit, { compact: true })}, {p.gender})</option>
                     ))}
                   </select>
                 </div>
@@ -846,7 +847,7 @@ export function LabTestManagement({ hospital, userRole, currentUserId }: LabTest
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.patient')}</label>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">{selectedTest.patientName}</div>
-                    <div className="text-xs text-gray-500">{selectedTest.patientAge} Years • {selectedTest.patientGender}</div>
+                    <div className="text-xs text-gray-500">{formatAgeLong(selectedTest.patientAge, (selectedTest as any).patientAgeUnit)} • {selectedTest.patientGender}</div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.doctor')}</label>

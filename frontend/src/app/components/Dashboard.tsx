@@ -21,7 +21,9 @@ import {
   Package,
   Printer,
   HeartPulse,
-  Bed
+  Bed,
+  Radio,
+  ScanLine,
 } from 'lucide-react';
 import { UserRole, Hospital } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -64,11 +66,13 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  */
 const DASHBOARD_PANELS = [
   'available_stock', 'medicine_sale', 'appointment_fees', 'lab_orders_amount',
-  'surgery_fees', 'room_booking_fees', 'expenses', 'inventory_purchases',
+  'surgery_fees', 'room_booking_fees', 'ultrasound_fees', 'xray_fees',
+  'expenses', 'inventory_purchases',
   'other_income', 'salary', 'revenue_total',
   'count_hospitals', 'count_doctors', 'count_patients', 'count_prescriptions',
   'count_medicines', 'count_test_templates', 'count_lab_tests',
   'count_appointments', 'count_rooms', 'count_surgeries',
+  'count_ultrasound', 'count_xray',
   'chart_monthly', 'chart_appointment_status', 'chart_test_status',
   'chart_medicine_stock',
   'recent_patients', 'recent_prescriptions', 'recent_lab_orders',
@@ -98,6 +102,8 @@ interface DashboardSummary {
     active_rooms: number;
     surgeries: number;
     lab_orders_today: number;
+    ultrasound_exams_today: number;
+    xray_receipts_today: number;
     appointments_today: number;
     room_bookings_today: number;
     patient_surgeries_today: number;
@@ -123,6 +129,8 @@ interface DashboardSummary {
     total_lab_fees: number;
     total_surgery_fees?: number;
     total_room_fees?: number;
+    total_ultrasound_fees?: number;
+    total_xray_fees?: number;
     total_sales_invoice_amount: number;
     total_sales_paid_amount?: number;
     total_sales_due_amount?: number;
@@ -188,6 +196,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     active_rooms: 0,
     surgeries: 0,
     lab_orders_today: 0,
+    ultrasound_exams_today: 0,
+    xray_receipts_today: 0,
     appointments_today: 0,
     room_bookings_today: 0,
     patient_surgeries_today: 0,
@@ -214,6 +224,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     total_lab_fees: 0,
     total_surgery_fees: 0,
     total_room_fees: 0,
+    total_ultrasound_fees: 0,
+    total_xray_fees: 0,
     total_sales_invoice_amount: 0,
     total_sales_return_amount: 0,
     total_net_medicine_sale: 0,
@@ -364,6 +376,24 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         icon: <Bed className="w-4 h-4" />,
         color: 'bg-cyan-500',
         visible: showPanel('room_booking_fees', 'view_room_bookings', 'manage_room_bookings'),
+      },
+      {
+        key: 'ultrasound_fees',
+        label: 'Ultrasound Fees',
+        value: formatMoney(dailyFinancials.total_ultrasound_fees ?? 0),
+        helper: 'Total ultrasound fees for selected period',
+        icon: <Radio className="w-4 h-4" />,
+        color: 'bg-fuchsia-500',
+        visible: showPanel('ultrasound_fees', 'view_ultrasound_exams', 'manage_ultrasound_exams', 'manage_ultrasound_payments'),
+      },
+      {
+        key: 'xray_fees',
+        label: 'X-Ray Fees',
+        value: formatMoney(dailyFinancials.total_xray_fees ?? 0),
+        helper: 'Total X-Ray fees for selected period',
+        icon: <ScanLine className="w-4 h-4" />,
+        color: 'bg-sky-600',
+        visible: showPanel('xray_fees', 'view_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments'),
       },
       {
         key: 'expenses',
@@ -649,6 +679,22 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={counts.lab_orders_today.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-cyan-500"
+          />
+        )}
+        {showPanel('count_ultrasound', 'view_ultrasound_exams', 'manage_ultrasound_exams') && (
+          <StatCard
+            label="Ultrasound (Today)"
+            value={counts.ultrasound_exams_today.toString()}
+            icon={<Radio className="w-4 h-4" />}
+            color="bg-fuchsia-500"
+          />
+        )}
+        {showPanel('count_xray', 'view_xray_receipts', 'manage_xray_receipts') && (
+          <StatCard
+            label="X-Ray (Today)"
+            value={counts.xray_receipts_today.toString()}
+            icon={<ScanLine className="w-4 h-4" />}
+            color="bg-sky-600"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (

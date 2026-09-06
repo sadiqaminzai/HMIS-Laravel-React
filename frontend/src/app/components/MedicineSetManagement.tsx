@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { calculatePrescriptionQuantity } from '../utils/prescriptionQuantity';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Plus, Save, Trash2, Pencil, X, Search } from 'lucide-react';
@@ -227,9 +228,23 @@ export function MedicineSetManagement({ hospital, userRole = 'admin' }: Medicine
 
   const updateItem = (index: number, field: keyof MedicineSetFormItem, value: string | number) => {
     setItems((previous) =>
-      previous.map((item, currentIndex) =>
-        currentIndex === index ? { ...item, [field]: value } : item
-      )
+      previous.map((item, currentIndex) => {
+        if (currentIndex !== index) return item;
+        const updated = { ...item, [field]: value } as MedicineSetFormItem;
+
+        // The same auto-calculation the prescription grid does: a set is a
+        // template for prescription lines, so typing 1-0-1 for 5 days should
+        // reach 10 here exactly as it would there. Previously the quantity on
+        // a set had to be worked out by hand and stayed 0 if it was not.
+        if (field === 'dose' || field === 'duration') {
+          updated.quantity = calculatePrescriptionQuantity(
+            String(field === 'dose' ? value : item.dose ?? ''),
+            String(field === 'duration' ? value : item.duration ?? '')
+          );
+        }
+
+        return updated;
+      })
     );
   };
 

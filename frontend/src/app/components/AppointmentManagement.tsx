@@ -111,7 +111,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
   // Ref-backed: two clicks in one frame cannot both pass the check, which
   // is how duplicate appointments were being created on a slow connection.
   const { submitting, guard } = useSubmitGuard();
-  const { getDefaultDoctorId, getPrintPaperSize, loadHospitalSetting } = useSettings();
+  const { getDefaultDoctorId, getPrintPaperSize, loadHospitalSetting, getDefaultPaymentStatuses } = useSettings();
   
   // Sorting state. Matches the order the API returns -- latest appointment date
   // first -- so the page is not re-shuffled the moment it loads. The API sorts
@@ -133,8 +133,20 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
     originalFeeAmount: '',
     discountEnabled: false,
     discountAmount: '',
-    paymentStatus: 'paid' as NonNullable<Appointment['paymentStatus']>,
+    paymentStatus: (getDefaultPaymentStatuses(currentHospital.id).appointments === 'paid'
+      ? 'paid'
+      : 'pending') as NonNullable<Appointment['paymentStatus']>,
   });
+
+  /**
+   * What a new appointment starts as, from Settings > Reception.
+   *
+   * This was hard-coded to 'paid' in all three places a form is reset, so a
+   * hospital that had turned the toggle off still got every new appointment
+   * marked collected -- money recorded that nobody had taken.
+   */
+  const defaultAppointmentPaymentStatus = (): NonNullable<Appointment['paymentStatus']> =>
+    getDefaultPaymentStatuses(currentHospital.id).appointments === 'paid' ? 'paid' : 'pending';
 
   const calculateTotals = () => {
     const original = Math.max(0, Number(formData.originalFeeAmount || 0));
@@ -581,6 +593,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       paymentStatus: formData.paymentStatus,
       patientName: patient?.name,
       patientAge: patient?.age,
+      // The unit travels with the number. Sent without it, the appointment
+      // stored the fallback 'year' and a four-month-old printed as "4 Years"
+      // on the fees card while the ID card correctly read "4M".
+      patientAgeUnit: patient?.ageUnit,
       patientGender: patient?.gender,
     }).then(() => {
       setShowAddModal(false);
@@ -626,6 +642,10 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       paymentStatus: formData.paymentStatus,
       patientName: patient?.name,
       patientAge: patient?.age,
+      // The unit travels with the number. Sent without it, the appointment
+      // stored the fallback 'year' and a four-month-old printed as "4 Years"
+      // on the fees card while the ID card correctly read "4M".
+      patientAgeUnit: patient?.ageUnit,
       patientGender: patient?.gender,
       status: selectedAppointment.status,
     }).then(() => {
@@ -730,7 +750,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
       originalFeeAmount: '',
       discountEnabled: false,
       discountAmount: '',
-      paymentStatus: 'paid',
+      paymentStatus: defaultAppointmentPaymentStatus(),
     });
   };
 
@@ -866,7 +886,7 @@ export function AppointmentManagement({ hospital, userRole, currentUser }: Appoi
                   originalFeeAmount: defaultDoctor ? String(defaultDoctor.consultationFee ?? 0) : '',
                   discountEnabled: false,
                   discountAmount: '',
-                  paymentStatus: 'paid',
+                  paymentStatus: defaultAppointmentPaymentStatus(),
                 });
                 setShowAddModal(true);
               }}

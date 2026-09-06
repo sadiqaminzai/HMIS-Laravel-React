@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Beaker, Plus, X, Search, Clock, CheckCircle, XCircle, Trash2, FileText, Printer, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown, FileDown, CreditCard, Eye, RefreshCw, ChevronDown, Check, Pencil, Receipt, FlaskConical, Wallet, Microscope } from 'lucide-react';
 import { Hospital, LabTest, Patient, TestResult, TestTemplate, UserRole } from '../types';
@@ -14,7 +14,7 @@ import jsPDF from 'jspdf';
 import { toPng } from 'html-to-image';
 import autoTable from 'jspdf-autotable';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
-import { fetchAllLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
+import { fetchLabOrders, fetchLabOrder, createLabOrder, processPayment, resetLabOrderPayment, updateLabOrder, collectSample, cancelLabOrder, deleteLabOrder, enterResults, LabOrder } from '../../api/labOrders';
 import { fetchTestTemplates } from '../../api/testTemplates';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
@@ -41,7 +41,27 @@ const mapOrderStatus = (orderStatus: string, paymentStatus: string): LabTest['st
   return 'pending';
 };
 
-const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients: Patient[]): LabTest => {
+/**
+ * Lookup tables built once per refresh instead of scanned once per row.
+ *
+ * This used to take the raw arrays and call .find() inside both loops: once
+ * per item for the template and once per order for the patient. On one
+ * hospital that is 686 orders against 1,126 patients and 1,653 items against
+ * 166 templates -- around half a million String() allocations and comparisons
+ * every time the list rendered.
+ */
+export interface LabLookups {
+  templateById: Map<string, TestTemplate>;
+  patientById: Map<string, Patient>;
+}
+
+export const buildLabLookups = (templates: TestTemplate[], patients: Patient[]): LabLookups => ({
+  templateById: new Map(templates.map((t) => [String(t.id), t])),
+  patientById: new Map(patients.map((p) => [String(p.id), p])),
+});
+
+const mapOrderToLabTest = (order: LabOrder, lookups: LabLookups): LabTest => {
+  const { templateById, patientById } = lookups;
   const selectedTests: string[] = [];
   // Tests the laboratory still has to key a result for. Analyser-reported
   // tests are billed and printed but never appear in the technician's queue.
@@ -61,7 +81,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     order.createdBy;
 
   order.items?.forEach((item) => {
-    const template = templates.find((t) => String(t.id) === String(item.testTemplateId));
+    const template = templateById.get(String(item.testTemplateId));
     const norm = (v: string | undefined | null) => (v ?? '').trim().toLowerCase();
 
     // Prefer the latest template metadata for display.
@@ -128,7 +148,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), requiresResult, parameters, results });
   });
 
-  const patient = patients.find(p => String(p.id) === String(order.patientId));
+  const patient = patientById.get(String(order.patientId));
   const orderAny = order as any;
   const patientDisplayId =
     order.patientDisplayId ||
@@ -156,7 +176,7 @@ const mapOrderToLabTest = (order: LabOrder, templates: TestTemplate[], patients:
     // The modal filters to the ones they may actually touch.
     resultsEditable: (order.items || [])
       .filter((item) => {
-        const tpl = templates.find((t) => String(t.id) === String(item.testTemplateId));
+        const tpl = templateById.get(String(item.testTemplateId));
         return tpl ? tpl.requiresResult !== false : (item as any).requiresResult !== false;
       })
       .some((item) => (item as any).isEditable !== false),
@@ -331,21 +351,72 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
   }, [currentHospital.id, isAllHospitals]);
 
+  /**
+   * Templates and patients are only needed to label rows, so they are read
+   * through refs rather than closed over.
+   *
+   * As dependencies they made this callback -- and the effect that runs it --
+   * new every time either array arrived. Templates load in their own effect
+   * and patients come from context, so a single visit refetched the hospital's
+   * entire order history two or three times over before settling. The list is
+   * re-labelled below when they land; it is not fetched again.
+   */
+  const lookupsRef = useRef<LabLookups>(buildLabLookups(testTemplates, patients));
+  const rawOrdersRef = useRef<LabOrder[]>([]);
+
+  useEffect(() => {
+    lookupsRef.current = buildLabLookups(testTemplates, patients);
+    if (rawOrdersRef.current.length) {
+      setLabTests(rawOrdersRef.current.map((order) => mapOrderToLabTest(order, lookupsRef.current)));
+    }
+  }, [testTemplates, patients]);
+
+  /** Total matching rows on the server, for the pager. */
+  const [serverTotal, setServerTotal] = useState(0);
+  /** Mirrors the latch above, so buttons can disable themselves. */
+  const [actionBusy, setActionBusy] = useState(false);
+
+  /**
+   * One page, filtered by the desk currently in view.
+   *
+   * This used to download every order the hospital had ever raised and do the
+   * filtering, searching, sorting and paging in the browser -- 664 rows and
+   * 4.2 MB, about 3.2 seconds, before a single row appeared, and it grew with
+   * the archive. The three queues are expressible as query filters, so the
+   * server sends the fifty rows actually on screen: ~270 KB in ~210 ms, and
+   * flat as the lab grows.
+   */
   const refreshLabOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await fetchAllLabOrders({
+      const stageParams =
+        activeStage === 'payments'
+          ? { excludeCancelled: true }
+          : activeStage === 'processing'
+            // Paid work that the lab still has to key a result for. Orders made
+            // up entirely of analyser-reported tests never enter this queue.
+            ? { excludeCancelled: true, paymentStatus: 'paid', hasResultWork: true }
+            : {};
+
+      const { data, total } = await fetchLabOrders({
         hospitalId: isAllHospitals ? undefined : currentHospital.id,
         doctorId: userRole === 'doctor' ? currentUserId : undefined,
+        search: searchTerm.trim() || undefined,
+        page: currentPage,
+        perPage: itemsPerPage,
+        ...stageParams,
       });
-      setLabTests(data.map((order) => mapOrderToLabTest(order, testTemplates, patients)));
+      rawOrdersRef.current = data;
+      setServerTotal(total ?? data.length);
+      setLabTests(data.map((order) => mapOrderToLabTest(order, lookupsRef.current)));
     } catch (error) {
       console.error(error);
       setToast({ message: 'Failed to load lab tests', type: 'danger' });
     } finally {
       setLoading(false);
     }
-  }, [currentHospital.id, currentUserId, isAllHospitals, patients, testTemplates, userRole]);
+  }, [currentHospital.id, currentUserId, isAllHospitals, userRole,
+      activeStage, currentPage, itemsPerPage, searchTerm]);
 
   useEffect(() => {
     loadTestTemplates();
@@ -498,14 +569,17 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           return aOwed - bOwed;
         })
       : stageFilteredLabTests;
-  const totalPages = Math.max(1, Math.ceil(filteredLabTests.length / itemsPerPage));
-  const paginatedLabTests = filteredLabTests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // The server already returned exactly this page, filtered and counted.
+  const totalPages = Math.max(1, Math.ceil(serverTotal / itemsPerPage));
+  const paginatedLabTests = filteredLabTests;
   const minimumRowCount = 5;
   const fillerRows = Math.max(0, minimumRowCount - paginatedLabTests.length);
 
+  // Back to page one whenever the result set changes underneath. Sorting is
+  // excluded: it reorders the page in the browser and must not refetch.
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedHospitalId, sortField, sortDirection, itemsPerPage, activeStage]);
+  }, [searchTerm, selectedHospitalId, itemsPerPage, activeStage]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -721,6 +795,29 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
   };
 
+  /**
+   * True while a state-changing request is in the air.
+   *
+   * The list took seconds to come back, so a technician who pressed "Start
+   * Processing" and saw nothing happen pressed it again -- and the second
+   * click raced the first. A ref rather than state: it has to be readable and
+   * writable synchronously inside the same click, before React re-renders.
+   */
+  const actionInFlight = useRef(false);
+
+  /** Runs an action once, ignoring repeat presses until it settles. */
+  const runOnce = async (action: () => Promise<void>) => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActionBusy(true);
+    try {
+      await action();
+    } finally {
+      actionInFlight.current = false;
+      setActionBusy(false);
+    }
+  };
+
   const handleAdminResetToPending = async (test: LabTest) => {
     try {
       await updateLabOrder(test.id, { status: 'pending' });
@@ -737,7 +834,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
   };
 
-  const handleCollectSample = async (test: LabTest) => {
+  const handleCollectSample = (test: LabTest) => runOnce(async () => {
     try {
       await collectSample(test.id);
       await refreshLabOrders();
@@ -748,7 +845,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     } finally {
       setOpenStatusDropdown(null);
     }
-  };
+  });
 
   const handleCancelOrder = async (test: LabTest) => {
     try {
@@ -763,14 +860,45 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     }
   };
 
-  const handleSubmitResults = async (results: TestResult[], remarks: string) => {
+  /**
+   * Open the result sheet for an order.
+   *
+   * The list no longer carries result values -- sending every recorded figure
+   * for every order was most of a 4.9 MB response -- so the full order is
+   * fetched here, where it is actually needed. One small request when a
+   * technician opens a sheet, instead of the whole lab's results on every
+   * refresh.
+   */
+  /**
+   * Opened straight from the list row, which carries the recorded values.
+   *
+   * These briefly fetched the order first, to go with a slimmer list payload.
+   * The report renders from whatever is in state at that moment, so the sheet
+   * printed empty while the fetch was still in flight -- with patients waiting
+   * on it. The row is complete again; nothing to wait for.
+   */
+  const openResultModal = (test: LabTest) => {
+    setSelectedTest(test);
+    setShowResultModal(true);
+    setOpenStatusDropdown(null);
+  };
+
+  const openViewModal = (test: LabTest) => {
+    setSelectedTest(test);
+    setShowViewModal(true);
+  };
+
+  const handleSubmitResults = (results: TestResult[], remarks: string) =>
+    runOnce(() => submitResultsOnce(results, remarks));
+
+  const submitResultsOnce = async (results: TestResult[], remarks: string) => {
     if (!selectedTest) return;
     let currentTest = selectedTest;
 
     // Refresh latest order to ensure payment/status are current
     try {
       const latest = await fetchLabOrder(selectedTest.id);
-      const mapped = mapOrderToLabTest(latest, testTemplates, patients);
+      const mapped = mapOrderToLabTest(latest, lookupsRef.current);
       currentTest = mapped;
       setSelectedTest(mapped);
     } catch (refreshErr) {
@@ -1220,20 +1348,15 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                                 
                                 {test.status === 'pending' && canProcess && (
                                   <button
-                                    onClick={() => {
-                                      handleCollectSample(test);
-                                    }}
-                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                  >{t('ui.startProcessing')}</button>
+                                    disabled={actionBusy}
+                                    onClick={() => { handleCollectSample(test); }}
+                                    className="block w-full text-left px-2 py-1.5 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-wait"
+                                  >{actionBusy ? 'Working...' : t('ui.startProcessing')}</button>
                                 )}
                                 
                                 {test.status === 'in_progress' && canEnterResults && (
                                   <button
-                                    onClick={() => {
-                                      setSelectedTest(test);
-                                      setShowResultModal(true);
-                                      setOpenStatusDropdown(null);
-                                    }}
+                                    onClick={() => openResultModal(test)}
                                     className="block w-full text-left px-2 py-1.5 text-[10px] text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
                                   >
                                     Enter Results & Complete
@@ -1256,7 +1379,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => { setSelectedTest(test); setShowViewModal(true); }}
+                            onClick={() => openViewModal(test)}
                             className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
                             title={t('ui.viewDetails')}
                           >
@@ -1338,10 +1461,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             && (test.status === 'in_progress'
                               || (test.status === 'completed' && test.resultsEditable)) && (
                             <button
-                              onClick={() => {
-                                setSelectedTest(test);
-                                setShowResultModal(true);
-                              }}
+                              onClick={() => openResultModal(test)}
                               className={`p-1.5 rounded-md transition-colors ${
                                 test.status === 'completed'
                                   ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
@@ -1554,7 +1674,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           }}
                           className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-900 dark:text-gray-100"
                         >
-                          {p.name} ({p.age}Y, {p.gender})
+                          {p.name} ({formatAge(p.age, p.ageUnit, { compact: true })}, {p.gender})
                         </button>
                       ))}
                     </div>
@@ -1781,17 +1901,25 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       {/* View Modal */}
       {showViewModal && selectedTest && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 flex flex-col">
-            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between rounded-t-lg">
+          {/* Capped at 90vh with the body scrolling inside it. Uncapped, a test
+              with a dozen parameters grew the card past the bottom of the
+              screen and took the close button with it -- there was no way out
+              of the modal but the browser's back button. */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+            <div className="shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <Beaker className="w-4 h-4 text-blue-600" />
                 Test Details
               </h2>
-              <button onClick={() => setShowViewModal(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">
+              <button
+                onClick={() => setShowViewModal(false)}
+                aria-label="Close test details"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* Header Info */}
               <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800">
                 <div>
@@ -1842,21 +1970,53 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
 
               {/* Results if available */}
               {selectedTest.testResults && selectedTest.testResults.length > 0 && (
-                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-100 dark:border-green-800">
-                   <label className="block text-[10px] font-semibold text-green-700 dark:text-green-400 uppercase tracking-wider mb-2">Test Results</label>
-                   <div className="space-y-2">
-                     {selectedTest.testResults.map((res, idx) => (
-                       <div key={idx} className="text-xs text-gray-800 dark:text-gray-200">
-                         <span className="font-bold">{res.testName} ({res.parameterName}):</span> {res.result} {res.unit}
-                       </div>
-                     ))}
-                     {selectedTest.remarks && (
-                       <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
-                         <span className="text-[10px] font-bold text-green-800 dark:text-green-300">Remarks: </span>
-                         <span className="text-xs text-gray-700 dark:text-gray-300">{selectedTest.remarks}</span>
-                       </div>
-                     )}
-                   </div>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Test Results</span>
+                    <span className="text-[10px] text-gray-400">{selectedTest.testResults.length} parameters</span>
+                  </div>
+
+                  {/* A table, and one that scrolls on its own. Read as a run of
+                      sentences, a panel of values is impossible to scan down;
+                      a long panel also pushed everything below it out of
+                      reach. Ten rows are shown and the rest scroll here. */}
+                  <div className="max-h-[280px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white dark:bg-gray-800 shadow-[0_1px_0_rgb(229,231,235)]">
+                        <tr className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          <th className="text-left font-semibold px-3 py-1.5">Test</th>
+                          <th className="text-left font-semibold px-3 py-1.5">Parameter</th>
+                          <th className="text-right font-semibold px-3 py-1.5">Result</th>
+                          <th className="text-left font-semibold px-3 py-1.5 w-20">Unit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedTest.testResults.map((res, idx) => (
+                          <tr key={idx} className="border-t border-gray-100 dark:border-gray-700/60">
+                            <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">{res.testName}</td>
+                            <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-white">{res.parameterName}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-900 dark:text-white">
+                              {res.result || '-'}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">{res.unit}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {selectedTest.remarks && (
+                    <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-amber-50/60 dark:bg-amber-900/10">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">Remarks</div>
+                      {/* Written in the rich-text box, so it is stored as HTML.
+                          Printed as plain text it came out as literal markup --
+                          "&lt;p&gt;Some&amp;nbsp;Important..." on screen. */}
+                      <div
+                        className="text-xs text-gray-700 dark:text-gray-300 rx-quill-content"
+                        dangerouslySetInnerHTML={{ __html: selectedTest.remarks }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1893,13 +2053,14 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                 </div>
               </div>
 
-              {/* Close Button */}
-              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                 <button
-                  onClick={() => setShowViewModal(false)}
-                  className="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs shadow-sm"
-                >{t('ui.closeDetailView')}</button>
-              </div>
+            </div>
+
+            {/* Outside the scrolling body, so it is always on screen. */}
+            <div className="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 flex justify-end">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium text-xs"
+              >{t('ui.closeDetailView')}</button>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { formatAge } from '../utils/age';
 import { useReactToPrint } from 'react-to-print';
 import { X, Phone, Mail, Printer } from 'lucide-react';
 import { Hospital, Patient, Doctor, PrescriptionMedicine } from '../types';
@@ -7,7 +8,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { formatDate, formatVisitDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
 import { useSettings } from '../context/SettingsContext';
-import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { POWERED_BY_TEXT_WITH_PHONE } from '../utils/receiptBranding';
 import { printName } from '../utils/printName';
 
 // Extended type for medicine with additional display fields
@@ -482,15 +483,15 @@ export function PrescriptionPrint({
     #prescription-print-content .print-content-grow > div:first-child {
       float: none !important;
       flex: 0 0 30% !important;
-      width: 30% !important;
-      max-width: 30% !important;
+      width: 24% !important;
+      max-width: 24% !important;
     }
 
     #prescription-print-content .print-content-grow > div:last-child {
       float: none !important;
       flex: 1 1 auto !important;
-      width: 70% !important;
-      max-width: 70% !important;
+      width: 76% !important;
+      max-width: 76% !important;
       margin-bottom: 4mm !important;
     }
 
@@ -580,14 +581,14 @@ export function PrescriptionPrint({
     #prescription-print-content .rx-nv-row { display: block !important; }
     #prescription-print-content .rx-nv-row > div:first-child {
       float: left !important;
-      width: 30% !important;
-      max-width: 30% !important;
+      width: 24% !important;
+      max-width: 24% !important;
       padding-right: 12px !important;
     }
     #prescription-print-content .rx-nv-row > div:last-child {
       float: right !important;
-      width: 70% !important;
-      max-width: 70% !important;
+      width: 76% !important;
+      max-width: 76% !important;
     }
     #prescription-print-content .rx-nv-row::after {
       content: "";
@@ -622,6 +623,13 @@ export function PrescriptionPrint({
       border: 0 !important;
     }
     #prescription-print-content .rx-med-table { font-size: 11px !important; }
+    /* The name carries the most weight on the sheet and was setting at the
+       same 11px as the dosage columns, which is small on A4. Raised on its
+       own so the row height barely moves. */
+    #prescription-print-content .rx-med-table tbody td:first-child {
+      font-size: 13px !important;
+      line-height: 1.3 !important;
+    }
     #prescription-print-content .rx-med-table thead th {
       padding: 0 6px 5px !important;
       font-size: 9px !important;
@@ -631,8 +639,11 @@ export function PrescriptionPrint({
       color: #9ca3af !important;
       border-bottom: 1px solid #d1d5db !important;
     }
+    #prescription-print-content .rx-med-table tbody td:first-child { padding-left: 0 !important; }
+    #prescription-print-content .rx-med-table thead th { padding-left: 4px !important; padding-right: 4px !important; }
+    #prescription-print-content .rx-med-table thead th:first-child { padding-left: 0 !important; }
     #prescription-print-content .rx-med-table tbody td {
-      padding: 6px !important;
+      padding: 6px 4px !important;
       vertical-align: top !important;
       border-bottom: 1px dotted #cbd5e1 !important;
     }
@@ -872,7 +883,7 @@ export function PrescriptionPrint({
           >
             {getInstructionLabel(med.instruction)}
           </td>
-          <td className="text-center font-medium">{med.quantity ?? '-'}</td>
+          <td className="text-right font-medium tabular-nums">{med.quantity ?? '-'}</td>
         </tr>
       );
     });
@@ -1223,6 +1234,7 @@ export function PrescriptionPrint({
           /* A list, not a grid: rules run between rows only, dotted and
              generously spaced, and no line is drawn between columns. */
           .rx-med-table { font-size: 11px; }
+          .rx-med-table tbody td:first-child { font-size: 13px; line-height: 1.3; }
           .rx-med-table thead th {
             padding: 0 6px 5px;
             font-size: 9px;
@@ -1232,8 +1244,11 @@ export function PrescriptionPrint({
             color: #9ca3af;
             border-bottom: 1px solid #d1d5db;
           }
+          .rx-med-table tbody td { padding: 6px 4px; }
+          .rx-med-table tbody td:first-child { padding-left: 0; }
+          .rx-med-table thead th { padding-left: 4px; padding-right: 4px; }
+          .rx-med-table thead th:first-child { padding-left: 0; }
           .rx-med-table tbody td {
-            padding: 6px;
             border-bottom: 1px dotted #cbd5e1;
             vertical-align: top;
           }
@@ -1494,7 +1509,7 @@ export function PrescriptionPrint({
             </span>
             <span className="rx-cell w-[86px] shrink-0">
               <span className="rx-cell-label" style={{ color: brand.stripText }}>Age</span>
-              <span className="rx-cell-value">{patient.age} Y</span>
+              <span className="rx-cell-value">{formatAge(patient.age, (patient as any).ageUnit)}</span>
             </span>
             <span className="rx-cell w-[96px] shrink-0">
               <span className="rx-cell-label" style={{ color: brand.stripText }}>Sex</span>
@@ -1519,7 +1534,7 @@ export function PrescriptionPrint({
             {/* A faint tinted panel, so the notes column reads as the margin
                 of the pad rather than a second table. The divider is drawn on
                 this side as a coloured rule, not a hairline border. */}
-            <div className="rx-notes md:col-span-4 print:col-span-4 flex flex-col gap-4 p-3 overflow-hidden">
+            <div className="rx-notes md:col-span-3 print:col-span-3 flex flex-col gap-4 p-3 overflow-hidden">
 
               {/* Top Left: Diagnosis */}
                 <div className="flex-1 overflow-hidden break-words">
@@ -1548,7 +1563,7 @@ export function PrescriptionPrint({
             </div>
 
             {/* Right Column: Medicines Table (70%) */}
-            <div className="rx-scripts md:col-span-8 print:col-span-8 overflow-hidden pl-4">
+            <div className="rx-scripts md:col-span-9 print:col-span-9 overflow-hidden pl-3">
               {/* The ℞ stands on its own above the list, at the size a
                   prescription pad prints it -- it is the heading, so it is not
                   buried in a coloured strip beside a label. It answers the CR
@@ -1575,10 +1590,14 @@ export function PrescriptionPrint({
                   <thead>
                     <tr>
                       <th className="text-left">Medicine Name</th>
-                      <th className="text-left w-16">Dosage</th>
-                      <th className="text-left w-16">Duration</th>
-                      <th className="text-left w-24">Instr.</th>
-                      <th className="text-center w-10">Qty</th>
+                      {/* Fixed and narrow, sized to their longest real value
+                          ("1-1-1-1", "14 days", "Before Meal", a 2-3 digit
+                          count). Everything they give up goes to the medicine
+                          name, which is the column that was wrapping. */}
+                      <th className="text-left w-[52px]">Dosage</th>
+                      <th className="text-left w-[56px]">Duration</th>
+                      <th className="text-left w-[74px]">Instr.</th>
+                      <th className="text-right w-[34px]">Qty</th>
                     </tr>
                   </thead>
                   <tbody className="text-[10px] text-gray-700">
@@ -1597,21 +1616,24 @@ export function PrescriptionPrint({
               bottom of the list. */}
           {nextVisit && (
             <div className="rx-nv-row grid grid-cols-1 md:grid-cols-12 print:grid-cols-12 gap-0">
-              <div className="rx-notes-foot md:col-span-4 print:col-span-4 p-3">
-                <div className="rx-next-visit inline-flex items-baseline gap-2 rounded border-l-2 px-2.5 py-1"
+              <div className="rx-notes-foot md:col-span-3 print:col-span-3 p-3">
+                {/* Label above value, matching the Name / Age / Sex / Date
+                    cells at the top of the sheet. Side by side, the label
+                    squeezed the date into a second line in the narrow notes
+                    column; stacked, the date gets the full width. */}
+                <div className="rx-next-visit rounded border-l-2 px-2.5 py-1"
                      style={{ borderColor: brand.mid, background: brand.strip }}>
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: brand.stripText }}>
+                  <div className="text-[8px] font-bold uppercase tracking-[0.14em] leading-none"
+                       style={{ color: brand.stripText }}>
                     Next Visit
-                  </span>
-                  {/* Normal weight at body size: it is a date, not a headline,
-                      and set bold at 14px it shouted louder than the
-                      medicines. */}
-                  <span className="text-[11px] text-gray-800">
+                  </div>
+                  {/* Normal weight at body size: it is a date, not a headline. */}
+                  <div className="mt-0.5 text-[11px] leading-tight text-gray-800 whitespace-nowrap">
                     {formatVisitDate(nextVisit, hospital.timezone, hospital.calendarType)}
-                  </span>
+                  </div>
                 </div>
               </div>
-              <div className="md:col-span-8 print:col-span-8" />
+              <div className="md:col-span-9 print:col-span-9" />
             </div>
           )}
           </div>
@@ -1641,10 +1663,10 @@ export function PrescriptionPrint({
                     <thead>
                       <tr>
                         <th className="text-left">Medicine Name</th>
-                        <th className="text-left w-16">Dosage</th>
-                        <th className="text-left w-16">Duration</th>
-                        <th className="text-left w-24">Instr.</th>
-                        <th className="text-center w-10">Qty</th>
+                        <th className="text-left w-[52px]">Dosage</th>
+                        <th className="text-left w-[56px]">Duration</th>
+                        <th className="text-left w-[74px]">Instr.</th>
+                        <th className="text-right w-[34px]">Qty</th>
                       </tr>
                     </thead>
                     <tbody className="text-gray-700">
@@ -1735,7 +1757,7 @@ export function PrescriptionPrint({
                 <i />
               </span>
               <span className="rx-wedge rx-wedge-foot" aria-hidden="true" style={{ background: brand.light }} />
-              <p className="relative m-0 w-full px-6 text-center text-[10px] italic leading-none text-white/90">{POWERED_BY_TEXT}</p>
+              <p className="relative m-0 w-full px-6 text-center text-[10px] italic leading-none text-white/90">{POWERED_BY_TEXT_WITH_PHONE}</p>
             </div>
           </div>
 

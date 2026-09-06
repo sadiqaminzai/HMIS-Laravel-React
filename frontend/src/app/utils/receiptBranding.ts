@@ -6,7 +6,18 @@
  * Solutions", "SoftCare IT Solutions" and "ShifaaScript HMIS" on four
  * different documents from the same hospital. One constant, one spelling.
  */
-export const POWERED_BY_TEXT = 'Powered by: SoftCare IT Solutions  0772 502020 | 0788 502020';
+export const POWERED_BY_TEXT = 'Powered by: SoftCare IT Solutions';
+
+/**
+ * The same line with contact numbers, for the prescription only.
+ *
+ * A thermal receipt is 76-80mm wide and the whole footer sets at 9px; two
+ * phone numbers on the end pushed it to a size nobody reads and, on the
+ * narrower rolls, wrapped it. The prescription is A4 and is the document a
+ * patient keeps, so it is the one place the numbers earn their space.
+ */
+export const POWERED_BY_TEXT_WITH_PHONE =
+  'Powered by: SoftCare IT Solutions  0772 502020 | 0788 502020';
 
 /**
  * Markup for the print surfaces that build their document as an HTML string.

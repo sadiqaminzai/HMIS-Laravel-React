@@ -43,6 +43,12 @@ const CATEGORY_TO_TAB: Record<string, string> = {
   'Room Management': 'Reception',
   'Surgery Management': 'Reception',
 
+  // --- Radiology ---------------------------------------------------------
+  // Ultrasound and X-Ray are the two halves of one department, and a
+  // supervisor configuring a radiographer had to cross two tabs to do it.
+  // They keep their own panels inside the tab.
+  Ultrasound: 'Radiology',
+
   // --- Finance -----------------------------------------------------------
   // Taking and reversing money is finance work wherever the charge came from,
   // so the twelve collection rights sit with the money, not with the desk that
@@ -103,6 +109,10 @@ const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
  * version of the resource key, so new permissions group sensibly on their own.
  */
 const RESOURCE_LABELS: Record<string, string> = {
+  dashboard_amounts: 'Dashboard — Amounts (Fees & Totals)',
+  dashboard_counts: 'Dashboard — Counts',
+  dashboard_charts: 'Dashboard — Charts',
+  dashboard_lists: 'Dashboard — Recent Lists',
   payment_collection: 'Payment Collection — Take Money',
   payment_reversal: 'Payment Collection — Put Money Back',
   manufacturers: 'Manufacturers',
@@ -175,6 +185,29 @@ const RESOURCE_LABELS: Record<string, string> = {
 const titleCase = (key: string) =>
   key.split('_').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
+/**
+ * Which panel a dashboard permission belongs in.
+ *
+ * Every one of these is named `view_dashboard_<something>`, so the generic
+ * splitter gave each its own resource -- and the Dashboard tab became thirty
+ * panels holding one checkbox apiece. They divide naturally into what the
+ * panel actually shows, and the suffix already says which: `count_` cards,
+ * `chart_` charts, `recent_` lists, everything else a money figure.
+ *
+ * Derived rather than listed, so a dashboard permission added later files
+ * itself without anyone remembering to update a map here.
+ */
+function dashboardResource(name: string): string | null {
+  if (!name.startsWith('view_dashboard_')) return null;
+
+  const suffix = name.slice('view_dashboard_'.length);
+  if (!suffix) return null;                       // plain `view_dashboard`
+  if (suffix.startsWith('count_')) return 'dashboard_counts';
+  if (suffix.startsWith('chart_')) return 'dashboard_charts';
+  if (suffix.startsWith('recent_')) return 'dashboard_lists';
+  return 'dashboard_amounts';
+}
+
 /** Split `add_medicine_types` into its action and resource parts. */
 function splitPermission(name: string): { action: string; resource: string } {
   for (const action of ACTIONS) {
@@ -197,7 +230,17 @@ function actionLabel(perm: PermissionOption, action: string): string {
   if (action) {
     return titleCase(action);
   }
-  return perm.displayName || titleCase(perm.name);
+
+  const label = perm.displayName || titleCase(perm.name);
+
+  // Inside a panel already titled "Dashboard — Amounts", a checkbox reading
+  // "View Dashboard Appointment Fees" repeats two of its three words. The
+  // stored display name is left alone; only what is shown here is trimmed.
+  if (dashboardResource(perm.name)) {
+    return label.replace(/^View Dashboard (Total - )?/i, '').trim() || label;
+  }
+
+  return label;
 }
 
 export function PermissionSelector({
@@ -224,9 +267,12 @@ export function PermissionSelector({
       const rawCategory = perm.category || 'General';
       const category = CATEGORY_TO_TAB[rawCategory] ?? rawCategory;
       const override = PERMISSION_PANEL[perm.name];
+      const dashboardPanel = override ? null : dashboardResource(perm.name);
       const { action, resource } = override
         ? { action: '', resource: override.resource }
-        : splitPermission(perm.name);
+        : dashboardPanel
+          ? { action: '', resource: dashboardPanel }
+          : splitPermission(perm.name);
 
       out[category] = out[category] || {};
       out[category][resource] = out[category][resource] || [];

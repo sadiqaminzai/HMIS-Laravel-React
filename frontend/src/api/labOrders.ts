@@ -121,6 +121,7 @@ export interface LabOrder {
   completedAt: Date | null;
   remarks: string | null;
   createdBy: string | null;
+  updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date | null;
   items: LabOrderItem[];
@@ -249,6 +250,7 @@ function transformToFrontend(order: LabOrderResponse): LabOrder {
     completedAt: order.completed_at ? new Date(order.completed_at) : null,
     remarks: order.remarks,
     createdBy: order.created_by,
+    updatedBy: order.updated_by,
     createdAt: new Date(order.created_at),
     updatedAt: order.updated_at ? new Date(order.updated_at) : null,
     items: (order.items || []).map(transformItemToFrontend),
@@ -266,6 +268,10 @@ export interface FetchLabOrdersParams {
   search?: string;
   page?: number;
   perPage?: number;
+  /** Drops cancelled orders -- neither desk queue shows them. */
+  excludeCancelled?: boolean;
+  /** Only orders carrying a test the lab has to key a result for. */
+  hasResultWork?: boolean;
 }
 
 export async function fetchLabOrders(
@@ -283,6 +289,8 @@ export async function fetchLabOrders(
   if (params.fromDate) queryParams.from_date = params.fromDate;
   if (params.toDate) queryParams.to_date = params.toDate;
   if (params.search) queryParams.search = params.search;
+  if (params.excludeCancelled) queryParams.exclude_cancelled = 1;
+  if (params.hasResultWork) queryParams.has_result_work = 1;
 
   const response = await api.get<PaginatedResponse<LabOrderResponse>>('/lab-orders', {
     params: queryParams,
@@ -307,12 +315,18 @@ export async function fetchLabOrders(
 export async function fetchAllLabOrders(
   params: FetchLabOrdersParams = {}
 ): Promise<{ data: LabOrder[]; total: number }> {
-  const perPage = params.perPage || 200;
+  // One request, not a page at a time. Walking the pages sequentially meant
+  // four round trips of ~1.7s each before the screen could render anything --
+  // the fifteen-second wait on Lab Tests. The list payload is now slim enough
+  // (the server stopped sending result values and full doctor records) that a
+  // single response covers a hospital's whole history.
+  const perPage = params.perPage || 1000;
   const first = await fetchLabOrders({ ...params, page: 1, perPage });
 
   const rows = [...first.data];
-  // A guard, not an expectation: a miscounted last_page should not spin here.
-  const lastPage = Math.min(first.lastPage || 1, 100);
+  // Only for a lab that has outgrown one page. A guard, not an expectation:
+  // a miscounted last_page must not spin here.
+  const lastPage = Math.min(first.lastPage || 1, 50);
 
   for (let page = 2; page <= lastPage; page += 1) {
     const next = await fetchLabOrders({ ...params, page, perPage });

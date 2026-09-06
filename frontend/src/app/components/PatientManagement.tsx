@@ -20,7 +20,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
 import { buildVerificationUrl } from '../utils/verification';
 import { AddButton } from './AddButton';
-import { formatAge, maxAgeFor, AgeUnit } from '../utils/age';
+import { formatAge, maxAgeFor, AgeUnit, formatAgeLong } from '../utils/age';
 import { printName } from '../utils/printName';
 
 // Helper to convert hex to RGB array for jsPDF
@@ -1023,7 +1023,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                   </div>
                   <div>
                     <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">Age / Sex</p>
-                    <p className="text-[8px] font-bold text-gray-900">{selectedPatient.age}Y / {selectedPatient.gender?.charAt(0).toUpperCase()}</p>
+                    <p className="text-[8px] font-bold text-gray-900">{formatAge(selectedPatient.age, selectedPatient.ageUnit, { compact: true })} / {selectedPatient.gender?.charAt(0).toUpperCase()}</p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-[6px] text-gray-500 uppercase font-bold tracking-[0.1em]">{t('ui.phone')}</p>
@@ -1126,7 +1126,7 @@ export function PatientManagement({ hospital, userRole = 'admin', currentUser }:
                     <div className="space-y-0.5">
                       <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('ui.age')}</label>
                       <p className="text-xs text-gray-900 dark:text-white font-medium">
-                        {selectedPatient.age} Years
+                        {formatAgeLong(selectedPatient.age, selectedPatient.ageUnit)}
                       </p>
                     </div>
                     <div className="space-y-0.5">

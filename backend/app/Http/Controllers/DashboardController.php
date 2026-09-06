@@ -21,6 +21,7 @@ use App\Models\Surgery;
 use App\Models\TestTemplate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -156,6 +157,22 @@ class DashboardController extends Controller
                 ->where('is_delete', false)
                 ->count(),
             'lab_orders_today' => LabOrder::query()
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('created_at', Carbon::today())
+                )
+                ->count(),
+            // Ultrasound and X-Ray, counted over the same window and by the
+            // same rule as the lab orders above.
+            'ultrasound_exams_today' => DB::table('ultrasound_exams')
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('created_at', Carbon::today())
+                )
+                ->count(),
+            'xray_receipts_today' => DB::table('xray_receipts')
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->when($startDate,
                     fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]),
@@ -421,6 +438,17 @@ class DashboardController extends Controller
             ->where('category', 'sales_return')
             ->sum('net_amount'), 2);
 
+        // A refund is not income. The sale was counted gross above, and the
+        // refund is deliberately excluded from expenses (it is not a cost, it
+        // is a reversal), so without this correction the money handed back to
+        // the customer never left the revenue figure at all -- Revenue Total
+        // was overstated by exactly the day's returns while the Medicine Net
+        // Sale tile beside it already showed them deducted.
+        //
+        // Applied to income at source so everything derived from it agrees:
+        // total_income, total_revenue and total_cash_flow.
+        $totalIncome = round($totalIncome - $salesReturnAmount, 2);
+
         $dailyFinancials = [
             'report_date' => $financialStart->toDateString(),
             'report_period_start' => $financialStart->toDateString(),
@@ -441,6 +469,17 @@ class DashboardController extends Controller
                 ->sum('net_amount'), 2),
             'total_room_fees' => round((float) (clone $dailyLedgerQuery)
                 ->where('module', 'room_booking')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            // Ultrasound posts under 'radiology' and X-Ray under its own
+            // module (see LedgerPostingService), so they are two separate
+            // sums rather than one radiology figure.
+            'total_ultrasound_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'radiology')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
+            'total_xray_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'xray')
                 ->where('entry_direction', 'income')
                 ->sum('net_amount'), 2),
             'total_sales_invoice_amount' => $salesInvoiceAmount,
@@ -733,6 +772,8 @@ class DashboardController extends Controller
             'total_lab_fees' => 'lab_orders_amount',
             'total_surgery_fees' => 'surgery_fees',
             'total_room_fees' => 'room_booking_fees',
+            'total_ultrasound_fees' => 'ultrasound_fees',
+            'total_xray_fees' => 'xray_fees',
             'total_expenses' => 'expenses',
             'total_inventory_purchases' => 'inventory_purchases',
             'total_other_income' => 'other_income',
@@ -754,6 +795,8 @@ class DashboardController extends Controller
             'medicine_types' => 'count_medicines',
             'test_templates' => 'count_test_templates',
             'lab_orders_today' => 'count_lab_tests',
+            'ultrasound_exams_today' => 'count_ultrasound',
+            'xray_receipts_today' => 'count_xray',
             'appointments_today' => 'count_appointments',
             'rooms' => 'count_rooms',
             'active_rooms' => 'count_rooms',

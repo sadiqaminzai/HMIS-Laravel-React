@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { calculatePrescriptionQuantity } from '../utils/prescriptionQuantity';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Search, X, Plus, Save, Printer, Trash2, Pill, ChevronDown } from 'lucide-react';
@@ -973,47 +974,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
     }));
   };
 
-  const calculateQuantity = (dose: string, duration: string): number => {
-    let dosePerDay = 0;
-    
-    // Check for standard X-X-X format
-    if (dose.includes('-')) {
-      dosePerDay = dose.split('-').reduce((sum, val) => {
-        const num = parseFloat(val);
-        return sum + (isNaN(num) ? 0 : num);
-      }, 0);
-    } else {
-      // Basic text parsing
-      const lowerDose = dose.toLowerCase();
-      if (lowerDose.includes('once') || lowerDose === 'od' || lowerDose === 'stat') dosePerDay = 1;
-      else if (lowerDose.includes('twice') || lowerDose === 'bid') dosePerDay = 2;
-      else if (lowerDose.includes('thrice') || lowerDose === 'tid') dosePerDay = 3;
-      else if (lowerDose.includes('four') || lowerDose === 'qid') dosePerDay = 4;
-    }
-
-    let days = 0;
-    const lowerDuration = duration.toLowerCase();
-    const num = parseInt(duration) || 1; // Default to 1 if number not found but keyword matches
-
-    if (lowerDuration.includes('month')) {
-      days = num * 30;
-    } else if (lowerDuration.includes('week')) {
-      days = num * 7;
-    } else if (lowerDuration.includes('year')) {
-      days = num * 365;
-    } else if (lowerDuration.includes('day')) {
-      days = parseInt(duration) || 0;
-    } else if (lowerDuration.includes('continue')) {
-      days = 15; // Default assumption for 'continue' if calculation needed
-    } else {
-      // Try just parsing the number
-      days = parseInt(duration) || 0;
-    }
-
-    if (dosePerDay === 0 || days === 0) return 0;
-    
-    return Math.ceil(dosePerDay * days);
-  };
+  /** The shared rule, so Treatment Sets computes quantities identically. */
+  const calculateQuantity = (dose: string, duration: string): number =>
+    calculatePrescriptionQuantity(dose, duration);
 
   const role = String(currentUser.role || '').toLowerCase();
   const hideOutOfStockForDoctors = role === 'doctor' && !getShowOutOfStockMedicines(currentHospital.id);
@@ -1246,10 +1209,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   return (
     <div className="space-y-2 max-w-[95%] mx-auto">
       {/* Header with Title and Actions - Sticky */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 pt-0.5 pb-1.5 flex items-center justify-between">
+      {/* The bar is sticky, so in dark mode a hard white ground sat over the
+          page as a bright strip with a near-black title on it. */}
+      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pt-0.5 pb-1.5 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-bold text-gray-900">Create Prescription</h2>
-          <p className="text-xs text-gray-600 mt-0.5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Create Prescription</h2>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
             Creating for {isAllHospitals ? 'selected hospital' : currentHospital.name}
           </p>
         </div>
@@ -1303,17 +1268,19 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
       {/* Patient and diagnosis: two compact toolbars, not two tall panels. */}
       <div className="grid grid-cols-1 xl:grid-cols-[40%_60%] gap-2">
         {/* LEFT COLUMN - Patient Selection or Walk-in */}
-        <div className="bg-white border border-gray-200 rounded-md px-2 py-1.5">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1.5">
           {/* Three rows: the patient type, then the identity fields, then
               Confirm. Stacked rather than strung along one line -- this column
               has the height to spare, and the fields get their full width. */}
           <div className="space-y-1.5">
             {/* Row 1: which kind of patient. */}
-            <div className="flex bg-gray-100 rounded p-0.5">
+            <div className="flex bg-gray-100 dark:bg-gray-900/60 rounded p-0.5">
               <button
                 onClick={() => handleTogglePatientType('existing')}
                 className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
-                  !isWalkIn ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  !isWalkIn
+                    ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Existing (Registered)
@@ -1321,7 +1288,9 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
               <button
                 onClick={() => handleTogglePatientType('walkin')}
                 className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
-                  isWalkIn ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  isWalkIn
+                    ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Walk-in
@@ -1351,12 +1320,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   }, 200)}
                   onKeyDown={handlePatientSearchKeyDown}
                   aria-label="Patient"
-                  className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="Patient name, ID or phone..."
                 />
             {/* Patient Dropdown */}
             {showPatientDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {filteredPatients.length > 0 ? (
                   filteredPatients.map((patient, index) => (
                     <div
@@ -1368,11 +1337,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                       }}
                       className={`px-3 py-2 cursor-pointer transition-colors ${
                         index === highlightedPatientIndex
-                          ? 'bg-blue-50 border-l-2 border-blue-500'
-                          : 'hover:bg-gray-50'
+                          ? 'bg-blue-50 dark:bg-blue-900/40 border-l-2 border-blue-500'
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
                       }`}
                     >
-                      <div className="font-medium text-sm text-gray-900">{patient.name}</div>
+                      <div className="font-medium text-sm text-gray-900 dark:text-white">{patient.name}</div>
                       <div className="text-xs text-gray-500">
                         {patient.patientId} • Age: {patient.age} • {patient.gender}
                       </div>
@@ -1382,7 +1351,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     </div>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-xs text-gray-500">
+                  <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                     No scheduled patients found
                   </div>
                 )}
@@ -1397,7 +1366,7 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     type="text"
                     value={walkInPatient.name}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, name: e.target.value })}
-                    className="flex-1 min-w-0 px-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="flex-1 min-w-0 px-2 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="Patient name *"
                     aria-label="Walk-in patient name"
                   />
@@ -1405,14 +1374,14 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                     type="number"
                     value={walkInPatient.age}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, age: e.target.value })}
-                    className="w-16 shrink-0 px-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-16 shrink-0 px-2 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="Age *"
                     aria-label="Walk-in patient age"
                   />
                   <select
                     value={walkInPatient.gender}
                     onChange={(e) => setWalkInPatient({ ...walkInPatient, gender: e.target.value })}
-                    className="w-20 shrink-0 px-1 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-20 shrink-0 px-1 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     aria-label="Walk-in patient gender"
                   >
                     <option value="male">{t('ui.male')}</option>
@@ -1432,11 +1401,11 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         </div>
 
         {/* RIGHT COLUMN - Diagnosis */}
-        <div className="bg-white border border-gray-200 rounded-md px-2 py-1.5">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1.5">
           {/* Label, template picker and the quick-insert chips share one line:
               they are all shortcuts into the same editor below. */}
           <div className="flex items-center gap-2 mb-1">
-          <span className="shrink-0 text-[11px] font-semibold text-gray-700">Diagnosis / C.C.</span>
+          <span className="shrink-0 text-[11px] font-semibold text-gray-700 dark:text-gray-200">Diagnosis / C.C.</span>
           <div ref={diagnosisTemplateContainerRef} className="relative w-56 shrink-0">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -1455,13 +1424,13 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                   setHighlightedDiagnosisTemplateIndex(0);
                 }}
                 onKeyDown={handleDiagnosisTemplateSearchKeyDown}
-                className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="Template..."
                 title="Search diagnosis template"
               />
             </div>
             {showDiagnosisTemplateDropdown && (
-              <div className="absolute z-40 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+              <div className="absolute z-40 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-52 overflow-y-auto">
                 {isLoadingDiagnosisTemplates ? (
                   <div className="px-2.5 py-1.5 text-xs text-gray-500">Loading templates...</div>
                 ) : filteredDiagnosisTemplates.length > 0 ? (
@@ -1488,42 +1457,42 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
             <button
               type="button"
               onClick={insertDiagnosisTemplate}
-              className="px-1.5 h-6 text-[10px] rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+              className="px-1.5 h-6 text-[10px] rounded border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-200 bg-blue-50 dark:bg-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/60"
             >
               Insert Template
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('H/O')}
-              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               H/O
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('Vital Signs')}
-              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               Vital Signs
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('C/C')}
-              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               C/C
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('BP')}
-              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               BP
             </button>
             <button
               type="button"
               onClick={() => insertDiagnosisLabel('Weight')}
-              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="px-1.5 h-6 text-[10px] rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               Weight
             </button>
@@ -1569,13 +1538,13 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
                       setHighlightedMedicineSetIndex(0);
                     }}
                     onKeyDown={handleMedicineSetSearchKeyDown}
-                    className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full pl-7 pr-2 h-7 text-[11px] border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="Search treatment set..."
                     title="Search treatment set"
                   />
                 </div>
                 {showMedicineSetDropdown && (
-                  <div className="absolute z-40 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+                  <div className="absolute z-40 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-52 overflow-y-auto">
                     {filteredMedicineSets.length > 0 ? (
                       filteredMedicineSets.map((set, index) => (
                         <button

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Printer, Wallet, RotateCcw, Loader2, Receipt, ScanLine } from 'lucide-react';
+import { Printer, Wallet, RotateCcw, Loader2, Receipt, ScanLine, Trash2 } from 'lucide-react';
 import { Hospital } from '../types';
-import { UltrasoundExamApi, payUltrasoundExam, reverseUltrasoundPayment } from '../api/ultrasound';
+import { UltrasoundExamApi, payUltrasoundExam, reverseUltrasoundPayment, deleteUltrasoundExam } from '../api/ultrasound';
+import { toast } from 'sonner';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
 import { formatOnlyDate } from '../utils/date';
 import {
@@ -27,6 +28,7 @@ interface Props {
   canTakePayment: boolean;
   canReversePayment: boolean;
   canPrintReceipt: boolean;
+  canDelete: boolean;
   onChanged: () => void;
 }
 
@@ -53,10 +55,12 @@ export function UltrasoundReceipts({
   canTakePayment,
   canReversePayment,
   canPrintReceipt,
+  canDelete,
   onChanged,
 }: Props) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingExam, setDeletingExam] = useState<UltrasoundExamApi | null>(null);
   const [payingExam, setPayingExam] = useState<UltrasoundExamApi | null>(null);
   const [method, setMethod] = useState('cash');
 
@@ -84,6 +88,29 @@ export function UltrasoundReceipts({
       onChanged();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Payment failed.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingExam) return;
+    setBusyId(deletingExam.id);
+    setError(null);
+    try {
+      await deleteUltrasoundExam(deletingExam.id);
+      const label = deletingExam.patient?.name
+        ? `Receipt #${deletingExam.id} (${deletingExam.patient.name}) deleted`
+        : `Receipt #${deletingExam.id} deleted`;
+      setDeletingExam(null);
+      onChanged();
+      // Says so out loud: the row simply vanishing from the list looks the
+      // same as the click not registering.
+      toast.success(label);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to delete the receipt';
+      setError(message);
+      toast.error(message);
     } finally {
       setBusyId(null);
     }
@@ -285,6 +312,19 @@ export function UltrasoundReceipts({
                       <RotateCcw className="w-3.5 h-3.5" />
                     </TableAction>
                   )}
+                  {/* Gated on delete_ultrasound_exams. Confirmed first: a
+                      receipt is a financial record and the row gives no other
+                      way back once it is gone. */}
+                  {canDelete && (
+                    <TableAction
+                      tone="delete"
+                      title="Delete receipt"
+                      disabled={busyId === exam.id}
+                      onClick={() => setDeletingExam(exam)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </TableAction>
+                  )}
                 </div>
               </td>
             </Tr>
@@ -342,6 +382,42 @@ export function UltrasoundReceipts({
                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
                 Confirm &amp; Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deleting a receipt removes a financial record, so it asks first and
+          names what is going -- the row it came from is already gone from the
+          screen by the time anyone notices a mistake. */}
+      {deletingExam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-sm p-4">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Delete Receipt</h3>
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+              Receipt #{deletingExam.id} &mdash; {deletingExam.patient?.name}
+              {deletingExam.ultrasound_type?.name ? ` (${deletingExam.ultrasound_type.name})` : ''}
+            </p>
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+              This cannot be undone.
+              {deletingExam.payment_status === 'paid'
+                ? ' This receipt is marked paid; deleting it removes the record of that payment.'
+                : ''}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeletingExam(null)}
+                className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={busyId === deletingExam.id}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {busyId === deletingExam.id ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

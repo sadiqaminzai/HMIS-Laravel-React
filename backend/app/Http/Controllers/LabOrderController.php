@@ -57,7 +57,14 @@ class LabOrderController extends Controller
         $user = $request->user();
 
         $query = LabOrder::query()
-            ->with(['items.results', 'patient', 'walkInPatient', 'doctor']);
+            // Results stay on the list. Dropping them to save payload broke the
+            // printed report, which renders straight from the list row -- so
+            // the saving is not available here without reworking that path.
+            //
+            // The doctor is still trimmed to id and name: the list only ever
+            // prints doctor_name, yet the full user record carried a 520-byte
+            // availability_schedule on EVERY row. That part is pure win.
+            ->with(['items.results', 'patient', 'walkInPatient', 'doctor:id,name']);
 
         // If logged-in user is a doctor, always scope to their own hospital and their own orders.
         if ($user && (string) $user->role === 'doctor') {
@@ -73,11 +80,30 @@ class LabOrderController extends Controller
         }
 
         // Status filter
+        // Orders the laboratory still has to key a result for.
+        //
+        // The Processing queue used to be built in the browser, which meant the
+        // whole history had to be downloaded to find the handful of rows that
+        // belong in it -- 664 orders and 4.2 MB to show fifty. "Requires a
+        // result" is a property of the test template, so only the database can
+        // answer it; expressed here, the queue can be paginated like the rest.
+        if ($request->boolean('has_result_work')) {
+            $query->whereHas('items.template', function ($templateQuery) {
+                $templateQuery->where('requires_result', true);
+            });
+        }
+
         if ($request->has('status')) {
             $query->where('status', $request->get('status'));
         }
 
         // Payment status filter
+        // Neither desk queue shows a cancelled order; expressed as a filter so
+        // the count the client paginates against matches what it displays.
+        if ($request->boolean('exclude_cancelled')) {
+            $query->where('status', '!=', 'cancelled');
+        }
+
         if ($request->has('payment_status')) {
             $query->where('payment_status', $request->get('payment_status'));
         }
