@@ -312,7 +312,13 @@ class LabOrderController extends Controller
             // Update financial amount fields after test items are created.
             $totals = [
                 'discount_amount' => round($discountAmount, 2),
+                // total_amount has always held the NET figure. net_amount is
+                // the same number under the name the dashboard and the other
+                // receipt modules use; discount_percentage is recorded so a
+                // receipt can show what rate produced the amount.
                 'total_amount' => round($netAmount, 2),
+                'net_amount' => round($netAmount, 2),
+                'discount_percentage' => round($discountPercent, 2),
             ];
 
             // Where the hospital collects the fee at the counter before the
@@ -546,6 +552,10 @@ class LabOrderController extends Controller
 
             $labOrder->discount_amount = round($discountAmount, 2);
             $labOrder->total_amount = round($netAmount, 2);
+            $labOrder->net_amount = round($netAmount, 2);
+            $labOrder->discount_percentage = $grossAmount > 0
+                ? round(($discountAmount / $grossAmount) * 100, 2)
+                : 0.0;
             $labOrder->paid_amount = min((float) ($labOrder->paid_amount ?? 0), $netAmount);
 
             if ((float) $labOrder->paid_amount <= 0) {

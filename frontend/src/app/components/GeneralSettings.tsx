@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3, Image as ImageIcon, Upload, Wallet } from 'lucide-react';
+import { Settings as SettingsIcon, User, Hash, UserPlus, Building2, Globe, Printer, Pill, ListChecks, Package, ScanLine, Columns3, BarChart3, Image as ImageIcon, Upload, Wallet, Percent } from 'lucide-react';
 import {
   useSettings,
   PRINT_PAPER_SIZES,
@@ -27,6 +27,7 @@ import {
   type ReportIncomeModule,
   type ReportDesk,
   type PrescriptionWatermarkSettings,
+  type DefaultDiscountSettings,
 } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useHospitals } from '../context/HospitalContext';
@@ -158,9 +159,16 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   });
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
 
+  const [defaultDiscounts, setDefaultDiscounts] = useState<DefaultDiscountSettings>({
+    surgery: 0, lab: 0, ultrasound: 0, xray: 0, dental: 0, roomBooking: 0,
+  });
+  const canManageDefaultDiscounts =
+    hasPermission('manage_default_discounts') || hasPermission('manage_hospital_settings');
+
   const [showOutOfStockMedicines, setShowOutOfStockMedicines] = useState(false);
   const [showOutOfStockMedicinesForPharmacy, setShowOutOfStockMedicinesForPharmacy] = useState(false);
   const [showPrescriptionListMeta, setShowPrescriptionListMeta] = useState(true);
+  const [showDoctorPhone, setShowDoctorPhone] = useState(false);
 
   // Get doctors for currently selected hospital
   const hospitalDoctors = doctors.filter(d => d.hospitalId === selectedHospital.id);
@@ -194,7 +202,9 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       setShowOutOfStockMedicines(setting.showOutOfStockMedicines);
       setShowOutOfStockMedicinesForPharmacy(setting.showOutOfStockMedicinesForPharmacy);
       setShowPrescriptionListMeta(setting.showPrescriptionListMeta);
+      setShowDoctorPhone(setting.showDoctorPhoneOnPrescription);
       setWatermark(setting.prescriptionWatermark);
+      setDefaultDiscounts(setting.defaultDiscounts);
 
       setTimezone(selectedHospital.timezone || 'Asia/Kabul');
       setCalendarType(selectedHospital.calendarType || 'gregorian');
@@ -332,6 +342,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       });
   };
 
+  const handleSaveDefaultDiscounts = () => {
+    saveHospitalSetting(selectedHospital.id, { defaultDiscounts })
+      .then(() => toast.success('Default discounts saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save the default discounts'));
+  };
+
   const handleWatermarkUpload = (file: File | undefined) => {
     if (!file) return;
     // Matches the backend rule, checked here too so the user is told before a
@@ -372,6 +388,21 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       .catch((err) => {
         setShowPrescriptionListMeta(!newValue);
         toast.error(err?.response?.data?.message || 'Failed to update prescription list visibility');
+      });
+  };
+
+  const handleDoctorPhoneToggle = () => {
+    const newValue = !showDoctorPhone;
+    setShowDoctorPhone(newValue);
+    saveHospitalSetting(selectedHospital.id, { showDoctorPhoneOnPrescription: newValue })
+      .then(() => toast.success(newValue
+        ? "The doctor's phone number will print on the prescription"
+        : "The doctor's phone number is hidden on the prescription"))
+      .catch((err) => {
+        // Put the switch back: leaving it on would claim a number is printing
+        // when the server never accepted the change.
+        setShowDoctorPhone(!newValue);
+        toast.error(err?.response?.data?.message || 'Failed to update doctor phone visibility');
       });
   };
 
@@ -888,6 +919,53 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             </button>
           </div>
 
+          {/* Sits in the same panel as the Rx-number switch: both decide what
+              appears on the printed prescription. */}
+          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30 mt-3">
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">Show doctor's phone number</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Prints the prescribing doctor's own phone number under their name on the letterhead,
+                beside the designation and registration number. Leave it off to keep the clinic's
+                number as the only way to reach them.
+              </p>
+            </div>
+            <button
+              onClick={handleDoctorPhoneToggle}
+              aria-label="Toggle the doctor's phone number on the printed prescription"
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2
+                ${showDoctorPhone
+                  ? 'bg-blue-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+                }
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${showDoctorPhone ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+
+          <div className={`p-2 rounded-lg border mt-3 ${
+            showDoctorPhone
+              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+              : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+          }`}>
+            <p className={`text-xs font-medium ${
+              showDoctorPhone
+                ? 'text-blue-700 dark:text-blue-300'
+                : 'text-gray-600 dark:text-gray-400'
+            }`}>
+              {showDoctorPhone
+                ? "\u2713 Doctor's phone number prints on the prescription"
+                : "Doctor's phone number hidden"}
+            </p>
+          </div>
+
           <div className={`p-2 rounded-lg border mt-3 ${
             showPrescriptionListMeta
               ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
@@ -1055,6 +1133,62 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               </div>
             </>
           )}
+        </div>
+        )}
+
+        {/* Standing discount per module */}
+        {settingsTab === 'general' && canManageDefaultDiscounts && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Percent className="w-4 h-4 text-rose-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Discount</h2>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Seeds the discount on a new receipt, so a clinic-wide announcement is not retyped on every bill.
+            Whoever raises the receipt can still change it. Leave at 0 for no standing discount.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { key: 'surgery' as const, label: 'Surgery' },
+              { key: 'lab' as const, label: 'Laboratory' },
+              { key: 'ultrasound' as const, label: 'Ultrasound' },
+              { key: 'xray' as const, label: 'X-Ray' },
+              { key: 'dental' as const, label: 'Dental' },
+              { key: 'roomBooking' as const, label: 'Room Booking' },
+            ]).map((row) => (
+              <div key={row.key}>
+                <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                  {row.label}
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={defaultDiscounts[row.key]}
+                    onChange={(e) => {
+                      // Clamped here as well as on the server: a discount over
+                      // 100% would make the receipt owe the patient money.
+                      const next = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                      setDefaultDiscounts((prev) => ({ ...prev, [row.key]: next }));
+                    }}
+                    aria-label={`Default ${row.label} discount percent`}
+                    className="w-full pl-2 pr-6 h-8 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400">%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={handleSaveDefaultDiscounts}
+            className="mt-3 w-full px-3 h-8 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700"
+          >
+            Save Default Discounts
+          </button>
         </div>
         )}
 

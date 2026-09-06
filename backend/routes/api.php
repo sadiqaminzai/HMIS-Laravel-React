@@ -50,6 +50,9 @@ use App\Http\Controllers\TestTemplateController;
 use App\Http\Controllers\UltrasoundExamController;
 use App\Http\Controllers\XrayReceiptController;
 use App\Http\Controllers\UltrasoundTypeController;
+use App\Http\Controllers\DentalReceiptController;
+use App\Http\Controllers\DentalServiceController;
+use App\Http\Controllers\XrayTypeController;
 use App\Http\Controllers\ShifaaScriptController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VerificationController;
@@ -374,6 +377,28 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Radiology - X-Ray receipts (a cash desk only: the film is reported
 	// outside ShifaaScript, so there is no exam or template counterpart).
+	// Dental: a service catalogue and the receipts raised against it.
+	Route::get('dental-services', [DentalServiceController::class, 'index'])->middleware('permission:view_dental_services,manage_dental_services,view_dental_receipts,manage_dental_receipts');
+	Route::get('dental-services/{dentalService}', [DentalServiceController::class, 'show'])->middleware('permission:view_dental_services,manage_dental_services,view_dental_receipts,manage_dental_receipts');
+	Route::post('dental-services', [DentalServiceController::class, 'store'])->middleware('permission:add_dental_services,manage_dental_services');
+	Route::match(['PUT', 'PATCH'], 'dental-services/{dentalService}', [DentalServiceController::class, 'update'])->middleware('permission:edit_dental_services,manage_dental_services');
+	Route::delete('dental-services/{dentalService}', [DentalServiceController::class, 'destroy'])->middleware('permission:delete_dental_services,manage_dental_services');
+
+	Route::get('dental-receipts', [DentalReceiptController::class, 'index'])->middleware('permission:view_dental_receipts,manage_dental_receipts');
+	Route::get('dental-receipts/{dentalReceipt}', [DentalReceiptController::class, 'show'])->middleware('permission:view_dental_receipts,manage_dental_receipts');
+	Route::post('dental-receipts', [DentalReceiptController::class, 'store'])->middleware('permission:add_dental_receipts,manage_dental_receipts');
+	Route::match(['PUT', 'PATCH'], 'dental-receipts/{dentalReceipt}', [DentalReceiptController::class, 'update'])->middleware('permission:edit_dental_receipts,manage_dental_receipts');
+	Route::delete('dental-receipts/{dentalReceipt}', [DentalReceiptController::class, 'destroy'])->middleware('permission:delete_dental_receipts,manage_dental_receipts');
+	Route::post('dental-receipts/{dentalReceipt}/payment', [DentalReceiptController::class, 'processPayment'])->middleware('permission:manage_dental_payments,manage_dental_receipts');
+	Route::post('dental-receipts/{dentalReceipt}/reverse-payment', [DentalReceiptController::class, 'reversePayment'])->middleware('permission:reverse_dental_payment');
+	Route::get('dental-receipts/{dentalReceipt}/receipt', [DentalReceiptController::class, 'receipt'])->middleware('permission:print_dental_receipt,manage_dental_payments,manage_dental_receipts');
+
+	Route::get('xray-types', [XrayTypeController::class, 'index'])->middleware('permission:view_xray_types,manage_xray_types,view_xray_receipts,manage_xray_receipts');
+	Route::get('xray-types/{xrayType}', [XrayTypeController::class, 'show'])->middleware('permission:view_xray_types,manage_xray_types,view_xray_receipts,manage_xray_receipts');
+	Route::post('xray-types', [XrayTypeController::class, 'store'])->middleware('permission:add_xray_types,manage_xray_types');
+	Route::match(['PUT', 'PATCH'], 'xray-types/{xrayType}', [XrayTypeController::class, 'update'])->middleware('permission:edit_xray_types,manage_xray_types');
+	Route::delete('xray-types/{xrayType}', [XrayTypeController::class, 'destroy'])->middleware('permission:delete_xray_types,manage_xray_types');
+
 	Route::get('xray-receipts', [XrayReceiptController::class, 'index'])->middleware('permission:view_xray_receipts,manage_xray_receipts');
 	Route::get('xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'show'])->middleware('permission:view_xray_receipts,manage_xray_receipts');
 	Route::post('xray-receipts', [XrayReceiptController::class, 'store'])->middleware('permission:add_xray_receipts,manage_xray_receipts');

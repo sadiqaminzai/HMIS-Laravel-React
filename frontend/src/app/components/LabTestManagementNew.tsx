@@ -23,6 +23,7 @@ import { useAppointments } from '../context/AppointmentContext';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
 import { formatAge, formatAgeLong } from '../utils/age';
+import { useSettings } from '../context/SettingsContext';
 
 interface LabTestManagementNewProps {
   hospital: Hospital;
@@ -213,6 +214,25 @@ const mapOrderToLabTest = (order: LabOrder, lookups: LabLookups): LabTest => {
 export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabTestManagementNewProps) {
   const { t } = useTranslation();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { loadHospitalSetting, getDefaultDiscounts } = useSettings();
+
+  /**
+   * What the discount field starts at on a new order.
+   *
+   * A hospital that always gives, say, 10% off lab work should not have a
+   * receptionist typing it on every order. Returns '' rather than '0' so an
+   * unconfigured hospital shows an empty box, not a zero the user has to clear.
+   */
+  const seededLabDiscount = () => {
+    const percent = getDefaultDiscounts(currentHospital.id).lab;
+    return percent > 0 ? String(percent) : '';
+  };
+
+  // Settings are fetched per hospital on demand, so ask for this one's before
+  // reading its default discount.
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { hospitals } = useHospitals();
@@ -291,7 +311,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     patientId: '',
     selectedTests: [] as string[],
     instructions: '',
-    discountPercentage: '',
+    discountPercentage: seededLabDiscount(),
     priority: 'normal' as 'normal' | 'urgent' | 'stat',
     hospitalId: currentHospital.id,
     doctorId: userRole === 'doctor' ? currentUserId || '' : '',
@@ -1009,7 +1029,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
       patientId: '',
       selectedTests: [],
       instructions: '',
-      discountPercentage: '',
+      discountPercentage: seededLabDiscount(),
       priority: 'normal',
       hospitalId: currentHospital.id,
       doctorId: userRole === 'doctor' ? currentUserId || '' : '',
@@ -1626,7 +1646,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             key={h.id}
                             type="button"
                             onClick={() => {
-                              setFormData({ ...formData, hospitalId: h.id, patientId: '', selectedTests: [], discountPercentage: '', doctorId: userRole === 'doctor' ? (currentUserId || '') : '' });
+                              setFormData({ ...formData, hospitalId: h.id, patientId: '', selectedTests: [], discountPercentage: (getDefaultDiscounts(h.id).lab > 0 ? String(getDefaultDiscounts(h.id).lab) : ''), doctorId: userRole === 'doctor' ? (currentUserId || '') : '' });
                               setIsHospitalDropdownOpen(false);
                               setHospitalSearchKeyword('');
                             }}

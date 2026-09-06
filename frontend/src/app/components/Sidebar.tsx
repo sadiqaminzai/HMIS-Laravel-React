@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, ShieldCheck, BadgeDollarSign, Wallet } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, ShieldCheck, BadgeDollarSign, Wallet, Smile } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
@@ -99,7 +99,8 @@ const menuItems: MenuItem[] = [
       'view_radiology_menu',
       'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
       'view_ultrasound_types', 'manage_ultrasound_types',
-      'view_xray_receipts', 'add_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt'
+      'view_xray_receipts', 'add_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt',
+      'view_xray_types', 'manage_xray_types'
     ],
     subItems: [
       {
@@ -125,9 +126,23 @@ const menuItems: MenuItem[] = [
         icon: <Receipt className="w-3.5 h-3.5" />,
         anyPermissions: [
           'view_xray_receipts', 'add_xray_receipts', 'edit_xray_receipts', 'delete_xray_receipts',
-          'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt'
+          'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt',
+          'view_xray_types', 'add_xray_types', 'edit_xray_types', 'delete_xray_types', 'manage_xray_types'
         ]
       }
+    ]
+  },
+  {
+    // Dental is its own desk, not a radiology modality: a service catalogue
+    // the hospital maintains itself, plus the receipts raised against it.
+    id: '/dental',
+    translationKey: 'nav.dental',
+    icon: <Smile className="w-3.5 h-3.5" />,
+    anyPermissions: [
+      'view_dental_receipts', 'add_dental_receipts', 'edit_dental_receipts', 'delete_dental_receipts',
+      'manage_dental_receipts', 'manage_dental_payments', 'print_dental_receipt',
+      'view_dental_services', 'add_dental_services', 'edit_dental_services',
+      'delete_dental_services', 'manage_dental_services'
     ]
   },
   {

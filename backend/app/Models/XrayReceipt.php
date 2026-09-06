@@ -22,6 +22,7 @@ class XrayReceipt extends Model
         'sequence_id',
         'patient_id',
         'doctor_id',
+        'xray_type_id',
         'study_name',
         'performed_at',
         'referred_by',
@@ -80,5 +81,10 @@ class XrayReceipt extends Model
     public function doctor()
     {
         return $this->belongsTo(User::class, 'doctor_id');
+    }
+
+    public function xrayType()
+    {
+        return $this->belongsTo(XrayType::class);
     }
 }

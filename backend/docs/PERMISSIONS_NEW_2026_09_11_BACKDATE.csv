@@ -1,0 +1,2 @@
+"name","display_name","category","description","status","is_system"
+"backdate_receipts","Change Receipt Date","Settings","Set a receipt to a date other than today","active","True"

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Printer, Receipt, RotateCcw, Search, Wallet, X } from 'lucide-react';
+import { Loader2, Printer, Receipt, RotateCcw, Scan, Search, Wallet, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Hospital, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,7 @@ import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { SearchableSelect } from './SearchableSelect';
 import { AddButton } from './AddButton';
+import { XrayTypes } from './XrayTypes';
 import {
   CellNumber,
   CellStack,
@@ -29,12 +30,15 @@ import {
   useTableSort,
 } from './DataTable';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
-import { formatOnlyDate } from '../utils/date';
+import { formatOnlyDate, getISODateInTimeZone } from '../utils/date';
+import { formatAge } from '../utils/age';
 import {
   XrayReceiptApi,
+  XrayTypeApi,
   createXrayReceipt,
   deleteXrayReceipt,
   fetchXrayReceipts,
+  fetchXrayTypes,
   payXrayReceipt,
   reverseXrayPayment,
   updateXrayReceipt,
@@ -57,6 +61,7 @@ const paymentTone = (status: string): 'green' | 'amber' | 'red' =>
 const emptyForm = () => ({
   patientId: '',
   doctorId: '',
+  xrayTypeId: '',
   studyName: '',
   performedAt: new Date().toISOString().slice(0, 10),
   referredBy: '',
@@ -79,7 +84,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
   const { hasPermission } = useAuth();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
-  const { getPrintPaperSize } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } =
     useHospitalFilter(hospital, userRole);
 
@@ -93,6 +98,8 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [paying, setPaying] = useState<XrayReceiptApi | null>(null);
   const [method, setMethod] = useState('cash');
+  const [activeTab, setActiveTab] = useState<'receipts' | 'types'>('receipts');
+  const [types, setTypes] = useState<XrayTypeApi[]>([]);
 
   const canManage = hasPermission('manage_xray_receipts');
   const canView = hasPermission('view_xray_receipts') || canManage;
@@ -104,13 +111,49 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
   // so it is held explicitly or not at all.
   const canReversePayment = hasPermission('reverse_xray_payment');
   const canPrintReceipt = hasPermission('print_xray_receipt') || canTakePayment;
+  // The catalogue tab is its own permission family, so a cashier who may
+  // raise receipts does not automatically get to reprice every study.
+  const canViewTypes = hasPermission('view_xray_types')
+    || hasPermission('manage_xray_types')
+    || hasPermission('add_xray_types')
+    || hasPermission('edit_xray_types')
+    || hasPermission('delete_xray_types');
   // Same rights as the appointment and surgery discounts.
   const canApplyDiscount = hasPermission('add_discounts')
     || hasPermission('edit_discounts')
     || hasPermission('manage_discounts');
 
-  const paperSize = getPrintPaperSize(currentHospital.id, 'ultrasound_receipt');
+  const paperSize = getPrintPaperSize(currentHospital.id, 'xray_receipt');
   const isThermal = paperSize !== 'a4' && paperSize !== 'a5';
+
+  /**
+   * The second line under a patient's name in the dropdown: ID, age, sex and
+   * phone. SearchableSelect also matches typing against this, so the clerk can
+   * find someone by phone number as well as by name.
+   */
+  const patientMeta = (p: { patientId?: string; age?: number; ageUnit?: string; gender?: string; phone?: string }) =>
+    [
+      p.patientId ? 'ID ' + p.patientId : null,
+      formatAge(p.age, p.ageUnit, { compact: true, fallback: '' }) || null,
+      p.gender || null,
+      p.phone || null,
+    ]
+      .filter(Boolean)
+      .join('  \u00b7  ');
+
+  // Dating a charge decides which day-end sheet and which report it lands in,
+  // so it is its own right. Without it the field stays on today.
+  const canBackdateReceipt = hasPermission('backdate_receipts');
+
+
+  /**
+   * Today in the hospital's own timezone, not the browser's and not UTC.
+   *
+   * This used to be new Date().toISOString().slice(0,10), which is UTC: in
+   * Kabul (UTC+4:30) every receipt raised between midnight and 04:30 defaulted
+   * to YESTERDAY. The timezone comes from Settings > General > Date & Time.
+   */
+  const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
 
   /** Hospital id sent to the API; only super admins may target another tenant. */
   const scopedHospitalId = useMemo(() => {
@@ -167,6 +210,46 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
     [doctors, isAllHospitals, currentHospital.id]
   );
 
+  // The catalogue feeding the Study field. Fetched active-only and once per
+  // hospital rather than per modal open, so opening the form costs nothing.
+  const loadTypes = useCallback(() => {
+    // The whole catalogue, not just the active slice: a receipt being edited
+    // may point at an entry that has since been retired, and its name still
+    // has to render.
+    fetchXrayTypes(scopedHospitalId ? { hospital_id: scopedHospitalId } : {})
+      .then(setTypes)
+      .catch(() => {
+        // A missing catalogue is not an error the cashier can act on: the
+        // field falls back to free text below.
+        setTypes([]);
+      });
+  }, [scopedHospitalId]);
+
+  useEffect(() => {
+    loadTypes();
+  }, [loadTypes]);
+
+  /**
+   * What the picker offers: active entries only, plus whichever entry this
+   * receipt already points at. Without the second part, deactivating an entry
+   * would blank the field on every existing receipt that used it.
+   */
+  const activeTypes = useMemo(() => {
+    const live = types.filter((row) => row.is_active);
+    const selectedId = form.xrayTypeId;
+
+    if (!selectedId) return live;
+    if (live.some((row) => String(row.id) === selectedId)) return live;
+
+    const retired = types.find((row) => String(row.id) === selectedId);
+    return retired ? [...live, retired] : live;
+  }, [types, form.xrayTypeId]);
+
+  // Settings load per hospital on demand; the default discount above needs it.
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
+
   /**
    * Mirrors DiscountService::computeFeeTotals so the modal shows the numbers
    * the server will store. The server still recomputes them -- this is a
@@ -188,6 +271,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
       setForm({
         patientId: String(row.patient_id),
         doctorId: row.doctor_id ? String(row.doctor_id) : '',
+        xrayTypeId: row.xray_type_id ? String(row.xray_type_id) : '',
         studyName: row.study_name,
         performedAt: String(row.performed_at ?? '').slice(0, 10),
         referredBy: row.referred_by ?? '',
@@ -198,8 +282,19 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
       });
     } else {
       setEditing(null);
-      setForm(emptyForm());
+      const seeded = getDefaultDiscounts(currentHospital.id).xray;
+      setForm({
+        ...emptyForm(),
+        // A new receipt is dated today; editing keeps whatever was saved.
+        performedAt: today(),
+        // The percentage field, not discountEnabled -- that flag is a full
+        // waiver and would make every X-Ray free.
+        discountPercentage: seeded > 0 ? String(seeded) : '',
+      });
     }
+    // The catalogue tab sits beside this one; re-reading it here means an
+    // entry deactivated a moment ago is gone from the picker straight away.
+    loadTypes();
     setIsModalOpen(true);
   };
 
@@ -216,6 +311,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
       ...(scopedHospitalId ? { hospital_id: scopedHospitalId } : {}),
       patient_id: form.patientId,
       doctor_id: form.doctorId || null,
+      xray_type_id: form.xrayTypeId || null,
       study_name: form.studyName.trim(),
       performed_at: form.performedAt,
       referred_by: form.referredBy || null,
@@ -236,7 +332,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
       }
       setIsModalOpen(false);
       setEditing(null);
-      setForm(emptyForm());
+      setForm({ ...emptyForm(), performedAt: today() });
       await loadData();
     } catch (error: any) {
       const errors = error?.response?.data?.errors;
@@ -347,14 +443,19 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
         <div class="col-head">Patient</div>
         <div><span class="k">Name: </span><span class="v">${row.patient?.name ?? '-'}</span></div>
         <div><span class="k">ID: </span><span class="v">${row.patient?.patient_id ?? row.patient_id}</span></div>
-        <div><span class="k">Age / Sex: </span><span class="v">${row.patient?.age ?? '-'} / ${row.patient?.gender ?? '-'}</span></div>
-        <div><span class="k">Referred By: </span><span class="v">${row.referred_by || row.doctor?.name || '-'}</span></div>
+        <!-- Age and Sex on their own lines: crammed together they wrapped
+             awkwardly on the narrow thermal roll. -->
+        <div><span class="k">Age: </span><span class="v">${row.patient?.age ?? '-'}</span></div>
+        <div><span class="k">Sex: </span><span class="v">${row.patient?.gender ?? '-'}</span></div>
       </div>
       <div class="sep"></div>
       <div class="col">
         <div class="col-head">Receipt</div>
         <div><span class="k">No: </span><span class="v">${receiptNo}</span></div>
         <div><span class="k">Date: </span><span class="v">${formatOnlyDate(new Date().toISOString(), hospital.timezone, hospital.calendarType)}</span></div>
+        <!-- Referred By belongs with the receipt details, not the patient's
+             own particulars, and it keeps the two columns even in height. -->
+        <div><span class="k">Referred By: </span><span class="v">${row.referred_by || row.doctor?.name || '-'}</span></div>
         ${paid ? '' : '<div><span class="k">Status: </span><span class="v">Unpaid</span></div>'}
       </div>
     </div>
@@ -398,14 +499,34 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
 
   return (
     <div className="space-y-3">
-      {/* One tab, because the module is one desk. Rendered anyway so X-Ray
-          reads the same way as Ultrasound beside it in the sidebar. */}
+      {/* Receipt first, because that is the desk; the catalogue behind it is
+          maintained far less often. Hidden entirely from users with no rights
+          over it rather than shown disabled. */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
-        <span className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400">
-          <Receipt className="w-3.5 h-3.5" />
-          Receipt
-        </span>
+        {([
+          { key: 'receipts' as const, label: 'Receipt', icon: <Receipt className="w-3.5 h-3.5" />, allowed: true },
+          { key: 'types' as const, label: 'X-Ray Types', icon: <Scan className="w-3.5 h-3.5" />, allowed: canViewTypes },
+        ]).filter((tab) => tab.allowed).map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {activeTab === 'types' ? (
+        <XrayTypes hospital={hospital} userRole={userRole} />
+      ) : (
+      <>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -595,7 +716,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
                   options={hospitalPatients.map((p) => ({
                     value: String(p.id),
                     label: p.name,
-                    meta: p.patientId || p.phone || undefined,
+                    meta: patientMeta(p) || undefined,
                   }))}
                   placeholder="Search patient..."
                   required
@@ -606,19 +727,57 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
                 <SearchableSelect
                   value={form.doctorId}
                   onChange={(value) => setForm((p) => ({ ...p, doctorId: value }))}
-                  options={hospitalDoctors.map((d) => ({ value: String(d.id), label: d.name }))}
+                  options={hospitalDoctors.map((d) => ({
+                    value: String(d.id),
+                    label: d.name,
+                    meta: d.specialization || undefined,
+                  }))}
                   placeholder="Search doctor..."
                 />
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>Study</label>
-                <input
-                  value={form.studyName}
-                  onChange={(e) => setForm((p) => ({ ...p, studyName: e.target.value }))}
-                  placeholder="e.g. Chest PA"
-                  required
-                  className={inputClass}
+                {/* The catalogue is the normal path, so the picker is always
+                    shown -- previously it vanished when the catalogue was
+                    empty, which read as a missing feature rather than as
+                    "nothing to pick yet". The free-text box below appears only
+                    while the catalogue is empty, so the desk keeps working. */}
+                <SearchableSelect
+                  value={form.xrayTypeId}
+                  onChange={(value) => {
+                    const picked = activeTypes.find((row) => String(row.id) === value);
+                    setForm((p) => ({
+                      ...p,
+                      xrayTypeId: value,
+                      // The name is copied, not referenced, so renaming a
+                      // study later cannot rewrite receipts already printed.
+                      studyName: picked ? picked.name : p.studyName,
+                      fee: picked ? Number(picked.price || 0).toFixed(2) : p.fee,
+                    }));
+                  }}
+                  options={activeTypes.map((row) => ({
+                    value: String(row.id),
+                    // A retired entry only appears here when this receipt
+                    // already points at it, so say so rather than letting it
+                    // look like a current choice.
+                    label:
+                      (Number(row.price || 0) > 0
+                        ? `${row.name} (${Number(row.price).toFixed(2)})`
+                        : row.name) + (row.is_active ? '' : ' - inactive'),
+                  }))}
+                  placeholder={activeTypes.length > 0 ? 'Search study...' : 'No X-Ray types yet'}
+                  disabled={activeTypes.length === 0}
+                  emptyMessage="No X-Ray types yet - add them in the X-Ray Types tab"
                 />
+                {activeTypes.length === 0 && (
+                  <input
+                    value={form.studyName}
+                    onChange={(e) => setForm((p) => ({ ...p, studyName: e.target.value }))}
+                    placeholder="e.g. Chest PA"
+                    required
+                    className={inputClass + ' mt-1.5'}
+                  />
+                )}
               </div>
               <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>Date</label>
@@ -627,7 +786,9 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
                   value={form.performedAt}
                   onChange={(e) => setForm((p) => ({ ...p, performedAt: e.target.value }))}
                   required
-                  className={inputClass}
+                  disabled={!canBackdateReceipt}
+                  title={canBackdateReceipt ? undefined : 'Changing the receipt date requires the Change Receipt Date permission'}
+                  className={inputClass + ' disabled:opacity-60 disabled:cursor-not-allowed'}
                 />
               </div>
               <div className="col-span-12 md:col-span-6">
@@ -646,6 +807,15 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
                   step="0.01"
                   value={form.fee}
                   onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
+                  // Money is settled to the fils on paper, so it reads that
+                  // way in the form too. Normalised on blur rather than on
+                  // every keystroke, which would fight the typist.
+                  onBlur={() =>
+                    setForm((p) => ({
+                      ...p,
+                      fee: p.fee === '' ? '' : Number(p.fee || 0).toFixed(2),
+                    }))
+                  }
                   className={inputClass}
                 />
               </div>
@@ -777,6 +947,8 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

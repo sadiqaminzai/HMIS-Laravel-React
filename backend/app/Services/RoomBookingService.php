@@ -23,18 +23,35 @@ class RoomBookingService
         return max(1, $days);
     }
 
-    public function calculateCosts(Room $room, int $bedsToBook, string $checkInDate, ?string $checkOutDate, float $discountAmount = 0): array
+    /**
+     * $discountPercent, when given, wins over $discountAmount: a hospital's
+     * standing default is expressed as a rate, and the nightly rate times the
+     * number of nights is only known here.
+     */
+    public function calculateCosts(Room $room, int $bedsToBook, string $checkInDate, ?string $checkOutDate, float $discountAmount = 0, ?float $discountPercent = null): array
     {
         $days = $this->calculateDays($checkInDate, $checkOutDate);
         $baseCost = round($days * (float) $room->cost_per_bed * $bedsToBook, 2);
+
+        if ($discountPercent !== null) {
+            $percent = min(max($discountPercent, 0), 100);
+            $discountAmount = round(($baseCost * $percent) / 100, 2);
+        }
+
         $discount = round(max(0, $discountAmount), 2);
         $discount = min($baseCost, $discount);
+        $total = round(max(0, $baseCost - $discount), 2);
 
         return [
             'days' => $days,
             'base_cost' => $baseCost,
             'discount_amount' => $discount,
-            'total_cost' => round(max(0, $baseCost - $discount), 2),
+            // total_cost is NET of the discount. Kept under its historical
+            // name so nothing downstream breaks; net_amount below is the same
+            // number under the name the other receipt modules use.
+            'total_cost' => $total,
+            'net_amount' => $total,
+            'discount_percentage' => $baseCost > 0 ? round(($discount / $baseCost) * 100, 2) : 0.0,
         ];
     }
 

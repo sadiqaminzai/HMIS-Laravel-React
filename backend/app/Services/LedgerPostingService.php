@@ -13,6 +13,7 @@ use App\Models\PatientSurgery;
 use App\Models\RoomBooking;
 use App\Models\Transaction;
 use App\Models\UltrasoundExam;
+use App\Models\DentalReceipt;
 use App\Models\XrayReceipt;
 
 class LedgerPostingService
@@ -112,7 +113,16 @@ class LedgerPostingService
 
     public function upsertRoomBookingSnapshot(RoomBooking $booking): LedgerEntry
     {
-        $netAmount = (float) ($booking->total_cost ?? 0);
+        // total_cost is already NET of the discount -- RoomBookingService
+        // returns it as base_cost minus discount_amount. The gross has to be
+        // reconstructed by adding the discount back, exactly as the lab
+        // snapshot below does with total_amount. Treating total_cost as the
+        // gross would take the discount off a second time.
+        $netAmount = $booking->net_amount !== null
+            ? (float) $booking->net_amount
+            : (float) ($booking->total_cost ?? 0);
+        $discountAmount = max(0.0, (float) ($booking->discount_amount ?? 0));
+        $grossAmount = max(0.0, round($netAmount + $discountAmount, 2));
         [$paidAmount, $dueAmount] = $this->resolveUntrackedPaymentSplit($netAmount, (string) ($booking->payment_status ?? 'pending'));
 
         return $this->upsertSnapshot(
@@ -126,8 +136,8 @@ class LedgerPostingService
                 'title' => 'Room Booking #' . (string) $booking->id,
                 'patient_id' => $booking->patient_id ? (int) $booking->patient_id : null,
                 'supplier_id' => null,
-                'amount' => $netAmount,
-                'discount_amount' => (float) ($booking->discount_amount ?? 0),
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
                 'tax_amount' => 0,
                 'net_amount' => $netAmount,
                 'paid_amount' => $paidAmount,
@@ -219,7 +229,13 @@ class LedgerPostingService
      */
     public function upsertUltrasoundExamSnapshot(UltrasoundExam $exam): LedgerEntry
     {
-        $netAmount = (float) ($exam->fee ?? 0);
+        // fee is the gross. Ultrasound had no discount columns until now, so
+        // this posted the fee as the net and hard-coded the discount to zero.
+        $grossAmount = (float) ($exam->fee ?? 0);
+        $discountAmount = min($grossAmount, max(0.0, (float) ($exam->discount_amount ?? 0)));
+        $netAmount = $exam->net_amount !== null
+            ? (float) $exam->net_amount
+            : round($grossAmount - $discountAmount, 2);
         $isSettled = (string) $exam->payment_status === 'paid';
 
         return $this->upsertSnapshot(
@@ -233,8 +249,8 @@ class LedgerPostingService
                 'title' => 'Ultrasound #' . (string) ($exam->sequence_id ?? $exam->id),
                 'patient_id' => $exam->patient_id ? (int) $exam->patient_id : null,
                 'supplier_id' => null,
-                'amount' => $netAmount,
-                'discount_amount' => 0,
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
                 'tax_amount' => 0,
                 'net_amount' => $netAmount,
                 'paid_amount' => $isSettled ? (float) ($exam->paid_amount ?? $netAmount) : 0,
@@ -315,6 +331,54 @@ class LedgerPostingService
     public function voidXrayReceiptSnapshot(XrayReceipt $receipt, ?string $actor = null): void
     {
         $this->voidSnapshot((int) $receipt->hospital_id, 'xray_receipt', (int) $receipt->id, $actor);
+    }
+
+    public function upsertDentalReceiptSnapshot(DentalReceipt $receipt): LedgerEntry
+    {
+        $grossAmount = (float) ($receipt->fee ?? 0);
+        $discountAmount = min($grossAmount, max(0.0, (float) ($receipt->discount_amount ?? 0)));
+        $netAmount = $receipt->payableAmount();
+        $isSettled = $receipt->isPaid();
+
+        return $this->upsertSnapshot(
+            (int) $receipt->hospital_id,
+            'dental_receipt',
+            (int) $receipt->id,
+            [
+                'entry_direction' => 'income',
+                'module' => 'dental',
+                'category' => 'dental',
+                'title' => 'Dental #' . (string) ($receipt->sequence_id ?? $receipt->id),
+                'patient_id' => $receipt->patient_id ? (int) $receipt->patient_id : null,
+                'supplier_id' => null,
+                // Gross and discount posted separately, so reports can show
+                // what was charged as well as what was actually collected.
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
+                'tax_amount' => 0,
+                'net_amount' => $netAmount,
+                'paid_amount' => $isSettled ? (float) ($receipt->paid_amount ?? $netAmount) : 0,
+                'due_amount' => $isSettled ? 0 : $netAmount,
+                'status' => $isSettled ? 'paid' : 'pending',
+                'currency' => 'AFN',
+                // Paid_at where known, so takings land on the day collected.
+                'posted_at' => $receipt->paid_at ?? $receipt->performed_at ?? $receipt->created_at ?? now(),
+                'posted_by' => $receipt->updated_by ?? $receipt->created_by,
+                'collected_by' => $receipt->paid_by,
+                'collected_at' => $receipt->paid_at,
+                'voided_at' => null,
+                'metadata' => [
+                    'service_name' => $receipt->service_name,
+                    'dental_service_id' => $receipt->dental_service_id,
+                    'doctor_id' => $receipt->doctor_id,
+                ],
+            ]
+        );
+    }
+
+    public function voidDentalReceiptSnapshot(DentalReceipt $receipt, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $receipt->hospital_id, 'dental_receipt', (int) $receipt->id, $actor);
     }
 
     /** Pharmacy document type => what the paper is actually called. */

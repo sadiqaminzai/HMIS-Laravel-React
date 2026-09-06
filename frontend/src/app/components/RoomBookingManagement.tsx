@@ -60,6 +60,7 @@ interface BookingItem {
   bedsToBook: number;
   totalCost: number;
   discountAmount: number;
+  discountPercentage: number;
   status: 'Pending' | 'Confirmed' | 'Checked-in' | 'Checked-out' | 'Cancelled';
   paymentStatus: 'pending' | 'paid' | 'partial' | 'cancelled';
   remarks?: string;
@@ -120,6 +121,7 @@ const mapBooking = (b: any): BookingItem => ({
   bedsToBook: Number(b.beds_to_book || 1),
   totalCost: Number(b.total_cost || 0),
   discountAmount: Number(b.discount_amount || 0),
+  discountPercentage: Number(b.discount_percentage || 0),
   status: b.status,
   paymentStatus: b.payment_status,
   remarks: b.remarks || undefined,
@@ -139,7 +141,13 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
    * AppointmentManagement.
    */
   const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
-  const { getPrintPaperSize, loadHospitalSetting } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
+
+  /** The rate a new booking starts at, from Settings > General > Default Discounts. */
+  const seededRoomDiscount = () => {
+    const percent = getDefaultDiscounts(currentHospital.id).roomBooking;
+    return percent > 0 ? String(percent) : '0';
+  };
   const { hospitals } = useHospitals();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -283,7 +291,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       checkOutDate: '',
       bedNumber: '',
       bedsToBook: '1',
-      discountPercent: '0',
+      discountPercent: seededRoomDiscount(),
       status: 'Pending',
       paymentStatus: 'pending',
       remarks: '',
@@ -309,7 +317,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       checkOutDate: toDateInputValue(item.checkOutDate),
       bedNumber: item.bedNumber || '',
       bedsToBook: String(item.bedsToBook),
-      discountPercent: '0',
+      // Was hard-coded to '0', so opening a discounted booking and saving it
+      // silently removed the discount. The stored rate is now shown back.
+      discountPercent: String(item.discountPercentage || 0),
       status: item.status,
       paymentStatus: item.paymentStatus,
       remarks: item.remarks || '',
@@ -425,7 +435,9 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       check_out_date: form.checkOutDate || undefined,
       bed_number: form.bedNumber || undefined,
       beds_to_book: Number(form.bedsToBook || 1),
-      discount_amount: calculateNightsAndTotal().discountAmount,
+      // The rate, not the amount: the server knows the nightly price and the
+      // number of nights, and recomputes the money from them.
+      discount_percentage: Math.min(Math.max(Number(form.discountPercent || 0), 0), 100),
       status: form.status,
       payment_status: form.paymentStatus,
       remarks: form.remarks || undefined,

@@ -35,6 +35,22 @@ export interface PrescriptionWatermarkSettings {
   width: number;
 }
 
+/**
+ * A standing discount per revenue module, as a percentage.
+ *
+ * Seeds the discount field on a new receipt so a clinic-wide announcement --
+ * "30% off surgery this month" -- does not have to be retyped on every bill.
+ * Zero means no standing discount.
+ */
+export interface DefaultDiscountSettings {
+  surgery: number;
+  lab: number;
+  ultrasound: number;
+  xray: number;
+  dental: number;
+  roomBooking: number;
+}
+
 /** Which customer options the pharmacy sale screen offers for this hospital. */
 export type PharmacyCustomerMode = 'patient_only' | 'walk_in_only' | 'both';
 export type PharmacyDefaultCustomer = 'patient' | 'walk_in';
@@ -71,6 +87,12 @@ export type PrintModule =
   | 'surgery_receipt'
   | 'surgery_discharge_summary'
   | 'room_booking_receipt'
+  // Radiology and dental were printing through keys that were never in this
+  // union, so getPrintPaperSize returned undefined and every one of them
+  // silently printed thermal with no way to configure it.
+  | 'ultrasound_receipt'
+  | 'xray_receipt'
+  | 'dental_receipt'
   | 'expense_receipt'
   | 'other_income_receipt'
   | 'prescription';
@@ -108,6 +130,14 @@ export const PRINT_MODULE_GROUPS: { group: string; modules: { key: PrintModule; 
     ],
   },
   {
+    group: 'Radiology & Dental',
+    modules: [
+      { key: 'ultrasound_receipt', label: 'Ultrasound Receipt' },
+      { key: 'xray_receipt', label: 'X-Ray Receipt' },
+      { key: 'dental_receipt', label: 'Dental Receipt' },
+    ],
+  },
+  {
     group: 'Finance & Prescriptions',
     modules: [
       { key: 'expense_receipt', label: 'Expense Receipt' },
@@ -129,6 +159,9 @@ export const DEFAULT_PRINT_PAPER_SIZES: Record<PrintModule, PrintPaperSize> = {
   surgery_receipt: '80mm',
   surgery_discharge_summary: 'a4',
   room_booking_receipt: '80mm',
+  ultrasound_receipt: '80mm',
+  xray_receipt: '80mm',
+  dental_receipt: '80mm',
   expense_receipt: 'a4',
   other_income_receipt: 'a4',
   prescription: 'a4',
@@ -218,9 +251,12 @@ export interface HospitalSetting {
   printColumns: PrintColumnSettings;
   prescriptionPrintAssetSettings: PrescriptionPrintAssetSettings;
   prescriptionWatermark: PrescriptionWatermarkSettings;
+  defaultDiscounts: DefaultDiscountSettings;
   showOutOfStockMedicines: boolean;
   showOutOfStockMedicinesForPharmacy: boolean;
   showPrescriptionListMeta: boolean;
+  /** Print the prescribing doctor's own phone number on the letterhead. */
+  showDoctorPhoneOnPrescription: boolean;
   /** Paper size configured per printable document for this hospital. */
   printPaperSizes: Record<PrintModule, PrintPaperSize>;
   /** Optional invoice columns configured per transaction type. */
@@ -268,9 +304,11 @@ interface SettingsContextType {
   getPrintColumnSettings: (hospitalId: string) => PrintColumnSettings;
   getPrescriptionPrintAssetSettings: (hospitalId: string) => PrescriptionPrintAssetSettings;
   getPrescriptionWatermark: (hospitalId: string) => PrescriptionWatermarkSettings;
+  getDefaultDiscounts: (hospitalId: string) => DefaultDiscountSettings;
   getShowOutOfStockMedicines: (hospitalId: string) => boolean;
   getShowOutOfStockMedicinesForPharmacy: (hospitalId: string) => boolean;
   getShowPrescriptionListMeta: (hospitalId: string) => boolean;
+  getShowDoctorPhoneOnPrescription: (hospitalId: string) => boolean;
   getPrintPaperSize: (hospitalId: string, module: PrintModule) => PrintPaperSize;
   getPrintPaperSizes: (hospitalId: string) => Record<PrintModule, PrintPaperSize>;
   getInvoiceFields: (hospitalId: string, type: InvoiceType) => Record<InvoiceFieldKey, boolean>;
@@ -313,6 +351,21 @@ const defaultPrescriptionPrintAssetSettings: PrescriptionPrintAssetSettings = {
 
 // Matches what every prescription printed before the setting existed, so a
 // hospital that never opens the tab sees no change.
+const toPercent = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(parsed, 100);
+};
+
+const defaultDiscounts: DefaultDiscountSettings = {
+  surgery: 0,
+  lab: 0,
+  ultrasound: 0,
+  xray: 0,
+  dental: 0,
+  roomBooking: 0,
+};
+
 const defaultPrescriptionWatermark: PrescriptionWatermarkSettings = {
   enabled: true,
   source: 'stethoscope',
@@ -384,6 +437,7 @@ const SettingsContext = createContext<SettingsContextType>({
   getPrintColumnSettings: () => defaultPrintColumns,
   getPrescriptionPrintAssetSettings: () => defaultPrescriptionPrintAssetSettings,
   getPrescriptionWatermark: () => defaultPrescriptionWatermark,
+  getDefaultDiscounts: () => defaultDiscounts,
   getShowOutOfStockMedicines: () => false,
   getShowOutOfStockMedicinesForPharmacy: () => false,
   getShowPrescriptionListMeta: () => true,
@@ -493,6 +547,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.prescription_signature_width = payload.prescriptionPrintAssetSettings.signatureWidth;
       body.prescription_signature_height = payload.prescriptionPrintAssetSettings.signatureHeight;
     }
+    if (payload.defaultDiscounts) {
+      body.default_discount_surgery = payload.defaultDiscounts.surgery;
+      body.default_discount_lab = payload.defaultDiscounts.lab;
+      body.default_discount_ultrasound = payload.defaultDiscounts.ultrasound;
+      body.default_discount_xray = payload.defaultDiscounts.xray;
+      body.default_discount_dental = payload.defaultDiscounts.dental;
+      body.default_discount_room_booking = payload.defaultDiscounts.roomBooking;
+    }
     if (payload.prescriptionWatermark) {
       body.prescription_watermark_enabled = payload.prescriptionWatermark.enabled;
       body.prescription_watermark_source = payload.prescriptionWatermark.source;
@@ -505,6 +567,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
     if (payload.showOutOfStockMedicinesForPharmacy !== undefined) {
       body.show_out_of_stock_medicines_to_pharmacy = payload.showOutOfStockMedicinesForPharmacy;
+    }
+    if (payload.showDoctorPhoneOnPrescription !== undefined) {
+      body.show_doctor_phone_on_prescription = payload.showDoctorPhoneOnPrescription;
     }
     if (payload.showPrescriptionListMeta !== undefined) {
       body.show_prescription_list_meta = payload.showPrescriptionListMeta;
@@ -584,6 +649,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         signatureWidth: toPositiveInt(raw.prescription_signature_width, defaultPrescriptionPrintAssetSettings.signatureWidth),
         signatureHeight: toPositiveInt(raw.prescription_signature_height, defaultPrescriptionPrintAssetSettings.signatureHeight),
       },
+      defaultDiscounts: {
+        surgery: toPercent(raw.default_discount_surgery),
+        lab: toPercent(raw.default_discount_lab),
+        ultrasound: toPercent(raw.default_discount_ultrasound),
+        xray: toPercent(raw.default_discount_xray),
+        dental: toPercent(raw.default_discount_dental),
+        roomBooking: toPercent(raw.default_discount_room_booking),
+      },
       prescriptionWatermark: {
         enabled: Boolean(raw.prescription_watermark_enabled ?? defaultPrescriptionWatermark.enabled),
         source: (['stethoscope', 'logo', 'custom'].includes(String(raw.prescription_watermark_source))
@@ -595,6 +668,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       showOutOfStockMedicines: Boolean(raw.show_out_of_stock_medicines_to_doctors ?? false),
       showOutOfStockMedicinesForPharmacy: Boolean(raw.show_out_of_stock_medicines_to_pharmacy ?? false),
       showPrescriptionListMeta: Boolean(raw.show_prescription_list_meta ?? true),
+      // Defaults off: a personal number must be opted into, not inherited.
+      showDoctorPhoneOnPrescription: Boolean(raw.show_doctor_phone_on_prescription ?? false),
       printPaperSizes: normalizePaperSizes(raw.print_paper_sizes),
       invoiceFields: normalizeInvoiceFields(raw.invoice_fields),
       reportModuleOwners: normalizeReportOwners(raw.report_module_owners),
@@ -646,9 +721,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       printColumns: { ...defaultPrintColumns },
       prescriptionPrintAssetSettings: { ...defaultPrescriptionPrintAssetSettings },
       prescriptionWatermark: { ...defaultPrescriptionWatermark },
+      defaultDiscounts: { ...defaultDiscounts },
       showOutOfStockMedicines: false,
       showOutOfStockMedicinesForPharmacy: false,
       showPrescriptionListMeta: true,
+      showDoctorPhoneOnPrescription: false,
       printPaperSizes: { ...DEFAULT_PRINT_PAPER_SIZES },
       invoiceFields: normalizeInvoiceFields(undefined),
       reportModuleOwners: normalizeReportOwners(undefined),
@@ -691,6 +768,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return getHospitalSetting(hospitalId).printColumns;
   };
 
+  const getDefaultDiscounts = (hospitalId: string): DefaultDiscountSettings => {
+    return getHospitalSetting(hospitalId).defaultDiscounts;
+  };
+
   const getPrescriptionWatermark = (hospitalId: string): PrescriptionWatermarkSettings => {
     return getHospitalSetting(hospitalId).prescriptionWatermark;
   };
@@ -709,6 +790,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const getShowPrescriptionListMeta = (hospitalId: string): boolean => {
     return getHospitalSetting(hospitalId).showPrescriptionListMeta;
+  };
+
+  const getShowDoctorPhoneOnPrescription = (hospitalId: string): boolean => {
+    return getHospitalSetting(hospitalId).showDoctorPhoneOnPrescription;
   };
 
   const getPrintPaperSize = (hospitalId: string, module: PrintModule): PrintPaperSize => {
@@ -788,9 +873,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       getPrintColumnSettings,
       getPrescriptionPrintAssetSettings,
       getPrescriptionWatermark,
+      getDefaultDiscounts,
       getShowOutOfStockMedicines,
       getShowOutOfStockMedicinesForPharmacy,
       getShowPrescriptionListMeta,
+      getShowDoctorPhoneOnPrescription,
       getPrintPaperSize,
       getPrintPaperSizes,
       getPharmacyCustomerMode,

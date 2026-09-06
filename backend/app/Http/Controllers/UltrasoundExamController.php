@@ -13,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class UltrasoundExamController extends Controller
 {
+    use \App\Http\Controllers\Concerns\HandlesReceiptDiscounts;
+
     private const RELATIONS = ['patient', 'doctor', 'ultrasoundType'];
 
     public function __construct(private LedgerPostingService $ledgerPostingService)
@@ -91,6 +93,11 @@ class UltrasoundExamController extends Controller
             $data['report_body'] = UltrasoundType::whereKey($data['ultrasound_type_id'])->value('default_template');
         }
 
+        // Who may discount, then what the discount comes to. Both enforced
+        // here: the form disables the field, but that is only a hint.
+        $this->enforceDiscountPermission($request, $data);
+        $this->applyDiscountRules($data, 'fee');
+
         $exam = DB::transaction(function () use ($data, $request, $hospitalId) {
             $data['created_by'] = $request->user()->name ?? null;
             $data['updated_by'] = $request->user()->name ?? null;
@@ -162,6 +169,15 @@ class UltrasoundExamController extends Controller
         if (!($request->user()?->hasPermission('set_ultrasound_fee') ?? false)) {
             unset($data['fee']);
         }
+
+        // Same two steps as store(), but against the stored row: a user without
+        // the discount right editing some other field must not wipe a discount
+        // a supervisor applied, and the recomputation has to use whichever fee
+        // actually applies -- the posted one, or the existing one if the fee
+        // was just unset above.
+        $this->enforceDiscountPermission($request, $data, $ultrasoundExam);
+        $data['fee'] = $data['fee'] ?? (float) ($ultrasoundExam->fee ?? 0);
+        $this->applyDiscountRules($data, 'fee');
 
         // Payment fields belong to the counter's own endpoints. Accepting them
         // here would let a specialist settle an exam by saving a report.
@@ -358,6 +374,9 @@ class UltrasoundExamController extends Controller
             'impression' => ['nullable', 'string'],
             'status' => ['required', 'in:draft,completed,cancelled'],
             'fee' => ['nullable', 'numeric', 'min:0'],
+            'discount_enabled' => ['nullable', 'boolean'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
     }
 

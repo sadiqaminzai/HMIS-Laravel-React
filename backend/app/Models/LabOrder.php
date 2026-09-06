@@ -46,6 +46,9 @@ class LabOrder extends Model
         'created_by',
         'updated_by',
         'verification_token',
+        'discount_enabled',
+        'discount_percentage',
+        'net_amount',
     ];
 
     protected $casts = [
@@ -56,6 +59,9 @@ class LabOrder extends Model
         'paid_at' => 'datetime',
         'sample_collected_at' => 'datetime',
         'completed_at' => 'datetime',
+        'discount_enabled' => 'boolean',
+        'discount_percentage' => 'decimal:2',
+        'net_amount' => 'decimal:2',
     ];
 
     protected static function booted()

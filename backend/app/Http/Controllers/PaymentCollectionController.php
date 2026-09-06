@@ -38,6 +38,7 @@ class PaymentCollectionController extends Controller
         // this map is keyed by module, so two radiology source types could not
         // both be reached from here.
         'xray' => ['manage_xray_payments', 'xray_receipt', 'X-Ray', 'reverse_xray_payment'],
+        'dental' => ['manage_dental_payments', 'dental_receipt', 'Dental', 'reverse_dental_payment'],
         'surgery' => ['manage_surgery_payments', 'patient_surgery', 'Surgery', 'reverse_surgery_payment'],
         'room_booking' => ['manage_room_booking_payments', 'room_booking', 'Room Bookings', 'reverse_room_booking_payment'],
         'pharmacy' => ['record_finance_payments', 'transaction', 'Pharmacy Invoices', 'reverse_finance_payment'],
@@ -64,6 +65,7 @@ class PaymentCollectionController extends Controller
         'lab_order' => 'lab_orders',
         'ultrasound_exam' => 'ultrasound_exams',
         'xray_receipt' => 'xray_receipts',
+        'dental_receipt' => 'dental_receipts',
         'patient_surgery' => 'patient_surgeries',
         'room_booking' => 'room_bookings',
         'transaction' => 'transactions',

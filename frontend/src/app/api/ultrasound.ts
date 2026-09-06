@@ -31,6 +31,10 @@ export interface UltrasoundExamApi {
   /** Set at the reception counter, not by the reporting specialist. */
   payment_status: 'unpaid' | 'partial' | 'paid';
   fee: number | string;
+  discount_enabled?: boolean;
+  discount_percentage?: number | string | null;
+  discount_amount?: number | string | null;
+  net_amount?: number | string | null;
   paid_amount?: number | string | null;
   payment_method?: string | null;
   paid_at?: string | null;

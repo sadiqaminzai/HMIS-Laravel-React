@@ -97,6 +97,13 @@ class HospitalSettingController extends Controller
             'show_out_of_stock_medicines_to_doctors' => ['boolean'],
             'show_out_of_stock_medicines_to_pharmacy' => ['boolean'],
             'show_prescription_list_meta' => ['boolean'],
+            'show_doctor_phone_on_prescription' => ['boolean'],
+            'default_discount_surgery' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_lab' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_ultrasound' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_xray' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_dental' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_room_booking' => ['numeric', 'min:0', 'max:100'],
         ]);
 
         $setting = $this->getOrCreateSetting($hospital->id);
@@ -136,6 +143,26 @@ class HospitalSettingController extends Controller
 
         if (!empty($touchedPharmacy) && !$this->canManagePharmacySettings($request->user())) {
             abort(403, 'Not allowed to change pharmacy customer settings');
+        }
+
+        // A standing discount decides what every future receipt charges, so it
+        // is not part of general settings access.
+        $discountKeys = [
+            'default_discount_surgery',
+            'default_discount_lab',
+            'default_discount_ultrasound',
+            'default_discount_xray',
+            'default_discount_dental',
+            'default_discount_room_booking',
+        ];
+        $touchedDiscounts = array_filter(
+            $discountKeys,
+            fn ($key) => array_key_exists($key, $data)
+                && (string) $data[$key] !== (string) ($setting->{$key} ?? '0.00')
+        );
+
+        if (!empty($touchedDiscounts) && !$this->canManageDefaultDiscounts($request->user())) {
+            abort(403, 'Not allowed to change the default discount');
         }
 
         // Keep mode and default consistent: a hospital cannot default to an option
@@ -220,6 +247,16 @@ class HospitalSettingController extends Controller
         $setting->update($data);
 
         return response()->json($this->presentSetting($setting->fresh()));
+    }
+
+    private function canManageDefaultDiscounts($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return $user->role === 'super_admin'
+            || $user->hasAnyPermission(['manage_default_discounts', 'manage_hospital_settings']);
     }
 
     private function canManagePharmacySettings($user): bool
@@ -338,6 +375,13 @@ class HospitalSettingController extends Controller
                 'show_out_of_stock_medicines_to_doctors' => false,
                 'show_out_of_stock_medicines_to_pharmacy' => false,
                 'show_prescription_list_meta' => true,
+                'show_doctor_phone_on_prescription' => false,
+                'default_discount_surgery' => 0,
+                'default_discount_lab' => 0,
+                'default_discount_ultrasound' => 0,
+                'default_discount_xray' => 0,
+                'default_discount_dental' => 0,
+                'default_discount_room_booking' => 0,
             ]
         );
     }

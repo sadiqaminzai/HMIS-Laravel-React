@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class RoomBookingController extends Controller
 {
+    use \App\Http\Controllers\Concerns\HandlesReceiptDiscounts;
+
     use RecordsPaymentCollection;
 
     public function __construct(
@@ -120,6 +122,9 @@ class RoomBookingController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatePayload($request);
+        // The form disables the discount field for users without the right,
+        // but that is only a hint -- the gate has to be on the server.
+        $this->enforceDiscountPermission($request, $data);
         $user = $request->user();
 
         $data['created_by'] = $user?->name;
@@ -137,16 +142,25 @@ class RoomBookingController extends Controller
                 $data['bed_number'] ?? null
             );
 
+            // A rate wins over a flat amount: the hospital default is stored
+            // as a percentage and the base cost is only known inside here.
+            $discountPercent = isset($data['discount_percentage']) && $data['discount_percentage'] !== ''
+                ? (float) $data['discount_percentage']
+                : null;
+
             $costs = $this->bookingService->calculateCosts(
                 $room,
                 (int) $data['beds_to_book'],
                 $data['check_in_date'],
                 $data['check_out_date'] ?? null,
-                (float) ($data['discount_amount'] ?? 0)
+                (float) ($data['discount_amount'] ?? 0),
+                $discountPercent
             );
 
             $data['discount_amount'] = $costs['discount_amount'];
             $data['total_cost'] = $costs['total_cost'];
+            $data['net_amount'] = $costs['net_amount'];
+            $data['discount_percentage'] = $costs['discount_percentage'];
 
             $booking = RoomBooking::create($data);
             $this->ledgerPostingService->upsertRoomBookingSnapshot($booking);
@@ -169,6 +183,9 @@ class RoomBookingController extends Controller
         $this->authorizeScope($request->user(), $roomBooking->hospital_id);
 
         $data = $this->validatePayload($request, $roomBooking->hospital_id);
+        // Passing the booking keeps a supervisor's discount in place when
+        // someone without the right edits an unrelated field.
+        $this->enforceDiscountPermission($request, $data, $roomBooking);
         $data['updated_by'] = $request->user()?->name;
         // A payment_status arriving on a plain edit still has to record
         // who took the money -- see RecordsPaymentCollection.
@@ -194,16 +211,25 @@ class RoomBookingController extends Controller
                 $data['bed_number'] ?? null
             );
 
+            // A rate wins over a flat amount: the hospital default is stored
+            // as a percentage and the base cost is only known inside here.
+            $discountPercent = isset($data['discount_percentage']) && $data['discount_percentage'] !== ''
+                ? (float) $data['discount_percentage']
+                : null;
+
             $costs = $this->bookingService->calculateCosts(
                 $room,
                 (int) $data['beds_to_book'],
                 $data['check_in_date'],
                 $data['check_out_date'] ?? null,
-                (float) ($data['discount_amount'] ?? 0)
+                (float) ($data['discount_amount'] ?? 0),
+                $discountPercent
             );
 
             $data['discount_amount'] = $costs['discount_amount'];
             $data['total_cost'] = $costs['total_cost'];
+            $data['net_amount'] = $costs['net_amount'];
+            $data['discount_percentage'] = $costs['discount_percentage'];
 
             $roomBooking->update($data);
 
@@ -289,6 +315,7 @@ class RoomBookingController extends Controller
             'bed_number' => ['nullable', 'string', 'max:255'],
             'beds_to_book' => ['required', 'integer', 'min:1'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['required', 'in:Pending,Confirmed,Checked-in,Checked-out,Cancelled'],
             'payment_status' => ['required', 'in:pending,paid,partial,cancelled'],
             'remarks' => ['nullable', 'string'],

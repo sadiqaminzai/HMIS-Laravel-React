@@ -179,6 +179,14 @@ class DashboardController extends Controller
                     fn ($q) => $q->whereDate('created_at', Carbon::today())
                 )
                 ->count(),
+            'dental_receipts_today' => DB::table('dental_receipts')
+                ->whereNull('deleted_at')
+                ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
+                ->when($startDate,
+                    fn ($q) => $q->whereBetween('created_at', [$startDate, $endDate]),
+                    fn ($q) => $q->whereDate('created_at', Carbon::today())
+                )
+                ->count(),
             'appointments_today' => Appointment::query()
                 ->when($hospitalId, fn ($q) => $q->where('hospital_id', $hospitalId))
                 ->when($startDate,
@@ -482,6 +490,12 @@ class DashboardController extends Controller
                 ->where('module', 'xray')
                 ->where('entry_direction', 'income')
                 ->sum('net_amount'), 2),
+            // net_amount, like every other line here: what the hospital is
+            // owed after any discount, not the list price.
+            'total_dental_fees' => round((float) (clone $dailyLedgerQuery)
+                ->where('module', 'dental')
+                ->where('entry_direction', 'income')
+                ->sum('net_amount'), 2),
             'total_sales_invoice_amount' => $salesInvoiceAmount,
             'total_sales_return_amount' => $salesReturnAmount,
             // What the pharmacy actually kept: invoices less goods handed back.
@@ -596,6 +610,7 @@ class DashboardController extends Controller
             // needs its own line or its takings would be missing from the
             // day-end sheet entirely.
             'xray' => ['label' => 'X-Ray Fees', 'module' => 'xray', 'permission' => 'view_dashboard_xray_fees'],
+            'dental' => ['label' => 'Dental Fees', 'module' => 'dental', 'permission' => 'view_dashboard_dental_fees'],
             'surgery' => ['label' => 'Surgery Fees', 'module' => 'surgery', 'permission' => 'view_dashboard_surgery_fees'],
             'room_booking' => ['label' => 'Room Booking Fees', 'module' => 'room_booking', 'permission' => 'view_dashboard_room_booking_fees'],
             'pharmacy' => ['label' => 'Pharmacy Sales', 'module' => 'pharmacy', 'category' => 'sales', 'permission' => 'view_dashboard_medicine_sale'],
@@ -797,6 +812,7 @@ class DashboardController extends Controller
             'lab_orders_today' => 'count_lab_tests',
             'ultrasound_exams_today' => 'count_ultrasound',
             'xray_receipts_today' => 'count_xray',
+            'dental_receipts_today' => 'count_dental',
             'appointments_today' => 'count_appointments',
             'rooms' => 'count_rooms',
             'active_rooms' => 'count_rooms',

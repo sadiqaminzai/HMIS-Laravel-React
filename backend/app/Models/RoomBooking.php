@@ -32,6 +32,9 @@ class RoomBooking extends Model
         'created_by',
         'updated_by',
         'deleted_by',
+        'discount_enabled',
+        'discount_percentage',
+        'net_amount',
     ];
 
     protected $casts = [
@@ -49,6 +52,9 @@ class RoomBooking extends Model
         'discount_amount' => 'decimal:2',
         'is_active' => 'boolean',
         'is_delete' => 'boolean',
+        'discount_enabled' => 'boolean',
+        'discount_percentage' => 'decimal:2',
+        'net_amount' => 'decimal:2',
     ];
 
     public function hospital()

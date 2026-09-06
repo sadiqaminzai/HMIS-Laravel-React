@@ -195,7 +195,27 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
    * AppointmentManagement.
    */
   const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
-  const { getPrintPaperSize, loadHospitalSetting } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
+
+  /**
+   * What the discount field starts at on a new surgery.
+   *
+   * A hospital that has announced a standing discount should not have it
+   * retyped on every receipt -- and forgotten on the ones where it is not.
+   * Zero means no standing discount, and the field simply starts empty and
+   * disabled as before.
+   */
+  const seededSurgeryDiscount = () => {
+    const percent = getDefaultDiscounts(currentHospital.id).surgery;
+    return {
+      // NOT discountEnabled. That flag is a full waiver -- DiscountService
+      // reads it as "charge nothing" and both the preview here and the server
+      // set the total to zero. A standing 30% belongs in the percentage field,
+      // which is the partial-discount path.
+      discountEnabled: false,
+      discountPercentage: percent > 0 ? String(percent) : '',
+    };
+  };
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { user, hasPermission } = useAuth();
@@ -273,6 +293,8 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
     // patient pays, so pending was the wrong starting point for most entries.
     paymentStatus: 'paid' as PatientSurgeryItem['paymentStatus'],
     cost: '',
+    // Seeded properly by resetPatientSurgeryForm / the Add button, which can
+    // read the hospital setting; useState runs before that is available.
     discountEnabled: false,
     discountPercentage: '',
     notes: '',
@@ -753,8 +775,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
         status: 'scheduled',
         paymentStatus: 'pending',
         cost: '',
-        discountEnabled: false,
-        discountPercentage: '',
+        ...seededSurgeryDiscount(),
         notes: '',
         isActive: true,
       });
@@ -913,7 +934,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
           {activeTab === 'types' && canAddTypes && <AddButton onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} label={t('ui.addType')} />}
           {activeTab === 'surgeries' && canAddSurgeries && <AddButton onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} label="Add Surgery" />}
-          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: today(), status: 'scheduled', paymentStatus: 'paid', cost: '', discountEnabled: false, discountPercentage: '', notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: today(), status: 'scheduled', paymentStatus: 'paid', cost: '', ...seededSurgeryDiscount(), notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
           {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <AddButton onClick={openNewDischargeModal} label="Add Discharge" />}
         </div>
       </div>

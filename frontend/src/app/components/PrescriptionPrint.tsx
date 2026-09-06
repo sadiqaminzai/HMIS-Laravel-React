@@ -227,7 +227,7 @@ export function PrescriptionPrint({
   updatedBy
 }: PrescriptionPrintProps) {
   const componentRef = useRef<HTMLDivElement>(null);
-  const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getShowPrescriptionListMeta, getPrescriptionWatermark } = useSettings();
+  const { loadHospitalSetting, getPrescriptionPrintAssetSettings, getShowPrescriptionListMeta, getPrescriptionWatermark, getShowDoctorPhoneOnPrescription } = useSettings();
 
   useEffect(() => {
     if (!hospital?.id) return;
@@ -322,6 +322,7 @@ export function PrescriptionPrint({
    * is set and the height follows the image -- forcing both squashed logos.
    */
   const watermarkSetting = getPrescriptionWatermark(hospital.id);
+  const showDoctorPhone = getShowDoctorPhoneOnPrescription(hospital.id);
   // null means "use the drawn mark below". The stethoscope has always been the
   // inline SVG -- the PNG this used to request does not exist, so every render
   // fired a 404 and arrived at the SVG through the error handler anyway.
@@ -1028,6 +1029,18 @@ export function PrescriptionPrint({
             )}
             {doctor.registrationNumber && (
               <div className="mt-0.5 text-[10.5px] text-gray-500">Reg. No {doctor.registrationNumber}</div>
+            )}
+            {/* Off by default and switched on per hospital in Settings >
+                General > Prescription: some doctors want patients able to
+                reach them directly, others keep the clinic's number as the
+                only route in. Same size as the registration line so it reads
+                as part of the credentials block, not as a second contact
+                header competing with the clinic's own. */}
+            {showDoctorPhone && doctor.phone && (
+              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10.5px] text-gray-500">
+                <Phone className="h-2.5 w-2.5 shrink-0" style={{ color: brand.mid }} />
+                <span dir="ltr">{doctor.phone}</span>
+              </div>
             )}
           </div>
         </div>

@@ -11,7 +11,9 @@ export interface XrayReceiptApi {
   sequence_id: number;
   patient_id: number;
   doctor_id: number | null;
-  /** Free text: the study performed, e.g. "Chest PA". */
+  /** The catalogue entry billed, when one was chosen. */
+  xray_type_id?: number | null;
+  /** The printed label. Kept even with a type, so a rename cannot alter history. */
   study_name: string;
   performed_at: string;
   referred_by: string | null;
@@ -41,6 +43,7 @@ export interface XrayReceiptPayload {
   hospital_id?: number | string;
   patient_id: number | string;
   doctor_id?: number | string | null;
+  xray_type_id?: number | string | null;
   study_name: string;
   performed_at: string;
   referred_by?: string | null;
@@ -85,4 +88,54 @@ export async function payXrayReceipt(
 export async function reverseXrayPayment(id: number, reason: string): Promise<XrayReceiptApi> {
   const { data } = await api.post(`/xray-receipts/${id}/reverse-payment`, { reason });
   return data?.data ?? data;
+}
+
+/**
+ * One study in the hospital's X-Ray catalogue.
+ *
+ * Same shape as an ultrasound type minus the report template: X-Ray produces
+ * a receipt, not a report. The price is what a new receipt's fee defaults to.
+ */
+export interface XrayTypeApi {
+  id: number;
+  hospital_id: number;
+  name: string;
+  code: string | null;
+  description: string | null;
+  price: number | string;
+  sort_order: number;
+  is_active: boolean;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface XrayTypePayload {
+  hospital_id?: number | string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  price?: number | null;
+  sort_order?: number | null;
+  is_active?: boolean;
+}
+
+export async function fetchXrayTypes(params: Record<string, unknown> = {}): Promise<XrayTypeApi[]> {
+  const { data } = await api.get('/xray-types', { params });
+  return Array.isArray(data) ? data : (data?.data ?? []);
+}
+
+export async function createXrayType(payload: XrayTypePayload): Promise<XrayTypeApi> {
+  const { data } = await api.post('/xray-types', payload);
+  return data;
+}
+
+export async function updateXrayType(id: number, payload: XrayTypePayload): Promise<XrayTypeApi> {
+  const { data } = await api.put(`/xray-types/${id}`, payload);
+  return data;
+}
+
+export async function deleteXrayType(id: number): Promise<void> {
+  await api.delete(`/xray-types/${id}`);
 }

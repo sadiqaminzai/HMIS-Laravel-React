@@ -54,6 +54,13 @@ class HospitalSetting extends Model
         'show_out_of_stock_medicines_to_doctors',
         'show_out_of_stock_medicines_to_pharmacy',
         'show_prescription_list_meta',
+        'show_doctor_phone_on_prescription',
+        'default_discount_surgery',
+        'default_discount_lab',
+        'default_discount_ultrasound',
+        'default_discount_xray',
+        'default_discount_dental',
+        'default_discount_room_booking',
     ];
 
     protected $casts = [
@@ -80,6 +87,13 @@ class HospitalSetting extends Model
         'show_out_of_stock_medicines_to_doctors' => 'boolean',
         'show_out_of_stock_medicines_to_pharmacy' => 'boolean',
         'show_prescription_list_meta' => 'boolean',
+        'show_doctor_phone_on_prescription' => 'boolean',
+        'default_discount_surgery' => 'decimal:2',
+        'default_discount_lab' => 'decimal:2',
+        'default_discount_ultrasound' => 'decimal:2',
+        'default_discount_xray' => 'decimal:2',
+        'default_discount_dental' => 'decimal:2',
+        'default_discount_room_booking' => 'decimal:2',
     ];
 
     /**

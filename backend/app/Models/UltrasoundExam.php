@@ -31,6 +31,10 @@ class UltrasoundExam extends Model
         'receipt_number',
         'created_by',
         'updated_by',
+        'discount_enabled',
+        'discount_percentage',
+        'discount_amount',
+        'net_amount',
     ];
 
     protected $casts = [
@@ -38,6 +42,10 @@ class UltrasoundExam extends Model
         'paid_at' => 'datetime',
         'fee' => 'decimal:2',
         'paid_amount' => 'decimal:2',
+        'discount_enabled' => 'boolean',
+        'discount_percentage' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'net_amount' => 'decimal:2',
     ];
 
     /** Settled at the counter, so the specialist may begin. */

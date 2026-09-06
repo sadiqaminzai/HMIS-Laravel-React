@@ -1,0 +1,7 @@
+"name","display_name","category","description","status","is_system"
+"manage_default_discounts","Manage Default Discounts","Settings","Set the standing discount applied to new surgery, lab, ultrasound, X-Ray and dental receipts","active","True"
+"view_xray_types","View X-Ray Types","Radiology","See the X-Ray study catalogue","active","True"
+"add_xray_types","Add X-Ray Types","Radiology","Create a new X-Ray study","active","True"
+"edit_xray_types","Edit X-Ray Types","Radiology","Change an existing X-Ray study","active","True"
+"delete_xray_types","Delete X-Ray Types","Radiology","Remove an X-Ray study from the catalogue","active","True"
+"manage_xray_types","Manage X-Ray Types","Radiology","Full control of the X-Ray study catalogue","active","True"

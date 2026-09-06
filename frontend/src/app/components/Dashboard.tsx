@@ -25,6 +25,7 @@ import {
   Bed,
   Radio,
   ScanLine,
+  Smile,
 } from 'lucide-react';
 import { UserRole, Hospital } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -60,13 +61,13 @@ import { printHandoverReport } from '../utils/handoverPrint';
  */
 const DASHBOARD_PANELS = [
   'available_stock', 'medicine_sale', 'appointment_fees', 'lab_orders_amount',
-  'surgery_fees', 'room_booking_fees', 'ultrasound_fees', 'xray_fees',
+  'surgery_fees', 'room_booking_fees', 'ultrasound_fees', 'xray_fees', 'dental_fees',
   'expenses', 'inventory_purchases',
   'other_income', 'salary', 'revenue_total',
   'count_hospitals', 'count_doctors', 'count_patients', 'count_prescriptions',
   'count_medicines', 'count_test_templates', 'count_lab_tests',
   'count_appointments', 'count_rooms', 'count_surgeries',
-  'count_ultrasound', 'count_xray',
+  'count_ultrasound', 'count_xray', 'count_dental',
   'chart_monthly', 'chart_appointment_status', 'chart_test_status',
   'chart_medicine_stock',
   'recent_patients', 'recent_prescriptions', 'recent_lab_orders',
@@ -98,6 +99,7 @@ interface DashboardSummary {
     lab_orders_today: number;
     ultrasound_exams_today: number;
     xray_receipts_today: number;
+    dental_receipts_today: number;
     appointments_today: number;
     room_bookings_today: number;
     patient_surgeries_today: number;
@@ -125,6 +127,7 @@ interface DashboardSummary {
     total_room_fees?: number;
     total_ultrasound_fees?: number;
     total_xray_fees?: number;
+    total_dental_fees?: number;
     total_sales_invoice_amount: number;
     total_sales_paid_amount?: number;
     total_sales_due_amount?: number;
@@ -192,6 +195,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     lab_orders_today: 0,
     ultrasound_exams_today: 0,
     xray_receipts_today: 0,
+    dental_receipts_today: 0,
     appointments_today: 0,
     room_bookings_today: 0,
     patient_surgeries_today: 0,
@@ -220,6 +224,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     total_room_fees: 0,
     total_ultrasound_fees: 0,
     total_xray_fees: 0,
+    total_dental_fees: 0,
     total_sales_invoice_amount: 0,
     total_sales_return_amount: 0,
     total_net_medicine_sale: 0,
@@ -391,6 +396,15 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         icon: <ScanLine className="w-4 h-4" />,
         color: 'bg-sky-600',
         visible: showPanel('xray_fees', 'view_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments'),
+      },
+      {
+        key: 'dental_fees',
+        label: t('ui.dentalFees'),
+        value: formatMoney(dailyFinancials.total_dental_fees ?? 0),
+        helper: 'Total dental fees for selected period',
+        icon: <Smile className="w-4 h-4" />,
+        color: 'bg-teal-600',
+        visible: showPanel('dental_fees', 'view_dental_receipts', 'manage_dental_receipts', 'manage_dental_payments'),
       },
       {
         key: 'expenses',
@@ -692,6 +706,14 @@ export function Dashboard({ role, hospital }: DashboardProps) {
             value={formatCount(counts.xray_receipts_today)}
             icon={<ScanLine className="w-4 h-4" />}
             color="bg-sky-600"
+          />
+        )}
+        {showPanel('count_dental', 'view_dental_receipts', 'manage_dental_receipts') && (
+          <StatCard
+            label={t('ui.dentalToday')}
+            value={formatCount(counts.dental_receipts_today)}
+            icon={<Smile className="w-4 h-4" />}
+            color="bg-teal-600"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (

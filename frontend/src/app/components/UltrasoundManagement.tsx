@@ -45,6 +45,7 @@ import { useTranslation } from 'react-i18next';
 import { Hospital, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { getISODateInTimeZone } from '../utils/date';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -94,6 +95,7 @@ const emptyExamForm = () => ({
   impression: '',
   status: 'draft' as UltrasoundExamApi['status'],
   fee: '',
+  discountPercentage: '',
 });
 
 const emptyTypeForm = () => ({
@@ -115,11 +117,17 @@ const statusStyles: Record<string, string> = {
 export function UltrasoundManagement({ hospital, userRole, initialTab }: UltrasoundManagementProps) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
-  const { getPrintPaperSize } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
   const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } =
     useHospitalFilter(hospital, userRole);
+
+  // Settings load per hospital on demand; the default discount below is read
+  // from whatever this fetch brings back.
+  useEffect(() => {
+    loadHospitalSetting(currentHospital.id);
+  }, [currentHospital.id, loadHospitalSetting]);
 
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'exams');
   const [exams, setExams] = useState<UltrasoundExamApi[]>([]);
@@ -130,6 +138,14 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<UltrasoundExamApi | null>(null);
   const [examForm, setExamForm] = useState(emptyExamForm);
+  // Gross minus the discount, for display only -- UltrasoundExamController
+  // recomputes both from the fee it stores.
+  const ultrasoundNetPreview = (() => {
+    const fee = Number(examForm.fee) || 0;
+    const percent = Math.min(Math.max(Number(examForm.discountPercentage) || 0, 0), 100);
+    return Math.max(0, Math.round((fee - (fee * percent) / 100) * 100) / 100);
+  })();
+
   const [patientSearch, setPatientSearch] = useState('');
   const [patientListOpen, setPatientListOpen] = useState(false);
   const [referrerListOpen, setReferrerListOpen] = useState(false);
@@ -163,7 +179,25 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
     hasPermission('print_ultrasound_receipt') || canTakeUltrasoundPayment;
   const canViewReceipts = canTakeUltrasoundPayment || canPrintUltrasoundReceipt;
 
+
+  /**
+   * Today in the hospital's own timezone, not the browser's and not UTC.
+   *
+   * This used to be new Date().toISOString().slice(0,10), which is UTC: in
+   * Kabul (UTC+4:30) every receipt raised between midnight and 04:30 defaulted
+   * to YESTERDAY. The timezone comes from Settings > General > Date & Time.
+   */
+  const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
+
   const canSetUltrasoundFee = hasPermission('set_ultrasound_fee');
+  // Dating an exam decides which day-end sheet and which report it lands in,
+  // so it is its own right -- the same one the receipt desks use.
+  const canBackdateExam = hasPermission('backdate_receipts');
+  // Deciding the price and deciding to discount it are separate rights: the
+  // desk that sets the fee is not always the one allowed to reduce it.
+  const canApplyUltrasoundDiscount = hasPermission('add_discounts')
+    || hasPermission('edit_discounts')
+    || hasPermission('manage_discounts');
 
   // The exam list is the reporting desk's queue. Kept apart from the receipt
   // rights so a cashier does not get the clinical list along with the till.
@@ -274,6 +308,28 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
     return chosen ? `${chosen.name} — ${chosen.patientId} (${formatAge(chosen.age, chosen.ageUnit)} / ${chosen.gender})` : '';
   }, [examForm.patientId, patientsForHospital]);
 
+  /** Name only, for the reporting form's summary card. */
+  const selectedPatientName = useMemo(() => {
+    if (!examForm.patientId) return '';
+    const chosen = patientsForHospital.find((p) => String(p.id) === String(examForm.patientId));
+    return chosen ? chosen.name : '';
+  }, [examForm.patientId, patientsForHospital]);
+
+  /** ID, age and sex, under the name. */
+  const selectedPatientDetail = useMemo(() => {
+    if (!examForm.patientId) return '';
+    const chosen = patientsForHospital.find((p) => String(p.id) === String(examForm.patientId));
+    if (!chosen) return '';
+    return [chosen.patientId, formatAge(chosen.age, chosen.ageUnit), chosen.gender]
+      .filter(Boolean)
+      .join('  \u00b7  ');
+  }, [examForm.patientId, patientsForHospital]);
+
+  const selectedTypeName = useMemo(() => {
+    const chosen = types.find((type) => String(type.id) === String(examForm.ultrasoundTypeId));
+    return chosen ? chosen.name : '';
+  }, [types, examForm.ultrasoundTypeId]);
+
   const doctorsForHospital = useMemo(
     () => doctors.filter((d) => isAllHospitals || d.hospitalId === currentHospital.id),
     [doctors, isAllHospitals, currentHospital.id]
@@ -373,17 +429,26 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
         patientId: String(exam.patient_id),
         doctorId: exam.doctor_id ? String(exam.doctor_id) : '',
         ultrasoundTypeId: String(exam.ultrasound_type_id),
-        examinedAt: format(new Date(exam.examined_at), 'yyyy-MM-dd'),
+        examinedAt: getISODateInTimeZone(currentHospital.timezone || 'Asia/Kabul', new Date(exam.examined_at)),
         referredBy: exam.referred_by ?? '',
         clinicalNotes: exam.clinical_notes ?? '',
         reportBody: exam.report_body ?? '',
         impression: exam.impression ?? '',
         status: exam.status,
         fee: exam.fee != null ? String(exam.fee) : '',
+        discountPercentage: exam.discount_percentage ? String(Number(exam.discount_percentage)) : '',
       });
     } else {
       setEditingExam(null);
-      setExamForm(emptyExamForm());
+      const seeded = getDefaultDiscounts(currentHospital.id).ultrasound;
+      setExamForm({
+        ...emptyExamForm(),
+        // A new exam is dated today; editing keeps whatever was saved.
+        examinedAt: today(),
+        // A standing rate belongs in the percentage field. There is a
+        // discount_enabled flag on the row too, but that one is a full waiver.
+        discountPercentage: seeded > 0 ? String(seeded) : '',
+      });
     }
     setIsExamModalOpen(true);
   };
@@ -448,8 +513,14 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
       clinical_notes: examForm.clinicalNotes || null,
       report_body: examForm.reportBody || null,
       impression: examForm.impression || null,
-      status: examForm.status,
+      // Submitting the report is what completes the exam. A radiologist
+      // finishing their work should not have to remember a second step, and a
+      // draft left behind by a forgotten dropdown reads as unfinished work in
+      // the queue. A cancelled exam stays cancelled.
+      status:
+        !isReceptionForm && examForm.status === 'draft' ? 'completed' : examForm.status,
       fee: examForm.fee ? Number(examForm.fee) : 0,
+      discount_percentage: examForm.discountPercentage ? Number(examForm.discountPercentage) : 0,
     };
 
     setIsSubmitting(true);
@@ -463,7 +534,15 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
       }
       setIsExamModalOpen(false);
       setEditingExam(null);
-      setExamForm(emptyExamForm());
+      const seeded = getDefaultDiscounts(currentHospital.id).ultrasound;
+      setExamForm({
+        ...emptyExamForm(),
+        // A new exam is dated today; editing keeps whatever was saved.
+        examinedAt: today(),
+        // A standing rate belongs in the percentage field. There is a
+        // discount_enabled flag on the row too, but that one is a full waiver.
+        discountPercentage: seeded > 0 ? String(seeded) : '',
+      });
       await loadData();
     } catch (error: any) {
       const errors = error?.response?.data?.errors;
@@ -809,7 +888,9 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               than the viewport, the scrollbar appeared, and every field inside
               jumped narrower by its width -- then back again on close. */}
           <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-xl max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700"
+            className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full ${
+              isReceptionForm ? 'max-w-xl' : 'max-w-5xl'
+            } max-h-[92vh] overflow-y-auto border border-gray-200 dark:border-gray-700`}
             style={{ scrollbarGutter: 'stable' }}
           >
             <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
@@ -833,6 +914,46 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               {/* One field, not a filter box feeding a separate dropdown.
                   Typing narrows the list; empty shows the most recently
                   registered patients, which is what reception needs. */}
+              {/* Reporting works on an exam reception already booked: the
+                  patient, referrer and study are settled facts by now, so they
+                  are shown as a summary rather than as three editable pickers
+                  the radiologist could change by accident. */}
+              {!isReceptionForm && (
+              <div className="col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-px rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700">
+                <div className="bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {t('ultrasound.patient')}
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                    {selectedPatientName || '—'}
+                  </div>
+                  {selectedPatientDetail && (
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                      {selectedPatientDetail}
+                    </div>
+                  )}
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {t('ultrasound.referredBy')}
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                    {examForm.referredBy || '—'}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {t('ultrasound.type')}
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                    {selectedTypeName || '—'}
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {isReceptionForm && (
+              <>
               <div className="col-span-12 md:col-span-6 relative">
                 <label className={labelClass}>
                   {t('ultrasound.patient')} <span className="text-red-500">*</span>
@@ -948,6 +1069,24 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 />
 
               </div>
+              </>
+              )}
+
+              <div className="col-span-12 md:col-span-6">
+                <label className={labelClass}>
+                  {t('ultrasound.date', 'Date')} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={examForm.examinedAt}
+                  onChange={(e) => setExamForm((prev) => ({ ...prev, examinedAt: e.target.value }))}
+                  disabled={!canBackdateExam}
+                  title={canBackdateExam ? 'Examination date' : 'Changing the date requires the Change Receipt Date permission'}
+                  aria-label="Examination date"
+                  className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
+                />
+              </div>
 
               {/* Kept for reception: who sent the patient is billing
                   information, unlike the reporting radiologist. Free text let
@@ -957,7 +1096,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                   allowed to decide what it costs. Without the permission the
                   price is inherited from the ultrasound type. */}
               {!isReceptionForm ? null : (
-              <div className="col-span-12 md:col-span-6">
+              <div className="col-span-12 md:col-span-4">
                 <label className={labelClass}>{t('ultrasound.fee')}</label>
                 <input
                   type="number"
@@ -965,6 +1104,12 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                   step="0.01"
                   value={examForm.fee}
                   onChange={(e) => setExamForm((prev) => ({ ...prev, fee: e.target.value }))}
+                  onBlur={() =>
+                    setExamForm((prev) => ({
+                      ...prev,
+                      fee: prev.fee === '' ? '' : Number(prev.fee || 0).toFixed(2),
+                    }))
+                  }
                   placeholder="0.00"
                   disabled={!canSetUltrasoundFee}
                   className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
@@ -972,22 +1117,49 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               </div>
               )}
 
-              <div className="col-span-12 md:col-span-6">
-                <label className={labelClass}>
-                  {t('ultrasound.examDate')} <span className="text-red-500">*</span>
-                </label>
+              {/* Gross, discount and net, in that order, so the receipt and
+                  this form tell the same story. The net is derived here only
+                  as a preview -- the server recomputes it. */}
+              {!isReceptionForm ? null : (
+              <div className="col-span-12 md:col-span-4">
+                <label className={labelClass}>{t('ultrasound.discountPercent', 'Discount %')}</label>
                 <input
-                  type="date"
-                  required
-                  value={examForm.examinedAt}
-                  onChange={(e) => setExamForm((prev) => ({ ...prev, examinedAt: e.target.value }))}
-                  title="Examination date"
-                  aria-label="Examination date"
-                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={examForm.discountPercentage}
+                  onChange={(e) => setExamForm((prev) => ({ ...prev, discountPercentage: e.target.value }))}
+                  placeholder="0"
+                  disabled={!canApplyUltrasoundDiscount}
+                  className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
                 />
               </div>
+              )}
 
-              {!isReceptionForm && (
+              {!isReceptionForm ? null : (
+              <div className="col-span-12 md:col-span-4">
+                <label className={labelClass}>{t('ultrasound.netAmount', 'Net Amount')}</label>
+                {/* Always read-only: it is fee minus discount, and the server
+                    recomputes it on save. Dimmed when the user can move
+                    neither input, so it reads as inert rather than broken. */}
+                <div
+                  className={`${inputClass} bg-gray-50 dark:bg-gray-900/40 font-semibold tabular-nums ${
+                    canSetUltrasoundFee || canApplyUltrasoundDiscount
+                      ? ''
+                      : 'opacity-60 cursor-not-allowed'
+                  }`}
+                >
+                  {ultrasoundNetPreview.toFixed(2)}
+                </div>
+              </div>
+              )}
+
+              {/* Status is no longer set by hand on the reporting form:
+                  submitting the report is what completes it (see submitExam).
+                  The picker stays only for a cancelled exam, which is the one
+                  transition submitting cannot express. */}
+              {!isReceptionForm && examForm.status === 'cancelled' && (
               <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>
                   {t('common.status')} <span className="text-red-500">*</span>

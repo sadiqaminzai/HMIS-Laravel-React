@@ -289,6 +289,15 @@ class XrayReceiptController extends Controller
                     fn ($q) => $q->where('hospital_id', $hospitalId)->where('role', 'doctor')->whereNull('deleted_at')
                 ),
             ],
+            // The catalogue is the normal path, but study_name stays
+            // required: historical receipts have no type, and the printed
+            // label must survive a study later being renamed or removed.
+            'xray_type_id' => [
+                'nullable',
+                Rule::exists('xray_types', 'id')->where(
+                    fn ($q) => $q->where('hospital_id', $hospitalId)->whereNull('deleted_at')
+                ),
+            ],
             'study_name' => ['required', 'string', 'max:191'],
             'performed_at' => ['required', 'date'],
             'referred_by' => ['nullable', 'string', 'max:191'],

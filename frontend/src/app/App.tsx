@@ -103,6 +103,7 @@ const OtherIncomeReportLazy = lazy(() => import('./components/OtherIncomeReport'
 const LedgerReportLazy = lazy(() => import('./components/LedgerReport'));
 const UltrasoundManagementLazy = lazy(() => import('./components/UltrasoundManagement').then((m) => ({ default: m.UltrasoundManagement })));
 const XrayReceiptsLazy = lazy(() => import('./components/XrayReceipts').then((m) => ({ default: m.XrayReceipts })));
+const DentalReceiptsLazy = lazy(() => import('./components/DentalReceipts').then((m) => ({ default: m.DentalReceipts })));
 const AuditLogManagementLazy = lazy(() => import('./components/AuditLogManagement').then((m) => ({ default: m.AuditLogManagement })));
 const PharmacyFinanceLazy = lazy(() => import('./components/PharmacyFinance').then((m) => ({ default: m.PharmacyFinance })));
 
@@ -683,9 +684,20 @@ function AppContent() {
             <Route
               path="/xray"
               element={
-                <RequirePermission anyOf={["view_xray_receipts", "add_xray_receipts", "edit_xray_receipts", "delete_xray_receipts", "manage_xray_receipts", "manage_xray_payments", "print_xray_receipt"]}>
+                <RequirePermission anyOf={["view_xray_receipts", "add_xray_receipts", "edit_xray_receipts", "delete_xray_receipts", "manage_xray_receipts", "manage_xray_payments", "print_xray_receipt", "view_xray_types", "add_xray_types", "edit_xray_types", "delete_xray_types", "manage_xray_types"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <XrayReceiptsLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* Dental: a Receipt tab plus the service catalogue behind it. */}
+            <Route
+              path="/dental"
+              element={
+                <RequirePermission anyOf={["view_dental_receipts", "add_dental_receipts", "edit_dental_receipts", "delete_dental_receipts", "manage_dental_receipts", "manage_dental_payments", "print_dental_receipt", "view_dental_services", "add_dental_services", "edit_dental_services", "delete_dental_services", "manage_dental_services"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <DentalReceiptsLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }

@@ -1,0 +1,76 @@
+﻿category,item,action,since_last_deploy,notes
+MIGRATION,backend/database/migrations/2026_09_07_000100_add_default_discounts_to_hospital_settings_table.php,php artisan migrate --force,EARLIER,"Adds 5 default_discount_* columns to hospital_settings, decimal(5,2) default 0. No data change."
+MIGRATION,backend/database/migrations/2026_09_07_000200_add_manage_default_discounts_permission.php,php artisan migrate --force,EARLIER,Inserts permission manage_default_discounts. Insert only.
+MIGRATION,backend/database/migrations/2026_09_08_000100_add_discount_columns_to_revenue_tables.php,php artisan migrate --force,EARLIER,"Adds discount_enabled/discount_percentage/net_amount to lab_orders, ultrasound_exams, room_bookings. BACKFILLS net_amount = existing total. Verified: 949 rows, 0 discrepancies."
+MIGRATION,backend/database/migrations/2026_09_08_000200_add_default_discount_room_booking.php,php artisan migrate --force,EARLIER,"Adds default_discount_room_booking to hospital_settings, default 0."
+MIGRATION,backend/database/migrations/2026_09_09_000100_create_xray_types_table.php,php artisan migrate --force,EARLIER,Creates xray_types; adds nullable xray_type_id to xray_receipts with nullOnDelete. Existing receipts get NULL.
+MIGRATION,backend/database/migrations/2026_09_09_000200_add_xray_type_permissions.php,php artisan migrate --force,EARLIER,Inserts 5 X-Ray type permissions. Insert only.
+MIGRATION,backend/database/migrations/2026_09_10_000100_create_dental_tables.php,php artisan migrate --force,EARLIER,Creates dental_services + dental_receipts. Both start empty.
+MIGRATION,backend/database/migrations/2026_09_10_000200_create_dental_permissions.php,php artisan migrate --force,EARLIER,Inserts 15 dental permissions. Insert only.
+MIGRATION,backend/database/migrations/2026_09_11_000100_add_backdate_receipts_permission.php,php artisan migrate --force,NEW,"Inserts permission backdate_receipts. SEE WARNING: gates the Date field on Ultrasound, X-Ray and Dental."
+MIGRATION,backend/database/migrations/2026_09_12_000100_add_show_doctor_phone_on_prescription.php,php artisan migrate --force,NEW,"Adds boolean show_doctor_phone_on_prescription to hospital_settings, default FALSE. Prescriptions print exactly as today until switched on."
+BACKEND_NEW,backend/app/Http/Controllers/Concerns/HandlesReceiptDiscounts.php,upload,EARLIER,Shared discount engine: permission gate + gross/discount/net arithmetic.
+BACKEND_NEW,backend/app/Models/XrayType.php,upload,EARLIER,X-Ray study catalogue model.
+BACKEND_NEW,backend/app/Http/Controllers/XrayTypeController.php,upload,EARLIER,X-Ray types CRUD.
+BACKEND_NEW,backend/app/Models/DentalService.php,upload,EARLIER,Dental service catalogue model.
+BACKEND_NEW,backend/app/Models/DentalReceipt.php,upload,EARLIER,Dental receipt model.
+BACKEND_NEW,backend/app/Http/Controllers/DentalServiceController.php,upload,EARLIER,Dental services CRUD.
+BACKEND_NEW,backend/app/Http/Controllers/DentalReceiptController.php,upload,EARLIER,Dental cash desk.
+BACKEND_MODIFIED,backend/app/Services/LedgerPostingService.php,upload,EARLIER,HIGHEST RISK FILE. Room booking + ultrasound now post true gross/discount/net; adds dental snapshot methods.
+BACKEND_MODIFIED,backend/app/Http/Controllers/HospitalSettingController.php,upload,NEW,Default-discount validation + gate; NEW: show_doctor_phone_on_prescription validation and default.
+BACKEND_MODIFIED,backend/app/Models/HospitalSetting.php,upload,NEW,default_discount_* fillable/casts; NEW: show_doctor_phone_on_prescription fillable/cast.
+BACKEND_MODIFIED,backend/app/Http/Controllers/RoomBookingController.php,upload,EARLIER,Uses discount trait; accepts discount_percentage; permission gate on store and update.
+BACKEND_MODIFIED,backend/app/Services/RoomBookingService.php,upload,EARLIER,calculateCosts() takes an optional percentage; returns net_amount + discount_percentage.
+BACKEND_MODIFIED,backend/app/Http/Controllers/UltrasoundExamController.php,upload,EARLIER,Uses discount trait; discount validation on store/update.
+BACKEND_MODIFIED,backend/app/Http/Controllers/LabOrderController.php,upload,EARLIER,Persists net_amount + discount_percentage. Lab keeps its own lab_test_order_discount gate.
+BACKEND_MODIFIED,backend/app/Http/Controllers/XrayReceiptController.php,upload,EARLIER,Validates xray_type_id scoped to the hospital.
+BACKEND_MODIFIED,backend/app/Http/Controllers/DashboardController.php,upload,EARLIER,Adds total_dental_fees (sums net_amount) + dental_receipts_today + dental day-end line.
+BACKEND_MODIFIED,backend/app/Http/Controllers/PaymentCollectionController.php,upload,EARLIER,Dental added to the day-end handover / collection map.
+BACKEND_MODIFIED,backend/app/Models/LabOrder.php,upload,EARLIER,discount + net_amount fillable/casts.
+BACKEND_MODIFIED,backend/app/Models/RoomBooking.php,upload,EARLIER,discount + net_amount fillable/casts.
+BACKEND_MODIFIED,backend/app/Models/UltrasoundExam.php,upload,EARLIER,discount + net_amount fillable/casts.
+BACKEND_MODIFIED,backend/app/Models/XrayReceipt.php,upload,EARLIER,xray_type_id fillable + xrayType relation.
+BACKEND_MODIFIED,backend/routes/api.php,upload,EARLIER,"5 X-Ray type routes + 10 dental routes, each permission-protected."
+PERMISSION,manage_default_discounts,import CSV then ASSIGN TO ROLES,EARLIER,Settings | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | Set the standing per-hospital discount.
+PERMISSION,view_xray_types,import CSV then ASSIGN TO ROLES,EARLIER,Radiology | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | See the X-Ray study catalogue.
+PERMISSION,add_xray_types,import CSV then ASSIGN TO ROLES,EARLIER,Radiology | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | Create an X-Ray study.
+PERMISSION,edit_xray_types,import CSV then ASSIGN TO ROLES,EARLIER,Radiology | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | Change an X-Ray study.
+PERMISSION,delete_xray_types,import CSV then ASSIGN TO ROLES,EARLIER,Radiology | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | Remove an X-Ray study.
+PERMISSION,manage_xray_types,import CSV then ASSIGN TO ROLES,EARLIER,Radiology | source: backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv | Full control of the X-Ray catalogue.
+PERMISSION,view_dental_services,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | See the dental service catalogue.
+PERMISSION,add_dental_services,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Create a dental service.
+PERMISSION,edit_dental_services,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Change a dental service.
+PERMISSION,delete_dental_services,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Remove a dental service.
+PERMISSION,manage_dental_services,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Full control of the dental catalogue.
+PERMISSION,view_dental_receipts,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | See the dental receipts list.
+PERMISSION,add_dental_receipts,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Raise a dental receipt.
+PERMISSION,edit_dental_receipts,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Change a dental receipt.
+PERMISSION,delete_dental_receipts,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Remove a dental receipt.
+PERMISSION,manage_dental_receipts,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Full control of dental receipts.
+PERMISSION,print_dental_receipt,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Print a dental receipt.
+PERMISSION,manage_dental_payments,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Take payment against a dental receipt.
+PERMISSION,reverse_dental_payment,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | Undo a dental payment.
+PERMISSION,view_dashboard_dental_fees,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | See dental income on the dashboard.
+PERMISSION,view_dashboard_count_dental,import CSV then ASSIGN TO ROLES,EARLIER,Dental | source: backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv | See the dental count on the dashboard.
+PERMISSION,backdate_receipts,import CSV then ASSIGN TO ROLES,NEW,"Settings | source: backend/docs/PERMISSIONS_NEW_2026_09_11_BACKDATE.csv | MUST GRANT: without it the Date field is locked on Ultrasound, X-Ray and Dental for all 51 non-super-admin users."
+PERMISSION_CSV,backend/docs/PERMISSIONS_NEW_2026_09_09_DISCOUNTS_XRAY_TYPES.csv,import via the permissions screen,EARLIER,6 rows: manage_default_discounts + 5 X-Ray type rights.
+PERMISSION_CSV,backend/docs/PERMISSIONS_NEW_2026_09_10_DENTAL.csv,import via the permissions screen,EARLIER,15 rows: the whole dental family.
+PERMISSION_CSV,backend/docs/PERMISSIONS_NEW_2026_09_11_BACKDATE.csv,import via the permissions screen,NEW,1 row: backdate_receipts.
+FRONTEND,frontend/src/app/components/UltrasoundManagement.tsx,rebuild (npm run build) + upload dist/,NEW,Date renamed/moved + permission-gated; result form shows read-only summary; wider modal; submit auto-completes a draft.
+FRONTEND,frontend/src/app/components/XrayReceipts.tsx,rebuild (npm run build) + upload dist/,NEW,"Types tab, study picker, richer patient/doctor dropdown lines, gated Date, 2dp fee, receipt layout."
+FRONTEND,frontend/src/app/components/XrayTypes.tsx,rebuild (npm run build) + upload dist/,NEW,"Catalogue CRUD: view modal, toggle, no code/sort-order columns."
+FRONTEND,frontend/src/app/components/DentalReceipts.tsx,rebuild (npm run build) + upload dist/,NEW,"Dental cash desk, same treatment as X-Ray."
+FRONTEND,frontend/src/app/components/DentalServices.tsx,rebuild (npm run build) + upload dist/,NEW,Dental catalogue CRUD.
+FRONTEND,frontend/src/app/components/GeneralSettings.tsx,rebuild (npm run build) + upload dist/,NEW,Default Discounts panel (6 fields) + NEW doctor-phone toggle.
+FRONTEND,frontend/src/app/context/SettingsContext.tsx,rebuild (npm run build) + upload dist/,NEW,"roomBooking discount, print-module keys, NEW showDoctorPhoneOnPrescription."
+FRONTEND,frontend/src/app/components/PrescriptionPrint.tsx,rebuild (npm run build) + upload dist/,NEW,Optional doctor phone line on the letterhead.
+FRONTEND,frontend/src/i18n/config.ts,rebuild (npm run build) + upload dist/,NEW,"nav.dental, dental dashboard labels, ultrasound.date - 4 languages."
+FRONTEND,frontend/src/app/components/Dashboard.tsx,rebuild (npm run build) + upload dist/,EARLIER,"Dental fee panel + count card, permission-gated."
+FRONTEND,frontend/src/app/components/Sidebar.tsx,rebuild (npm run build) + upload dist/,EARLIER,Dental entry; X-Ray type permissions.
+FRONTEND,frontend/src/app/App.tsx,rebuild (npm run build) + upload dist/,EARLIER,Dental route; widened X-Ray guard.
+FRONTEND,frontend/src/app/api/dental.ts,rebuild (npm run build) + upload dist/,EARLIER,Dental API client.
+FRONTEND,frontend/src/app/api/xray.ts,rebuild (npm run build) + upload dist/,EARLIER,X-Ray type API client.
+FRONTEND,frontend/src/app/api/ultrasound.ts,rebuild (npm run build) + upload dist/,EARLIER,Discount fields on the exam type.
+FRONTEND,frontend/src/app/components/LabTestManagementNew.tsx,rebuild (npm run build) + upload dist/,EARLIER,Seeds the lab discount from the hospital default.
+FRONTEND,frontend/src/app/components/SurgeryManagement.tsx,rebuild (npm run build) + upload dist/,EARLIER,Seeds the surgery discount.
+FRONTEND,frontend/src/app/components/RoomBookingManagement.tsx,rebuild (npm run build) + upload dist/,EARLIER,Sends the rate not the amount; fixes discount wipe on edit.
