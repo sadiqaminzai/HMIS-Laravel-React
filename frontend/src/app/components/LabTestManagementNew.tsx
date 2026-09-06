@@ -1093,7 +1093,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
         {([
           { key: 'orders' as LabStage, label: 'Lab Orders', icon: <FlaskConical className="w-3.5 h-3.5" />, allowed: true },
           { key: 'payments' as LabStage, label: 'Payments', icon: <Wallet className="w-3.5 h-3.5" />, allowed: canManagePayments },
-          { key: 'processing' as LabStage, label: 'Processing', icon: <Microscope className="w-3.5 h-3.5" />, allowed: canEnterResults || canUpdateStatus },
+          { key: 'processing' as LabStage, label: 'Result Processing', icon: <Microscope className="w-3.5 h-3.5" />, allowed: canEnterResults || canUpdateStatus },
         ]).filter((tab) => tab.allowed).map((tab) => (
           <button
             key={tab.key}
@@ -1117,7 +1117,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
             {activeStage === 'payments'
               ? 'Lab Payments'
               : activeStage === 'processing'
-                ? 'Lab Processing'
+                ? 'Result Processing'
                 : t('modules.labTestsTitle')}
           </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">

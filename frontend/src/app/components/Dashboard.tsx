@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatMoneyIn, formatNumberIn } from '../utils/money';
 import { useTranslation } from 'react-i18next';
 import {
   Users,
@@ -49,13 +50,6 @@ import { UserWiseTotalsPanel } from './UserWiseTotalsPanel';
 import { printHandoverReport } from '../utils/handoverPrint';
 
 /** Rendered instead of the ISO code, which reads as noise to local staff. */
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  AFN: '\u060B',
-  USD: '$',
-  EUR: '\u20AC',
-  PKR: '\u20A8',
-};
-
 /**
  * Every dashboard panel is switched independently, because the dashboard is the
  * one screen that aggregates figures from every module -- revenue, payroll,
@@ -148,7 +142,7 @@ interface DashboardSummary {
 }
 
 export function Dashboard({ role, hospital }: DashboardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -245,17 +239,20 @@ export function Dashboard({ role, hospital }: DashboardProps) {
    * read "AFN 51,269.52". Afghan users expect the afghani sign, so the symbol is
    * placed manually and Intl is used only for digit grouping.
    */
-  const formatMoney = (amount: number) => {
-    const symbol = CURRENCY_SYMBOLS[(dailyFinancials.currency || 'AFN').toUpperCase()]
-      ?? (dailyFinancials.currency || 'AFN').toUpperCase();
-    const digits = new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(Math.abs(amount));
-    return `${amount < 0 ? '-' : ''}${symbol} ${digits}`;
-  };
+  /**
+   * Money in the language the user chose.
+   *
+   * This built the string by hand -- an en-US number with the symbol glued to
+   * the front -- so a Pashto dashboard showed Western digits and put ؋ on the
+   * wrong side of a right-to-left column. Intl places the symbol and picks the
+   * digits itself once it is given the right locale.
+   */
+  const formatMoney = (amount: number) =>
+    formatMoneyIn(amount, dailyFinancials.currency || 'AFN', i18n.language);
 
-  const canViewAny = (...permissions: string[]) => permissions.some((permission) => hasPermission(permission));
+  /** Counts get the same digits as the money beside them. */
+  const formatCount = (value: number | string) =>
+    formatNumberIn(Number(value) || 0, i18n.language);
 
   /**
    * Every panel is gated on its own permission, with no fallback.
@@ -322,7 +319,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
     return [
       {
         key: 'available_stock',
-        label: 'Available Stock (Medicine)',
+        label: t('ui.availableStock'),
         value: formatMoney(dailyFinancials.total_stock_cost_amount ?? 0),
         helper: 'Current stock value at cost price',
         icon: <Pill className="w-4 h-4" />,
@@ -331,7 +328,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'medicine_sale',
-        label: 'Medicine Net Sale',
+        label: t('ui.medicineNetSale'),
         // Sales invoices less sales returns. The gross invoice total is still
         // sent as total_sales_invoice_amount for anyone who needs it.
         value: formatMoney(dailyFinancials.total_net_medicine_sale
@@ -343,7 +340,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'appointment_fees',
-        label: 'Appointments Fees',
+        label: t('ui.appointmentsFees'),
         value: formatMoney(dailyFinancials.total_fees),
         helper: 'All doctor appointments for selected period',
         icon: <Calendar className="w-4 h-4" />,
@@ -352,7 +349,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'lab_orders_amount',
-        label: 'Test Lab Orders Amount',
+        label: t('ui.labOrdersAmount'),
         value: formatMoney(dailyFinancials.total_lab_fees),
         helper: 'Lab order amount for selected period',
         icon: <TestTube className="w-4 h-4" />,
@@ -370,7 +367,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'room_booking_fees',
-        label: 'Room Booking Fees',
+        label: t('ui.roomBookingFees'),
         value: formatMoney(dailyFinancials.total_room_fees ?? 0),
         helper: 'Total room booking fees for selected period',
         icon: <Bed className="w-4 h-4" />,
@@ -379,7 +376,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'ultrasound_fees',
-        label: 'Ultrasound Fees',
+        label: t('ui.ultrasoundFees'),
         value: formatMoney(dailyFinancials.total_ultrasound_fees ?? 0),
         helper: 'Total ultrasound fees for selected period',
         icon: <Radio className="w-4 h-4" />,
@@ -388,7 +385,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'xray_fees',
-        label: 'X-Ray Fees',
+        label: t('ui.xrayFees'),
         value: formatMoney(dailyFinancials.total_xray_fees ?? 0),
         helper: 'Total X-Ray fees for selected period',
         icon: <ScanLine className="w-4 h-4" />,
@@ -406,7 +403,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'inventory_purchases',
-        label: 'Inventory Purchases',
+        label: t('ui.inventoryPurchases'),
         value: formatMoney(dailyFinancials.total_inventory_purchases ?? 0),
         // Deliberately NOT part of Revenue: this money became stock, it was not
         // consumed. Reported so the cash movement stays visible.
@@ -417,7 +414,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'other_income',
-        label: 'Other Income',
+        label: t('ui.otherIncomeAmount'),
         value: formatMoney(dailyFinancials.total_other_income ?? 0),
         helper: 'Additional hospital income for selected period',
         icon: <TrendingUp className="w-4 h-4" />,
@@ -435,7 +432,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       },
       {
         key: 'revenue_total',
-        label: 'Revenue Total',
+        label: t('ui.revenueTotal'),
         value: formatMoney(dailyFinancials.total_revenue ?? netIncome),
         helper: 'Income less operating expenses and salary (excludes stock purchases)',
         icon: <TrendingUp className="w-4 h-4" />,
@@ -569,7 +566,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
                   max={customTo || undefined}
                   onChange={(e) => setCustomFrom(e.target.value)}
                   title="From date"
-                  aria-label="From date"
+                  aria-label={t('ui.fromDate')}
                   className="text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-md px-2 py-1.5"
                 />
                 <span className="text-xs text-gray-400">to</span>
@@ -579,7 +576,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
                   min={customFrom || undefined}
                   onChange={(e) => setCustomTo(e.target.value)}
                   title="To date"
-                  aria-label="To date"
+                  aria-label={t('ui.toDate')}
                   className="text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-md px-2 py-1.5"
                 />
               </>
@@ -623,32 +620,32 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_hospitals', 'view_hospitals', 'manage_hospitals') && (
           <StatCard
-            label="Total Hospitals"
-            value={counts.hospitals.toString()}
+            label={t('ui.totalHospitals')}
+            value={formatCount(counts.hospitals)}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-purple-500"
           />
         )}
         {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
-            label="Total Doctors"
-            value={counts.doctors.toString()}
+            label={t('ui.totalDoctors')}
+            value={formatCount(counts.doctors)}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-blue-500"
           />
         )}
         {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
-            label="Total Patients"
-            value={counts.patients.toString()}
+            label={t('ui.totalPatients')}
+            value={formatCount(counts.patients)}
             icon={<Users className="w-4 h-4" />}
             color="bg-green-500"
           />
         )}
         {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
-            label="Total Prescriptions"
-            value={counts.prescriptions.toString()}
+            label={t('ui.totalPrescriptions')}
+            value={formatCount(counts.prescriptions)}
             icon={<FileText className="w-4 h-4" />}
             color="bg-orange-500"
           />
@@ -659,48 +656,48 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
-            label="Total Medicines"
-            value={counts.medicines.toString()}
+            label={t('ui.totalMedicines')}
+            value={formatCount(counts.medicines)}
             icon={<Pill className="w-4 h-4" />}
             color="bg-pink-500"
           />
         )}
         {showPanel('count_test_templates', 'view_test_templates', 'manage_test_templates') && (
           <StatCard
-            label="Test Templates"
-            value={counts.test_templates.toString()}
+            label={t('ui.testTemplatesCount')}
+            value={formatCount(counts.test_templates)}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-indigo-500"
           />
         )}
         {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
-            label="Lab Tests (Today)"
-            value={counts.lab_orders_today.toString()}
+            label={t('ui.labTestsToday')}
+            value={formatCount(counts.lab_orders_today)}
             icon={<Activity className="w-4 h-4" />}
             color="bg-cyan-500"
           />
         )}
         {showPanel('count_ultrasound', 'view_ultrasound_exams', 'manage_ultrasound_exams') && (
           <StatCard
-            label="Ultrasound (Today)"
-            value={counts.ultrasound_exams_today.toString()}
+            label={t('ui.ultrasoundToday')}
+            value={formatCount(counts.ultrasound_exams_today)}
             icon={<Radio className="w-4 h-4" />}
             color="bg-fuchsia-500"
           />
         )}
         {showPanel('count_xray', 'view_xray_receipts', 'manage_xray_receipts') && (
           <StatCard
-            label="X-Ray (Today)"
-            value={counts.xray_receipts_today.toString()}
+            label={t('ui.xrayToday')}
+            value={formatCount(counts.xray_receipts_today)}
             icon={<ScanLine className="w-4 h-4" />}
             color="bg-sky-600"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
-            label="Appointments"
-            value={counts.appointments_today.toString()}
+            label={t('ui.appointments')}
+            value={formatCount(counts.appointments_today)}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-teal-500"
           />
@@ -710,32 +707,32 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
-            label="Total Rooms"
-            value={counts.rooms.toString()}
+            label={t('ui.totalRooms')}
+            value={formatCount(counts.rooms)}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-sky-500"
           />
         )}
         {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
-            label="Active Rooms"
-            value={counts.active_rooms.toString()}
+            label={t('ui.activeRooms')}
+            value={formatCount(counts.active_rooms)}
             icon={<CheckCircle className="w-4 h-4" />}
             color="bg-emerald-500"
           />
         )}
-        {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
+        {showPanel('count_surgeries', 'view_surgeries', 'manage_surgeries') && (
           <StatCard
             label={t('ui.surgeries')}
-            value={counts.surgeries.toString()}
+            value={formatCount(counts.surgeries)}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
           />
         )}
-        {canViewAny('view_room_bookings', 'manage_room_bookings') && (
+        {showPanel('count_rooms', 'view_room_bookings', 'manage_room_bookings') && (
           <StatCard
-            label="Room Bookings (Today)"
-            value={counts.room_bookings_today.toString()}
+            label={t('ui.roomBookingsToday')}
+            value={formatCount(counts.room_bookings_today)}
             icon={<Package className="w-4 h-4" />}
             color="bg-indigo-500"
           />
@@ -814,24 +811,24 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
-            label="Total Doctors"
-            value={counts.doctors.toString()}
+            label={t('ui.totalDoctors')}
+            value={formatCount(counts.doctors)}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-blue-500"
           />
         )}
         {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
-            label="Total Patients"
-            value={counts.patients.toString()}
+            label={t('ui.totalPatients')}
+            value={formatCount(counts.patients)}
             icon={<Users className="w-4 h-4" />}
             color="bg-green-500"
           />
         )}
         {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
-            label="Prescriptions"
-            value={counts.prescriptions.toString()}
+            label={t('ui.prescriptions')}
+            value={formatCount(counts.prescriptions)}
             icon={<FileText className="w-4 h-4" />}
             color="bg-orange-500"
           />
@@ -839,7 +836,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
             label={t('ui.medicines')}
-            value={counts.medicines.toString()}
+            value={formatCount(counts.medicines)}
             icon={<Pill className="w-4 h-4" />}
             color="bg-purple-500"
           />
@@ -849,32 +846,32 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_rooms', 'view_rooms', 'manage_rooms') && (
           <StatCard
-            label="Total Rooms"
-            value={counts.rooms.toString()}
+            label={t('ui.totalRooms')}
+            value={formatCount(counts.rooms)}
             icon={<Building2 className="w-4 h-4" />}
             color="bg-sky-500"
           />
         )}
-        {canViewAny('view_surgeries', 'manage_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
+        {showPanel('count_surgeries', 'view_surgeries', 'manage_surgeries') && (
           <StatCard
             label={t('ui.surgeries')}
-            value={counts.surgeries.toString()}
+            value={formatCount(counts.surgeries)}
             icon={<Activity className="w-4 h-4" />}
             color="bg-rose-500"
           />
         )}
-        {canViewAny('view_room_bookings', 'manage_room_bookings') && (
+        {showPanel('count_rooms', 'view_room_bookings', 'manage_room_bookings') && (
           <StatCard
-            label="Room Bookings Today"
-            value={counts.room_bookings_today.toString()}
+            label={t('ui.roomBookingsToday')}
+            value={formatCount(counts.room_bookings_today)}
             icon={<Package className="w-4 h-4" />}
             color="bg-indigo-500"
           />
         )}
-        {canViewAny('view_patient_surgeries', 'manage_patient_surgeries') && (
+        {showPanel('count_surgeries', 'view_patient_surgeries', 'manage_patient_surgeries') && (
           <StatCard
-            label="Surgeries Today"
-            value={counts.patient_surgeries_today.toString()}
+            label={t('ui.surgeriesToday')}
+            value={formatCount(counts.patient_surgeries_today)}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-teal-500"
           />
@@ -1002,32 +999,32 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
-            label="Total Patients"
-            value={counts.patients.toString()}
+            label={t('ui.totalPatients')}
+            value={formatCount(counts.patients)}
             icon={<Users className="w-4 h-4" />}
             color="bg-blue-500"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
-            label="Appointments Today"
-            value={counts.appointments_today.toString()}
+            label={t('ui.appointmentsToday')}
+            value={formatCount(counts.appointments_today)}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-green-500"
           />
         )}
         {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
-            label="Prescriptions"
-            value={counts.prescriptions.toString()}
+            label={t('ui.prescriptions')}
+            value={formatCount(counts.prescriptions)}
             icon={<ClipboardList className="w-4 h-4" />}
             color="bg-orange-500"
           />
         )}
         {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
-            label="Lab Tests Ordered"
-            value={counts.lab_orders_today.toString()}
+            label={t('ui.labTestsOrdered')}
+            value={formatCount(counts.lab_orders_today)}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-purple-500"
           />
@@ -1097,23 +1094,23 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_patients', 'view_patients', 'manage_patients') && (
           <StatCard
-            label="Total Patients"
-            value={counts.patients.toString()}
+            label={t('ui.totalPatients')}
+            value={formatCount(counts.patients)}
             icon={<Users className="w-4 h-4" />}
             color="bg-blue-500"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
-            label="Today's Appointments"
-            value={counts.appointments_today.toString()}
+            label={t('ui.todaysAppointments')}
+            value={formatCount(counts.appointments_today)}
             icon={<Calendar className="w-4 h-4" />}
             color="bg-green-500"
           />
         )}
         {showPanel('count_appointments', 'view_appointments', 'manage_appointments') && (
           <StatCard
-            label="Scheduled"
+            label={t('ui.scheduled')}
             value={scheduledCount.toString()}
             icon={<Clock className="w-4 h-4" />}
             color="bg-orange-500"
@@ -1121,8 +1118,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {showPanel('count_doctors', 'view_doctors', 'manage_doctors') && (
           <StatCard
-            label="Available Doctors"
-            value={counts.active_doctors.toString()}
+            label={t('ui.availableDoctors')}
+            value={formatCount(counts.active_doctors)}
             icon={<Stethoscope className="w-4 h-4" />}
             color="bg-purple-500"
           />
@@ -1323,32 +1320,32 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_medicines', 'view_medicines', 'manage_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
-            label="Total Medicines"
-            value={counts.medicines.toString()}
+            label={t('ui.totalMedicines')}
+            value={formatCount(counts.medicines)}
             icon={<Pill className="w-4 h-4" />}
             color="bg-green-500"
           />
         )}
         {showPanel('count_prescriptions', 'view_prescriptions', 'manage_prescriptions') && (
           <StatCard
-            label="Prescriptions"
-            value={counts.prescriptions.toString()}
+            label={t('ui.prescriptions')}
+            value={formatCount(counts.prescriptions)}
             icon={<FileText className="w-4 h-4" />}
             color="bg-blue-500"
           />
         )}
-        {canViewAny('view_stocks', 'manage_stocks', 'view_stock_reconciliation', 'manage_stock_reconciliation') && (
+        {showPanel('count_medicines', 'view_stocks', 'manage_stocks') && (
           <StatCard
-            label="Low Stock Items"
-            value={lowStockCount.toString()}
+            label={t('ui.lowStockItems')}
+            value={formatCount(lowStockCount)}
             icon={<AlertCircle className="w-4 h-4" />}
             color="bg-orange-500"
           />
         )}
-        {canViewAny('view_manufacturers', 'manage_manufacturers') && (
+        {showPanel('count_medicines', 'view_manufacturers', 'manage_manufacturers') && (
           <StatCard
             label={t('ui.manufacturers')}
-            value={counts.manufacturers.toString()}
+            value={formatCount(counts.manufacturers)}
             icon={<Package className="w-4 h-4" />}
             color="bg-purple-500"
           />
@@ -1448,7 +1445,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
-            label="Pending Tests"
+            label={t('ui.pendingTests')}
             value={pendingLabCount.toString()}
             icon={<Clock className="w-4 h-4" />}
             color="bg-orange-500"
@@ -1456,7 +1453,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
-            label="In Progress"
+            label={t('ui.inProgress')}
             value={inProgressLabCount.toString()}
             icon={<Activity className="w-4 h-4" />}
             color="bg-blue-500"
@@ -1464,7 +1461,7 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {showPanel('count_lab_tests', 'view_lab_orders', 'manage_lab_orders') && (
           <StatCard
-            label="Completed Today"
+            label={t('ui.completedToday')}
             value={completedLabCount.toString()}
             icon={<CheckCircle className="w-4 h-4" />}
             color="bg-green-500"
@@ -1472,8 +1469,8 @@ export function Dashboard({ role, hospital }: DashboardProps) {
         )}
         {showPanel('count_test_templates', 'view_test_templates', 'manage_test_templates') && (
           <StatCard
-            label="Test Templates"
-            value={counts.test_templates.toString()}
+            label={t('ui.testTemplatesCount')}
+            value={formatCount(counts.test_templates)}
             icon={<TestTube className="w-4 h-4" />}
             color="bg-purple-500"
           />
