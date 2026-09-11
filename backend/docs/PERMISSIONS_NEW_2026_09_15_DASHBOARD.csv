@@ -1,0 +1,6 @@
+"name","display_name","category","description","status","is_system"
+"view_dashboard_medicine_profit","Dashboard: Medicine Sales Profit","Dashboard","See the gross profit on medicine sales, and the cost of goods behind it","active","True"
+"view_dashboard_active_users","Dashboard: Logged-in Users","Dashboard","See who is currently signed in to this hospital","active","True"
+"view_dashboard_chart_income","Dashboard: Income by Module Chart","Dashboard","See the income-by-module bar and donut chart","active","True"
+"view_dashboard_chart_hourly","Dashboard: Trend by Hour Chart","Dashboard","See the hour-by-hour activity chart","active","True"
+"view_dashboard_chart_collection","Dashboard: Collection Status Chart","Dashboard","See paid, partly paid and unpaid billing for the selected period","active","True"

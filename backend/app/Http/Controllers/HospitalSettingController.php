@@ -103,6 +103,7 @@ class HospitalSettingController extends Controller
             'default_discount_ultrasound' => ['numeric', 'min:0', 'max:100'],
             'default_discount_xray' => ['numeric', 'min:0', 'max:100'],
             'default_discount_dental' => ['numeric', 'min:0', 'max:100'],
+            'default_discount_ecg' => ['numeric', 'min:0', 'max:100'],
             'default_discount_room_booking' => ['numeric', 'min:0', 'max:100'],
         ]);
 
@@ -153,6 +154,7 @@ class HospitalSettingController extends Controller
             'default_discount_ultrasound',
             'default_discount_xray',
             'default_discount_dental',
+            'default_discount_ecg',
             'default_discount_room_booking',
         ];
         $touchedDiscounts = array_filter(
@@ -381,6 +383,7 @@ class HospitalSettingController extends Controller
                 'default_discount_ultrasound' => 0,
                 'default_discount_xray' => 0,
                 'default_discount_dental' => 0,
+                'default_discount_ecg' => 0,
                 'default_discount_room_booking' => 0,
             ]
         );

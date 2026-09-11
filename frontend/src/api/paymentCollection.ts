@@ -158,6 +158,18 @@ export async function settlePendingCharge(
         payment_method: method,
       });
 
+    case 'dental_receipt':
+      return api.post(`/dental-receipts/${charge.source_id}/payment`, {
+        paid_amount: amount,
+        payment_method: method,
+      });
+
+    case 'ecg_receipt':
+      return api.post(`/ecg-receipts/${charge.source_id}/payment`, {
+        paid_amount: amount,
+        payment_method: method,
+      });
+
     case 'transaction':
       return api.post(`/pharmacy-finance/${charge.source_id}/payment`, {
         amount,
@@ -175,11 +187,11 @@ export async function settlePendingCharge(
  * Kept apart from settlePendingCharge because it is a different right, not a
  * different argument: a collector takes money, a supervisor puts it back. The
  * endpoints are as inconsistent as the payment ones -- three spell it
- * /payment/reverse, lab says reset-payment, ultrasound reverse-payment, and
- * pharmacy has no reverse route at all, only a status change that checks
- * reverse_finance_payment internally.
+ * /payment/reverse, lab says reset-payment, ultrasound, X-Ray, dental and ECG
+ * reverse-payment, and pharmacy has no reverse route at all, only a status
+ * change that checks reverse_finance_payment internally.
  *
- * Lab, ultrasound and X-Ray REQUIRE a reason -- reversing a collection is the one
+ * Lab, ultrasound, X-Ray, dental and ECG REQUIRE a reason -- reversing a collection is the one
  * action on this screen that money can disappear through, so it is recorded
  * against the person who did it. The others accept it harmlessly, and
  * pharmacy keeps it as the finance note.
@@ -203,6 +215,12 @@ export async function reversePendingCharge(charge: PendingCharge, reason: string
 
     case 'xray_receipt':
       return api.post(`/xray-receipts/${charge.source_id}/reverse-payment`, { reason });
+
+    case 'dental_receipt':
+      return api.post(`/dental-receipts/${charge.source_id}/reverse-payment`, { reason });
+
+    case 'ecg_receipt':
+      return api.post(`/ecg-receipts/${charge.source_id}/reverse-payment`, { reason });
 
     case 'transaction':
       return api.put(`/pharmacy-finance/${charge.source_id}/status`, { payment_status: 'pending', finance_note: reason });

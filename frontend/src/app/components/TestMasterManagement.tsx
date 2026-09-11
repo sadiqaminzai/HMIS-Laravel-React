@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface TestMasterManagementProps {
   testMasters: TestMaster[];
@@ -24,6 +25,9 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
   const [showModal, setShowModal] = useState(false);
   const [editingTest, setEditingTest] = useState<TestMaster | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [formData, setFormData] = useState<Partial<TestMaster>>({
     testName: '',
     testCode: '',
@@ -330,7 +334,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={guard(handleSubmit)} className="p-6 space-y-6">
               {/* Basic Information */}
               <div className="space-y-4">
                 <h4 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -588,7 +592,7 @@ export function TestMasterManagement({ testMasters, onAdd, onUpdate, onDelete }:
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || submitLocked}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Saving...' : editingTest ? t('update') : t('create')}

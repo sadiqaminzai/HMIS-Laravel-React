@@ -34,6 +34,7 @@ class Medicine extends Model
         'created_by',
         'updated_by',
         'stock',
+        'min_stock',
         'cost_price',
         'sale_price',
         'pack_price',
@@ -42,6 +43,7 @@ class Medicine extends Model
 
     protected $casts = [
         'stock' => 'integer',
+        'min_stock' => 'integer',
         'pack_size' => 'integer',
         'pack_price' => 'decimal:2',
         'strip_price' => 'decimal:2',

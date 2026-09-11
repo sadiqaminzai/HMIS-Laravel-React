@@ -11,6 +11,7 @@ import { useMedicineTypes } from '../context/MedicineTypeContext';
 import { useHospitals } from '../context/HospitalContext';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface MedicineTypeManagementProps {
   hospital: Hospital;
@@ -37,6 +38,9 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   
   // Sorting state
   const [sortField, setSortField] = useState<string>('name');
@@ -802,7 +806,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
 
             {/* Add/Edit Form */}
             {(modalMode === 'add' || modalMode === 'edit') && (
-              <form onSubmit={handleSubmit} className="p-4 space-y-3">
+              <form onSubmit={guard(handleSubmit)} className="p-4 space-y-3">
                 {/* Hospital Selection for Super Admin */}
                 {userRole === 'super_admin' && (
                   <div>
@@ -865,7 +869,7 @@ export function MedicineTypeManagement({ hospital, userRole = 'admin' }: Medicin
                   >{t('ui.cancel')}</button>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || submitLocked}
                     className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {submitting ? 'Saving...' : modalMode === 'add' ? t('ui.add') : t('ui.save')}

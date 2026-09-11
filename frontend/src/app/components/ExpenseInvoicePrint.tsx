@@ -1,7 +1,8 @@
 import React from 'react';
 import { X, Printer, Phone, Mail, MapPin } from 'lucide-react';
 import { Hospital, Expense } from '../types';
-import { formatDate } from '../utils/date';
+import { formatCalendarDate } from '../utils/date';
+import { useSettings } from '../context/SettingsContext';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { POWERED_BY_TEXT, poweredByStyle } from '../utils/receiptBranding';
@@ -11,6 +12,8 @@ interface ExpenseInvoicePrintProps {
   expense: Expense;
   categoryName: string;
   voucherLabel?: string;
+  /** Overrides the "... Details" section heading; derived from voucherLabel otherwise. */
+  detailsLabel?: string;
   onClose: () => void;
 }
 
@@ -19,24 +22,57 @@ export function ExpenseInvoicePrint({
   expense,
   categoryName,
   voucherLabel = 'Expense Voucher',
+  detailsLabel,
   onClose
 }: ExpenseInvoicePrintProps) {
+  /*
+   * The section heading follows the voucher, not the component.
+   *
+   * This template backs Other Income as well as Expenses, so the hardcoded
+   * "Expense Details" was printing on income vouchers. Derived from the
+   * voucher label so a future caller cannot forget to pass it.
+   */
+  const sectionTitle =
+    detailsLabel ?? (voucherLabel.toLowerCase().includes('income') ? 'Income Details' : 'Expense Details');
   const voucherNo = String(expense.sequenceId);
   
-  const [receiptSize, setReceiptSize] = React.useState<'a4' | 'a5' | '80mm' | '76mm' | '58mm'>(() => {
-    return (localStorage.getItem('expense_receipt_size') as any) || 'a4';
-  });
+  /*
+   * The paper size comes from the hospital's settings, not from this dialog.
+   *
+   * It used to be a dropdown here backed by localStorage, which meant the same
+   * voucher printed differently on every machine in the building and the value
+   * in Settings > General > Printing was ignored. Expense Receipt and Other
+   * Income Receipt already have their own entries there, alongside every other
+   * receipt in the system; this now reads them like the pharmacy and
+   * appointment receipts do.
+   */
+  const { getPrintPaperSize, loadHospitalSetting } = useSettings();
+  const configuredSize = getPrintPaperSize(
+    hospital.id,
+    voucherLabel.toLowerCase().includes('income') ? 'other_income_receipt' : 'expense_receipt'
+  );
 
   React.useEffect(() => {
-    localStorage.setItem('expense_receipt_size', receiptSize);
-  }, [receiptSize]);
+    loadHospitalSetting(hospital.id);
+  }, [hospital.id, loadHospitalSetting]);
+
+  // Seeded from the setting and kept in step with it. No localStorage: a value
+  // cached in one browser is what made the same voucher print differently on
+  // different machines.
+  const [receiptSize, setReceiptSize] = React.useState<'a4' | 'a5' | '80mm' | '76mm' | '58mm'>(
+    configuredSize
+  );
+
+  React.useEffect(() => {
+    setReceiptSize(configuredSize);
+  }, [configuredSize]);
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank', 'width=900,height=1200');
     if (!printWindow) return;
 
     const escapeHtml = (unsafe: string) => (unsafe || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const dateFormatted = formatDate(expense.expenseDate, hospital.timezone, hospital.calendarType);
+    const dateFormatted = formatCalendarDate(expense.expenseDate, hospital.timezone, hospital.calendarType);
     let html = '';
 
     if (receiptSize === 'a4') {
@@ -105,7 +141,7 @@ export function ExpenseInvoicePrint({
 
               <div class="grid">
                 <div class="col">
-                  <div class="sec-title">Expense Details</div>
+                  <div class="sec-title">${escapeHtml(sectionTitle)}</div>
                   <div class="field"><span class="f-label">Title / Purpose</span><div class="f-val">${escapeHtml(expense.title)}</div></div>
                   <div class="field"><span class="f-label">Category</span><div class="f-val-sm">${escapeHtml(categoryName)}</div></div>
                   ${expense.notes ? `<div class="field"><span class="f-label">Notes / Description</span><div class="f-val-sm">${escapeHtml(expense.notes)}</div></div>` : ''}
@@ -279,18 +315,12 @@ export function ExpenseInvoicePrint({
             Voucher Preview
           </h2>
           <div className="flex items-center gap-2">
-            <select
-              title="Receipt size"
-              value={receiptSize}
-              onChange={(e) => setReceiptSize(e.target.value as any)}
-              className="mr-2 text-sm border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white py-1.5 px-3"
-            >
-              <option value="a4">A4 Size</option>
-              <option value="a5">A5 Size</option>
-              <option value="80mm">80mm Thermal</option>
-              <option value="76mm">76mm Thermal</option>
-              <option value="58mm">58mm Thermal</option>
-            </select>
+            {/* States the configured size instead of offering to change it --
+                the size lives in Settings > General > Printing, like every
+                other receipt. */}
+            <span className="mr-1 text-[11px] text-gray-500 dark:text-gray-400">
+              Prints on <span className="font-semibold uppercase">{receiptSize}</span>
+            </span>
             <button
               onClick={handleDownloadPDF}
               className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
@@ -343,7 +373,7 @@ export function ExpenseInvoicePrint({
                   <span className="text-xl font-mono font-bold text-gray-900">{voucherNo}</span>
                 </div>
                 <div className="text-sm text-gray-500">
-                  Date: <span className="font-medium text-gray-900">{formatDate(expense.expenseDate, hospital.timezone, hospital.calendarType)}</span>
+                  Date: <span className="font-medium text-gray-900">{formatCalendarDate(expense.expenseDate, hospital.timezone, hospital.calendarType)}</span>
                 </div>
               </div>
             </div>
@@ -355,7 +385,7 @@ export function ExpenseInvoicePrint({
             {/* Voucher Info */}
             <div className="grid grid-cols-2 gap-8 mb-8">
               <div>
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">Expense Details</h3>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">{sectionTitle}</h3>
                 <div className="space-y-3 text-sm">
                   <div>
                     <span className="block text-gray-500 text-xs uppercase">Title / Purpose</span>

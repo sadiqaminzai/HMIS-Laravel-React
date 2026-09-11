@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface UserManagementProps {
   hospital: Hospital;
@@ -70,6 +71,9 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [accessDenied, setAccessDenied] = useState(false);
   
   // Sorting state
@@ -751,7 +755,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit} className="p-4 space-y-3">
+            <form onSubmit={guard(showAddModal ? handleSubmitAdd : handleSubmitEdit)} className="p-4 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.fullName')}<span className="text-red-500">*</span></label>
@@ -947,7 +951,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || submitLocked}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}
@@ -1131,7 +1135,7 @@ export function UserManagement({ hospital, userRole }: UserManagementProps) {
               >{t('ui.cancel')}</button>
               <button
                 onClick={handleConfirmDelete}
-                disabled={submitting}
+                disabled={submitting || submitLocked}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Deleting...' : t('ui.delete')}

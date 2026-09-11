@@ -16,6 +16,7 @@ import {
   deleteTestTemplate,
 } from '../../api/testTemplates';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface TestManagementProps {
   hospital: Hospital;
@@ -43,6 +44,9 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
   const [selectedTest, setSelectedTest] = useState<TestTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Synchronous ref lock on top of `isSubmitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
 
   // Sorting state
   const [sortField, setSortField] = useState<string>('testCode');
@@ -558,7 +562,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 space-y-3">
+            <form onSubmit={guard(handleSubmit)} className="p-4 space-y-3">
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
@@ -792,7 +796,7 @@ export function TestManagement({ hospital, userRole = 'admin' }: TestManagementP
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || submitLocked}
                   className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors font-medium text-xs shadow-sm flex items-center justify-center gap-1.5"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

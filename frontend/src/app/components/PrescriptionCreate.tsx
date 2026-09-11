@@ -6,6 +6,7 @@ import { Search, X, Plus, Save, Printer, Trash2, Pill, ChevronDown } from 'lucid
 import { Hospital, Patient, Medicine, Doctor, UserRole, PrescriptionMedicine, MedicineSet } from '../types';
 import { doseOptions, durationOptions, instructionOptions } from '../data/mockData';
 import api from '../../api/axios';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { PrescriptionPrint } from './PrescriptionPrint';
 import { useSettings } from '../context/SettingsContext';
 import { toast } from '../utils/toast';
@@ -137,6 +138,10 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0);
   const [openMedicineDropdownRowId, setOpenMedicineDropdownRowId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Synchronous ref lock on top of isSaving. The state check at the top of
+  // handleSave cannot stop two clicks landing in the same frame -- both read
+  // the old false -- and two prescriptions were being written.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [isWalkIn, setIsWalkIn] = useState(settings.defaultToWalkIn || false);
   const [medicineSets, setMedicineSets] = useState<MedicineSet[]>([]);
   const [selectedMedicineSetId, setSelectedMedicineSetId] = useState('');
@@ -1221,12 +1226,12 @@ export function PrescriptionCreate({ hospital, currentUser }: PrescriptionCreate
         <div className="flex gap-1.5">
           {canSavePrescription && (
             <button
-              onClick={handleSave}
-              disabled={isSaving || medicines.length === 0 || (!isWalkIn && !selectedPatient)}
+              onClick={guard(handleSave)}
+              disabled={isSaving || saving || medicines.length === 0 || (!isWalkIn && !selectedPatient)}
               className="px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium text-xs"
             >
               <Save className="w-3 h-3" />
-              {isSaving ? 'Saving...' : isEditMode ? 'Update' : 'Save'}
+              {isSaving || saving ? 'Saving...' : isEditMode ? 'Update' : 'Save'}
             </button>
           )}
           {canPrintPrescription && (

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, ShieldCheck, BadgeDollarSign, Wallet, Smile } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, BedDouble, Scissors, UserCheck, Stethoscope, Users, TestTube, FileText, Package, Factory, Pill, Receipt, Box, ClipboardList, FilePlus, List, BarChart, Settings, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Globe, Sliders, MessageSquare, UserCog, Shield, Key, LogOut, Hospital, Database, Briefcase, ScanLine, ShieldCheck, BadgeDollarSign, Wallet, Smile, Activity, BookOpen, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
@@ -15,7 +15,20 @@ interface MenuItem {
   id: string; // This will now be the route path
   translationKey: string;
   icon: React.ReactNode;
+  /** Show the item when the user holds at least one of these. */
   anyPermissions?: string[];
+  /**
+   * The Navigation checkbox that switches this whole group on and off.
+   *
+   * Required on top of the children: without it the group is hidden even if
+   * the user can reach pages inside it. Groups used to be decided by their
+   * children alone, which made the five `view_*_menu` permissions that already
+   * existed dead checkboxes -- ticking or clearing one changed nothing.
+   *
+   * The group still hides when no child is visible, so granting only the menu
+   * cannot produce an empty dropdown.
+   */
+  menuPermission?: string;
   subItems?: MenuItem[];
 }
 
@@ -24,19 +37,20 @@ const menuItems: MenuItem[] = [
     id: '/',
     translationKey: 'nav.dashboard',
     icon: <LayoutDashboard className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_dashboard']
+    menuPermission: 'view_dashboard'
   },
   {
     id: '/hospitals',
     translationKey: 'nav.hospitals',
     icon: <Building2 className="w-3.5 h-3.5" />,
+    menuPermission: 'view_hospitals_menu',
     anyPermissions: ['view_hospitals', 'manage_hospitals']
   },
   {
     id: 'reception', // Group ID, not a route
     translationKey: 'nav.reception',
     icon: <UserCheck className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_reception_menu'],
+    menuPermission: 'view_reception_menu',
     subItems: [
       {
         id: '/doctors',
@@ -75,7 +89,7 @@ const menuItems: MenuItem[] = [
     id: 'laboratory', // Group ID
     translationKey: 'nav.laboratory',
     icon: <TestTube className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_laboratory_menu'],
+    menuPermission: 'view_laboratory_menu',
     subItems: [
       {
         id: '/lab-tests',
@@ -95,13 +109,7 @@ const menuItems: MenuItem[] = [
     id: 'radiology', // Group ID
     translationKey: 'nav.radiology',
     icon: <ScanLine className="w-3.5 h-3.5" />,
-    anyPermissions: [
-      'view_radiology_menu',
-      'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams', 'manage_ultrasound_exams',
-      'view_ultrasound_types', 'manage_ultrasound_types',
-      'view_xray_receipts', 'add_xray_receipts', 'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt',
-      'view_xray_types', 'manage_xray_types'
-    ],
+    menuPermission: 'view_radiology_menu',
     subItems: [
       {
         // Receipts, Exams and Report Templates are now tabs inside this one
@@ -129,6 +137,19 @@ const menuItems: MenuItem[] = [
           'manage_xray_receipts', 'manage_xray_payments', 'print_xray_receipt',
           'view_xray_types', 'add_xray_types', 'edit_xray_types', 'delete_xray_types', 'manage_xray_types'
         ]
+      },
+      {
+        // ECG sits with the imaging desks rather than under Reception: it is a
+        // study a technician runs on a machine and charges for, which is how
+        // ultrasound and X-Ray already work here. Reception registers patients.
+        id: '/ecg',
+        translationKey: 'nav.ecg',
+        icon: <Activity className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_ecg_receipts', 'add_ecg_receipts', 'edit_ecg_receipts', 'delete_ecg_receipts',
+          'manage_ecg_receipts', 'manage_ecg_payments', 'print_ecg_receipt',
+          'view_ecg_services', 'add_ecg_services', 'edit_ecg_services', 'delete_ecg_services', 'manage_ecg_services'
+        ]
       }
     ]
   },
@@ -138,6 +159,7 @@ const menuItems: MenuItem[] = [
     id: '/dental',
     translationKey: 'nav.dental',
     icon: <Smile className="w-3.5 h-3.5" />,
+    menuPermission: 'view_dental_menu',
     anyPermissions: [
       'view_dental_receipts', 'add_dental_receipts', 'edit_dental_receipts', 'delete_dental_receipts',
       'manage_dental_receipts', 'manage_dental_payments', 'print_dental_receipt',
@@ -149,7 +171,7 @@ const menuItems: MenuItem[] = [
     id: 'pharmacy', // Group ID
     translationKey: 'nav.pharmacy',
     icon: <Package className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_pharmacy_menu'],
+    menuPermission: 'view_pharmacy_menu',
     subItems: [
       {
         // Medicines, types, manufacturers and suppliers live here as tabs.
@@ -179,54 +201,10 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    // Money, wherever it came from.
-    //
-    // Collection and settlement used to sit inside the modules that raise the
-    // charges -- pharmacy invoices under Pharmacy, the collection desk under
-    // Reception -- which suited whoever creates the document rather than
-    // whoever handles the cash. A cashier works across all of them, and now has
-    // one place to stand.
-    id: 'finance', // Group ID, not a route
-    translationKey: 'nav.finance',
-    icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
-    anyPermissions: [
-      'view_finance_menu',
-      'view_finance_sales', 'view_finance_purchases',
-      'view_finance_sales_returns', 'view_finance_purchase_returns',
-      'record_finance_payments', 'edit_finance_payment_status', 'manage_finance',
-      'manage_appointment_payments', 'manage_lab_payments', 'manage_ultrasound_payments',
-      'manage_surgery_payments', 'manage_room_booking_payments'
-    ],
-    subItems: [
-      {
-        // Every unpaid charge in the hospital, in one queue.
-        id: '/payment-collection',
-        translationKey: 'nav.paymentCollection',
-        icon: <Wallet className="w-3.5 h-3.5" />,
-        anyPermissions: [
-          'manage_appointment_payments', 'manage_lab_payments', 'manage_ultrasound_payments',
-          'manage_surgery_payments', 'manage_room_booking_payments', 'record_finance_payments'
-        ]
-      },
-      {
-        // Paid / pending control over pharmacy documents, split per type.
-        id: '/pharmacy-finance',
-        translationKey: 'nav.pharmacyFinance',
-        icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
-        anyPermissions: [
-          'view_finance_menu',
-          'view_finance_sales', 'view_finance_purchases',
-          'view_finance_sales_returns', 'view_finance_purchase_returns',
-          'record_finance_payments', 'edit_finance_payment_status', 'manage_finance'
-        ]
-      }
-    ]
-  },
-  {
     id: 'prescription-menu', // Group ID
     translationKey: 'nav.prescriptions',
     icon: <ClipboardList className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_prescriptions_menu'],
+    menuPermission: 'view_prescriptions_menu',
     subItems: [
       {
         // The list page owns creation via its "+ Add Prescription" button,
@@ -251,73 +229,139 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'expenses',
-    translationKey: 'nav.expenses',
-    icon: <Receipt className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_expenses', 'manage_expenses', 'view_expense_categories', 'manage_expense_categories'],
-    subItems: [
-      {
-        id: '/expenses/categories',
-        translationKey: 'nav.expenseCategories',
-        icon: <ClipboardList className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_expense_categories', 'manage_expense_categories']
-      },
-      {
-        id: '/expenses/entries',
-        translationKey: 'nav.expenseEntries',
-        icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_expenses', 'manage_expenses']
-      },
-      {
-        id: '/expenses/report',
-        translationKey: 'nav.expenseReport',
-        icon: <BarChart className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_expenses', 'manage_expenses']
-      }
-    ]
-  },
-  {
-    id: 'other-income',
-    translationKey: 'nav.otherIncome',
-    icon: <Receipt className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_other_incomes', 'manage_other_incomes', 'view_other_income_categories', 'manage_other_income_categories'],
-    subItems: [
-      {
-        id: '/other-income/categories',
-        translationKey: 'nav.otherIncomeCategories',
-        icon: <ClipboardList className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_other_income_categories', 'manage_other_income_categories']
-      },
-      {
-        id: '/other-income/entries',
-        translationKey: 'nav.otherIncomeEntries',
-        icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_other_incomes', 'manage_other_incomes']
-      },
-      {
-        id: '/other-income/report',
-        translationKey: 'nav.otherIncomeReport',
-        icon: <BarChart className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_other_incomes', 'manage_other_incomes']
-      }
-    ]
-  },
-  {
+    // Reports, one entry per desk.
+    //
+    // This used to be a single /reports page whose desks were tabs inside it,
+    // which meant the sidebar could not say what reporting existed and a
+    // particular report could not be linked to or bookmarked. Each desk is now
+    // its own route with its own tabs, so "the pharmacy expiry report" is a URL
+    // rather than a sequence of three clicks.
     id: 'reports-menu',
     translationKey: 'nav.reports',
     icon: <BarChart className="w-3.5 h-3.5" />,
-    anyPermissions: ['view_reports', 'manage_reports', 'view_ledger', 'manage_ledger', 'export_ledger'],
+    menuPermission: 'view_reports_menu',
     subItems: [
       {
-        id: '/reports',
-        translationKey: 'nav.reports',
+        id: '/reports/general',
+        translationKey: 'nav.reportsGeneral',
         icon: <BarChart className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_general', 'view_reports', 'manage_reports']
       },
       {
-        id: '/ledger',
+        id: '/reports/pharmacy',
+        translationKey: 'nav.reportsPharmacy',
+        icon: <Package className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_pharmacy', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/reception',
+        translationKey: 'nav.reportsReception',
+        icon: <UserCheck className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_reception', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/laboratory',
+        translationKey: 'nav.reportsLaboratory',
+        icon: <TestTube className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_laboratory', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/surgery',
+        translationKey: 'nav.reportsSurgery',
+        icon: <Stethoscope className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_surgery', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/room-booking',
+        translationKey: 'nav.reportsRoomBooking',
+        icon: <BedDouble className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_room_booking', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/xray',
+        translationKey: 'nav.reportsXray',
+        icon: <ScanLine className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_xray', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/ultrasound',
+        translationKey: 'nav.reportsUltrasound',
+        icon: <Activity className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_ultrasound', 'view_reports', 'manage_reports']
+      },
+      {
+        // Moved out of the Expenses menu: reading a report and typing an entry
+        // are different jobs done by different people, and every other report
+        // is found here.
+        id: '/reports/expenses',
+        translationKey: 'nav.reportsExpenses',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_expenses', 'view_reports', 'manage_reports']
+      },
+      {
+        id: '/reports/other-income',
+        translationKey: 'nav.reportsOtherIncome',
+        icon: <Wallet className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_other_income', 'view_reports', 'manage_reports']
+      },
+      {
+        // Last in the list on purpose: the desks above report across every
+        // patient, this one reports on a single named patient, so it reads as
+        // the odd one out wherever else it sits.
+        id: '/patient-history',
+        translationKey: 'nav.patientHistory',
+        icon: <History className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_patients', 'manage_patients', 'register_patients']
+      }
+    ]
+  },
+  {
+    // Accounts, split out of Reports.
+    //
+    // The ledger is not a report -- it is the book the reports are drawn from,
+    // and it is read by a different person for a different reason. Sitting it
+    // under Reports made it look like one more export.
+    id: 'accounts-menu',
+    translationKey: 'nav.accounts',
+    icon: <BookOpen className="w-3.5 h-3.5" />,
+    menuPermission: 'view_accounts_menu',
+    subItems: [
+      {
+        // Every unpaid charge in the hospital, in one queue. Moved here from
+        // the old Finance menu, which held nothing else worth keeping: its
+        // only other entry duplicated the pharmacy rows this page already
+        // lists alongside every other module's.
+        id: '/payment-collection',
+        translationKey: 'nav.paymentCollection',
+        icon: <Wallet className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'manage_appointment_payments', 'manage_lab_payments', 'manage_ultrasound_payments',
+          'manage_surgery_payments', 'manage_room_booking_payments', 'record_finance_payments'
+        ]
+      },
+      {
+        // Entries and categories live here as tabs.
+        id: '/accounts/expenses',
+        translationKey: 'nav.expenses',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_expenses', 'manage_expenses',
+          'view_expense_categories', 'manage_expense_categories'
+        ]
+      },
+      {
+        id: '/accounts/other-income',
+        translationKey: 'nav.otherIncome',
+        icon: <BadgeDollarSign className="w-3.5 h-3.5" />,
+        anyPermissions: [
+          'view_other_incomes', 'manage_other_incomes',
+          'view_other_income_categories', 'manage_other_income_categories'
+        ]
+      },
+      {
+        id: '/accounts/ledger',
         translationKey: 'nav.ledger',
-        icon: <BarChart className="w-3.5 h-3.5" />,
+        icon: <BookOpen className="w-3.5 h-3.5" />,
         anyPermissions: ['view_ledger', 'manage_ledger', 'export_ledger']
       }
     ]
@@ -326,17 +370,7 @@ const menuItems: MenuItem[] = [
     id: 'hr-menu',
     translationKey: 'nav.hr',
     icon: <Briefcase className="w-3.5 h-3.5" />,
-    anyPermissions: [
-      'view_departments', 'manage_departments',
-      'view_designations', 'manage_designations',
-      'view_shifts', 'manage_shifts',
-      'view_employees', 'manage_employees',
-      'view_employee_attendances', 'manage_employee_attendances',
-      'view_leave_requests', 'manage_leave_requests',
-      'view_salary_structures', 'manage_salary_structures',
-      'view_payroll_batches', 'manage_payroll_batches',
-      'view_payroll_items', 'manage_payroll_items'
-    ],
+    menuPermission: 'view_hr_menu',
     subItems: [
       {
         id: '/hr/departments',
@@ -452,11 +486,52 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const canSeeAuditLog = hasPermission('view_audit_logs') || hasPermission('manage_audit_logs');
   
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+
+  /**
+   * Which group owns the page currently on screen.
+   *
+   * Read from the menu definition rather than from a hand-written list of
+   * paths, so a group can never fall out of sync with its own children. Sub
+   * items are matched by prefix as well as exactly, so a tab query string or a
+   * deeper child (/reports/pharmacy?tab=low-stock) still resolves to its group.
+   */
+  const groupForPath = (path: string): string | null =>
+    menuItems.find(
+      (item) =>
+        item.subItems?.some((sub) => sub.id === path || path.startsWith(`${sub.id}/`)) ?? false
+    )?.id ?? null;
+
+  /*
+   * The open group follows the page, and stays open.
+   *
+   * This used to be a bare useState([]) plus six hardcoded "if you navigated
+   * away from pharmacy, close pharmacy" blocks. Two things went wrong with
+   * that: the lists still named routes that no longer exist, and nothing
+   * listed Accounts or Reports at all -- so those groups snapped shut on every
+   * click because the state started empty on each mount and nothing ever
+   * reopened them. Seeding from the route fixes both, and a group the user
+   * opened by hand is respected until they open a different one.
+   */
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(() => {
+    const owner = groupForPath(location.pathname);
+    return owner ? [owner] : [];
+  });
+
+  useEffect(() => {
+    const owner = groupForPath(location.pathname);
+    if (!owner) return;
+
+    setExpandedMenus((prev) => (prev.includes(owner) ? prev : [owner]));
+  }, [location.pathname]);
 
   const isItemVisible = (item: MenuItem): boolean => {
+    // The Navigation checkbox is a gate, not one more alternative: a user who
+    // can open pages inside the group still does not get the group without it.
+    if (item.menuPermission && !hasPermission(item.menuPermission)) {
+      return false;
+    }
     if (!item.anyPermissions || item.anyPermissions.length === 0) {
-      // Public-to-auth (dashboard) or group header; visibility determined by children
+      // Group header, or a menu whose only gate is its Navigation checkbox.
       return true;
     }
     return item.anyPermissions.some((p) => hasPermission(p));
@@ -469,7 +544,12 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
       return { ...item, subItems };
     })
     .filter((item) => {
-      if (item.subItems?.length) return item.subItems.length > 0;
+      // Groups used to be decided by `subItems.length > 0` alone, which skipped
+      // the group's own permission entirely -- the five `view_*_menu` rights
+      // were checkboxes that did nothing. Both tests now have to pass, so the
+      // menu is switchable and a group with nothing visible inside it still
+      // never renders as an empty dropdown.
+      if (item.subItems?.length) return isItemVisible(item) && item.subItems.length > 0;
       return isItemVisible(item);
     });
 
@@ -481,66 +561,19 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
     );
   };
 
+  /**
+   * Navigate, and leave the menu alone.
+   *
+   * The open group is decided by the route (see the effect above), so nothing
+   * needs closing here. The six hand-written "collapse that group" blocks this
+   * replaced had gone stale -- they still named routes that no longer exist and
+   * knew nothing about Accounts or Reports -- which is why those two snapped
+   * shut whenever one of their pages was opened.
+   */
   const handleNavigate = (path: string) => {
-    // Check if path is a group ID (no slash) - if so, don't navigate
-    if (!path.startsWith('/')) {
-      return;
-    }
-    
-    // Auto-collapse logic based on path groups
-    // If navigating to a non-pharmacy page and pharmacy is expanded, collapse it
-    const isPharmacySubItem = ['/pharmacy-master', '/manufacturers', '/medicine-types', '/medicines', '/suppliers', '/transactions', '/stock-control', '/stocks', '/stock-adjustments', '/pharmacy-finance'].includes(path);
-    if (!isPharmacySubItem && path !== 'pharmacy' && expandedMenus.includes('pharmacy')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'pharmacy'));
-    }
-    
-    // If navigating to a non-prescription page and prescription menu is expanded, collapse it
-    const isPrescriptionSubItem = ['/prescriptions/create', '/prescriptions', '/settings/treatment-sets', '/settings/prescription-diagnoses'].includes(path);
-    if (!isPrescriptionSubItem && path !== 'prescription-menu' && expandedMenus.includes('prescription-menu')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'prescription-menu'));
-    }
+    // Group headers carry an id with no leading slash and are not routes.
+    if (!path.startsWith('/')) return;
 
-    // If navigating away from radiology and its menu is expanded, collapse it
-    const isRadiologySubItem = [
-      '/ultrasound',
-      '/xray',
-    ].includes(path);
-    if (!isRadiologySubItem && path !== 'radiology' && expandedMenus.includes('radiology')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'radiology'));
-    }
-    
-    // If navigating to a non-laboratory page and laboratory menu is expanded, collapse it
-    const isLaboratorySubItem = ['/lab-tests', '/test-management'].includes(path);
-    if (!isLaboratorySubItem && path !== 'laboratory' && expandedMenus.includes('laboratory')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'laboratory'));
-    }
-    
-    // If navigating to a non-reception page and reception menu is expanded, collapse it
-    const isReceptionSubItem = ['/doctors', '/patients', '/appointments', '/room-management', '/rooms', '/room-bookings', '/surgeries'].includes(path);
-    if (!isReceptionSubItem && path !== 'reception' && expandedMenus.includes('reception')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'reception'));
-    }
-
-    const isOtherIncomeSubItem = ['/other-income/categories', '/other-income/entries', '/other-income/report'].includes(path);
-    if (!isOtherIncomeSubItem && path !== 'other-income' && expandedMenus.includes('other-income')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'other-income'));
-    }
-
-    const isHrSubItem = [
-      '/hr/departments',
-      '/hr/designations',
-      '/hr/shifts',
-      '/hr/employees',
-      '/hr/attendances',
-      '/hr/leave-requests',
-      '/hr/salary-structures',
-      '/hr/payroll',
-      '/hr/data-tools'
-    ].includes(path);
-    if (!isHrSubItem && path !== 'hr-menu' && expandedMenus.includes('hr-menu')) {
-      setExpandedMenus(prev => prev.filter(id => id !== 'hr-menu'));
-    }
-    
     navigate(path);
   };
 

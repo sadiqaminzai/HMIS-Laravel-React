@@ -11,6 +11,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface DoctorManagementProps {
   hospital: Hospital;
@@ -66,6 +67,9 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
+  // Synchronous ref lock on top of `formSubmitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
 
   // Sorting state
   const [sortField, setSortField] = useState<string>('id');
@@ -615,7 +619,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit} className="p-4 space-y-3">
+            <form onSubmit={guard(showAddModal ? handleSubmitAdd : handleSubmitEdit)} className="p-4 space-y-3">
               {/* Hospital Selection for Super Admin */}
               {userRole === 'super_admin' && (
                 <div>
@@ -844,7 +848,7 @@ export function DoctorManagement({ hospital, userRole = 'admin' }: DoctorManagem
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={formSubmitting}
+                  disabled={formSubmitting || submitLocked}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {formSubmitting ? 'Saving...' : showAddModal ? t('ui.create') : t('ui.save')}

@@ -35,17 +35,14 @@ class PharmacyFinancePermissionsSeeder extends Seeder
     public static function permissions(): array
     {
         return [
-            ['name' => 'view_finance_menu', 'display_name' => 'View Pharmacy Finance Menu', 'category' => 'Navigation'],
             ['name' => 'manage_appointment_payments', 'display_name' => 'Manage Appointment Payments', 'category' => 'Appointments'],
-            ['name' => 'view_finance_sales', 'display_name' => 'View Invoice Finances', 'category' => 'Pharmacy Finance'],
-            ['name' => 'view_finance_purchases', 'display_name' => 'View Purchase Finances', 'category' => 'Pharmacy Finance'],
-            ['name' => 'view_finance_sales_returns', 'display_name' => 'View Return In Finances', 'category' => 'Pharmacy Finance'],
-            ['name' => 'view_finance_purchase_returns', 'display_name' => 'View Return Out Finances', 'category' => 'Pharmacy Finance'],
-            ['name' => 'record_finance_payments', 'display_name' => 'Record Payments', 'category' => 'Pharmacy Finance'],
-            ['name' => 'edit_finance_payment_status', 'display_name' => 'Edit Payment Status & Terms', 'category' => 'Pharmacy Finance'],
-            ['name' => 'export_finance', 'display_name' => 'Export Pharmacy Finance', 'category' => 'Pharmacy Finance'],
-            ['name' => 'print_finance', 'display_name' => 'Print Pharmacy Finance', 'category' => 'Pharmacy Finance'],
-            ['name' => 'manage_finance', 'display_name' => 'Manage Pharmacy Finance (Full Access)', 'category' => 'Pharmacy Finance'],
+            ['name' => 'view_finance_sales', 'display_name' => 'Sales Invoice', 'category' => 'Accounts'],
+            ['name' => 'view_finance_purchases', 'display_name' => 'Purchase Invoice', 'category' => 'Accounts'],
+            ['name' => 'view_finance_sales_returns', 'display_name' => 'Sales Return', 'category' => 'Accounts'],
+            ['name' => 'view_finance_purchase_returns', 'display_name' => 'Purchase Return', 'category' => 'Accounts'],
+            ['name' => 'record_finance_payments', 'display_name' => 'Record Payments', 'category' => 'Accounts'],
+            ['name' => 'edit_finance_payment_status', 'display_name' => 'Edit Payment Status & Terms', 'category' => 'Accounts'],
+            ['name' => 'manage_finance', 'display_name' => 'Manage Settlements (Full Access)', 'category' => 'Accounts'],
         ];
     }
 }

@@ -18,7 +18,7 @@ interface TransactionContextType {
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined);
 
-const mapDetail = (d: any): TransactionDetail => ({
+export const mapDetail = (d: any): TransactionDetail => ({
   id: String(d.id),
   trxId: String(d.trx_id ?? d.trxId ?? d.transaction_id ?? ''),
   medicineId: String(d.medicine_id),
@@ -38,7 +38,7 @@ const mapDetail = (d: any): TransactionDetail => ({
   medicineName: d.medicine?.brand_name ?? d.medicine_name ?? undefined,
 });
 
-const mapTransaction = (t: any): Transaction => ({
+export const mapTransaction = (t: any): Transaction => ({
   id: String(t.id),
   hospitalId: String(t.hospital_id),
   serialNo: t.serial_no !== undefined && t.serial_no !== null ? Number(t.serial_no) : undefined,
@@ -60,6 +60,9 @@ const mapTransaction = (t: any): Transaction => ({
   createdAt: t.created_at ? new Date(t.created_at) : undefined,
   updatedAt: t.updated_at ? new Date(t.updated_at) : undefined,
   details: Array.isArray(t.details) ? t.details.map(mapDetail) : [],
+  // List rows carry a count instead of the lines themselves; an invoice
+  // fetched on its own carries both, so prefer the real length when present.
+  detailsCount: Array.isArray(t.details) ? t.details.length : Number(t.details_count ?? 0),
 });
 
 const sortByCreatedDesc = (records: Transaction[]) => {
@@ -185,6 +188,31 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
       {children}
     </TransactionContext.Provider>
   );
+}
+
+/**
+ * Create, update and delete an invoice, without asking for the list.
+ *
+ * `useTransactions` triggers the whole-table download the moment it is called,
+ * which is right for a screen that reads the array and wrong for one that pages
+ * against the server -- the Invoices screen wants the writes and its own page,
+ * and pulling the book in behind it is what made that screen unusable.
+ */
+export function useTransactionActions() {
+  const context = useContext(TransactionContext);
+
+  if (!context) {
+    console.warn('useTransactionActions called outside TransactionProvider');
+    return {
+      addTransaction: async () => { throw new Error('TransactionProvider is unavailable'); },
+      updateTransaction: async () => { throw new Error('TransactionProvider is unavailable'); },
+      deleteTransaction: async () => {},
+    } as Pick<TransactionContextType, 'addTransaction' | 'updateTransaction' | 'deleteTransaction'>;
+  }
+
+  const { addTransaction, updateTransaction, deleteTransaction } = context;
+
+  return { addTransaction, updateTransaction, deleteTransaction };
 }
 
 export function useTransactions() {

@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface SupplierManagementProps {
   hospital: Hospital;
@@ -42,6 +43,9 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -607,7 +611,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-4 space-y-3" onSubmit={handleSubmitAdd}>
+          <form className="p-4 space-y-3" onSubmit={guard(handleSubmitAdd)}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.supplierName')}<span className="text-red-500">*</span></label>
@@ -658,7 +662,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             </div>
             <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
               <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
-              <button type="submit" disabled={submitting} className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+              <button type="submit" disabled={submitting || submitLocked} className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">
                 {submitting ? t('ui.saving') : t('ui.save')}
               </button>
             </div>
@@ -675,7 +679,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-4 space-y-3" onSubmit={handleSubmitEdit}>
+          <form className="p-4 space-y-3" onSubmit={guard(handleSubmitEdit)}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">{t('ui.supplierName')}<span className="text-red-500">*</span></label>
@@ -726,7 +730,7 @@ export function SupplierManagement({ hospital, userRole = 'admin' }: SupplierMan
             </div>
             <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
               <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
-              <button type="submit" disabled={submitting} className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed">
+              <button type="submit" disabled={submitting || submitLocked} className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed">
                 {submitting ? t('ui.saving') : t('ui.update')}
               </button>
             </div>

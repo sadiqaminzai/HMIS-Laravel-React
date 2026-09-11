@@ -4,7 +4,10 @@ import { Barcode, Eye, FileSpreadsheet, FileText, Pencil, Plus, Minus, Search, T
 import { Hospital, Patient, SaleUnit, Transaction, TransactionDetail, UserRole } from '../types';
 import { toast } from 'sonner';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
-import { useTransactions } from '../context/TransactionContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import { mapTransaction, useTransactionActions } from '../context/TransactionContext';
+import { fetchAllPages } from '../utils/fetchAllPages';
+import { fetchTransaction, useDebouncedValue, useTransactionList } from '../hooks/useTransactionList';
 import { useMedicines } from '../context/MedicineContext';
 import { useStocks } from '../context/StockContext';
 import { useSuppliers } from '../context/SupplierContext';
@@ -167,8 +170,8 @@ const buildInitialFormData = (hospitalId: string) => ({
 
 export function TransactionManagement({ hospital, userRole = 'admin' }: TransactionManagementProps) {
   const { t } = useTranslation();
-  const { selectedHospitalId, setSelectedHospitalId, currentHospital, filterByHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
-  const { transactions, addTransaction, updateTransaction, deleteTransaction, loading } = useTransactions();
+  const { selectedHospitalId, setSelectedHospitalId, currentHospital, isAllHospitals } = useHospitalFilter(hospital, userRole);
+  const { addTransaction, updateTransaction, deleteTransaction } = useTransactionActions();
   const { medicines, refresh: refreshMedicines, findByBarcode, updateMedicine } = useMedicines();
   const { stocks, refresh: refreshStocks } = useStocks();
   const { suppliers } = useSuppliers();
@@ -185,6 +188,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
           getPharmacyWalkInFields, getBarcodeScanningEnabled, getInvoiceFields,
           getDefaultPaymentStatuses } = useSettings();
   const mayUseWalkIn = hasPermission('pharmacy_walk_in_sales') || hasPermission('manage_transactions');
+  // Gates the list fetch itself: without it the screen would ask for a page
+  // it is not allowed to read and show the 403 as a load failure.
+  const canViewTransactions = hasPermission('view_transactions') || hasPermission('manage_transactions');
   const canAdd = hasPermission('add_transactions') || hasPermission('manage_transactions');
   const canEdit = hasPermission('edit_transactions') || hasPermission('manage_transactions');
   const canDelete = hasPermission('delete_transactions') || hasPermission('manage_transactions');
@@ -223,6 +229,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   // silently prints A4. Users can still override per preview.
   const [receiptSize, setReceiptSize] = useState<PrintPaperSize>('a4');
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of : two clicks in one frame both
+  // read the old state, which is how a single sale became two invoices.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [remoteMedicines, setRemoteMedicines] = useState<typeof medicines>([]);
   const [remoteSuppliers, setRemoteSuppliers] = useState<typeof suppliers>([]);
   const [remotePatients, setRemotePatients] = useState<typeof patients>([]);
@@ -293,7 +302,56 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     }
   }, [showAddModal, formData.trxType, formData.isWalkIn, pharmacyCustomerMode, walkInAllowed, walkInDefaults]);
 
-  const scopedTransactions = filterByHospital(transactions);
+  /*
+   * The page on screen, fetched as a page.
+   *
+   * This screen used to hold the hospital's whole invoice book in memory and
+   * filter, sort, count and slice it here. At live volumes that was 15.5 MB
+   * over seven sequential requests before a single row could be drawn, so the
+   * table sat on "Loading transactions..." and every tab read zero. Searching,
+   * sorting, counting and paging are now SQL, and the browser is sent the
+   * fifty rows it is about to render -- so the cost stops following the
+   * invoice count, which is what made this get worse every month.
+   *
+   * Rows carry no detail lines. View, edit and print load the one invoice
+   * they open through withDetails() below.
+   */
+  const debouncedSearch = useDebouncedValue(searchTerm);
+  const {
+    rows: pageTransactions,
+    counts: typeCounts,
+    nextSerials,
+    total: totalTransactions,
+    lastPage: totalPages,
+    loading,
+    reload: reloadTransactions,
+  } = useTransactionList({
+    hospitalId: selectedHospitalId,
+    trxType: trxTypeFilter,
+    search: debouncedSearch,
+    sort: sortState.key,
+    direction: sortState.dir,
+    page: currentPage,
+    perPage: itemsPerPage,
+    enabled: canViewTransactions,
+  });
+
+  /**
+   * An invoice with its lines, fetched if the list row does not carry them.
+   *
+   * Falls back to the row itself when the fetch fails, so a network blip
+   * degrades to an invoice with no lines rather than a dead button.
+   */
+  const withDetails = async (trx: Transaction): Promise<Transaction> => {
+    if (trx.details && trx.details.length > 0) return trx;
+
+    try {
+      return await fetchTransaction(trx.id);
+    } catch {
+      toast.error('Could not load the invoice lines.');
+      return trx;
+    }
+  };
 
   const getHospital = (id: string) => hospitals.find((h) => h.id === id);
   const getHospitalName = (id: string) => getHospital(id)?.name || 'Unknown';
@@ -1088,24 +1146,43 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     printWindow.document.write(html);
     printWindow.document.close();
   };
-  const getMedicineName = (id: string) => medicines.find((m) => m.id === id)?.brandName || 'Unknown';
+  /*
+   * Id -> record indexes, rebuilt only when the underlying list changes.
+   *
+   * These lookups used to be `patients.find(...)` / `medicines.find(...)`, run
+   * once per row inside the transaction filter. On the live database that is
+   * 5,400 transactions x 3,100 patients = ~34 MILLION comparisons for a single
+   * pass, repeated on every render -- which is why typing in the medicine combo
+   * on a new invoice froze the page once invoice volume grew. A Map turns each
+   * of those scans into one hash lookup.
+   */
+  const patientsById = useMemo(() => {
+    const map = new Map<string, Patient>();
+    patients.forEach((patient) => map.set(String(patient.id), patient));
+    return map;
+  }, [patients]);
+
+  const medicinesById = useMemo(() => {
+    const map = new Map<string, (typeof medicines)[number]>();
+    medicines.forEach((medicine) => map.set(String(medicine.id), medicine));
+    return map;
+  }, [medicines]);
+
+  const getMedicineName = (id: string) => medicinesById.get(String(id))?.brandName || 'Unknown';
   const getMedicineDisplay = (id: string) => {
-    const med = medicines.find((m) => m.id === id);
+    const med = medicinesById.get(String(id));
     if (!med) return '';
     const parts = [med.type || '', med.brandName, med.strength || ''];
     return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   };
   const getSupplierDisplay = (id?: string) => suppliers.find((s) => s.id === id)?.name || '';
   const getPatientDisplay = (id?: string) => {
-    const patient = patients.find((p) => p.id === id);
+    const patient = patientsById.get(String(id));
     if (!patient) return '';
     return `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}${patient.phone ? ` - ${patient.phone}` : ''}`.trim();
   };
   const getPatientOptionDisplay = (patient: Patient) =>
     `${patient.name} ${patient.patientId ? `(${patient.patientId})` : ''}${patient.phone ? ` - ${patient.phone}` : ''}`.trim();
-  const getTransactionPatientPhone = (transaction: Transaction) =>
-    patients.find((patient) => String(patient.id) === String(transaction.patientId))?.phone || '';
-
   // Purchases/purchase returns are against a supplier, sales/sales returns a patient.
   const isSupplierSide = (trx: Transaction) =>
     trx.trxType === 'purchase' || trx.trxType === 'purchase_return';
@@ -1115,7 +1192,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       return suppliers.find((s) => String(s.id) === String(trx.supplierId))?.name
         || trx.supplierName || '—';
     }
-    return patients.find((p) => String(p.id) === String(trx.patientId))?.name
+    return patientsById.get(String(trx.patientId))?.name
       || trx.patientName || '—';
   };
 
@@ -1124,7 +1201,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       const supplier = suppliers.find((s) => String(s.id) === String(trx.supplierId));
       return supplier?.phone ? `${supplier.phone}` : '—';
     }
-    const patient = patients.find((p) => String(p.id) === String(trx.patientId));
+    const patient = patientsById.get(String(trx.patientId));
     if (!patient) return '—';
     return [patient.patientId ? `ID: ${patient.patientId}` : null, patient.phone || null]
       .filter(Boolean).join(' · ') || '—';
@@ -1235,7 +1312,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     return sortedByBatchNumber[0];
   };
-  const getMedicineById = (id?: string) => medicines.find((m) => m.id === id);
+  const getMedicineById = (id?: string) => medicinesById.get(String(id));
   const getPackSize = (id?: string) => Math.max(1, Number(getMedicineById(id)?.packSize ?? 1));
 
   /** Pieces contained in one unit -- the single conversion rule, mirroring the API. */
@@ -1383,7 +1460,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
   const getMedicinePrice = (id: string, type: Transaction['trxType'], saleUnit: SaleUnit = 'piece') => {
-    const med = medicines.find((m) => m.id === id);
+    const med = medicinesById.get(String(id));
     if (!med) return 0;
     const isPurchase = type === 'purchase' || type === 'purchase_return';
 
@@ -1431,10 +1508,37 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     return parts.length ? `${pieces} (${parts.join(' + ')})` : `${pieces}`;
   };
 
-  const exportToExcel = async () => {
-    const { XLSX } = await loadXlsxTools();
+  /**
+   * Every row the current filter matches, for an export.
+   *
+   * The table holds one page now, but "export" has always meant the whole
+   * filtered list, so this pages through it on demand. Deliberately only on
+   * a button press: doing it on load is what made this screen unusable, and
+   * rows carry no detail lines, so the walk is a fraction of what it was.
+   */
+  const fetchExportRows = async (): Promise<Transaction[]> => {
+    const rows = await fetchAllPages<any>('/transactions', {
+      ...(selectedHospitalId && selectedHospitalId !== 'all'
+        ? { hospital_id: selectedHospitalId }
+        : {}),
+      trx_type: trxTypeFilter,
+      ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+      sort: sortState.key,
+      direction: sortState.dir,
+    });
 
-    const workSheet = XLSX.utils.json_to_sheet(sortedTransactions.map((t) => ({
+    return rows.map(mapTransaction);
+  };
+
+  const exportToExcel = async () => {
+    const [{ XLSX }, exportRows] = await Promise.all([loadXlsxTools(), fetchExportRows()]);
+
+    if (!exportRows.length) {
+      toast.error('There is nothing to export.');
+      return;
+    }
+
+    const workSheet = XLSX.utils.json_to_sheet(exportRows.map((t) => ({
       ID: t.serialNo ?? t.id,
       Type: t.trxType,
       GrandTotal: t.grandTotal,
@@ -1449,7 +1553,12 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
   };
 
   const exportToPDF = async () => {
-    const { jsPDF, autoTable } = await loadPdfTools();
+    const [{ jsPDF, autoTable }, exportRows] = await Promise.all([loadPdfTools(), fetchExportRows()]);
+
+    if (!exportRows.length) {
+      toast.error('There is nothing to export.');
+      return;
+    }
 
     const doc = new jsPDF();
     const headerY = 20;
@@ -1470,7 +1579,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
     autoTable(doc, {
       head: [['ID', 'Type', 'Grand Total', 'Paid', 'Due', 'Created']],
-      body: sortedTransactions.map((t) => [
+      body: exportRows.map((t) => [
         `#${t.serialNo ?? t.id}`,
         t.trxType,
         t.grandTotal,
@@ -1486,59 +1595,21 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     doc.save('Transactions_Report.pdf');
   };
 
-  const filteredTransactions = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return scopedTransactions.filter((t) => {
-      const patientPhone = getTransactionPatientPhone(t).toLowerCase();
-      const matchesTerm =
-        String(t.serialNo ?? t.id).includes(term) ||
-        (t.trxType || '').toLowerCase().includes(term) ||
-        (t.patientName || '').toLowerCase().includes(term) ||
-        getPatientDisplay(t.patientId).toLowerCase().includes(term) ||
-        patientPhone.includes(term) ||
-        (t.details || []).some((d) => (d.medicineName || getMedicineName(d.medicineId)).toLowerCase().includes(term));
-      const matchesType = t.trxType === trxTypeFilter;
-      return matchesTerm && matchesType;
-    });
-  }, [scopedTransactions, searchTerm, trxTypeFilter, medicines, patients]);
+  /*
+   * Search, sort and paging all live on the server now, so the rows that
+   * arrive are already the rows to draw. What was here was a filter, a sort
+   * and a slice over the hospital's entire invoice book on every keystroke.
+   */
+  const paginatedTransactions = pageTransactions;
 
-  const sortedTransactions = useMemo(() => {
-    const dir = sortState.dir === 'asc' ? 1 : -1;
-    const valueOf = (t: Transaction): string | number => {
-      switch (sortState.key) {
-        case 'serial': return Number(t.serialNo ?? t.id ?? 0);
-        case 'party': return getPartyName(t).toLowerCase();
-        case 'grandTotal': return Number(t.grandTotal ?? 0);
-        case 'paid': return Number(t.paidAmount ?? 0);
-        case 'due': return Number(t.dueAmount ?? 0);
-        case 'date':
-        default: return t.createdAt ? new Date(t.createdAt).getTime() : 0;
-      }
-    };
-
-    return [...filteredTransactions].sort((a, b) => {
-      const av = valueOf(a);
-      const bv = valueOf(b);
-      if (typeof av === 'string' || typeof bv === 'string') {
-        return String(av).localeCompare(String(bv)) * dir;
-      }
-      return (av - bv) * dir;
-    });
-  }, [filteredTransactions, sortState, patients, suppliers]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / itemsPerPage));
-  // Shown in the footer. Clamped to the row count so an empty list reads
-  // "0-0 of 0" rather than "1-50 of 0".
-  const rangeStart = sortedTransactions.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
-  const rangeEnd = Math.min(currentPage * itemsPerPage, sortedTransactions.length);
-  const paginatedTransactions = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return sortedTransactions.slice(startIndex, startIndex + itemsPerPage);
-  }, [sortedTransactions, currentPage, itemsPerPage]);
+  // Shown in the footer. Derived from the server total, and clamped so an
+  // empty list reads "0-0 of 0" rather than "1-50 of 0".
+  const rangeStart = totalTransactions === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const rangeEnd = Math.min(currentPage * itemsPerPage, totalTransactions);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, trxTypeFilter, selectedHospitalId, itemsPerPage]);
+  }, [debouncedSearch, trxTypeFilter, selectedHospitalId, itemsPerPage, sortState]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1883,7 +1954,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
 
   /** Open the inline editor for the product on a line. */
   const openPriceEditor = (medicineId: string) => {
-    const medicine = medicines.find((m) => String(m.id) === String(medicineId));
+    const medicine = medicinesById.get(String(medicineId));
     if (!medicine) return;
     setPriceEditor({
       medicineId: String(medicine.id),
@@ -1902,7 +1973,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
    */
   const submitPriceEditor = async () => {
     if (!priceEditor || savingPrice) return;
-    const medicine = medicines.find((m) => String(m.id) === String(priceEditor.medicineId));
+    const medicine = medicinesById.get(String(priceEditor.medicineId));
     if (!medicine) return;
 
     const cost = Number(priceEditor.costPrice);
@@ -1988,7 +2059,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     resetTransactionForm();
   };
 
-  const handleView = (trx: Transaction) => {
+  const handleView = async (listRow: Transaction) => {
+    const trx = await withDetails(listRow);
     setSelectedTransaction(trx);
     if (trx.trxType === 'purchase' || trx.trxType === 'purchase_return') {
       setPrintTemplate(trx.supplierId ? 'supplier' : 'purchase');
@@ -1998,7 +2070,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     setShowViewModal(true);
   };
 
-  const handleEdit = (trx: Transaction) => {
+  const handleEdit = async (listRow: Transaction) => {
+    const trx = await withDetails(listRow);
     setSelectedTransaction(trx);
     setFormData({
       trxType: trx.trxType,
@@ -2615,6 +2688,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       pendingPrintWindowRef.current = null;
       closeTransactionModal();
       toast.success('Transaction added successfully.');
+      // The list is a server page now, so a write is reflected by asking for
+      // the page again rather than by splicing a local array.
+      reloadTransactions();
       void Promise.all([refreshMedicines(), refreshStocks()]);
       if (shouldPrint) {
         await handlePrintInvoice(savedTransaction, false, undefined, printWindow);
@@ -2691,6 +2767,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       pendingPrintWindowRef.current = null;
       closeTransactionModal();
       toast.success('Transaction updated successfully.');
+      // The list is a server page now, so a write is reflected by asking for
+      // the page again rather than by splicing a local array.
+      reloadTransactions();
       void Promise.all([refreshMedicines(), refreshStocks()]);
       if (shouldPrint) {
         await handlePrintInvoice(savedTransaction, false, undefined, printWindow);
@@ -2709,6 +2788,9 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       await deleteTransaction(selectedTransaction.id);
       setShowDeleteModal(false);
       toast.success('Transaction deleted successfully.');
+      // The list is a server page now, so a write is reflected by asking for
+      // the page again rather than by splicing a local array.
+      reloadTransactions();
       void Promise.all([refreshMedicines(), refreshStocks()]);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to delete transaction');
@@ -2725,12 +2807,13 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
     // (hospital_id, trx_type, serial_no). Scoping only by hospital showed the
     // next SALES number on a purchase -- 790 beside a purchase book that had
     // reached 35 -- so the preview never matched what was actually saved.
-    const scoped = transactions.filter((t) =>
-      String(t.hospitalId) === String(formData.hospitalId)
-      && String(t.trxType) === String(formData.trxType));
-    const maxSerial = scoped.reduce((max, t) => Math.max(max, t.serialNo ?? 0), 0);
-    return maxSerial + 1;
-  }, [formData.hospitalId, formData.trxType, selectedTransaction?.serialNo, showEditModal, transactions]);
+    //
+    // MAX(serial_no)+1 per type now comes back with the list, because
+    // deriving it here meant holding every invoice in memory to read one
+    // number off them. It is still only a preview: the server assigns the
+    // real serial under a lock when the invoice is saved.
+    return nextSerials[formData.trxType] ?? 1;
+  }, [formData.trxType, nextSerials, selectedTransaction?.serialNo, showEditModal]);
   const printTotalsSummary = selectedTransaction
     ? calculateTotalsSummary(selectedTransaction.details || [])
     : { totalDiscount: 0, totalTax: 0, totalBonus: 0 };
@@ -2938,7 +3021,8 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" role="tablist" aria-label="Invoice types">
         {INVOICE_TABS.map((tab) => {
           const isActive = trxTypeFilter === tab.id;
-          const count = scopedTransactions.filter((t) => t.trxType === tab.id).length;
+          // Counted in SQL across the whole book, not over the page in hand.
+          const count = typeCounts[tab.id] ?? 0;
           return (
             <button
               key={tab.id}
@@ -3025,7 +3109,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                         {canPrint && (
                           <button
                             onClick={() => {
-                              void handlePrintInvoice(trx);
+                              void withDetails(trx).then((full) => handlePrintInvoice(full));
                             }}
                             className="p-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-200"
                             title={t('ui.print')}
@@ -3033,11 +3117,11 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                             <Printer className="w-4 h-4" />
                           </button>
                         )}
-                        <button onClick={() => handleView(trx)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title={t('ui.view')}>
+                        <button onClick={() => void handleView(trx)} className="p-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200" title={t('ui.view')}>
                           <Eye className="w-4 h-4" />
                         </button>
                         {canEdit && (
-                          <button onClick={() => handleEdit(trx)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title={t('ui.edit')}>
+                          <button onClick={() => void handleEdit(trx)} className="p-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200" title={t('ui.edit')}>
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
@@ -3071,7 +3155,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <span className="tabular-nums">
               <strong className="text-gray-900 dark:text-gray-100">{rangeStart}&ndash;{rangeEnd}</strong>
               {' of '}
-              <strong className="text-gray-900 dark:text-gray-100">{sortedTransactions.length}</strong>
+              <strong className="text-gray-900 dark:text-gray-100">{totalTransactions}</strong>
             </span>
             <label className="flex items-center gap-1.5">
               <span className="text-gray-500">Rows</span>
@@ -3245,7 +3329,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                     <button
                       onClick={() => {
                         setShowViewModal(false);
-                        handleEdit(selectedTransaction);
+                        void handleEdit(selectedTransaction);
                       }}
                       className="px-3 py-1.5 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
                     >{t('ui.edit')}</button>
@@ -3676,7 +3760,7 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
             <form
               ref={transactionFormRef}
               className="p-4 space-y-4 flex-1 min-h-0 overflow-visible flex flex-col"
-              onSubmit={showAddModal ? handleSubmitAdd : handleSubmitEdit}
+              onSubmit={guard(showAddModal ? handleSubmitAdd : handleSubmitEdit)}
               onInvalidCapture={cancelPendingPrint}
               /**
                * A form with a submit button files itself when Enter is pressed in
@@ -4531,13 +4615,17 @@ export function TransactionManagement({ hospital, userRole = 'admin' }: Transact
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    // Both flags: `saving` is the guard's synchronous ref lock,
+                    // `submitting` the existing state. State alone lets two
+                    // clicks in the same frame through, which is how one sale
+                    // became two invoices.
+                    disabled={submitting || saving}
                     className="inline-flex items-center justify-center gap-1.5 min-w-[124px] px-3 py-1 text-xs font-semibold rounded border border-blue-700 bg-blue-600 text-white hover:bg-blue-700 active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                   >
-                    {submitting
+                    {submitting || saving
                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       : <Check className="w-3.5 h-3.5" />}
-                    {submitting ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
+                    {submitting || saving ? 'Saving...' : showAddModal ? t('ui.save') : t('ui.update')}
                     <span className="text-[9px] text-blue-100">Ctrl+S</span>
                   </button>
                 </div>

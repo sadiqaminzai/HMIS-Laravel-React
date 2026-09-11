@@ -102,6 +102,140 @@ const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
   reverse_surgery_payment:       { resource: 'payment_reversal', label: 'Reverse — Surgery' },
   reverse_room_booking_payment:  { resource: 'payment_reversal', label: 'Reverse — Room Booking' },
   reverse_finance_payment:       { resource: 'payment_reversal', label: 'Reverse — Pharmacy' },
+  // Dental belongs with the other seven desks, not in two panels of its own.
+  manage_dental_payments:        { resource: 'payment_collection', label: 'Collect — Dental' },
+  reverse_dental_payment:        { resource: 'payment_reversal', label: 'Reverse — Dental' },
+  manage_ecg_payments:           { resource: 'payment_collection', label: 'Collect — ECG' },
+  reverse_ecg_payment:           { resource: 'payment_reversal', label: 'Reverse — ECG' },
+
+  /*
+   * Which pharmacy document types a collector may settle.
+   *
+   * These read as "view" rights but they are not: PharmacyFinanceController
+   * requires the matching one before it will take money against that document
+   * type. They used to sit in a "Finance (General)" panel on the Pharmacy tab,
+   * which is a screen that no longer exists -- so they are filed with the
+   * collection desk they actually gate.
+   */
+  view_finance_sales:            { resource: 'payment_documents', label: 'Sales Invoice' },
+  view_finance_purchases:        { resource: 'payment_documents', label: 'Purchase Invoice' },
+  view_finance_sales_returns:    { resource: 'payment_documents', label: 'Return In (Sales Return)' },
+  view_finance_purchase_returns: { resource: 'payment_documents', label: 'Return Out (Purchase Return)' },
+  edit_finance_payment_status:   { resource: 'payment_documents', label: 'Change Payment Status' },
+  manage_finance:                { resource: 'payment_documents', label: 'Manage All (overrides the above)' },
+
+  /*
+   * Single rights folded into the record they belong to.
+   *
+   * Each of these was its own panel holding one checkbox, so "Print" appeared
+   * as a feature in its own right beside the receipt it prints. Same decision,
+   * same panel.
+   */
+  print_dental_receipt:          { resource: 'dental_receipts', label: 'Print' },
+  print_ecg_receipt:             { resource: 'ecg_receipts', label: 'Print' },
+  print_xray_receipt:            { resource: 'xray_receipts', label: 'Print' },
+  print_ultrasound_receipt:      { resource: 'ultrasound_exams', label: 'Print Receipt' },
+  submit_ultrasound_result:      { resource: 'ultrasound_exams', label: 'Submit Result' },
+  add_ultrasound_receipt:        { resource: 'ultrasound_exams', label: 'Add Receipt' },
+  delete_ultrasound_exams:       { resource: 'ultrasound_exams', label: 'Delete' },
+  delete_ultrasound_receipt:     { resource: 'ultrasound_exams', label: 'Delete Receipt' },
+  set_ultrasound_fee:            { resource: 'ultrasound_exams', label: 'Set Fee' },
+  complete_unpaid_ultrasound:    { resource: 'ultrasound_exams', label: 'Complete While Unpaid' },
+  create_prescription:           { resource: 'prescriptions', label: 'Create' },
+  print_prescription:            { resource: 'prescriptions', label: 'Print' },
+
+  // The expense/income date right reads as a field on the register, not as a
+  // module of its own.
+  edit_expense_date:             { resource: 'expenses', label: 'Edit Date' },
+  edit_other_income_date:        { resource: 'other_incomes', label: 'Edit Date' },
+
+  // Discounting a receipt is one capability, applied in several places.
+  add_discounts:                 { resource: 'receipt_discounts', label: 'Apply' },
+  edit_discounts:                { resource: 'receipt_discounts', label: 'Change' },
+  manage_discounts:              { resource: 'receipt_discounts', label: 'Manage All' },
+
+  /*
+   * Laboratory's loose rights, gathered onto the order they act on.
+   *
+   * Ten one-checkbox panels made the Laboratory tab read as ten features; they
+   * are all decisions about a lab order.
+   */
+  enter_lab_results:             { resource: 'lab_orders', label: 'Enter Results' },
+  override_lab_result_lock:      { resource: 'lab_orders', label: 'Override Result Lock' },
+  update_lab_order_status:       { resource: 'lab_orders', label: 'Update Status' },
+  reverse_lab_order_status:      { resource: 'lab_orders', label: 'Reverse Status' },
+  cancel_paid_lab_order:         { resource: 'lab_orders', label: 'Cancel Paid Order' },
+  view_unpaid_lab_orders:        { resource: 'lab_orders', label: 'View Unpaid' },
+  print_unpaid_lab_receipt:      { resource: 'lab_orders', label: 'Print Unpaid Receipt' },
+  lab_test_order_discount:       { resource: 'lab_orders', label: 'Apply Discount' },
+
+  // Surgery's two loose fee rights belong to the patient surgery record.
+  edit_surgery_cost:             { resource: 'patient_surgeries', label: 'Edit Cost' },
+  edit_surgery_payment_status:   { resource: 'patient_surgeries', label: 'Change Payment Status' },
+
+  /*
+   * Navigation: one panel listing the menus, rather than six panels of one.
+   *
+   * Ticking one of these makes that top-level menu visible in the sidebar --
+   * the group itself is still hidden unless the user also holds a right for
+   * something inside it, which is what stops an empty menu appearing.
+   */
+  view_dashboard:                { resource: 'menus', label: 'Dashboard' },
+  view_reception_menu:           { resource: 'menus', label: 'Reception' },
+  view_laboratory_menu:          { resource: 'menus', label: 'Laboratory' },
+  view_radiology_menu:           { resource: 'menus', label: 'Radiology' },
+  view_pharmacy_menu:            { resource: 'menus', label: 'Pharmacy' },
+  view_prescriptions_menu:       { resource: 'menus', label: 'Prescriptions' },
+  view_dental_menu:              { resource: 'menus', label: 'Dental' },
+  view_reports_menu:             { resource: 'menus', label: 'Reports' },
+  view_accounts_menu:            { resource: 'menus', label: 'Accounts' },
+  view_hr_menu:                  { resource: 'menus', label: 'HR' },
+  view_hospitals_menu:           { resource: 'menus', label: 'Hospitals' },
+
+  // The last few loose rights, each folded onto the record it acts on.
+  override_appointment_fee:      { resource: 'appointments', label: 'Override Fee' },
+  update_appointment_status:     { resource: 'appointments', label: 'Update Status' },
+  manage_medicine_barcodes:      { resource: 'medicines', label: 'Manage Barcodes' },
+  pharmacy_walk_in_sales:        { resource: 'transactions', label: 'Sell to Walk-in' },
+
+  // Four settings pages, one panel: they are the same decision -- may this role
+  // change how the system is configured -- asked about four screens.
+  backdate_receipts:             { resource: 'hospital_settings', label: 'Change Receipt Date' },
+  manage_default_discounts:      { resource: 'hospital_settings', label: 'Default Discounts' },
+  manage_pharmacy_settings:      { resource: 'hospital_settings', label: 'Pharmacy Settings' },
+  manage_print_settings:         { resource: 'hospital_settings', label: 'Print Settings' },
+
+  /*
+   * Reports, grouped the way the sidebar is.
+   *
+   * Splitting on the name alone gave eleven panels holding one "View" checkbox
+   * each -- "Reports Pharmacy Expiry / View" beside "Reports Pharmacy Low Stock
+   * / View" -- which reads as eleven unrelated features rather than one
+   * question asked per desk. Two panels instead: which desks a role may open,
+   * and which of the pharmacy reports within that desk.
+   *
+   * The labels drop the "Reports" prefix because the panel title already says
+   * it; repeating it made every row start with the same word.
+   */
+  view_reports_general:      { resource: 'report_desks', label: 'General' },
+  view_reports_reception:    { resource: 'report_desks', label: 'Reception' },
+  view_reports_laboratory:   { resource: 'report_desks', label: 'Laboratory' },
+  view_reports_surgery:      { resource: 'report_desks', label: 'Surgery' },
+  view_reports_room_booking: { resource: 'report_desks', label: 'Room Booking' },
+  view_reports_xray:         { resource: 'report_desks', label: 'X-Ray' },
+  view_reports_ultrasound:   { resource: 'report_desks', label: 'Ultrasound' },
+  view_reports_expenses:     { resource: 'report_desks', label: 'Expenses' },
+  view_reports_other_income: { resource: 'report_desks', label: 'Other Income' },
+
+  // The pharmacy desk's own tabs. `view_reports_pharmacy` opens the desk and
+  // every tab on it, so it is listed first as the "all of these" grant.
+  view_reports_pharmacy:            { resource: 'report_pharmacy', label: 'Pharmacy Desk (all tabs)' },
+  view_reports_pharmacy_stock:      { resource: 'report_pharmacy', label: 'Available Stock' },
+  view_reports_pharmacy_purchase:   { resource: 'report_pharmacy', label: 'Purchase' },
+  view_reports_pharmacy_sales:      { resource: 'report_pharmacy', label: 'Sales' },
+  view_reports_pharmacy_expiry:     { resource: 'report_pharmacy', label: 'Short Expiry' },
+  view_reports_pharmacy_low_stock:  { resource: 'report_pharmacy', label: 'Low Stock' },
+  view_reports_pharmacy_profit:     { resource: 'report_pharmacy', label: 'Profit' },
 };
 
 /**
@@ -115,6 +249,9 @@ const RESOURCE_LABELS: Record<string, string> = {
   dashboard_lists: 'Dashboard — Recent Lists',
   payment_collection: 'Payment Collection — Take Money',
   payment_reversal: 'Payment Collection — Put Money Back',
+  payment_documents: 'Payment Collection — Pharmacy Documents',
+  receipt_discounts: 'Discounts on Receipts',
+  menus: 'Menus Visible in the Sidebar',
   manufacturers: 'Manufacturers',
   medicine_types: 'Medicine Types',
   medicines: 'Medicines',
@@ -139,6 +276,10 @@ const RESOURCE_LABELS: Record<string, string> = {
   ultrasound_types: 'Ultrasound Templates',
   xray_receipts: 'X-Ray Receipts',
   xray_receipt: 'X-Ray Receipt',
+  dental_receipts: 'Dental Receipts',
+  dental_services: 'Dental Services',
+  ecg_receipts: 'ECG Receipts',
+  ecg_services: 'ECG Studies',
   audit_logs: 'Audit Log',
   prescriptions: 'Prescriptions',
   prescription: 'Prescriptions',
@@ -166,7 +307,9 @@ const RESOURCE_LABELS: Record<string, string> = {
   other_income_categories: 'Other Income Categories',
   discounts: 'Discounts',
   ledger: 'Ledger',
-  reports: 'Reports',
+  reports: 'Reports (General Rights)',
+  report_desks: 'Reports — Which Desks',
+  report_pharmacy: 'Reports — Pharmacy Tabs',
   backups: 'Backups',
   contact_messages: 'Contact Messages',
   departments: 'Departments',

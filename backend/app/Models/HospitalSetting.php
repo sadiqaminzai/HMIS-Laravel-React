@@ -28,6 +28,8 @@ class HospitalSetting extends Model
         'print_paper_sizes',
         'invoice_fields',
         'report_module_owners',
+        'default_min_stock_packs',
+        'short_expiry_days',
         'pharmacy_customer_mode',
         'pharmacy_default_customer',
         'pharmacy_walk_in_default_name',
@@ -60,6 +62,7 @@ class HospitalSetting extends Model
         'default_discount_ultrasound',
         'default_discount_xray',
         'default_discount_dental',
+        'default_discount_ecg',
         'default_discount_room_booking',
     ];
 
@@ -93,6 +96,7 @@ class HospitalSetting extends Model
         'default_discount_ultrasound' => 'decimal:2',
         'default_discount_xray' => 'decimal:2',
         'default_discount_dental' => 'decimal:2',
+        'default_discount_ecg' => 'decimal:2',
         'default_discount_room_booking' => 'decimal:2',
     ];
 

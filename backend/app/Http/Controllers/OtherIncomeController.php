@@ -116,6 +116,8 @@ class OtherIncomeController extends Controller
         unset($data['sequence_id']);
         $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
 
+        $this->stampApproval($data, $otherIncome->status, $request->user());
+
         if ($request->hasFile('document')) {
             if ($otherIncome->document_path) {
                 Storage::disk('public')->delete($otherIncome->document_path);
@@ -182,6 +184,39 @@ class OtherIncomeController extends Controller
         }
 
         return (int) $hospitalId;
+    }
+
+    /**
+     * Record who signed an entry off, and when. See ExpenseController for why
+     * this is stamped only on a real status CHANGE and why the opposite
+     * decision's stamp is cleared.
+     */
+    private function stampApproval(array &$data, ?string $currentStatus, $user): void
+    {
+        $next = $data['status'] ?? null;
+
+        if (!$next || $next === $currentStatus) {
+            return;
+        }
+
+        $name = $user->name ?? null;
+
+        if ($next === 'approved') {
+            $data['approved_by'] = $name;
+            $data['approved_at'] = now();
+            $data['rejected_by'] = null;
+            $data['rejected_at'] = null;
+        } elseif ($next === 'rejected') {
+            $data['rejected_by'] = $name;
+            $data['rejected_at'] = now();
+            $data['approved_by'] = null;
+            $data['approved_at'] = null;
+        } else {
+            $data['approved_by'] = null;
+            $data['approved_at'] = null;
+            $data['rejected_by'] = null;
+            $data['rejected_at'] = null;
+        }
     }
 
     private function authorizeScope($user, OtherIncome $otherIncome): void

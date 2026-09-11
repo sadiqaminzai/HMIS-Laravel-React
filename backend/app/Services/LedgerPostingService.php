@@ -14,6 +14,7 @@ use App\Models\RoomBooking;
 use App\Models\Transaction;
 use App\Models\UltrasoundExam;
 use App\Models\DentalReceipt;
+use App\Models\EcgReceipt;
 use App\Models\XrayReceipt;
 
 class LedgerPostingService
@@ -379,6 +380,54 @@ class LedgerPostingService
     public function voidDentalReceiptSnapshot(DentalReceipt $receipt, ?string $actor = null): void
     {
         $this->voidSnapshot((int) $receipt->hospital_id, 'dental_receipt', (int) $receipt->id, $actor);
+    }
+
+    public function upsertEcgReceiptSnapshot(EcgReceipt $receipt): LedgerEntry
+    {
+        $grossAmount = (float) ($receipt->fee ?? 0);
+        $discountAmount = min($grossAmount, max(0.0, (float) ($receipt->discount_amount ?? 0)));
+        $netAmount = $receipt->payableAmount();
+        $isSettled = $receipt->isPaid();
+
+        return $this->upsertSnapshot(
+            (int) $receipt->hospital_id,
+            'ecg_receipt',
+            (int) $receipt->id,
+            [
+                'entry_direction' => 'income',
+                'module' => 'ecg',
+                'category' => 'ecg',
+                'title' => 'ECG #' . (string) ($receipt->sequence_id ?? $receipt->id),
+                'patient_id' => $receipt->patient_id ? (int) $receipt->patient_id : null,
+                'supplier_id' => null,
+                // Gross and discount posted separately, so reports can show
+                // what was charged as well as what was actually collected.
+                'amount' => $grossAmount,
+                'discount_amount' => $discountAmount,
+                'tax_amount' => 0,
+                'net_amount' => $netAmount,
+                'paid_amount' => $isSettled ? (float) ($receipt->paid_amount ?? $netAmount) : 0,
+                'due_amount' => $isSettled ? 0 : $netAmount,
+                'status' => $isSettled ? 'paid' : 'pending',
+                'currency' => 'AFN',
+                // Paid_at where known, so takings land on the day collected.
+                'posted_at' => $receipt->paid_at ?? $receipt->performed_at ?? $receipt->created_at ?? now(),
+                'posted_by' => $receipt->updated_by ?? $receipt->created_by,
+                'collected_by' => $receipt->paid_by,
+                'collected_at' => $receipt->paid_at,
+                'voided_at' => null,
+                'metadata' => [
+                    'service_name' => $receipt->service_name,
+                    'ecg_service_id' => $receipt->ecg_service_id,
+                    'doctor_id' => $receipt->doctor_id,
+                ],
+            ]
+        );
+    }
+
+    public function voidEcgReceiptSnapshot(EcgReceipt $receipt, ?string $actor = null): void
+    {
+        $this->voidSnapshot((int) $receipt->hospital_id, 'ecg_receipt', (int) $receipt->id, $actor);
     }
 
     /** Pharmacy document type => what the paper is actually called. */

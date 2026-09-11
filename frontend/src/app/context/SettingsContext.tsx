@@ -48,6 +48,7 @@ export interface DefaultDiscountSettings {
   ultrasound: number;
   xray: number;
   dental: number;
+  ecg: number;
   roomBooking: number;
 }
 
@@ -93,6 +94,7 @@ export type PrintModule =
   | 'ultrasound_receipt'
   | 'xray_receipt'
   | 'dental_receipt'
+  | 'ecg_receipt'
   | 'expense_receipt'
   | 'other_income_receipt'
   | 'prescription';
@@ -130,11 +132,12 @@ export const PRINT_MODULE_GROUPS: { group: string; modules: { key: PrintModule; 
     ],
   },
   {
-    group: 'Radiology & Dental',
+    group: 'Radiology, Dental & ECG',
     modules: [
       { key: 'ultrasound_receipt', label: 'Ultrasound Receipt' },
       { key: 'xray_receipt', label: 'X-Ray Receipt' },
       { key: 'dental_receipt', label: 'Dental Receipt' },
+      { key: 'ecg_receipt', label: 'ECG Receipt' },
     ],
   },
   {
@@ -162,6 +165,7 @@ export const DEFAULT_PRINT_PAPER_SIZES: Record<PrintModule, PrintPaperSize> = {
   ultrasound_receipt: '80mm',
   xray_receipt: '80mm',
   dental_receipt: '80mm',
+  ecg_receipt: '80mm',
   expense_receipt: 'a4',
   other_income_receipt: 'a4',
   prescription: 'a4',
@@ -363,6 +367,7 @@ const defaultDiscounts: DefaultDiscountSettings = {
   ultrasound: 0,
   xray: 0,
   dental: 0,
+  ecg: 0,
   roomBooking: 0,
 };
 
@@ -553,6 +558,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       body.default_discount_ultrasound = payload.defaultDiscounts.ultrasound;
       body.default_discount_xray = payload.defaultDiscounts.xray;
       body.default_discount_dental = payload.defaultDiscounts.dental;
+      body.default_discount_ecg = payload.defaultDiscounts.ecg;
       body.default_discount_room_booking = payload.defaultDiscounts.roomBooking;
     }
     if (payload.prescriptionWatermark) {
@@ -655,6 +661,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         ultrasound: toPercent(raw.default_discount_ultrasound),
         xray: toPercent(raw.default_discount_xray),
         dental: toPercent(raw.default_discount_dental),
+        ecg: toPercent(raw.default_discount_ecg),
         roomBooking: toPercent(raw.default_discount_room_booking),
       },
       prescriptionWatermark: {

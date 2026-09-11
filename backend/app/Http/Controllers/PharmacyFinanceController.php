@@ -10,13 +10,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * Financial control over pharmacy documents.
+ * Settlement of pharmacy documents.
  *
- * The operational side (TransactionController) creates invoices, purchases and
- * returns. This controller owns only the money: what is paid, what is
- * outstanding, and who settled it. Each document type is gated by its own
- * permission so, for example, a cashier can settle patient invoices without
- * seeing supplier purchase figures.
+ * This used to back a Pharmacy Finance SCREEN as well -- a list of invoices,
+ * purchases and returns with its own filters, summary and export. That screen
+ * is gone: Payment Collection already lists pharmacy invoices next to every
+ * other module's unpaid charges, which is how a cashier actually works, and
+ * two lists of the same rows meant two places to look and two chances to
+ * disagree.
+ *
+ * What remains is the pair of endpoints Payment Collection settles through, so
+ * a pharmacy payment is still recorded here, still posts to the ledger, and
+ * still checks the document-type permission before it does either. Deleting
+ * them would silently break settling any pharmacy invoice.
  */
 class PharmacyFinanceController extends Controller
 {
@@ -35,78 +41,6 @@ class PharmacyFinanceController extends Controller
         'sales_return' => ['view_finance_sales_returns', 'manage_finance'],
         'purchase_return' => ['view_finance_purchase_returns', 'manage_finance'],
     ];
-
-    public function index(Request $request)
-    {
-        $user = $request->user();
-        $allowedTypes = $this->allowedTypes($user);
-
-        if (empty($allowedTypes)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
-        $query = $this->scopedQuery($request, $allowedTypes);
-
-        $perPage = min(max((int) $request->integer('per_page', 25), 1), 200);
-
-        return response()->json(
-            $query->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->paginate($perPage)
-                ->appends($request->query())
-        );
-    }
-
-    /**
-     * Totals per document type for the current filters.
-     */
-    public function summary(Request $request)
-    {
-        $user = $request->user();
-        $allowedTypes = $this->allowedTypes($user);
-
-        if (empty($allowedTypes)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
-        $rows = $this->scopedQuery($request, $allowedTypes)
-            ->selectRaw('trx_type,
-                COUNT(*) as document_count,
-                COALESCE(SUM(grand_total), 0) as total_amount,
-                COALESCE(SUM(paid_amount), 0) as paid_amount,
-                COALESCE(SUM(due_amount), 0) as due_amount,
-                SUM(CASE WHEN payment_status = \'pending\' THEN 1 ELSE 0 END) as pending_count,
-                SUM(CASE WHEN payment_status = \'partial\' THEN 1 ELSE 0 END) as partial_count,
-                SUM(CASE WHEN payment_status = \'paid\' THEN 1 ELSE 0 END) as paid_count')
-            ->groupBy('trx_type')
-            ->get()
-            ->keyBy('trx_type');
-
-        $byType = [];
-        foreach ($allowedTypes as $type) {
-            $row = $rows->get($type);
-            $byType[$type] = [
-                'document_count' => (int) ($row->document_count ?? 0),
-                'total_amount' => round((float) ($row->total_amount ?? 0), 2),
-                'paid_amount' => round((float) ($row->paid_amount ?? 0), 2),
-                'due_amount' => round((float) ($row->due_amount ?? 0), 2),
-                'pending_count' => (int) ($row->pending_count ?? 0),
-                'partial_count' => (int) ($row->partial_count ?? 0),
-                'paid_count' => (int) ($row->paid_count ?? 0),
-            ];
-        }
-
-        return response()->json([
-            'allowed_types' => array_values($allowedTypes),
-            'by_type' => $byType,
-            'totals' => [
-                'total_amount' => round(array_sum(array_column($byType, 'total_amount')), 2),
-                'paid_amount' => round(array_sum(array_column($byType, 'paid_amount')), 2),
-                'due_amount' => round(array_sum(array_column($byType, 'due_amount')), 2),
-                'document_count' => array_sum(array_column($byType, 'document_count')),
-            ],
-        ]);
-    }
 
     /**
      * Record a payment against a document and re-derive its status.
@@ -280,100 +214,6 @@ class PharmacyFinanceController extends Controller
         ]);
 
         return response()->json($transaction->fresh());
-    }
-
-    /**
-     * Unpaginated feed for Excel/PDF export on the client.
-     */
-    public function export(Request $request)
-    {
-        $user = $request->user();
-        $allowedTypes = $this->allowedTypes($user);
-
-        if (empty($allowedTypes) || !$user->hasAnyPermission(['export_finance', 'manage_finance'])) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
-        $rows = $this->scopedQuery($request, $allowedTypes)
-            ->orderByDesc('created_at')
-            ->limit(10000)
-            ->get();
-
-        AuditLogger::log([
-            'module' => 'Pharmacy Finance',
-            'action' => 'export',
-            'description' => 'Exported '.$rows->count().' finance records.',
-        ]);
-
-        return response()->json($rows);
-    }
-
-    /**
-     * Document types the user is allowed to see.
-     *
-     * @return array<int, string>
-     */
-    private function allowedTypes($user): array
-    {
-        $allowed = [];
-
-        foreach (self::TYPE_PERMISSIONS as $type => $permissions) {
-            if ($user->hasAnyPermission($permissions)) {
-                $allowed[] = $type;
-            }
-        }
-
-        return $allowed;
-    }
-
-    /**
-     * @param  array<int, string>  $allowedTypes
-     */
-    private function scopedQuery(Request $request, array $allowedTypes)
-    {
-        $user = $request->user();
-
-        $query = Transaction::query()->whereIn('trx_type', $allowedTypes);
-
-        if ($user->role !== 'super_admin') {
-            $query->where('hospital_id', $user->hospital_id ?? 0);
-        } elseif ($request->filled('hospital_id')) {
-            $query->where('hospital_id', $request->integer('hospital_id'));
-        }
-
-        // A requested type still has to be one the user may see.
-        if ($request->filled('trx_type') && in_array($request->string('trx_type')->toString(), $allowedTypes, true)) {
-            $query->where('trx_type', $request->string('trx_type'));
-        }
-
-        if ($request->filled('payment_status')) {
-            $query->where('payment_status', $request->string('payment_status'));
-        }
-
-        if ($request->filled('start_date')) {
-            $query->whereDate('created_at', '>=', $request->string('start_date'));
-        }
-
-        if ($request->filled('end_date')) {
-            $query->whereDate('created_at', '<=', $request->string('end_date'));
-        }
-
-        if ($request->boolean('overdue_only')) {
-            $query->where('due_amount', '>', 0)->whereDate('payment_due_date', '<', now()->toDateString());
-        }
-
-        if ($request->filled('search')) {
-            $term = '%'.$request->string('search').'%';
-            $query->where(function ($q) use ($term) {
-                $q->where('patient_name', 'like', $term)
-                    ->orWhere('supplier_name', 'like', $term)
-                    ->orWhere('serial_no', 'like', $term)
-                    ->orWhere('payment_reference', 'like', $term)
-                    ->orWhere('finance_note', 'like', $term);
-            });
-        }
-
-        return $query;
     }
 
     private function authorizeDocument($user, Transaction $transaction): void

@@ -1,0 +1,49 @@
+category,item,action,data_risk,notes
+MIGRATION,backend/database/migrations/2026_09_13_000100_add_medicine_profit_dashboard_permission.php,php artisan migrate --force,NONE,Inserts permission view_dashboard_medicine_profit. Skips if it already exists.
+MIGRATION,backend/database/migrations/2026_09_13_000200_add_active_users_dashboard_permission.php,php artisan migrate --force,NONE,Inserts permission view_dashboard_active_users. Skips if it already exists.
+MIGRATION,backend/database/migrations/2026_09_14_000100_add_income_and_hourly_chart_permissions.php,php artisan migrate --force,NONE,Inserts view_dashboard_chart_income and view_dashboard_chart_hourly. Skips existing.
+MIGRATION,backend/database/migrations/2026_09_15_000100_add_collection_status_chart_permission.php,php artisan migrate --force,NONE,Inserts view_dashboard_chart_collection. Skips if it already exists.
+MIGRATION,backend/database/migrations/2026_09_20_000100_add_min_stock_to_medicines_table.php,php artisan migrate --force,NONE,"ADD COLUMN medicines.min_stock unsignedInteger NULL after stock. Nullable with no backfill, so every existing medicine keeps its data and falls back to the hospital default."
+MIGRATION,backend/database/migrations/2026_09_20_000110_add_pharmacy_report_defaults_to_hospital_settings_table.php,php artisan migrate --force,NONE,"ADD COLUMN hospital_settings.default_min_stock_packs (default 5) and short_expiry_days (default 90). New columns only."
+MIGRATION,backend/database/migrations/2026_09_21_000100_add_report_desk_and_approval_permissions.php,php artisan migrate --force,NONE,Inserts 18 permissions (report desks + approve_expenses/approve_other_incomes). Insert only; skips existing.
+MIGRATION,backend/database/migrations/2026_09_22_000100_add_approval_audit_to_expenses_and_other_incomes.php,php artisan migrate --force,NONE,"ADD COLUMN approved_by/approved_at/rejected_by/rejected_at on expenses and other_incomes. All nullable, no backfill. Existing vouchers keep every value they hold."
+MIGRATION,backend/database/migrations/2026_09_22_000200_add_entry_date_permissions.php,php artisan migrate --force,NONE,Inserts edit_expense_date and edit_other_income_date. Insert only.
+MIGRATION,backend/database/migrations/2026_09_23_000100_recategorise_accounts_permissions.php,php artisan migrate --force,NONE,"UPDATE permissions.category only, moving expense/other-income rights to Accounts. Changes a label on the roles screen. No role loses a permission."
+MIGRATION,backend/database/migrations/2026_09_24_000100_retire_dead_permissions_and_regroup_collection.php,php artisan migrate --force,LOW - SEE NOTES,"THE ONLY MIGRATION THAT DELETES ROWS. Deletes 8 permission rows for screens that no longer exist: view/delete/export/import/print_discounts, view_finance_menu, export_finance, print_finance. The FK on role_has_permissions is ON DELETE CASCADE, so any role holding one loses that checkbox. Permission config only - no patient, receipt, invoice, ledger or money row is touched. Also UPDATEs category on 22 collection permissions to Accounts."
+MIGRATION,backend/database/migrations/2026_09_24_000200_move_receipt_discount_permissions_to_accounts.php,php artisan migrate --force,NONE,"UPDATE permissions.category on add_discounts/edit_discounts/manage_discounts to Accounts. Label only; these three are still enforced on receipts."
+MIGRATION,backend/database/migrations/2026_09_24_000300_add_missing_menu_permissions.php,php artisan migrate --force,NONE,"Inserts 5 Navigation permissions (Dental, Accounts, Reports, HR, Hospitals) and BACKFILLS a grant to every role that can already reach that menu, including the 6 menu permissions that already existed. Grants are added, never removed, so no role loses a menu."
+MIGRATION,backend/database/migrations/2026_09_25_000100_create_ecg_tables.php,php artisan migrate --force,NONE,CREATE TABLE ecg_services and ecg_receipts. Two new empty tables. No existing table altered.
+MIGRATION,backend/database/migrations/2026_09_25_000200_create_ecg_permissions.php,php artisan migrate --force,NONE,Inserts 15 ECG permissions. Granted to nobody - the desk stays invisible until roles are assigned.
+MIGRATION,backend/database/migrations/2026_09_25_000300_add_default_discount_ecg.php,php artisan migrate --force,NONE,"ADD COLUMN hospital_settings.default_discount_ecg decimal(5,2) default 0."
+BACKEND,backend/app/Http/Controllers/AppointmentController.php,upload,NONE,per_page cap raised 200 to 1000 so reports are not silently truncated.
+BACKEND,backend/app/Http/Controllers/DashboardController.php,upload,NONE,"Low stock uses per-product min_stock; adds total_ecg_fees, ecg counts, ECG in the handover sheet and in Revenue Total."
+BACKEND,backend/app/Http/Controllers/EcgReceiptController.php,upload,NONE,NEW. The ECG cash desk.
+BACKEND,backend/app/Http/Controllers/EcgServiceController.php,upload,NONE,NEW. CRUD for the ECG study catalogue.
+BACKEND,backend/app/Http/Controllers/ExpenseController.php,upload,NONE,Stamps approved/rejected by and at on a real status change only.
+BACKEND,backend/app/Http/Controllers/HospitalSettingController.php,upload,NONE,Validates and persists default_discount_ecg.
+BACKEND,backend/app/Http/Controllers/MedicineController.php,upload,NONE,Validates min_stock.
+BACKEND,backend/app/Http/Controllers/OtherIncomeController.php,upload,NONE,Stamps approved/rejected by and at on a real status change only.
+BACKEND,backend/app/Http/Controllers/PatientHistoryController.php,upload,NONE,NEW. Read-only patient timeline across 10 modules.
+BACKEND,backend/app/Http/Controllers/PaymentCollectionController.php,upload,NONE,Adds ECG as a collectable module and ecg_receipt as a source type.
+BACKEND,backend/app/Http/Controllers/PharmacyFinanceController.php,upload,NONE,Reduced to recordPayment/updateStatus/authorizeDocument after the Pharmacy Finance screen was removed.
+BACKEND,backend/app/Http/Controllers/Reports/ClinicalReportController.php,upload,NONE,NEW. Surgery/room booking/x-ray/ultrasound/expenses/other-income report desks. Read-only.
+BACKEND,backend/app/Http/Controllers/Reports/PharmacyReportController.php,upload,NONE,NEW. Six pharmacy reports. Read-only.
+BACKEND,backend/app/Models/EcgReceipt.php,upload,NONE,NEW.
+BACKEND,backend/app/Models/EcgService.php,upload,NONE,NEW.
+BACKEND,backend/app/Models/Expense.php,upload,NONE,Document URL built with url() so the attachment resolves from the SPA origin.
+BACKEND,backend/app/Models/HospitalSetting.php,upload,NONE,default_discount_ecg added to fillable and casts.
+BACKEND,backend/app/Models/Medicine.php,upload,NONE,min_stock added to fillable.
+BACKEND,backend/app/Models/OtherIncome.php,upload,NONE,Document URL fix as above.
+BACKEND,backend/app/Services/LedgerPostingService.php,upload,NONE,"Adds upsertEcgReceiptSnapshot and voidEcgReceiptSnapshot. Existing snapshot methods untouched, so no historical ledger entry is rewritten."
+BACKEND,backend/app/Support/PharmacyCosting.php,upload,NONE,NEW. Shared weighted-average unit cost and low-stock SQL used by the dashboard and the profit report.
+BACKEND,backend/config/print.php,upload,NONE,"Adds ultrasound_receipt, xray_receipt, dental_receipt and ecg_receipt to the configurable print modules. FIXES a live bug: those sizes were offered in Settings but discarded on save."
+BACKEND,backend/routes/api.php,upload,NONE,"Adds 13 ECG routes plus the report and patient-history routes. All permission-gated."
+BACKEND,backend/database/seeders/FinancePaymentPermissionsSeeder.php,upload only - DO NOT RUN,NONE,Category corrected to Accounts. Uploaded for consistency only.
+BACKEND,backend/database/seeders/PharmacyFinancePermissionsSeeder.php,upload only - DO NOT RUN,NONE,Dead Finance permissions removed so a future run cannot resurrect them.
+BACKEND,backend/database/seeders/RolesPermissionsSeeder.php,upload only - DO NOT RUN,DESTRUCTIVE IF RUN,THIS SEEDER TRUNCATES USERS AND ROLES. Never run it on live. Uploaded only so the file matches the migrations.
+DOCS,backend/docs/PERMISSIONS_NEW_2026_09_25_ECG.csv,reference,NONE,The 15 ECG permissions and 5 Navigation permissions for the permissions import screen if you prefer importing to migrating.
+FRONTEND,frontend/dist/,upload contents to the web root,NONE,Rebuilt bundle. Replaces index.html and assets/.
+COMMAND,php artisan migrate --force,run after upload,SEE MIGRATION ROWS,Runs only the 16 migrations not yet recorded on live. Already-applied migrations are skipped.
+COMMAND,php artisan config:clear && php artisan config:cache,run after migrate,NONE,"REQUIRED. config/print.php changed; a cached config will keep serving the old module list and the paper-size fix will not take effect."
+COMMAND,php artisan route:clear && php artisan route:cache,run after migrate,NONE,Required for the new ECG and report routes to resolve.
+COMMAND,php artisan cache:clear,run after migrate,NONE,Clears any cached permission map.

@@ -105,6 +105,9 @@ export interface Medicine {
   medicineTypeId: string;
   type?: string; // human readable medicine type name (e.g., Tablet)
   stock?: number;            // always in base units (pieces)
+  /** Reorder level in PACKS. Undefined means "use the hospital default", which is
+   * not the same as zero -- zero would mark the product permanently healthy. */
+  minStock?: number;
   costPrice?: number;
   salePrice?: number;        // price per piece
   /** TOTAL pieces per pack. Derived: piecesPerStrip * stripsPerPack. Read-only. */
@@ -174,6 +177,11 @@ export interface Expense {
   createdBy?: string;
   updatedAt?: Date;
   updatedBy?: string;
+  /** Set by the server when the status changes; see the approval migration. */
+  approvedBy?: string;
+  approvedAt?: Date;
+  rejectedBy?: string;
+  rejectedAt?: Date;
 }
 
 export interface OtherIncomeCategory {
@@ -206,6 +214,11 @@ export interface OtherIncome {
   createdBy?: string;
   updatedAt?: Date;
   updatedBy?: string;
+  /** Set by the server when the status changes; see the approval migration. */
+  approvedBy?: string;
+  approvedAt?: Date;
+  rejectedBy?: string;
+  rejectedAt?: Date;
 }
 
 export interface TransactionDetail {
@@ -252,6 +265,14 @@ export interface Transaction {
   createdAt?: Date;
   updatedAt?: Date;
   details?: TransactionDetail[];
+  /**
+   * How many lines the invoice has.
+   *
+   * List rows omit `details` entirely -- the datatable draws none of them and
+   * carrying them made the page unloadable -- so this is what an "Items"
+   * column reads. Present on a single fetched invoice too.
+   */
+  detailsCount?: number;
 }
 
 export interface Stock {

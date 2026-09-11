@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface PermissionManagementProps {
   hospital: Hospital;
@@ -39,6 +40,9 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
   const [selectedPermission, setSelectedPermission] = useState<Permission | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [importing, setImporting] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [importKey, setImportKey] = useState(0);
@@ -392,7 +396,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                           {canEdit && (
                             <button
                               onClick={() => handleEdit(permission)}
-                              disabled={submitting}
+                              disabled={submitting || submitLocked}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               title={t('ui.edit')}
                             >
@@ -456,7 +460,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
-            <form onSubmit={handleSubmitAdd} className="p-4">
+            <form onSubmit={guard(handleSubmitAdd)} className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Permission Name</label>
@@ -580,7 +584,7 @@ export function PermissionManagement({ hospital, userRole }: PermissionManagemen
                 <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
-            <form onSubmit={handleSubmitEdit} className="p-4">
+            <form onSubmit={guard(handleSubmitEdit)} className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Permission Name</label>

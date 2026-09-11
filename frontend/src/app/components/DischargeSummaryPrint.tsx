@@ -164,7 +164,7 @@ export function DischargeSummaryPrint({
   );
 
   const qrData = JSON.stringify({
-    surgeryCase: `SURG-${surgeryItem.id}`,
+    surgeryCase: String(surgeryItem.id),
     hospitalCode: hospital.code,
     patientId: patient?.patientId,
     doctorId: doctor?.id,
@@ -225,7 +225,7 @@ export function DischargeSummaryPrint({
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Doctor/Surgeon</span><span className="font-semibold text-gray-900">{printName(doctorForPrint?.name || surgeryItem.doctorName || completedByName) || "N/A"}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Name</span><span className="text-gray-900">{printName(surgeryItem.surgeryName)}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Date</span><span className="text-gray-900">{formatDate(surgeryItem.surgeryDate, hospital.timezone, hospital.calendarType)}</span></div>
-                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Case #</span><span className="font-mono font-bold text-gray-900">SURG-{surgeryItem.id}</span></div>
+                <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Surgery Case #</span><span className="font-mono font-bold text-gray-900">{surgeryItem.id}</span></div>
                 <div><span className="block text-xs font-bold text-blue-900 mb-0.5">Status</span><span className="text-gray-900 capitalize">{surgeryItem.status.replace('_', ' ')}</span></div>
               </div>
             </div>

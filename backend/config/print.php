@@ -28,6 +28,15 @@ return [
         'surgery_receipt' => '80mm',
         'surgery_discharge_summary' => 'a4',
         'room_booking_receipt' => '80mm',
+        // The counter desks. These were offered on the Print Settings screen
+        // but were missing here, and the save path intersects the incoming
+        // sizes with this list -- so choosing A4 for an X-Ray receipt appeared
+        // to work, was dropped on the way to the database, and the receipt
+        // kept printing thermal with no way to change it.
+        'ultrasound_receipt' => '80mm',
+        'xray_receipt' => '80mm',
+        'dental_receipt' => '80mm',
+        'ecg_receipt' => '80mm',
         'expense_receipt' => 'a4',
         'other_income_receipt' => 'a4',
         'prescription' => 'a4',

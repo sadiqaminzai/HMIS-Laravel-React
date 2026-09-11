@@ -49,6 +49,7 @@ import { getISODateInTimeZone } from '../utils/date';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { UltrasoundReportPrint } from './UltrasoundReportPrint';
 import { AddButton } from './AddButton';
 import {
@@ -150,6 +151,9 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   const [patientListOpen, setPatientListOpen] = useState(false);
   const [referrerListOpen, setReferrerListOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Synchronous lock on top of isSubmitting: two clicks in one frame both read
+  // the old state, so state alone cannot stop a duplicate exam or receipt.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [examToDelete, setExamToDelete] = useState<UltrasoundExamApi | null>(null);
   const [printExam, setPrintExam] = useState<UltrasoundExamApi | null>(null);
 
@@ -908,7 +912,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
             </div>
 
             <form
-              onSubmit={submitExam}
+              onSubmit={guard(submitExam)}
               className="p-5 grid grid-cols-12 gap-x-4 gap-y-3"
             >
               {/* One field, not a filter box feeding a separate dropdown.
@@ -1229,11 +1233,11 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || saving}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  {isSubmitting ? t('ui.saving') : t('ui.save')}
+                  {isSubmitting || saving ? t('ui.saving') : t('ui.save')}
                 </button>
               </div>
             </form>
@@ -1259,7 +1263,7 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
               </button>
             </div>
 
-            <form onSubmit={submitType} className="p-5 grid grid-cols-12 gap-3">
+            <form onSubmit={guard(submitType)} className="p-5 grid grid-cols-12 gap-3">
               <div className="col-span-12 md:col-span-5">
                 <label className={labelClass}>{t('ui.name')}<span className="text-red-500">*</span>
                 </label>
@@ -1363,10 +1367,10 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || saving}
                   className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
-                  {isSubmitting ? 'Saving...' : editingType ? 'Update Template' : 'Save Template'}
+                  {isSubmitting || saving ? 'Saving...' : editingType ? 'Update Template' : 'Save Template'}
                 </button>
               </div>
             </form>

@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { Hospital, Medicine, SaleUnit, UserRole } from '../types';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface MedicineManagementProps {
   hospital: Hospital;
@@ -67,6 +68,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
 
   // Batch label printing: which medicines are selected and how many copies each.
   const [selectedForLabels, setSelectedForLabels] = useState<Set<string>>(new Set());
@@ -153,6 +157,8 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
     medicineTypeId: '',
     manufacturerId: '',
     stock: 0,
+    // Undefined, not 0: a blank field means "use the hospital default".
+    minStock: undefined as number | undefined,
     costPrice: 0,
     salePrice: 0,
     piecesPerStrip: 1,
@@ -301,6 +307,9 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       Type: getMedicineTypeName(m.medicineTypeId),
       Manufacturer: getManufacturerName(m.manufacturerId),
       Stock: m.stock ?? 0,
+      // Blank rather than 0 when unset, so a round-trip through Excel cannot
+      // turn "inherits the hospital default" into a hard threshold of zero.
+      MinStockPacks: m.minStock ?? '',
       CostPrice: m.costPrice ?? 0,
       SalePrice: m.salePrice ?? 0,
       Status: m.status,
@@ -348,6 +357,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         medicine_type: 'Tablet',
         manufacturer: 'Acme Pharma',
         stock: 100,
+        min_stock_packs: 10,
         cost_price: 8,
         sale_price: 12,
         status: 'active',
@@ -359,6 +369,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         medicine_type: 'Tablet',
         manufacturer: 'Global Med',
         stock: 50,
+        min_stock_packs: '',
         cost_price: 10,
         sale_price: 15,
         status: 'inactive',
@@ -423,6 +434,11 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         const medicineTypeName = readField(row, ['medicine_type', 'medicinetype', 'type']).toLowerCase();
         const manufacturerName = readField(row, ['manufacturer', 'manufacturer_name']).toLowerCase();
         const stockValue = Number(readField(row, ['stock']) || 0);
+        // Blank means "use the hospital default", so it stays undefined rather
+        // than collapsing to 0 -- a 0 threshold silently excludes the product
+        // from the Low Stock report forever.
+        const minStockRaw = readField(row, ['min_stock_packs', 'minstockpacks', 'min_stock', 'minstock']);
+        const minStockValue = minStockRaw === '' ? undefined : Number(minStockRaw);
         const costPriceValue = Number(readField(row, ['cost_price', 'costprice']) || 0);
         const salePriceValue = Number(readField(row, ['sale_price', 'saleprice']) || 0);
         const statusRaw = readField(row, ['status']);
@@ -473,6 +489,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
             medicineTypeId,
             manufacturerId,
             stock: Number.isFinite(stockValue) ? stockValue : 0,
+            minStock: minStockValue !== undefined && Number.isFinite(minStockValue) ? minStockValue : undefined,
             costPrice: Number.isFinite(costPriceValue) ? costPriceValue : 0,
             salePrice: Number.isFinite(salePriceValue) ? salePriceValue : 0,
             status,
@@ -565,6 +582,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       medicineTypeId: '',
       manufacturerId: '',
       stock: 0,
+      minStock: undefined,
       costPrice: 0,
       salePrice: 0,
       piecesPerStrip: 1,
@@ -602,6 +620,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
       medicineTypeId: medicine.medicineTypeId,
       manufacturerId: medicine.manufacturerId,
       stock: medicine.stock ?? 0,
+      minStock: medicine.minStock,
       costPrice: medicine.costPrice ?? 0,
       salePrice: medicine.salePrice ?? 0,
       piecesPerStrip: medicine.piecesPerStrip ?? 1,
@@ -1099,6 +1118,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
         stock: 0,
+        minStock: formData.minStock,
         costPrice: formData.costPrice,
         salePrice: formData.salePrice,
         piecesPerStrip: Math.max(1, Number(formData.piecesPerStrip) || 1),
@@ -1145,6 +1165,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
         medicineTypeId: formData.medicineTypeId,
         manufacturerId: formData.manufacturerId,
         stock: selectedMedicine.stock ?? 0,
+        minStock: formData.minStock,
         costPrice: formData.costPrice,
         salePrice: formData.salePrice,
         piecesPerStrip: Math.max(1, Number(formData.piecesPerStrip) || 1),
@@ -1671,7 +1692,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-3 space-y-2 max-h-[85vh] overflow-y-auto" onSubmit={handleSubmitAdd}>
+          <form className="p-3 space-y-2 max-h-[85vh] overflow-y-auto" onSubmit={guard(handleSubmitAdd)}>
             {/* Row 1: what the product is called. */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div>
@@ -1704,8 +1725,10 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               </div>
             </div>
 
-            {/* Row 2: the three prices, side by side for comparison. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {/* Row 2: the three prices side by side for comparison, plus the
+                reorder level -- which is a buying decision made off the same
+                numbers, so it belongs beside them rather than three rows down. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.costPrice')}{Number(formData.stripsPerPack) > 1 || Number(formData.piecesPerStrip) > 1 ? ` (${formData.packLabel || t('ui.pack')})` : ''}</label>
                 <input
@@ -1740,6 +1763,30 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   title={t('ui.retailPrice')}
                   value={formData.packPrice}
                   onChange={(e) => setFormData({ ...formData, packPrice: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                  {t('ui.minStock')} ({formData.packLabel || t('ui.pack')})
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.minStockHint')}
+                  placeholder={t('ui.minStockPlaceholder')}
+                  // Left blank the product inherits the hospital default, so
+                  // the empty string is stored as undefined rather than as 0 --
+                  // a 0 threshold would mark the product permanently healthy
+                  // and quietly drop it out of the Low Stock report.
+                  value={formData.minStock ?? ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      minStock: e.target.value === '' ? undefined : Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -1840,7 +1887,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || submitLocked}
                 className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? t('ui.saving') : t('ui.save')}
@@ -1859,7 +1906,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form className="p-3 space-y-2 max-h-[85vh] overflow-y-auto" onSubmit={handleSubmitEdit}>
+          <form className="p-3 space-y-2 max-h-[85vh] overflow-y-auto" onSubmit={guard(handleSubmitEdit)}>
             {/* Row 1: what the product is called. */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div>
@@ -1892,8 +1939,10 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               </div>
             </div>
 
-            {/* Row 2: the three prices, side by side for comparison. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {/* Row 2: the three prices side by side for comparison, plus the
+                reorder level -- which is a buying decision made off the same
+                numbers, so it belongs beside them rather than three rows down. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
               <div>
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">{t('ui.costPrice')}{Number(formData.stripsPerPack) > 1 || Number(formData.piecesPerStrip) > 1 ? ` (${formData.packLabel || t('ui.pack')})` : ''}</label>
                 <input
@@ -1928,6 +1977,30 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
                   title={t('ui.retailPrice')}
                   value={formData.packPrice}
                   onChange={(e) => setFormData({ ...formData, packPrice: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
+                  {t('ui.minStock')} ({formData.packLabel || t('ui.pack')})
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all"
+                  title={t('ui.minStockHint')}
+                  placeholder={t('ui.minStockPlaceholder')}
+                  // Left blank the product inherits the hospital default, so
+                  // the empty string is stored as undefined rather than as 0 --
+                  // a 0 threshold would mark the product permanently healthy
+                  // and quietly drop it out of the Low Stock report.
+                  value={formData.minStock ?? ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      minStock: e.target.value === '' ? undefined : Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -2028,7 +2101,7 @@ export function MedicineManagement({ hospital, userRole = 'admin' }: MedicineMan
               <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || submitLocked}
                 className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? t('ui.saving') : t('ui.update')}

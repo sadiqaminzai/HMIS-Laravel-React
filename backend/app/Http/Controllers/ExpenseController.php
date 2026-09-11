@@ -116,6 +116,8 @@ class ExpenseController extends Controller
         unset($data['sequence_id']);
         $data['updated_by'] = $data['updated_by'] ?? ($request->user()->name ?? null);
 
+        $this->stampApproval($data, $expense->status, $request->user());
+
         if ($request->hasFile('document')) {
             if ($expense->document_path) {
                 Storage::disk('public')->delete($expense->document_path);
@@ -182,6 +184,46 @@ class ExpenseController extends Controller
         }
 
         return (int) $hospitalId;
+    }
+
+    /**
+     * Record who signed an entry off, and when.
+     *
+     * Stamped only when the status actually CHANGES into approved or rejected.
+     * Writing it on every save would let a later edit to the title overwrite
+     * the approver with whoever touched the row last, which is exactly the
+     * problem having separate columns is meant to solve.
+     *
+     * The opposite decision's stamp is cleared on the way through, so a
+     * rejected entry that is later approved does not show both.
+     */
+    private function stampApproval(array &$data, ?string $currentStatus, $user): void
+    {
+        $next = $data['status'] ?? null;
+
+        if (!$next || $next === $currentStatus) {
+            return;
+        }
+
+        $name = $user->name ?? null;
+
+        if ($next === 'approved') {
+            $data['approved_by'] = $name;
+            $data['approved_at'] = now();
+            $data['rejected_by'] = null;
+            $data['rejected_at'] = null;
+        } elseif ($next === 'rejected') {
+            $data['rejected_by'] = $name;
+            $data['rejected_at'] = now();
+            $data['approved_by'] = null;
+            $data['approved_at'] = null;
+        } else {
+            // Back to pending: the previous decision no longer stands.
+            $data['approved_by'] = null;
+            $data['approved_at'] = null;
+            $data['rejected_by'] = null;
+            $data['rejected_at'] = null;
+        }
     }
 
     private function authorizeScope($user, Expense $expense): void

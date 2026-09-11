@@ -22,28 +22,174 @@ class TransactionController extends Controller
     {
     }
 
+    /**
+     * Columns the Invoices datatable actually draws.
+     *
+     * Party comes from the snapshot columns on the row itself, so the list needs
+     * no relations at all -- and a renamed supplier cannot rewrite history.
+     */
+    private const LIST_COLUMNS = [
+        'id', 'hospital_id', 'serial_no', 'trx_type',
+        'supplier_id', 'supplier_name', 'patient_id', 'patient_name',
+        'is_walk_in', 'walk_in_patient_id',
+        'grand_total', 'total_discount', 'total_tax', 'paid_amount', 'due_amount',
+        'payment_status', 'verification_token',
+        'created_by', 'updated_by', 'created_at', 'updated_at',
+    ];
+
+    /** Sort key from the client => the column it means. */
+    private const SORTABLE = [
+        'serial' => 'serial_no',
+        'grandTotal' => 'grand_total',
+        'paid' => 'paid_amount',
+        'due' => 'due_amount',
+        'date' => 'created_at',
+    ];
+
+    /**
+     * One page of invoices, plus the per-type counts the tabs show.
+     *
+     * This used to eager-load details.medicine on every page while the client
+     * walked the whole paginator before drawing anything -- 15.5 MB over seven
+     * requests and ~10s of server time for one hospital, which is why the live
+     * screen sat on "Loading transactions..." and every tab read zero. Not one
+     * of the six columns on screen comes from a detail line, so the lines were
+     * pure freight; withCount keeps the "Items" figure the reports column
+     * needs. Details are loaded per invoice by show() when one is opened.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
 
-        $query = Transaction::query()->with(['details.medicine', 'supplier', 'patient', 'walkInPatient']);
+        // Scope and search are built twice rather than cloned: the list carries
+        // a column list and a withCount subquery, and MySQL in ONLY_FULL_GROUP_BY
+        // rejects those alongside a GROUP BY.
+        $scoped = fn () => tap(Transaction::query(), function ($query) use ($request, $user) {
+            if ($user->role !== 'super_admin') {
+                $query->where('hospital_id', $user->hospital_id ?? 0);
+            } elseif ($request->filled('hospital_id')) {
+                $query->where('hospital_id', $request->integer('hospital_id'));
+            }
 
-        if ($user->role !== 'super_admin') {
-            $query->where('hospital_id', $user->hospital_id ?? 0);
-        } elseif ($request->filled('hospital_id')) {
-            $query->where('hospital_id', $request->integer('hospital_id'));
-        }
+            $this->applySearch($query, trim((string) $request->string('search')));
+        });
+
+        // Counted without the type filter: each tab shows its own total, so the
+        // figures must not be narrowed to the tab already open. The search does
+        // apply, so the counts track what the user typed.
+        $counts = $scoped()
+            ->selectRaw('trx_type, COUNT(*) as aggregate')
+            ->groupBy('trx_type')
+            ->pluck('aggregate', 'trx_type');
+
+        // The "next invoice number" the form previews. Serials run per document
+        // type -- the unique key is (hospital_id, trx_type, serial_no) -- so
+        // this is grouped the same way. Unsearched and unfiltered on purpose:
+        // the next number is a fact about the book, not about the current view.
+        $nextSerials = Transaction::query()
+            ->when(
+                $user->role !== 'super_admin',
+                fn ($q) => $q->where('hospital_id', $user->hospital_id ?? 0),
+                fn ($q) => $request->filled('hospital_id')
+                    ? $q->where('hospital_id', $request->integer('hospital_id'))
+                    : $q
+            )
+            ->selectRaw('trx_type, MAX(serial_no) as aggregate')
+            ->groupBy('trx_type')
+            ->pluck('aggregate', 'trx_type');
+
+        $query = $scoped()->select(self::LIST_COLUMNS)->withCount('details');
 
         if ($request->filled('trx_type')) {
             $query->where('trx_type', $request->string('trx_type'));
         }
 
-        // Pagination is retained so no single query/response is huge; clients that
-        // need the full list page through it. The ceiling is only a memory guard.
+        $requested = (string) $request->string('sort');
+        $direction = strtolower((string) $request->string('direction')) === 'asc' ? 'asc' : 'desc';
+
+        if ($requested === 'party') {
+            // Party is whichever side the document has: a supplier on a
+            // purchase, a patient on a sale. Sorted on the snapshot columns so
+            // the order matches the text actually printed in the column.
+            $sort = 'party_name';
+            $query->orderByRaw(
+                "COALESCE(NULLIF(patient_name, ''), NULLIF(supplier_name, ''), '') " . $direction
+            );
+        } else {
+            $sort = self::SORTABLE[$requested] ?? 'created_at';
+            $query->orderBy($sort, $direction);
+        }
+
+        // id tiebreaker keeps paging stable when rows share a sort value.
+        if ($sort !== 'id') {
+            $query->orderBy('id', $direction);
+        }
+
         $perPage = max(1, min($request->integer('per_page', 25), 1000));
 
-        // id tiebreaker keeps paging stable when rows share a created_at timestamp.
-        return response()->json($query->orderByDesc('created_at')->orderByDesc('id')->paginate($perPage));
+        // The page is taken from this request rather than left to
+        // Paginator::resolveCurrentPage(), which reads whatever request the
+        // container happens to hold -- so the endpoint returns the page it was
+        // asked for however it is called, not only over HTTP.
+        $page = max(1, $request->integer('page', 1));
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page)->appends($request->query());
+
+        return response()->json(array_merge($paginator->toArray(), [
+            // Every type gets a key even at zero, so a tab reads "0" rather
+            // than blank while the client waits to be told.
+            'counts' => [
+                'sales' => (int) ($counts['sales'] ?? 0),
+                'purchase' => (int) ($counts['purchase'] ?? 0),
+                'sales_return' => (int) ($counts['sales_return'] ?? 0),
+                'purchase_return' => (int) ($counts['purchase_return'] ?? 0),
+            ],
+            'next_serials' => [
+                'sales' => (int) ($nextSerials['sales'] ?? 0) + 1,
+                'purchase' => (int) ($nextSerials['purchase'] ?? 0) + 1,
+                'sales_return' => (int) ($nextSerials['sales_return'] ?? 0) + 1,
+                'purchase_return' => (int) ($nextSerials['purchase_return'] ?? 0) + 1,
+            ],
+        ]));
+    }
+
+    /**
+     * Free-text search across the row, the party and the medicines billed.
+     *
+     * Mirrors what the screen used to do in the browser over the whole list.
+     * The medicine arm is an EXISTS rather than a join so a multi-line invoice
+     * cannot appear twice, and it is only attached when a term is given.
+     */
+    private function applySearch($query, string $term): void
+    {
+        if ($term === '') {
+            return;
+        }
+
+        $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
+
+        $query->where(function ($outer) use ($term, $like) {
+            $outer->where('serial_no', 'like', $like)
+                ->orWhere('trx_type', 'like', $like)
+                ->orWhere('patient_name', 'like', $like)
+                ->orWhere('supplier_name', 'like', $like)
+                ->orWhereHas('patient', function ($patient) use ($like) {
+                    $patient->where('name', 'like', $like)->orWhere('phone', 'like', $like);
+                })
+                ->orWhereHas('walkInPatient', function ($walkIn) use ($like) {
+                    $walkIn->where('name', 'like', $like)->orWhere('phone', 'like', $like);
+                })
+                ->orWhereHas('details', function ($detail) use ($like) {
+                    $detail->whereHas('medicine', function ($medicine) use ($like) {
+                        $medicine->where('brand_name', 'like', $like);
+                    });
+                });
+
+            // A bare number is an invoice id as often as it is a serial.
+            if (ctype_digit($term)) {
+                $outer->orWhere('id', (int) $term);
+            }
+        });
     }
 
     public function store(Request $request)

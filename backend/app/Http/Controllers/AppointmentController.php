@@ -75,7 +75,13 @@ class AppointmentController extends Controller
             $query->whereDate('appointment_date', '<=', $request->date('date_to'));
         }
 
-        $perPage = max(1, min($request->integer('per_page', 25), 200));
+        // Ceiling raised from 200 to match the medicines endpoint. The Reports
+        // page attributes ledger fees to a doctor through the appointment that
+        // raised them, and a 200-row ceiling meant a month's reporting silently
+        // lost the attribution for everything past the first 200 appointments.
+        // The remaining ceiling is only a memory guard against an absurd
+        // per_page.
+        $perPage = max(1, min($request->integer('per_page', 25), 1000));
 
         // Ordered by the date the appointment is FOR, then its time slot: the
         // list is read as a schedule, so the day being worked belongs at the top

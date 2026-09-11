@@ -24,7 +24,7 @@ class FinancePaymentPermissionsSeeder extends Seeder
             ['name' => 'reverse_finance_payment', 'guard_name' => 'web'],
             [
                 'display_name' => 'Reverse Finance Payment (Paid to Pending)',
-                'category' => 'Pharmacy Finance',
+                'category' => 'Accounts',
                 'status' => 'active',
                 'is_system' => true,
             ]

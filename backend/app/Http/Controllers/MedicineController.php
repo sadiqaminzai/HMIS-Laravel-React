@@ -238,6 +238,10 @@ class MedicineController extends Controller
             'generic_name' => ['nullable', 'string', 'max:255'],
             'strength' => ['nullable', 'string', 'max:255'],
             'stock' => ['nullable', 'integer', 'min:0'],
+            // Reorder level in PACKS, not pieces -- see the min_stock migration.
+            // Nullable is meaningful: it means "fall back to the hospital
+            // default", which is not the same as a threshold of zero.
+            'min_stock' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'cost_price' => ['nullable', 'numeric', 'min:0'],
             'sale_price' => ['nullable', 'numeric', 'min:0'],
             // pack_size is the piece-per-pack conversion ratio. It must never be 0

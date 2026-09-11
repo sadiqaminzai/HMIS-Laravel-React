@@ -6,6 +6,7 @@ import { Hospital, UserRole } from '../types';
 import { toast } from 'sonner';
 import api from '../../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface RoleManagementProps {
   hospital: Hospital;
@@ -49,6 +50,9 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<PermissionOption[]>([]);
   const [formData, setFormData] = useState({
@@ -477,7 +481,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
-            <form onSubmit={handleSubmitAdd} className="p-4">
+            <form onSubmit={guard(handleSubmitAdd)} className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role Name</label>
@@ -525,7 +529,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || submitLocked}
                   className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? t('ui.saving') : 'Add Role'}
@@ -609,7 +613,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
-            <form onSubmit={handleSubmitEdit} className="p-4">
+            <form onSubmit={guard(handleSubmitEdit)} className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role Name</label>
@@ -655,7 +659,7 @@ export function RoleManagement({ hospital, userRole }: RoleManagementProps) {
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || submitLocked}
                   className="flex-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? t('ui.saving') : t('ui.saveChanges')}

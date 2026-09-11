@@ -59,6 +59,10 @@ const LabTestManagementNewLazy = lazy(() => import('./components/LabTestManageme
 const PrescriptionCreateLazy = lazy(() => import('./components/PrescriptionCreate').then((m) => ({ default: m.PrescriptionCreate })));
 const PrescriptionListLazy = lazy(() => import('./components/PrescriptionList').then((m) => ({ default: m.PrescriptionList })));
 const ReportsLazy = lazy(() => import('./components/Reports').then((m) => ({ default: m.Reports })));
+const PharmacyReportsLazy = lazy(() => import('./components/reports/PharmacyReports').then((m) => ({ default: m.PharmacyReports })));
+const PatientHistoryLazy = lazy(() => import('./components/patients/PatientHistory').then((m) => ({ default: m.PatientHistory })));
+const ClinicalReportsLazy = lazy(() => import('./components/reports/ClinicalReports').then((m) => ({ default: m.ClinicalReports })));
+const MoneyReportsLazy = lazy(() => import('./components/reports/MoneyReports').then((m) => ({ default: m.MoneyReports })));
 const DashboardLazy = lazy(() => import('./components/Dashboard').then((m) => ({ default: m.Dashboard })));
 const HospitalManagementLazy = lazy(() => import('./components/HospitalManagement').then((m) => ({ default: m.HospitalManagement })));
 const DoctorManagementLazy = lazy(() => import('./components/DoctorManagement').then((m) => ({ default: m.DoctorManagement })));
@@ -94,18 +98,14 @@ const RoleManagementLazy = lazy(() => import('./components/RoleManagement').then
 const PermissionManagementLazy = lazy(() => import('./components/PermissionManagement').then((m) => ({ default: m.PermissionManagement })));
 const GeneralSettingsLazy = lazy(() => import('./components/GeneralSettings').then((m) => ({ default: m.GeneralSettings })));
 const BackupManagementLazy = lazy(() => import('./components/BackupManagement').then((m) => ({ default: m.BackupManagement })));
-const ExpenseCategoriesLazy = lazy(() => import('./components/ExpenseCategories').then((m) => ({ default: m.ExpenseCategories })));
-const ExpenseManagementLazy = lazy(() => import('./components/ExpenseManagement').then((m) => ({ default: m.ExpenseManagement })));
-const ExpenseReportLazy = lazy(() => import('./components/ExpenseReport').then((m) => ({ default: m.ExpenseReport })));
-const OtherIncomeCategoriesLazy = lazy(() => import('./components/OtherIncomeCategories').then((m) => ({ default: m.OtherIncomeCategories })));
-const OtherIncomeManagementLazy = lazy(() => import('./components/OtherIncomeManagement').then((m) => ({ default: m.OtherIncomeManagement })));
-const OtherIncomeReportLazy = lazy(() => import('./components/OtherIncomeReport').then((m) => ({ default: m.OtherIncomeReport })));
+const AccountsExpensesLazy = lazy(() => import('./components/accounts/AccountsExpenses').then((m) => ({ default: m.AccountsExpenses })));
+const AccountsOtherIncomeLazy = lazy(() => import('./components/accounts/AccountsOtherIncome').then((m) => ({ default: m.AccountsOtherIncome })));
 const LedgerReportLazy = lazy(() => import('./components/LedgerReport'));
 const UltrasoundManagementLazy = lazy(() => import('./components/UltrasoundManagement').then((m) => ({ default: m.UltrasoundManagement })));
 const XrayReceiptsLazy = lazy(() => import('./components/XrayReceipts').then((m) => ({ default: m.XrayReceipts })));
 const DentalReceiptsLazy = lazy(() => import('./components/DentalReceipts').then((m) => ({ default: m.DentalReceipts })));
+const EcgReceiptsLazy = lazy(() => import('./components/EcgReceipts').then((m) => ({ default: m.EcgReceipts })));
 const AuditLogManagementLazy = lazy(() => import('./components/AuditLogManagement').then((m) => ({ default: m.AuditLogManagement })));
-const PharmacyFinanceLazy = lazy(() => import('./components/PharmacyFinance').then((m) => ({ default: m.PharmacyFinance })));
 
 function RouteLoadingFallback() {
   return (
@@ -115,12 +115,48 @@ function RouteLoadingFallback() {
   );
 }
 
+/**
+ * The Reports desks that are served by the original combined Reports page,
+ * each pinned to one of its modules.
+ *
+ * Pharmacy, the four clinical desks and the two money desks all have purpose
+ * built pages and are routed separately below.
+ */
+const REPORT_DESKS: Array<{ path: string; module: 'overall' | 'reception' | 'lab' }> = [
+  { path: '/reports/general', module: 'overall' },
+  { path: '/reports/reception', module: 'reception' },
+  { path: '/reports/laboratory', module: 'lab' },
+];
+
+/** The desks driven by ClinicalReports, which differ only in their desk key. */
+const CLINICAL_REPORT_DESKS: Array<'surgery' | 'room-booking' | 'xray' | 'ultrasound'> = [
+  'surgery',
+  'room-booking',
+  'xray',
+  'ultrasound',
+];
+
+const REPORT_PERMISSIONS = [
+  'view_reports',
+  'add_reports',
+  'edit_reports',
+  'delete_reports',
+  'export_reports',
+  'print_reports',
+  'manage_reports',
+];
+
 function RouteScopedProviders({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const pathname = location.pathname;
 
   const needsHrProviders = pathname.startsWith('/hr/');
-  const needsOtherIncomeProviders = pathname.startsWith('/other-income/');
+  // Other income moved under Accounts, so the providers follow it there. The
+  // report desk is deliberately NOT listed: it reads the reports API directly,
+  // and mounting the provider would fetch the whole register just to render a
+  // summary the server already computed.
+  const needsOtherIncomeProviders =
+    pathname.startsWith('/other-income/') || pathname.startsWith('/accounts/other-income');
 
   let content = children;
 
@@ -466,6 +502,16 @@ function AppContent() {
               }
             />
             <Route
+              path="/patient-history"
+              element={
+                <RequirePermission anyOf={["view_patients", "manage_patients", "register_patients"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <PatientHistoryLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            <Route
               path="/room-management"
               element={
                 <RequirePermission anyOf={["view_rooms", "manage_rooms", "view_room_bookings", "manage_room_bookings"]}>
@@ -657,16 +703,6 @@ function AppContent() {
                 </RequirePermission>
               }
             />
-            <Route
-              path="/pharmacy-finance"
-              element={
-                <RequirePermission anyOf={["view_finance_sales", "view_finance_purchases", "view_finance_sales_returns", "view_finance_purchase_returns", "record_finance_payments", "edit_finance_payment_status", "export_finance", "manage_finance"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <PharmacyFinanceLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
             {/* Radiology > Ultrasound: one page, three tabs. The three
                 /ultrasound/* paths below are kept so bookmarks and any link
                 still in the wild land on the right tab. */}
@@ -698,6 +734,20 @@ function AppContent() {
                 <RequirePermission anyOf={["view_dental_receipts", "add_dental_receipts", "edit_dental_receipts", "delete_dental_receipts", "manage_dental_receipts", "manage_dental_payments", "print_dental_receipt", "view_dental_services", "add_dental_services", "edit_dental_services", "delete_dental_services", "manage_dental_services"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <DentalReceiptsLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {/* ECG: a Receipt tab plus the study catalogue behind it. Grouped
+              under Radiology in the sidebar -- the desk behaves like the
+              imaging desks do, and Reception is where patients are registered,
+              not where studies are run. */}
+            <Route
+              path="/ecg"
+              element={
+                <RequirePermission anyOf={["view_ecg_receipts", "add_ecg_receipts", "edit_ecg_receipts", "delete_ecg_receipts", "manage_ecg_receipts", "manage_ecg_payments", "print_ecg_receipt", "view_ecg_services", "add_ecg_services", "edit_ecg_services", "delete_ecg_services", "manage_ecg_services"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <EcgReceiptsLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }
@@ -877,78 +927,120 @@ function AppContent() {
                 </RequirePermission>
               }
             />
+            {/*
+              Reports, one route per desk.
+              Bookmarks and links that still point at the old combined /reports
+              page are redirected to General rather than 404-ing.
+            */}
+            <Route path="/reports" element={<Navigate to="/reports/general" replace />} />
+            {REPORT_DESKS.map(({ path, module }) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                    <Suspense fallback={<RouteLoadingFallback />}>
+                      <ReportsLazy
+                        hospital={currentHospital}
+                        userRole={currentRole}
+                        lockedModule={module}
+                      />
+                    </Suspense>
+                  </RequirePermission>
+                }
+              />
+            ))}
             <Route
-              path="/reports"
+              path="/reports/pharmacy"
               element={
-                <RequirePermission anyOf={["view_reports", "add_reports", "edit_reports", "delete_reports", "export_reports", "print_reports", "manage_reports"]}>
+                <RequirePermission anyOf={REPORT_PERMISSIONS}>
                   <Suspense fallback={<RouteLoadingFallback />}>
-                    <ReportsLazy hospital={currentHospital} userRole={currentRole} />
+                    <PharmacyReportsLazy hospital={currentHospital} userRole={currentRole} />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+            {CLINICAL_REPORT_DESKS.map((desk) => (
+              <Route
+                key={desk}
+                path={`/reports/${desk}`}
+                element={
+                  <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                    <Suspense fallback={<RouteLoadingFallback />}>
+                      <ClinicalReportsLazy
+                        hospital={currentHospital}
+                        userRole={currentRole}
+                        desk={desk}
+                      />
+                    </Suspense>
+                  </RequirePermission>
+                }
+              />
+            ))}
+            <Route
+              path="/reports/expenses"
+              element={
+                <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <MoneyReportsLazy hospital={currentHospital} userRole={currentRole} kind="expense" />
                   </Suspense>
                 </RequirePermission>
               }
             />
             <Route
-              path="/expenses/categories"
+              path="/reports/other-income"
               element={
-                <RequirePermission anyOf={["view_expense_categories", "add_expense_categories", "edit_expense_categories", "delete_expense_categories", "export_expense_categories", "print_expense_categories", "manage_expense_categories"]}>
+                <RequirePermission anyOf={REPORT_PERMISSIONS}>
                   <Suspense fallback={<RouteLoadingFallback />}>
-                    <ExpenseCategoriesLazy hospital={currentHospital} userRole={currentRole} />
+                    <MoneyReportsLazy
+                      hospital={currentHospital}
+                      userRole={currentRole}
+                      kind="other-income"
+                    />
+                  </Suspense>
+                </RequirePermission>
+              }
+            />
+
+            {/*
+              Expenses and Other Income moved under Accounts, with their
+              categories folded in as a tab and their reports moved to Reports.
+              The four old paths redirect so existing bookmarks still land
+              somewhere sensible.
+            */}
+            <Route
+              path="/accounts/expenses"
+              element={
+                <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses", "view_expense_categories", "manage_expense_categories"]}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <AccountsExpensesLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }
             />
             <Route
-              path="/expenses/entries"
+              path="/accounts/other-income"
               element={
-                <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
+                <RequirePermission anyOf={["view_other_incomes", "add_other_incomes", "edit_other_incomes", "delete_other_incomes", "export_other_incomes", "print_other_incomes", "manage_other_incomes", "view_other_income_categories", "manage_other_income_categories"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
-                    <ExpenseManagementLazy hospital={currentHospital} userRole={currentRole} />
+                    <AccountsOtherIncomeLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
                 </RequirePermission>
               }
             />
+            <Route path="/expenses/categories" element={<Navigate to="/accounts/expenses?tab=categories" replace />} />
+            <Route path="/expenses/entries" element={<Navigate to="/accounts/expenses" replace />} />
+            <Route path="/expenses/report" element={<Navigate to="/reports/expenses" replace />} />
+            <Route path="/other-income/categories" element={<Navigate to="/accounts/other-income?tab=categories" replace />} />
+            <Route path="/other-income/entries" element={<Navigate to="/accounts/other-income" replace />} />
+            <Route path="/other-income/report" element={<Navigate to="/reports/other-income" replace />} />
+            {/* The Pharmacy Finance screen is gone -- Payment Collection lists
+                pharmacy invoices alongside every other module's charges. */}
+            <Route path="/pharmacy-finance" element={<Navigate to="/payment-collection" replace />} />
+            {/* The ledger moved out of Reports and into Accounts. */}
+            <Route path="/ledger" element={<Navigate to="/accounts/ledger" replace />} />
             <Route
-              path="/expenses/report"
-              element={
-                <RequirePermission anyOf={["view_expenses", "add_expenses", "edit_expenses", "delete_expenses", "export_expenses", "print_expenses", "manage_expenses"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <ExpenseReportLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/other-income/categories"
-              element={
-                <RequirePermission anyOf={["view_other_income_categories", "add_other_income_categories", "edit_other_income_categories", "delete_other_income_categories", "export_other_income_categories", "print_other_income_categories", "manage_other_income_categories"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <OtherIncomeCategoriesLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/other-income/entries"
-              element={
-                <RequirePermission anyOf={["view_other_incomes", "add_other_incomes", "edit_other_incomes", "delete_other_incomes", "export_other_incomes", "print_other_incomes", "manage_other_incomes"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <OtherIncomeManagementLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/other-income/report"
-              element={
-                <RequirePermission anyOf={["view_other_incomes", "add_other_incomes", "edit_other_incomes", "delete_other_incomes", "export_other_incomes", "print_other_incomes", "manage_other_incomes"]}>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <OtherIncomeReportLazy hospital={currentHospital} userRole={currentRole} />
-                  </Suspense>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/ledger"
+              path="/accounts/ledger"
               element={
                 <RequirePermission anyOf={["view_ledger", "manage_ledger", "export_ledger"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>

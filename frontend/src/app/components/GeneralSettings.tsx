@@ -160,7 +160,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
 
   const [defaultDiscounts, setDefaultDiscounts] = useState<DefaultDiscountSettings>({
-    surgery: 0, lab: 0, ultrasound: 0, xray: 0, dental: 0, roomBooking: 0,
+    surgery: 0, lab: 0, ultrasound: 0, xray: 0, dental: 0, ecg: 0, roomBooking: 0,
   });
   const canManageDefaultDiscounts =
     hasPermission('manage_default_discounts') || hasPermission('manage_hospital_settings');
@@ -1155,6 +1155,7 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
               { key: 'ultrasound' as const, label: 'Ultrasound' },
               { key: 'xray' as const, label: 'X-Ray' },
               { key: 'dental' as const, label: 'Dental' },
+              { key: 'ecg' as const, label: 'ECG' },
               { key: 'roomBooking' as const, label: 'Room Booking' },
             ]).map((row) => (
               <div key={row.key}>

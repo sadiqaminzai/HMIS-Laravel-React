@@ -39,16 +39,25 @@ export const formatMoneyIn = (
   const locale = localeFor(language);
   const code = String(currency || 'AFN').toUpperCase();
 
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `${formatNumberIn(amount, language, 2)} ${code}`;
+  // narrowSymbol prints the afghani sign; the default 'symbol' still gives
+  // the literal text "AFN" in English locales. Two fallbacks, because
+  // narrowSymbol throws on older Safari and an exception here would take the
+  // whole dashboard down over a currency glyph.
+  for (const currencyDisplay of ['narrowSymbol', 'symbol'] as const) {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: code,
+        currencyDisplay,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(amount);
+    } catch {
+      // try the next display form
+    }
   }
+
+  return `${formatNumberIn(amount, language, 2)} ${code}`;
 };
 
 /** A plain number -- counts, quantities -- in the language's own digits. */

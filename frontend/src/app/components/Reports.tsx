@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BarChart3,
@@ -10,6 +10,7 @@ import {
   FlaskConical,
   Pill,
   Printer,
+  Stethoscope,
   Receipt,
   Search,
   Users,
@@ -21,6 +22,8 @@ import {
 } from 'lucide-react';
 import { differenceInCalendarDays, endOfDay, format, startOfDay } from 'date-fns';
 import { Hospital, UserRole } from '../types';
+import { TABLE_HEAD_CLASS, Th } from './ui/DataTable';
+import { StatusBadge } from './ui/StatusBadge';
 import { useDoctors } from '../context/DoctorContext';
 import { usePatients } from '../context/PatientContext';
 import { useTransactions } from '../context/TransactionContext';
@@ -40,7 +43,6 @@ type ReportType =
   | 'patient_detailed'
   | 'fees_detailed'
   | 'reception_fees_overall'
-  | 'reception_fees_doctor_wise'
   | 'reception_lab_orders'
   | 'reception_prescription_sales'
   | 'reception_surgery_operations'
@@ -64,12 +66,22 @@ type StockGrouping = 'company' | 'product' | 'batch';
 interface ReportsProps {
   hospital: Hospital;
   userRole: UserRole;
+  /**
+   * Pin this page to a single desk's reports.
+   *
+   * Reports now has one sidebar entry per desk (General, Reception,
+   * Laboratory...), so the page arrives already knowing which desk it is
+   * showing and the module tab bar would only offer a second way to navigate
+   * away from the entry the user just clicked. Omitted, the page keeps its
+   * original behaviour: every module the user may see, selectable by tab.
+   */
+  lockedModule?: ReportModule;
 }
 
 interface ReportColumn {
   key: string;
   label: string;
-  kind?: 'text' | 'number' | 'currency' | 'date';
+  kind?: 'text' | 'number' | 'currency' | 'date' | 'status';
 }
 
 interface SummaryItem {
@@ -244,7 +256,6 @@ const REPORT_OPTIONS: Record<ReportModule, Array<{ key: ReportType; label: strin
   ],
   reception: [
     { key: 'reception_fees_overall', label: 'Fees Report (Overall)' },
-    { key: 'reception_fees_doctor_wise', label: 'Fees Report (Doctor Wise)' },
     { key: 'reception_lab_orders', label: 'Lab Orders Report' },
     { key: 'reception_prescription_sales', label: 'Prescription Sales Report' },
     { key: 'reception_surgery_operations', label: 'Surgery Operations Report' },
@@ -288,6 +299,48 @@ const FINANCIAL_MODULE_ORDER: Array<{ key: string; label: string }> = [
   { key: 'room_booking', label: 'Room Booking Fees' },
 ];
 
+/**
+ * How the Doctor filter reaches each report.
+ *
+ *   'row'    the rows carry a doctorId of their own -- filtering is exact.
+ *   'ledger' the rows are ledger entries, which carry no doctor. They are
+ *            attributed through the document that raised them, so choosing a
+ *            doctor also drops whatever cannot be attributed (medicine sales,
+ *            x-ray, ultrasound, room bookings). The report says so on screen.
+ *   'none'   the document genuinely has no doctor. An expense is not raised by
+ *            anyone's clinic, so the control is shown disabled with the reason
+ *            rather than silently returning nothing.
+ *
+ * Anything absent defaults to 'none'.
+ */
+const DOCTOR_FILTER_SCOPE: Partial<Record<ReportType, 'row' | 'ledger' | 'none'>> = {
+  doctor_detailed: 'row',
+  // One row per patient, summing every module they were charged for. A patient
+  // is seen by several doctors, so narrowing the page to one doctor would show
+  // that patient's whole bill under a doctor who earned part of it.
+  patient_detailed: 'none',
+  fees_detailed: 'ledger',
+  overall_financial: 'ledger',
+  reception_fees_overall: 'ledger',
+  reception_lab_orders: 'row',
+  reception_prescription_sales: 'none',
+  reception_surgery_operations: 'row',
+  reception_expenses: 'none',
+  reception_other_income: 'none',
+  reception_overall_clearance: 'ledger',
+  lab_samples: 'row',
+  lab_orders_date_wise: 'row',
+  lab_doctor_wise: 'row',
+};
+
+/** Why the Doctor control is disabled, shown as its tooltip. */
+const DOCTOR_FILTER_DISABLED_REASON: Partial<Record<ReportType, string>> = {
+  patient_detailed: 'A patient is seen by several doctors, so this report is not split by one.',
+  reception_prescription_sales: 'A medicine sale is not attributed to a doctor.',
+  reception_expenses: 'An expense is not raised by a doctor.',
+  reception_other_income: 'Other income is not raised by a doctor.',
+};
+
 const REPORT_GROUPS: Record<ReportModule, Array<{ group: string; keys: ReportType[] }>> = {
   overall: [
     { group: 'Financial Summary', keys: ['overall_financial', 'fees_detailed'] },
@@ -296,7 +349,7 @@ const REPORT_GROUPS: Record<ReportModule, Array<{ group: string; keys: ReportTyp
   reception: [
     {
       group: 'Income',
-      keys: ['reception_fees_overall', 'reception_fees_doctor_wise', 'reception_lab_orders',
+      keys: ['reception_fees_overall', 'reception_lab_orders',
              'reception_prescription_sales', 'reception_surgery_operations', 'reception_other_income'],
     },
     { group: 'Outgoing', keys: ['reception_expenses'] },
@@ -464,7 +517,11 @@ const normalizeTransaction = (item: any): NormalizedTransaction => {
     grandTotal: toNumber(item.grand_total ?? item.grandTotal),
     paidAmount: toNumber(item.paid_amount ?? item.paidAmount),
     dueAmount: toNumber(item.due_amount ?? item.dueAmount),
-    detailsCount: details.length,
+    // The invoice list no longer ships its lines -- carrying them made the
+    // Invoices screen unloadable -- so the count comes from the server.
+    // details.length still wins where the lines are present, which is any
+    // single invoice fetched on its own.
+    detailsCount: details.length || toNumber(item.details_count ?? item.detailsCount),
     date: toDate(item.created_at ?? item.createdAt),
   };
 };
@@ -587,7 +644,7 @@ async function loadXlsxTools() {
   return cachedXlsxTools;
 }
 
-export function Reports({ hospital, userRole }: ReportsProps) {
+export function Reports({ hospital, userRole, lockedModule }: ReportsProps) {
   const { t } = useTranslation();
   const { doctors } = useDoctors();
   const { patients: contextPatients } = usePatients();
@@ -646,13 +703,27 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       modules.push({ key: 'overall', label: 'Overall Reports' });
     }
 
-    return modules.filter((module, index, all) => all.findIndex((m) => m.key === module.key) === index);
+    const unique = modules.filter(
+      (module, index, all) => all.findIndex((m) => m.key === module.key) === index
+    );
+
+    // A locked module still has to clear the permission checks above, so a
+    // deep link to /reports/laboratory cannot hand a receptionist the lab
+    // reports. If it does not survive the filter, the page falls back to
+    // whatever the user may actually see.
+    if (lockedModule) {
+      const locked = unique.filter((module) => module.key === lockedModule);
+      if (locked.length) return locked;
+    }
+
+    return unique;
   }, [
     hasPermission,
     isAdmin,
     isLab,
     isPharmacist,
     isReceptionist,
+    lockedModule,
   ]);
 
   const [reportModule, setReportModule] = useState<ReportModule>(availableModules[0]?.key ?? 'overall');
@@ -709,6 +780,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       const scope = role === 'super_admin' ? { hospital_id: hospital.id } : {};
 
+      /*
+       * The four date-scoped sources fetch 1000 rather than 200.
+       *
+       * Appointments, lab orders, surgeries and the ledger are what the Doctor
+       * filter attributes fees through, and they are already narrowed to the
+       * chosen period server-side. At 200 a month's reporting quietly lost the
+       * attribution for everything past the 200th row, so the filter returned a
+       * total smaller than the truth without saying so.
+       */
       const [
         appointmentsRes,
         prescriptionsRes,
@@ -723,7 +803,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         patientsRes,
       ] = await Promise.all([
         safeCall(
-          () => api.get('/appointments', { params: { ...scope, date_from: startDate, date_to: endDate, per_page: 200 } }),
+          () => api.get('/appointments', { params: { ...scope, date_from: startDate, date_to: endDate, per_page: 1000 } }),
           null
         ),
         safeCall(
@@ -731,7 +811,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           null
         ),
         safeCall(
-          () => listLabOrders({ ...scope, from_date: startDate, to_date: endDate, per_page: 200 }),
+          () => listLabOrders({ ...scope, from_date: startDate, to_date: endDate, per_page: 1000 }),
           { data: [] }
         ),
         safeCall(
@@ -739,7 +819,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           null
         ),
         safeCall(
-          () => listPatientSurgeries({ ...scope, date_from: startDate, date_to: endDate, per_page: 200 }),
+          () => listPatientSurgeries({ ...scope, date_from: startDate, date_to: endDate, per_page: 1000 }),
           { data: [] }
         ),
         safeCall(
@@ -751,7 +831,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           null
         ),
         safeCall(
-          () => listLedger({ ...scope, date_from: startDate, date_to: endDate, per_page: 200 }),
+          () => listLedger({ ...scope, date_from: startDate, date_to: endDate, per_page: 1000 }),
           { data: [] }
         ),
         safeCall(
@@ -902,6 +982,9 @@ export function Reports({ hospital, userRole }: ReportsProps) {
         patientId: String(item.patient_id ?? item.patientId ?? ''),
         name: String(item.name ?? '-'),
         phone: String(item.phone ?? '-'),
+        age: item.age ?? item.patient_age ?? null,
+        ageUnit: String(item.age_unit ?? item.ageUnit ?? 'Y'),
+        gender: String(item.gender ?? '-'),
         hospitalId: String(item.hospital_id ?? item.hospitalId ?? ''),
       }))
       .filter((item) => String(item.hospitalId) === String(hospital.id));
@@ -936,6 +1019,55 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [doctors, hospital.id, normalizedAppointments, normalizedLabOrders, normalizedPrescriptions, normalizedSurgeries]);
 
+  /**
+   * "source_type#source_id" -> doctor id, for the ledger-driven reports.
+   *
+   * ledger_entries carries no doctor_id -- it records what was charged, not who
+   * ordered it -- so the only way to attribute a fee to a doctor is through the
+   * document that raised it. Appointments, lab orders, surgeries and
+   * prescriptions are already loaded for other reports, so the map costs
+   * nothing extra.
+   *
+   * Deliberately partial: a medicine sale, an x-ray receipt or a room booking
+   * has no doctor in this map, so picking a doctor hides them. That is the
+   * honest answer to "show me this doctor's fees" -- see DOCTOR_FILTER_SCOPE,
+   * which tells the reader when a report is narrowed this way.
+   */
+  const ledgerDoctorBySource = useMemo(() => {
+    const map = new Map<string, string>();
+
+    const add = (sourceType: string, id: string, doctorId: string) => {
+      if (!id || !doctorId) return;
+      map.set(`${sourceType}#${id}`, String(doctorId));
+    };
+
+    normalizedAppointments.forEach((row: any) => add('appointment', row.id, row.doctorId));
+    normalizedLabOrders.forEach((row: any) => add('lab_order', row.id, row.doctorId));
+    normalizedSurgeries.forEach((row: any) => add('patient_surgery', row.id, row.doctorId));
+    normalizedPrescriptions.forEach((row: any) => add('prescription', row.id, row.doctorId));
+
+    return map;
+  }, [normalizedAppointments, normalizedLabOrders, normalizedSurgeries, normalizedPrescriptions]);
+
+  const doctorFilterScope = DOCTOR_FILTER_SCOPE[reportType] ?? 'none';
+  const doctorFilterActive = doctorFilterScope !== 'none' && selectedDoctorId !== 'all';
+
+  /** True when a row belonging to `doctorId` should survive the filter. */
+  const matchesDoctor = useCallback(
+    (doctorId: any) => selectedDoctorId === 'all' || String(doctorId ?? '') === String(selectedDoctorId),
+    [selectedDoctorId]
+  );
+
+  /** True when a ledger entry's originating document belongs to the doctor. */
+  const ledgerMatchesDoctor = useCallback(
+    (entry: { sourceType: string; sourceId: string }) => {
+      if (selectedDoctorId === 'all') return true;
+      const attributed = ledgerDoctorBySource.get(`${entry.sourceType}#${entry.sourceId}`);
+      return attributed !== undefined && String(attributed) === String(selectedDoctorId);
+    },
+    [ledgerDoctorBySource, selectedDoctorId]
+  );
+
   const currency = useMemo(() => {
     const first = normalizedLedger.find((entry) => entry.currency);
     return first?.currency || 'AFN';
@@ -969,7 +1101,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           byModule.set(label, { module: label, entries: 0, incoming: 0, outgoing: 0, inventory: 0, paid: 0, due: 0 });
         });
 
-        ledgerActive.forEach((entry) => {
+        ledgerActive.filter(ledgerMatchesDoctor).forEach((entry) => {
           const key = normalizeModuleName(entry.module);
           if (!byModule.has(key)) {
             byModule.set(key, {
@@ -1299,128 +1431,86 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       case 'fees_detailed':
       case 'reception_fees_overall': {
-        const byModule = new Map<string, { module: string; entries: number; amount: number; paid: number; due: number }>();
+        /*
+         * One row per charge, not one row per module.
+         *
+         * The module rollup answered "which desk earned what", which the
+         * Overall Financial report already covers. What reception is actually
+         * asked for at the counter is a named patient's charges -- who, how
+         * old, which doctor, what was billed and what is still owed -- so the
+         * report lists the charges themselves and leaves the totalling to the
+         * table's own totals row.
+         */
+        const patientsById = new Map(normalizedPatients.map((patient) => [String(patient.id), patient]));
 
-        ledgerActive
+        const rows = ledgerActive
           .filter((entry) => entry.direction === 'income')
-          .forEach((entry) => {
-            const key = normalizeModuleName(entry.module);
-            if (!byModule.has(key)) {
-              byModule.set(key, { module: key, entries: 0, amount: 0, paid: 0, due: 0 });
-            }
-            const row = byModule.get(key)!;
-            row.entries += 1;
-            row.amount += entry.netAmount;
-            row.paid += entry.paidAmount;
-            row.due += entry.dueAmount;
-          });
+          .filter(ledgerMatchesDoctor)
+          .map((entry) => {
+            const patient = patientsById.get(String(entry.patientId));
+            const doctorId = ledgerDoctorBySource.get(`${entry.sourceType}#${entry.sourceId}`);
+            const doctor = doctorId
+              ? doctorOptions.find((option) => String(option.id) === String(doctorId))
+              : undefined;
 
-        const rows = Array.from(byModule.values()).sort((a, b) => b.amount - a.amount);
+            return {
+              date: entry.date,
+              patientCode: patient?.patientId || '-',
+              // The ledger carries its own snapshot of the payer's name, which
+              // is the only name a walk-in has -- the patients table has no row
+              // for them at all.
+              patient: patient?.name || entry.patientName || '-',
+              phone: patient?.phone || '-',
+              age: patient?.age != null ? `${patient.age} ${patient.ageUnit}` : '-',
+              gender: patient?.gender || '-',
+              doctor: doctor?.name || 'Unassigned',
+              module: normalizeModuleName(entry.module),
+              title: entry.title,
+              amount: entry.netAmount,
+              paid: entry.paidAmount,
+              due: entry.dueAmount,
+              status: entry.status,
+            };
+          })
+          .sort((a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
+
         const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
+        const totalPaid = rows.reduce((sum, row) => sum + row.paid, 0);
         const totalDue = rows.reduce((sum, row) => sum + row.due, 0);
+        const uniquePatients = new Set(rows.map((row) => row.patient)).size;
 
         return {
-          title: reportType === 'fees_detailed' ? 'Fees Detailed Report' : 'Reception Fees Report (Overall)',
-          subtitle: 'Fee collection summary grouped by module.',
+          title: reportType === 'fees_detailed' ? 'Fees Detailed Report' : 'Reception Fees Report',
+          subtitle: 'Every charge raised in the period, with the patient and doctor it belongs to.',
           columns: [
+            { key: 'date', label: t('ui.date'), kind: 'date' },
+            { key: 'patientCode', label: t('table.id') },
+            { key: 'patient', label: t('ui.patient') },
+            { key: 'phone', label: t('table.phone') },
+            { key: 'age', label: t('table.age') },
+            { key: 'gender', label: t('table.gender') },
+            { key: 'doctor', label: t('ui.doctor') },
             { key: 'module', label: t('ui.module') },
-            { key: 'entries', label: t('ui.entries'), kind: 'number' },
+            { key: 'title', label: t('ui.title') },
             { key: 'amount', label: t('ui.amount'), kind: 'currency' },
             { key: 'paid', label: t('ui.paid'), kind: 'currency' },
             { key: 'due', label: t('ui.due'), kind: 'currency' },
+            { key: 'status', label: t('ui.status'), kind: 'status' },
           ],
           rows,
           summary: [
-            { label: 'Modules', value: String(rows.length) },
+            { label: t('ui.entries'), value: String(rows.length) },
+            { label: 'Patients', value: String(uniquePatients) },
             { label: t('ui.totalFees'), value: formatCurrency(totalAmount), tone: 'positive' },
+            { label: t('ui.paid'), value: formatCurrency(totalPaid) },
             { label: t('ui.totalDue'), value: formatCurrency(totalDue), tone: totalDue > 0 ? 'negative' : 'default' },
-          ],
-        };
-      }
-
-      case 'reception_fees_doctor_wise': {
-        const byDoctor = new Map<string, {
-          doctorId: string;
-          doctor: string;
-          patientCount: number;
-          appointmentFees: number;
-          labFees: number;
-          surgeryFees: number;
-          totalFees: number;
-        }>();
-        const patientSets = new Map<string, Set<string>>();
-
-        const ensureDoctor = (doctorId: string, doctorName: string) => {
-          if (!byDoctor.has(doctorId)) {
-            byDoctor.set(doctorId, {
-              doctorId,
-              doctor: doctorName || 'Unknown Doctor',
-              patientCount: 0,
-              appointmentFees: 0,
-              labFees: 0,
-              surgeryFees: 0,
-              totalFees: 0,
-            });
-            patientSets.set(doctorId, new Set<string>());
-          }
-          return byDoctor.get(doctorId)!;
-        };
-
-        normalizedAppointments.forEach((item) => {
-          const doctorId = String(item.doctorId || item.doctorName);
-          const row = ensureDoctor(doctorId, item.doctorName);
-          row.appointmentFees += item.amount;
-          row.totalFees += item.amount;
-          patientSets.get(doctorId)?.add(String(item.patientId || item.patientName));
-        });
-
-        normalizedLabOrders.forEach((item) => {
-          const doctorId = String(item.doctorId || item.doctorName);
-          const row = ensureDoctor(doctorId, item.doctorName);
-          row.labFees += item.totalAmount;
-          row.totalFees += item.totalAmount;
-          patientSets.get(doctorId)?.add(String(item.patientId || item.patientName));
-        });
-
-        normalizedSurgeries.forEach((item) => {
-          const doctorId = String(item.doctorId || item.doctorName);
-          const row = ensureDoctor(doctorId, item.doctorName);
-          row.surgeryFees += item.cost;
-          row.totalFees += item.cost;
-          patientSets.get(doctorId)?.add(String(item.patientId || item.patientName));
-        });
-
-        const rows = Array.from(byDoctor.values())
-          .map((row) => ({
-            ...row,
-            patientCount: patientSets.get(row.doctorId)?.size ?? 0,
-          }))
-          .filter((row) => (selectedDoctorId === 'all' ? true : String(row.doctorId) === String(selectedDoctorId)))
-          .sort((a, b) => b.totalFees - a.totalFees);
-
-        const totalFees = rows.reduce((sum, row) => sum + row.totalFees, 0);
-
-        return {
-          title: 'Reception Fees Report (Doctor Wise)',
-          subtitle: 'Doctor-wise fee breakdown for appointments, lab orders, and surgeries.',
-          columns: [
-            { key: 'doctor', label: t('ui.doctor') },
-            { key: 'patientCount', label: 'Patients', kind: 'number' },
-            { key: 'appointmentFees', label: 'Appointment Fees', kind: 'currency' },
-            { key: 'labFees', label: 'Lab Fees', kind: 'currency' },
-            { key: 'surgeryFees', label: t('ui.surgeryFees'), kind: 'currency' },
-            { key: 'totalFees', label: t('ui.totalFees'), kind: 'currency' },
-          ],
-          rows,
-          summary: [
-            { label: 'Doctors', value: String(rows.length) },
-            { label: t('ui.totalFees'), value: formatCurrency(totalFees), tone: 'positive' },
           ],
         };
       }
 
       case 'reception_lab_orders': {
         const rows = normalizedLabOrders
+          .filter((item) => matchesDoctor(item.doctorId))
           .map((item) => ({
             date: item.date,
             orderNumber: item.orderNumber,
@@ -1498,6 +1588,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       case 'reception_surgery_operations': {
         const rows = normalizedSurgeries
+          .filter((item) => matchesDoctor(item.doctorId))
           .map((item) => {
             const amounts = derivePaidDue(item.cost, item.paymentStatus);
             return {
@@ -1610,6 +1701,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       case 'reception_overall_clearance': {
         const rows = ledgerActive
+          .filter(ledgerMatchesDoctor)
           .map((item) => ({
             date: item.date,
             module: normalizeModuleName(item.module),
@@ -2025,6 +2117,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       case 'lab_samples': {
         const rows = normalizedLabOrders
+          .filter((item) => matchesDoctor(item.doctorId))
           .map((item) => ({
             orderNumber: item.orderNumber,
             date: item.date,
@@ -2065,7 +2158,7 @@ export function Reports({ hospital, userRole }: ReportsProps) {
       case 'lab_orders_date_wise': {
         const byDate = new Map<string, { date: string; orders: number; totalAmount: number; paidAmount: number; dueAmount: number; completed: number }>();
 
-        normalizedLabOrders.forEach((item) => {
+        normalizedLabOrders.filter((item) => matchesDoctor(item.doctorId)).forEach((item) => {
           if (!item.date) return;
           const key = format(item.date, 'yyyy-MM-dd');
 
@@ -2199,6 +2292,10 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     normalizedTransactions,
     reportType,
     selectedDoctorId,
+    // Both close over selectedDoctorId, but listing them keeps the rebuild
+    // correct if the attribution map itself changes (new documents arrive).
+    matchesDoctor,
+    ledgerMatchesDoctor,
     stockGrouping,
   ]);
 
@@ -2617,7 +2714,12 @@ export function Reports({ hospital, userRole }: ReportsProps) {
     printWindow.print();
   };
 
-  const showDoctorFilter = reportType === 'doctor_detailed' || reportType === 'reception_fees_doctor_wise' || reportType === 'lab_doctor_wise';
+  // The Doctor control is on every report now, beside the date range, rather
+  // than only on the three reports that were "doctor wise" by name. Where a
+  // report has no doctor to filter on it is shown disabled with the reason, so
+  // the toolbar does not change shape from tab to tab.
+  const showDoctorFilter = true;
+  const doctorFilterDisabled = doctorFilterScope === 'none';
   const showStockGrouping = reportType === 'pharmacy_available_stock';
 
   return (
@@ -2670,8 +2772,14 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         {/* Main tabs: an underlined tab bar, so the selected desk is obvious and
-            the sub-reports below clearly belong to it. */}
-        <div className="flex overflow-x-auto scrollbar-none border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+            the sub-reports below clearly belong to it. Hidden when there is
+            only one desk to choose -- a tab bar with a single tab is a control
+            that cannot do anything. */}
+        <div
+          className={`${
+            availableModules.length > 1 ? 'flex' : 'hidden'
+          } overflow-x-auto scrollbar-none border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40`}
+        >
           {availableModules.map((module) => (
             <button
               key={module.key}
@@ -2758,21 +2866,6 @@ export function Reports({ hospital, userRole }: ReportsProps) {
             />
           </div>
 
-          {showDoctorFilter && (
-              <select
-                value={selectedDoctorId}
-                onChange={(event) => setSelectedDoctorId(event.target.value)}
-                title={t('ui.doctor')}
-                aria-label={t('ui.doctor')}
-                className="px-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="all">All Doctors</option>
-                {doctorOptions.map((doctor) => (
-                  <option key={doctor.id} value={doctor.id}>{doctor.name}</option>
-                ))}
-              </select>
-          )}
-
           {showStockGrouping && (
               <select
                 value={stockGrouping}
@@ -2798,7 +2891,47 @@ export function Reports({ hospital, userRole }: ReportsProps) {
           >
             Today
           </button>
+
+          {/* Doctor sits after the period, as the second narrowing step: the
+              dates are what make a report, the doctor is what makes it
+              personal. Present on every tab so the toolbar keeps its shape,
+              disabled with the reason on the reports that have no doctor. */}
+          {showDoctorFilter && (
+            <div className="flex items-center gap-1.5">
+              <Stethoscope className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <select
+                value={doctorFilterDisabled ? 'all' : selectedDoctorId}
+                onChange={(event) => setSelectedDoctorId(event.target.value)}
+                disabled={doctorFilterDisabled}
+                title={
+                  doctorFilterDisabled
+                    ? DOCTOR_FILTER_DISABLED_REASON[reportType] ?? 'This report is not split by doctor.'
+                    : t('ui.doctor')
+                }
+                aria-label={t('ui.doctor')}
+                className="px-2 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="all">All Doctors</option>
+                {doctorOptions.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>{doctor.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+
+        {/*
+          A ledger report narrowed to one doctor silently loses whatever cannot
+          be traced back to a doctor -- medicine sales, x-ray, ultrasound, room
+          bookings. Saying so is the difference between a filtered total and a
+          wrong one.
+        */}
+        {doctorFilterActive && doctorFilterScope === 'ledger' && (
+          <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+            Showing only charges traceable to this doctor (appointments, lab orders and surgeries).
+            Medicine sales, x-ray, ultrasound and room bookings carry no doctor and are excluded.
+          </p>
+        )}
       </div>
 
       {/* Title and summary share one strip: the title sits beside the figures
@@ -2861,34 +2994,23 @@ export function Reports({ hospital, userRole }: ReportsProps) {
 
         <div className="overflow-auto">
           <table className="w-full min-w-[980px] text-left text-xs">
-            <thead className="bg-gray-50 dark:bg-gray-700/40 text-gray-500 dark:text-gray-400">
+            <thead className={TABLE_HEAD_CLASS}>
               <tr>
-                {buildReport.columns.map((column) => {
-                  const rightAligned = column.kind === 'currency' || column.kind === 'number';
-                  const active = sortKey === column.key;
-                  return (
-                    <th
-                      key={column.key}
-                      onClick={() => toggleSort(column.key)}
-                      title={`Sort by ${column.label}`}
-                      className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        rightAligned ? 'text-right' : ''
-                      }`}
-                    >
-                      <span className={`inline-flex items-center gap-1 ${rightAligned ? 'flex-row-reverse' : ''}`}>
-                        {column.label}
-                        {active
-                          ? (sortDir === 'asc'
-                              ? <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                              : <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />)
-                          : <ArrowUpDown className="w-3 h-3 text-gray-300 dark:text-gray-600" />}
-                      </span>
-                    </th>
-                  );
-                })}
+                {buildReport.columns.map((column) => (
+                  <Th
+                    key={column.key}
+                    onSort={() => toggleSort(column.key)}
+                    active={sortKey === column.key}
+                    direction={sortDir}
+                    align={column.kind === 'currency' || column.kind === 'number' ? 'right' : 'left'}
+                    className="whitespace-nowrap"
+                  >
+                    {column.label}
+                  </Th>
+                ))}
                 {/* Row inspector: the wide financial reports carry more columns
                     than fit comfortably, so each row can be opened in full. */}
-                <th className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-center whitespace-nowrap">View</th>
+                <Th align="center" className="whitespace-nowrap">View</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
@@ -2906,11 +3028,15 @@ export function Reports({ hospital, userRole }: ReportsProps) {
                       return (
                         <td
                           key={column.key}
-                          className={`px-3 py-1.5 whitespace-nowrap ${
+                          className={`px-4 py-2 text-xs whitespace-nowrap ${
                             rightAligned ? 'text-right font-medium tabular-nums' : ''
                           }`}
                         >
-                          {formatCellValue(row[column.key], column)}
+                          {column.kind === 'status' ? (
+                            <StatusBadge status={row[column.key]} />
+                          ) : (
+                            formatCellValue(row[column.key], column)
+                          )}
                         </td>
                       );
                     })}

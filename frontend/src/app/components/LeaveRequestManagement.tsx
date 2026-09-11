@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { toast } from 'sonner';
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface LeaveRequestManagementProps {
   hospital: Hospital;
@@ -41,6 +42,9 @@ export function LeaveRequestManagement({ hospital, userRole }: LeaveRequestManag
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const itemsPerPage = 10;
 
   const [formData, setFormData] = useState({
@@ -389,7 +393,7 @@ export function LeaveRequestManagement({ hospital, userRole }: LeaveRequestManag
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3 transition-all">
-          <form onSubmit={onSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
+          <form onSubmit={guard(onSubmit)} className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center justify-between rounded-t-lg sticky top-0 z-10">
               <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                 {editingId ? 'Edit Leave Request' : t('ui.addLeaveRequest')}
@@ -500,7 +504,7 @@ export function LeaveRequestManagement({ hospital, userRole }: LeaveRequestManag
 
             <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
               <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
-              <button type="submit" disabled={submitting} className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors font-medium text-xs shadow-sm flex items-center justify-center gap-1.5">
+              <button type="submit" disabled={submitting || submitLocked} className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors font-medium text-xs shadow-sm flex items-center justify-center gap-1.5">
                 {submitting ? 'Saving...' : editingId ? t('ui.update') : t('ui.create')}
               </button>
             </div>

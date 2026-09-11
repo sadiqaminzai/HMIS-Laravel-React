@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
 import { TabActionsSlot, useIsEmbedded } from './TabbedModulePage';
 import { toast } from 'sonner';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { AddButton } from './AddButton';
 import {
   ActivePill,
@@ -162,6 +163,10 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
     });
     setIsModalOpen(true);
   };
+
+  // One room per press. There was no submit-state flag here at all, so a slow
+  // save could be clicked twice and create the room twice.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
 
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,7 +345,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={submitForm} className="p-5 grid grid-cols-12 gap-3">
+            <form onSubmit={guard(submitForm)} className="p-5 grid grid-cols-12 gap-3">
               <div className="col-span-12 md:col-span-6">
                 <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">Room Number</label>
                 <input value={form.roomNumber} onChange={(e) => setForm((p) => ({ ...p, roomNumber: e.target.value }))} required className="w-full px-2 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-all" />
@@ -372,7 +377,7 @@ export function RoomManagement({ hospital, userRole }: RoomManagementProps) {
               </div>
               <div className="col-span-12 flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium text-xs">{t('ui.cancel')}</button>
-                <button type="submit" className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{editing ? t('ui.update') : t('ui.create')}</button>
+                <button type="submit" disabled={submitLocked} className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs disabled:opacity-60 disabled:cursor-not-allowed">{submitLocked ? t('ui.saving') : editing ? t('ui.update') : t('ui.create')}</button>
               </div>
             </form>
           </div>

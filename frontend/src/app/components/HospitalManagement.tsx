@@ -16,6 +16,7 @@ interface HospitalManagementProps {
 
 type ManagedHospital = Hospital & { id: string };
 import { AddButton } from './AddButton';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const { t } = useTranslation();
@@ -32,6 +33,9 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous ref lock on top of `submitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   
   // Sorting state
   const [sortField, setSortField] = useState<keyof Hospital>('id');
@@ -498,7 +502,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 space-y-3">
+            <form onSubmit={guard(handleSubmit)} className="p-4 space-y-3">
               <div className="space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Hospital Name */}
@@ -708,7 +712,7 @@ export function HospitalManagement({ userRole }: HospitalManagementProps) {
                 >{t('ui.cancel')}</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || submitLocked}
                   className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Saving...' : modalMode === 'add' ? t('ui.create') : t('ui.save')}

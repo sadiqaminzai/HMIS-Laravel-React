@@ -7,6 +7,7 @@ import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useSettings } from '../context/SettingsContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { SearchableSelect } from './SearchableSelect';
 import { AddButton } from './AddButton';
 import { XrayTypes } from './XrayTypes';
@@ -297,6 +298,9 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
     loadTypes();
     setIsModalOpen(true);
   };
+
+  // One receipt per press: a slow save must not become two receipts.
+  const { submitting: saving, guard } = useSubmitGuard();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -707,7 +711,7 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
               </button>
             </div>
 
-            <form onSubmit={submit} className="p-5 grid grid-cols-12 gap-3">
+            <form onSubmit={guard(submit)} className="p-5 grid grid-cols-12 gap-3">
               <div className="col-span-12 md:col-span-6">
                 <label className={labelClass}>Patient</label>
                 <SearchableSelect
@@ -885,10 +889,13 @@ export function XrayReceipts({ hospital, userRole }: XrayReceiptsProps) {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  // Both flags: `saving` is the synchronous ref lock from the
+                  // guard, `isSubmitting` the existing state. State alone lets
+                  // two clicks in the same frame through.
+                  disabled={isSubmitting || saving}
                   className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {editing ? 'Save' : 'Create'}
+                  {isSubmitting || saving ? 'Saving…' : editing ? 'Save' : 'Create'}
                 </button>
               </div>
             </form>

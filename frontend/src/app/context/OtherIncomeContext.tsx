@@ -3,6 +3,7 @@ import { OtherIncome } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
+import { parseDateOnly } from '../utils/date';
 
 interface OtherIncomeContextType {
   otherIncomes: OtherIncome[];
@@ -22,7 +23,9 @@ const mapOtherIncome = (e: any): OtherIncome => ({
   sequenceId: Number(e.sequence_id ?? 0),
   title: e.title ?? '',
   amount: parseFloat(e.amount ?? 0),
-  incomeDate: e.income_date ? new Date(e.income_date) : new Date(),
+  // See ExpenseContext: a DATE column is anchored at noon UTC so local
+  // formatting cannot move it across a midnight.
+  incomeDate: parseDateOnly(e.income_date) ?? new Date(),
   paymentMethod: e.payment_method ?? '',
   reference: e.reference ?? '',
   documentUrl: e.document_url ?? null,
@@ -41,6 +44,10 @@ const mapOtherIncome = (e: any): OtherIncome => ({
   createdBy: e.created_by ?? undefined,
   updatedAt: e.updated_at ? new Date(e.updated_at) : undefined,
   updatedBy: e.updated_by ?? undefined,
+  approvedBy: e.approved_by ?? undefined,
+  approvedAt: e.approved_at ? new Date(e.approved_at) : undefined,
+  rejectedBy: e.rejected_by ?? undefined,
+  rejectedAt: e.rejected_at ? new Date(e.rejected_at) : undefined,
 });
 
 export function OtherIncomeProvider({ children }: { children: React.ReactNode }) {

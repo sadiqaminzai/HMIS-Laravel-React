@@ -7,6 +7,7 @@ import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { AddButton } from './AddButton';
 import { formatDate } from '../utils/date';
 import { ModalOverlay, ModalPanel, DetailModalHeader, DetailRow } from './ui/ModalParts';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import {
   CellNumber,
   CellText,
@@ -67,6 +68,9 @@ export function DentalServices({ hospital, userRole }: DentalServicesProps) {
   const [editing, setEditing] = useState<DentalServiceApi | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Synchronous ref lock on top of `isSubmitting`: two clicks in the same
+  // frame both read the old state, so state alone cannot stop a duplicate.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [viewing, setViewing] = useState<DentalServiceApi | null>(null);
 
@@ -329,7 +333,7 @@ export function DentalServices({ hospital, userRole }: DentalServicesProps) {
               </button>
             </div>
 
-            <form onSubmit={submit} className="p-4 space-y-3">
+            <form onSubmit={guard(submit)} className="p-4 space-y-3">
               <div className="grid grid-cols-12 gap-3">
                 <div className="col-span-12">
                   <label className={labelClass}>
@@ -416,7 +420,7 @@ export function DentalServices({ hospital, userRole }: DentalServicesProps) {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || submitLocked}
                   className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 flex items-center gap-1.5"
                 >
                   {isSubmitting ? (

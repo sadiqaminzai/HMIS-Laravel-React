@@ -158,3 +158,31 @@ export function parseDateOnly(value: Date | string | undefined | null): Date | u
   if (isNaN(d.getTime())) return undefined;
   return d;
 }
+
+/**
+ * A calendar date, printed without inventing a time for it.
+ *
+ * `expense_date`, `income_date`, `booking_date` and friends are DATE columns:
+ * they arrive as "2026-09-11" and mean a day, not an instant. Passing that
+ * straight to formatDate parses it as midnight UTC and then renders it in the
+ * hospital's zone, which produced a voucher stamped "Sep 11, 2026, 04:30 AM" --
+ * a time nobody entered, and on a timezone behind UTC it would also print the
+ * wrong DAY.
+ *
+ * parseDateOnly anchors the value at noon UTC so no zone can push it across a
+ * midnight, and the time fields are dropped because there is no time to show.
+ */
+export function formatCalendarDate(
+  value: Date | string | undefined | null,
+  timezone: string = 'Asia/Kabul',
+  calendarType: 'gregorian' | 'shamsi' = 'gregorian'
+): string {
+  const parsed = parseDateOnly(value);
+  if (!parsed) return '-';
+
+  return formatDate(parsed, timezone, calendarType, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}

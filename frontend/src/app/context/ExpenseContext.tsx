@@ -3,6 +3,7 @@ import { Expense } from '../types';
 import api from '../../api/axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
+import { parseDateOnly } from '../utils/date';
 
 interface ExpenseContextType {
   expenses: Expense[];
@@ -22,7 +23,9 @@ const mapExpense = (e: any): Expense => ({
   sequenceId: Number(e.sequence_id ?? 0),
   title: e.title ?? '',
   amount: parseFloat(e.amount ?? 0),
-  expenseDate: e.expense_date ? new Date(e.expense_date) : new Date(),
+  // parseDateOnly anchors a DATE column at noon UTC, so no timezone can push
+  // it onto the previous or next day when it is formatted locally.
+  expenseDate: parseDateOnly(e.expense_date) ?? new Date(),
   paymentMethod: e.payment_method ?? '',
   reference: e.reference ?? '',
   documentUrl: e.document_url ?? null,
@@ -41,6 +44,10 @@ const mapExpense = (e: any): Expense => ({
   createdBy: e.created_by ?? undefined,
   updatedAt: e.updated_at ? new Date(e.updated_at) : undefined,
   updatedBy: e.updated_by ?? undefined,
+  approvedBy: e.approved_by ?? undefined,
+  approvedAt: e.approved_at ? new Date(e.approved_at) : undefined,
+  rejectedBy: e.rejected_by ?? undefined,
+  rejectedAt: e.rejected_at ? new Date(e.rejected_at) : undefined,
 });
 
 export function ExpenseProvider({ children }: { children: React.ReactNode }) {

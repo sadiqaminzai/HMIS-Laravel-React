@@ -28,6 +28,7 @@ const mapMedicine = (m: any): Medicine => ({
   strength: m.strength ?? '',
   type: m.type ?? m.medicine_type?.name ?? m.medicine_type_name ?? '',
   stock: m.stock !== undefined && m.stock !== null ? Number(m.stock) : undefined,
+  minStock: m.min_stock !== undefined && m.min_stock !== null ? Number(m.min_stock) : undefined,
   costPrice: m.cost_price !== undefined && m.cost_price !== null ? Number(m.cost_price) : undefined,
   salePrice: m.sale_price !== undefined && m.sale_price !== null ? Number(m.sale_price) : undefined,
   packSize: m.pack_size !== undefined && m.pack_size !== null ? Math.max(1, Number(m.pack_size)) : 1,
@@ -104,6 +105,9 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     if (payload.genericName !== undefined) body.generic_name = payload.genericName;
     if (payload.strength !== undefined) body.strength = payload.strength;
     if (payload.stock !== undefined) body.stock = payload.stock;
+    // null is meaningful here: it clears the product's own level so it falls
+    // back to the hospital default. Only `undefined` means "leave unchanged".
+    if (payload.minStock !== undefined) body.min_stock = payload.minStock;
     if (payload.costPrice !== undefined) body.cost_price = payload.costPrice;
     if (payload.salePrice !== undefined) body.sale_price = payload.salePrice;
     if (payload.packSize !== undefined) body.pack_size = payload.packSize;

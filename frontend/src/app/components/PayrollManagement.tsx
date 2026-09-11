@@ -6,6 +6,7 @@ import { usePayroll } from '../context/PayrollContext';
 import { useAuth } from '../context/AuthContext';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
 import { toast } from 'sonner';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 
 interface PayrollManagementProps {
   hospital: Hospital;
@@ -38,6 +39,10 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [generating, setGenerating] = useState(false);
+  // Synchronous ref lock. Generating a payroll batch twice would double every
+  // employee's pay line, and the state check at the top of onGenerate cannot
+  // stop two clicks landing in the same frame.
+  const { submitting: submitLocked, guard } = useSubmitGuard();
   const [batchCurrentPage, setBatchCurrentPage] = useState(1);
   const [itemCurrentPage, setItemCurrentPage] = useState(1);
   const batchItemsPerPage = 10;
@@ -308,7 +313,7 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
         </div>
       </div>
 
-      <form onSubmit={onGenerate} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+      <form onSubmit={guard(onGenerate)} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
         {userRole === 'super_admin' && (
           <div>
             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">{t('ui.hospital')}</label>
@@ -352,7 +357,7 @@ export function PayrollManagement({ hospital, userRole }: PayrollManagementProps
         <div className="md:col-span-5 flex justify-end">
           <button
             type="submit"
-            disabled={generating}
+            disabled={generating || submitLocked}
             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-[10px] text-sm font-medium flex items-center gap-2 shadow-sm transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 active:scale-95 disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />

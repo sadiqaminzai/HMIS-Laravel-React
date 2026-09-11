@@ -26,6 +26,10 @@ class OtherIncome extends Model
         'status',
         'created_by',
         'updated_by',
+        'approved_by',
+        'approved_at',
+        'rejected_by',
+        'rejected_at',
     ];
 
     protected $casts = [
@@ -34,6 +38,8 @@ class OtherIncome extends Model
         // reading the first ten characters gets the PREVIOUS day.
         'income_date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
+        'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     protected $appends = ['document_url'];
@@ -43,12 +49,17 @@ class OtherIncome extends Model
         return $this->belongsTo(OtherIncomeCategory::class, 'other_income_category_id');
     }
 
+    /**
+     * An ABSOLUTE url for the attached document. See Expense::getDocumentUrl --
+     * the default `local` disk returns a root-relative path that the SPA's own
+     * origin cannot serve.
+     */
     public function getDocumentUrlAttribute()
     {
         if (!$this->document_path) {
             return null;
         }
 
-        return Storage::url($this->document_path);
+        return url('storage/' . str_replace('\\', '/', $this->document_path));
     }
 }
