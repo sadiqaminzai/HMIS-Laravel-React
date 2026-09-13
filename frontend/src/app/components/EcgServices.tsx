@@ -344,7 +344,7 @@ export function EcgServices({ hospital, userRole }: EcgServicesProps) {
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                    placeholder="Root canal treatment"
+                    placeholder="e.g. Resting 12-lead ECG"
                     className={inputClass}
                     autoFocus
                   />
@@ -360,7 +360,7 @@ export function EcgServices({ hospital, userRole }: EcgServicesProps) {
                     onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                     rows={3}
                     dir="auto"
-                    placeholder="د ریښې د کانال درملنه"
+                    placeholder="e.g. د زړه برقي ګراف (ECG) - or a pricing note"
                     className={inputClass}
                   />
                 </div>

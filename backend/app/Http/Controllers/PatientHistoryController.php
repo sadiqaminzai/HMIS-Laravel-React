@@ -152,7 +152,9 @@ class PatientHistoryController extends Controller
                 'module' => 'Dental',
                 'table' => 'dental_receipts',
                 'date' => 'performed_at',
-                'title' => 'COALESCE(dental_services.name, \'Dental Treatment\')',
+                // The receipt's own joined service names first: a receipt can now
+                // carry several services, and the catalogue join names only one.
+                'title' => 'COALESCE(NULLIF(dental_receipts.service_name, \'\'), dental_services.name, \'Dental Treatment\')',
                 'reference' => 'dental_receipts.receipt_number',
                 'gross' => 'COALESCE(dental_receipts.fee, 0)',
                 'net' => 'COALESCE(dental_receipts.net_amount, dental_receipts.fee, 0)',
@@ -400,6 +402,26 @@ class PatientHistoryController extends Controller
                 'rows' => $rows->map(fn ($item) => [
                     $item->medicine_name, $item->strength, $item->dose,
                     $item->duration, $item->instruction, (string) $item->quantity,
+                ])->all(),
+            ];
+        }
+
+        // Studies and services on a multi-line receipt, with what each cost.
+        if ($module === 'X-Ray' || $module === 'Dental') {
+            [$table, $fk, $name, $label] = $module === 'X-Ray'
+                ? ['xray_receipt_details', 'xray_receipt_id', 'study_name', 'Study']
+                : ['dental_receipt_details', 'dental_receipt_id', 'service_name', 'Service'];
+
+            $rows = DB::table($table)->where($fk, $row->id)->orderBy('sort_order')->orderBy('id')->get([$name, 'fee']);
+
+            if ($rows->isEmpty()) {
+                return null;
+            }
+
+            return [
+                'columns' => [$label, 'Fee'],
+                'rows' => $rows->map(fn ($item) => [
+                    $item->{$name}, number_format((float) $item->fee, 2),
                 ])->all(),
             ];
         }

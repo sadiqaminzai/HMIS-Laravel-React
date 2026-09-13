@@ -1,0 +1,3 @@
+"name","display_name","category","description","status","is_system"
+"print_lab_results","Print Lab Result","Laboratory","Print the report of a completed lab result","active","True"
+"download_lab_results","Download Lab Result","Laboratory","Download a completed lab result as PDF","active","True"

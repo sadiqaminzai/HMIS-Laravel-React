@@ -22,6 +22,9 @@ class UltrasoundExam extends Model
         'report_body',
         'impression',
         'status',
+        // Who filed the report and when -- apart from who took the money.
+        'completed_by',
+        'completed_at',
         'payment_status',
         'fee',
         'paid_amount',
@@ -40,6 +43,7 @@ class UltrasoundExam extends Model
     protected $casts = [
         'examined_at' => 'datetime',
         'paid_at' => 'datetime',
+        'completed_at' => 'datetime',
         'fee' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'discount_enabled' => 'boolean',
@@ -52,6 +56,14 @@ class UltrasoundExam extends Model
     public function isPaid(): bool
     {
         return (string) $this->payment_status === 'paid';
+    }
+
+    /** What the patient owes: the fee less any discount. */
+    public function payableAmount(): float
+    {
+        return $this->net_amount !== null
+            ? (float) $this->net_amount
+            : max(0.0, (float) ($this->fee ?? 0) - (float) ($this->discount_amount ?? 0));
     }
 
     public function patient()

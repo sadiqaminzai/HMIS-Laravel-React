@@ -270,7 +270,15 @@ class PatientSurgeryController extends Controller
         }
 
         if (!$can('edit_surgery_payment_status')) {
-            $data['payment_status'] = $existing->payment_status ?? 'pending';
+            // A new surgery starts on the hospital's configured default
+            // (Settings > General > Default Payment Status) rather than always
+            // pending; an existing one keeps what it has.
+            $defaults = \App\Models\HospitalSetting::where('hospital_id', (int) ($data['hospital_id'] ?? $existing?->hospital_id ?? 0))
+                ->value('default_payment_statuses');
+            $defaults = is_string($defaults) ? json_decode($defaults, true) : $defaults;
+
+            $data['payment_status'] = $existing->payment_status
+                ?? ((is_array($defaults) && ($defaults['surgery'] ?? 'pending') === 'paid') ? 'paid' : 'pending');
         }
 
         // Same rights that govern an appointment discount, so a hospital

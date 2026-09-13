@@ -3,6 +3,7 @@ import { Loader2, Printer, Receipt, RotateCcw, Search, Smile, Wallet, X } from '
 import { toast } from 'sonner';
 import { Hospital, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { ReturnPaymentDialog } from './ReturnPaymentDialog';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useSettings } from '../context/SettingsContext';
@@ -11,6 +12,7 @@ import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { SearchableSelect } from './SearchableSelect';
 import { AddButton } from './AddButton';
 import { DentalServices } from './DentalServices';
+import { ReceiptLine, ReceiptLinesEditor } from './ReceiptLinesEditor';
 import {
   CellNumber,
   CellStack,
@@ -62,15 +64,33 @@ const paymentTone = (status: string): 'green' | 'amber' | 'red' =>
 const emptyForm = () => ({
   patientId: '',
   doctorId: '',
-  dentalServiceId: '',
-  serviceName: '',
+  // One entry per service billed; the receipt's fee is their sum.
+  lines: [] as ReceiptLine[],
   performedAt: new Date().toISOString().slice(0, 10),
   referredBy: '',
   notes: '',
-  fee: '',
   discountEnabled: false,
   discountPercentage: '',
 });
+
+/**
+ * A saved receipt's services as form lines.
+ *
+ * Every receipt carries lines since the details table was added; the header
+ * fallback only covers a receipt served by a backend that predates it.
+ */
+const receiptLinesFrom = (row: DentalReceiptApi): ReceiptLine[] =>
+  row.details && row.details.length > 0
+    ? row.details.map((line) => ({
+        catalogueId: line.dental_service_id ? String(line.dental_service_id) : '',
+        name: line.service_name,
+        fee: Number(line.fee ?? 0).toFixed(2),
+      }))
+    : [{
+        catalogueId: row.dental_service_id ? String(row.dental_service_id) : '',
+        name: row.service_name,
+        fee: Number(row.fee ?? 0).toFixed(2),
+      }];
 
 /**
  * Dental: a Receipt desk backed by a service catalogue.
@@ -107,10 +127,15 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
   const canCreate = hasPermission('add_dental_receipts') || canManage;
   const canEdit = hasPermission('edit_dental_receipts') || canManage;
   const canDelete = hasPermission('delete_dental_receipts') || canManage;
-  const canTakePayment = hasPermission('manage_dental_payments') || canManage;
+  // The desk's own Take Payment right. It used to fall back to Manage, so
+  // anyone who could manage receipts could also collect; Accounts > Payment
+  // Collection has its own right and is unaffected.
+  const canTakePayment = hasPermission('take_dental_payment');
   // No fallback: undoing a payment is how cash gets taken and the trace erased,
   // so it is held explicitly or not at all.
-  const canReversePayment = hasPermission('reverse_dental_payment');
+  const canReversePayment = hasPermission('return_dental_payment');
+  // Without it every line is the catalogue price, enforced on the server.
+  const canSetFee = hasPermission('set_dental_fee');
   const canPrintReceipt = hasPermission('print_dental_receipt') || canTakePayment;
   // The catalogue tab is its own permission family, so a cashier who may
   // raise receipts does not automatically get to reprice every service.
@@ -182,7 +207,7 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return receipts;
     return receipts.filter((row) =>
-      [row.service_name, row.patient?.name, row.patient?.phone, row.referred_by, row.doctor?.name]
+      [row.service_name, ...(row.details ?? []).map((line) => line.service_name), row.patient?.name, row.patient?.phone, row.referred_by, row.doctor?.name]
         .some((field) => String(field ?? '').toLowerCase().includes(term))
     );
   }, [receipts, searchTerm]);
@@ -237,14 +262,10 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
    */
   const activeTypes = useMemo(() => {
     const live = types.filter((row) => row.is_active);
-    const selectedId = form.dentalServiceId;
-
-    if (!selectedId) return live;
-    if (live.some((row) => String(row.id) === selectedId)) return live;
-
-    const retired = types.find((row) => String(row.id) === selectedId);
-    return retired ? [...live, retired] : live;
-  }, [types, form.dentalServiceId]);
+    const billed = new Set(form.lines.map((line) => line.catalogueId).filter(Boolean));
+    const retired = types.filter((row) => !row.is_active && billed.has(String(row.id)));
+    return [...live, ...retired];
+  }, [types, form.lines]);
 
   // Settings load per hospital on demand; the default discount above needs it.
   useEffect(() => {
@@ -257,14 +278,14 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
    * preview, not the source of truth.
    */
   const feePreview = useMemo(() => {
-    const gross = Math.max(0, Number(form.fee || 0));
+    const gross = Math.max(0, Math.round(form.lines.reduce((sum, line) => sum + Number(line.fee || 0), 0) * 100) / 100);
     if (form.discountEnabled) {
       return { gross, percent: gross > 0 ? 100 : 0, discount: gross, net: 0 };
     }
     const percent = Math.min(100, Math.max(0, Number(form.discountPercentage || 0)));
     const discount = Math.min(gross, Math.round(((gross * percent) / 100) * 100) / 100);
     return { gross, percent, discount, net: Math.max(0, Math.round((gross - discount) * 100) / 100) };
-  }, [form.fee, form.discountEnabled, form.discountPercentage]);
+  }, [form.lines, form.discountEnabled, form.discountPercentage]);
 
   const openModal = (row?: DentalReceiptApi) => {
     if (row) {
@@ -272,12 +293,10 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
       setForm({
         patientId: String(row.patient_id),
         doctorId: row.doctor_id ? String(row.doctor_id) : '',
-        dentalServiceId: row.dental_service_id ? String(row.dental_service_id) : '',
-        serviceName: row.service_name,
+        lines: receiptLinesFrom(row),
         performedAt: String(row.performed_at ?? '').slice(0, 10),
         referredBy: row.referred_by ?? '',
         notes: row.notes ?? '',
-        fee: String(row.fee ?? ''),
         discountEnabled: Boolean(row.discount_enabled),
         discountPercentage: Number(row.discount_percentage ?? 0) > 0 ? String(row.discount_percentage) : '',
       });
@@ -306,8 +325,8 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
     e.preventDefault();
     if (isSubmitting) return;
 
-    if (!form.patientId || !form.serviceName.trim()) {
-      toast.error('Please choose a patient and name the service.');
+    if (!form.patientId || form.lines.length === 0) {
+      toast.error('Please choose a patient and add at least one service.');
       return;
     }
 
@@ -315,12 +334,15 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
       ...(scopedHospitalId ? { hospital_id: scopedHospitalId } : {}),
       patient_id: form.patientId,
       doctor_id: form.doctorId || null,
-      dental_service_id: form.dentalServiceId || null,
-      service_name: form.serviceName.trim(),
+      items: form.lines.map((line) => ({
+        dental_service_id: line.catalogueId || null,
+        service_name: line.name.trim(),
+        // Sent either way; without Set Dental Fee the server uses the catalogue price.
+        fee: line.fee === '' ? null : Number(line.fee),
+      })),
       performed_at: form.performedAt,
       referred_by: form.referredBy || null,
       notes: form.notes || null,
-      fee: form.fee === '' ? 0 : Number(form.fee),
       discount_enabled: form.discountEnabled,
       discount_percentage: form.discountPercentage === '' ? 0 : Number(form.discountPercentage),
     };
@@ -374,19 +396,22 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
     }
   };
 
-  const reverse = async (row: DentalReceiptApi) => {
-    // The backend requires a reason; asking here keeps the reversal auditable
-    // rather than sending a placeholder.
-    const reason = window.prompt('Reason for reversing this payment:');
-    if (!reason) return;
+  // The receipt whose payment is being returned, while the dialog asks.
+  const [returning, setReturning] = useState<DentalReceiptApi | null>(null);
+
+  /** Put a collected payment back, once the dialog has a reason for it. */
+  const confirmReturn = async (reason: string) => {
+    if (!returning) return;
+    const row = returning;
 
     setBusyId(row.id);
     try {
       await reverseDentalPayment(row.id, reason);
+      setReturning(null);
       await loadData();
-      toast.success('Payment reversed');
+      toast.success('Payment returned');
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Could not reverse the payment');
+      toast.error(error?.response?.data?.message || 'Could not return the payment');
     } finally {
       setBusyId(null);
     }
@@ -464,10 +489,11 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
       </div>
     </div>
 
-    <div class="line" style="margin-top:6px;border-top:1px solid #000;padding-top:4px">
-      <span class="v">${row.service_name}</span>
-      <span class="v">${money(row.fee)}</span>
+    <div style="margin-top:6px;border-top:1px solid #000;padding-top:4px">
+      ${receiptLinesFrom(row).map((line) => `
+        <div class="line"><span class="v">${line.name}</span><span class="v">${money(line.fee)}</span></div>`).join('')}
     </div>
+    ${receiptLinesFrom(row).length > 1 ? `<div class="line"><span class="v">Subtotal</span><span class="v">${money(row.fee)}</span></div>` : ''}
 
     ${discount > 0 ? `<div class="line"><span class="v">Discount${percent > 0 ? ` (${percent}%)` : ''}</span><span class="v">-${money(discount)}</span></div>` : ''}
 
@@ -677,7 +703,7 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
                         tone="warning"
                         title="Reverse payment"
                         disabled={busyId === row.id}
-                        onClick={() => reverse(row)}
+                        onClick={() => setReturning(row)}
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </TableAction>
@@ -739,63 +765,24 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
                   placeholder="Search doctor..."
                 />
               </div>
-              <div className="col-span-12 md:col-span-6">
-                <label className={labelClass}>Service</label>
-                {/* The catalogue is the normal path, so the picker is always
-                    shown -- it used to vanish when the catalogue was empty,
-                    which read as a missing feature rather than as "nothing to
-                    pick yet". The free-text box below appears only while the
-                    catalogue is empty, so the desk keeps working. */}
-                <SearchableSelect
-                  value={form.dentalServiceId}
-                  onChange={(value) => {
-                    const picked = activeTypes.find((row) => String(row.id) === value);
-                    setForm((p) => ({
-                      ...p,
-                      dentalServiceId: value,
-                      // The name is copied, not referenced, so renaming a
-                      // service later cannot rewrite receipts already printed.
-                      serviceName: picked ? picked.name : p.serviceName,
-                      fee: picked ? Number(picked.price || 0).toFixed(2) : p.fee,
-                    }));
-                  }}
-                  options={activeTypes.map((row) => ({
-                    value: String(row.id),
-                    // A retired entry only appears here when this receipt
-                    // already points at it, so say so rather than letting it
-                    // look like a current choice.
-                    label:
-                      (Number(row.price || 0) > 0
-                        ? `${row.name} (${Number(row.price).toFixed(2)})`
-                        : row.name) + (row.is_active ? '' : ' - inactive'),
-                  }))}
-                  placeholder={activeTypes.length > 0 ? 'Search service...' : 'No dental services yet'}
-                  disabled={activeTypes.length === 0}
-                  emptyMessage="No dental services yet - add them in the Dental Services tab"
-                />
-                {activeTypes.length === 0 && (
-                  <input
-                    value={form.serviceName}
-                    onChange={(e) => setForm((p) => ({ ...p, serviceName: e.target.value }))}
-                    placeholder="e.g. Root canal treatment"
-                    required
-                    className={inputClass + ' mt-1.5'}
-                  />
-                )}
-              </div>
-              <div className="col-span-12 md:col-span-6">
-                <label className={labelClass}>Date</label>
-                <input
-                  type="date"
-                  value={form.performedAt}
-                  onChange={(e) => setForm((p) => ({ ...p, performedAt: e.target.value }))}
-                  required
-                  disabled={!canBackdateReceipt}
-                  title={canBackdateReceipt ? undefined : 'Changing the receipt date requires the Change Receipt Date permission'}
-                  className={inputClass + ' disabled:opacity-60 disabled:cursor-not-allowed'}
+              <div className="col-span-12">
+                <label className={labelClass}>Services</label>
+                <ReceiptLinesEditor
+                  catalogue={activeTypes}
+                  lines={form.lines}
+                  onChange={(lines) => setForm((p) => ({ ...p, lines }))}
+                  canSetFee={canSetFee}
+                  itemLabel="service"
+                  placeholder="Add a service..."
+                  emptyCatalogueMessage="No dental services yet - add them in the Dental Services tab"
+                  freeTextPlaceholder="e.g. Root canal treatment"
+                  feePermissionName="Set Dental Fee"
                 />
               </div>
-              <div className="col-span-12 md:col-span-6">
+              {/* Referred By, Discount and Date on one row, in the order the
+                  counter fills them in. They are short fields; three half-rows
+                  made the form taller than the lines above it needed. */}
+              <div className="col-span-12 md:col-span-4">
                 <label className={labelClass}>Referred By (optional)</label>
                 <input
                   value={form.referredBy}
@@ -803,30 +790,10 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
                   className={inputClass}
                 />
               </div>
-              <div className="col-span-12 md:col-span-3">
-                <label className={labelClass}>Fee</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.fee}
-                  onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
-                  // Money is settled to the fils on paper, so it reads that
-                  // way in the form too. Normalised on blur rather than on
-                  // every keystroke, which would fight the typist.
-                  onBlur={() =>
-                    setForm((p) => ({
-                      ...p,
-                      fee: p.fee === '' ? '' : Number(p.fee || 0).toFixed(2),
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </div>
               {/* Percentage in, amount out -- hospitals announce campaigns as a
                   rate, and entering it the other way round means recomputing
                   the campaign by hand on every receipt. */}
-              <div className="col-span-12 md:col-span-3">
+              <div className="col-span-12 md:col-span-4">
                 <label className={labelClass}>Discount %</label>
                 <input
                   type="number"
@@ -841,6 +808,18 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
                 {!canApplyDiscount && (
                   <p className="text-[10px] text-gray-500 mt-0.5">No discount permission</p>
                 )}
+              </div>
+              <div className="col-span-12 md:col-span-4">
+                <label className={labelClass}>Date</label>
+                <input
+                  type="date"
+                  value={form.performedAt}
+                  onChange={(e) => setForm((p) => ({ ...p, performedAt: e.target.value }))}
+                  required
+                  disabled={!canBackdateReceipt}
+                  title={canBackdateReceipt ? undefined : 'Changing the receipt date requires the Change Receipt Date permission'}
+                  className={inputClass + ' disabled:opacity-60 disabled:cursor-not-allowed'}
+                />
               </div>
               <div className="col-span-12">
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5 bg-gray-50 dark:bg-gray-700/30">
@@ -902,6 +881,18 @@ export function DentalReceipts({ hospital, userRole }: DentalReceiptsProps) {
           </div>
         </div>
       )}
+
+      <ReturnPaymentDialog
+        open={Boolean(returning)}
+        patientName={returning?.patient?.name}
+        itemName={returning?.service_name}
+        receiptNo={returning ? (returning.receipt_number || returning.sequence_id || returning.id) : null}
+        amount={Number(returning?.paid_amount ?? returning?.net_amount ?? 0)}
+        paidBy={returning?.paid_by}
+        busy={Boolean(returning && busyId === returning.id)}
+        onCancel={() => setReturning(null)}
+        onConfirm={confirmReturn}
+      />
 
       {paying && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">

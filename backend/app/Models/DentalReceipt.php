@@ -87,4 +87,15 @@ class DentalReceipt extends Model
     {
         return $this->belongsTo(DentalService::class);
     }
+
+    /**
+     * The services billed on this receipt, in the order they were entered.
+     *
+     * The header keeps the bill's totals; these carry what was done. See
+     * 2026_09_27_000100 for why they were split.
+     */
+    public function details()
+    {
+        return $this->hasMany(DentalReceiptDetail::class, 'dental_receipt_id')->orderBy('sort_order')->orderBy('id');
+    }
 }

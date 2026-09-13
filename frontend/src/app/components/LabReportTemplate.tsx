@@ -5,7 +5,7 @@ import { formatDate } from '../utils/date';
 import { buildVerificationUrl } from '../utils/verification';
 // One branding string for every printout, rather than each report
 // spelling the company name its own way.
-import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { SOFTCARE_NAME, SOFTCARE_PHONES } from '../utils/receiptBranding';
 import { printNameOr } from '../utils/printName';
 import { formatAge, formatAgeLong } from '../utils/age';
 
@@ -185,6 +185,19 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
     </div>
   );
 
+  /** When this copy was printed, in the hospital's own timezone where it is set. */
+  const printedAt = (() => {
+    const options: Intl.DateTimeFormatOptions = {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+    };
+    try {
+      return new Date().toLocaleString('en-GB', { ...options, timeZone: hospital?.timezone || undefined });
+    } catch {
+      // An unrecognised timezone name must not break the report.
+      return new Date().toLocaleString('en-GB', options);
+    }
+  })().replace(/\b(am|pm)\b/i, (m) => m.toUpperCase());
+
   return (
     <div
       id={`report-${test.id}`}
@@ -262,10 +275,10 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
                   </div>
                   {/* Black, not grey: thermal and laser output thins mid-greys to
                       the point of vanishing, and this is the line a patient rings. */}
-                  <div style={{ fontSize: '11.5px', color: BRAND.ink, marginTop: '5px', lineHeight: 1.55 }}>
+                  <div style={{ fontSize: '13.5px', fontWeight: 500, color: BRAND.ink, marginTop: '6px', lineHeight: 1.5 }}>
                     {hospital?.address}
                   </div>
-                  <div style={{ fontSize: '11.5px', color: BRAND.ink, lineHeight: 1.55 }}>
+                  <div style={{ fontSize: '13.5px', fontWeight: 500, color: BRAND.ink, lineHeight: 1.5 }}>
                     {[hospital?.phone && `Phone: ${hospital.phone}`, hospital?.email && `Email: ${hospital.email}`]
                       .filter(Boolean)
                       .join('  ·  ')}
@@ -488,27 +501,40 @@ export function LabReportTemplate({ test, hospital, testTemplates = [] }: LabRep
                 </div>
               )}
 
-              <div style={{ display: 'flex' }}>
-                <div style={{ height: '2px', backgroundColor: BRAND.red, width: '72px' }} />
-                <div style={{ height: '2px', backgroundColor: accent, flex: '1 1 auto' }} />
+              {/* The footer's weight is carried by the coloured bands, not the
+                  text: a bold red and blue bar above, a thin one below, and a
+                  single line of small print between them. */}
+              <div style={{ display: 'flex', gap: '3px' }}>
+                <div style={{ height: '5px', backgroundColor: BRAND.red, width: '22%' }} />
+                <div style={{ height: '5px', backgroundColor: BRAND.navy, flex: '1 1 auto' }} />
+                <div style={{ height: '5px', backgroundColor: BRAND.red, width: '8%' }} />
               </div>
               <div
                 style={{
                   display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: '16px',
-                  padding: '5px 2px 0',
-                  fontSize: '8.5px',
+                  gap: '10px',
+                  padding: '3px 2px',
+                  fontSize: '7.5px',
+                  lineHeight: 1.3,
                   color: BRAND.muted,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {/* The hospital's address and numbers are already set out in full
-                    at the top of every page; repeating them here only crowded the
-                    foot of the sheet. */}
-                <span>{POWERED_BY_TEXT}</span>
                 <span>
+                  Powered by: <span style={{ fontWeight: 700, color: BRAND.navy }}>{SOFTCARE_NAME}</span>
+                  {'  ·  '}
+                  {SOFTCARE_PHONES.join(' , ')}
+                </span>
+                <span>Electronically generated report · Scan QR to verify · Printed {printedAt}</span>
+                <span style={{ fontWeight: 600, color: BRAND.navy }}>
                   Page {groupIndex + 1} of {groups.length}
                 </span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <div style={{ height: '2px', backgroundColor: BRAND.navy, flex: '1 1 auto' }} />
+                <div style={{ height: '2px', backgroundColor: BRAND.red, width: '22%' }} />
               </div>
             </div>
           </div>

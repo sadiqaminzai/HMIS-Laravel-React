@@ -82,7 +82,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     { key: 'general', label: 'General' },
     { key: 'reception', label: 'Reception' },
     { key: 'pharmacy', label: 'Pharmacy' },
-    { key: 'laboratory', label: 'Laboratory' },
     { key: 'prescription', label: 'Prescription' },
     { key: 'printing', label: 'Printing' },
     { key: 'reports', label: 'Reports' },
@@ -135,6 +134,12 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
     purchase: 'pending',
     purchase_return: 'pending',
     appointments: 'pending',
+    xray: 'pending',
+    ultrasound: 'pending',
+    ecg: 'pending',
+    dental: 'pending',
+    room_booking: 'pending',
+    surgery: 'pending',
   });
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [invoiceFields, setInvoiceFields] = useState<InvoiceFieldSettings>({ ...DEFAULT_INVOICE_FIELDS });
@@ -276,12 +281,20 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save payment defaults'));
   };
 
-  const handleSaveLabDefaults = () => {
+  /**
+   * Saves the whole Default Payment Status card in one request.
+   *
+   * The laboratory flag is only sent by someone allowed to change it, so a
+   * supervisor who manages discounts but not lab collections cannot reset
+   * the laboratory default as a side effect of saving the others.
+   */
+  const handleSaveReceiptPaymentDefaults = () => {
     saveHospitalSetting(selectedHospital.id, {
-      labDefaultPaymentStatus: labDefaultPaid ? 'paid' : 'unpaid',
+      defaultPaymentStatuses: paymentDefaults as any,
+      ...(canSetLabPaymentDefault ? { labDefaultPaymentStatus: labDefaultPaid ? 'paid' : 'unpaid' } : {}),
     })
-      .then(() => toast.success('Laboratory defaults saved'))
-      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save laboratory defaults'));
+      .then(() => toast.success('Payment defaults saved'))
+      .catch((err) => toast.error(err?.response?.data?.message || 'Failed to save payment defaults'));
   };
 
   const handleSaveBarcodeSettings = () => {
@@ -463,52 +476,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {settingsTab === 'reception' && canCollectAppointmentFees && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Wallet className="w-4 h-4 text-emerald-500" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Appointment Fee</h2>
-          </div>
-
-          {/* Same card as Walk-in Mode and Default Next Visit beside it: the
-              three answer the same kind of question and used to be dressed
-              three different ways. Saves on toggle -- a switch that needs a
-              separate button invites you to change it and walk away. */}
-          <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/30">
-            <div className="flex-1">
-              <h3 className="text-xs font-semibold text-gray-900 dark:text-white">New appointments start as Paid</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                If disabled, a new appointment opens as Pending and the fee is collected later.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={paymentDefaults.appointments === 'paid'}
-              aria-label="New appointments start as paid"
-              onClick={() => {
-                const next = paymentDefaults.appointments === 'paid' ? 'pending' : 'paid';
-                const updated = { ...paymentDefaults, appointments: next as 'paid' | 'pending' };
-                setPaymentDefaults(updated);
-                saveHospitalSetting(selectedHospital.id, { defaultPaymentStatuses: updated as any })
-                  .then(() => toast.success(`New appointments start as ${next === 'paid' ? 'Paid' : 'Pending'}`))
-                  .catch((err) => {
-                    setPaymentDefaults(paymentDefaults);
-                    toast.error(err?.response?.data?.message || 'Failed to save the appointment default');
-                  });
-              }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-2 ${
-                paymentDefaults.appointments === 'paid' ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                paymentDefaults.appointments === 'paid' ? 'translate-x-6' : 'translate-x-1'
-              }`} />
-            </button>
-          </div>
-        </div>
-        )}
-
         {settingsTab === 'pharmacy' && canRecordFinancePayments && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center gap-2 mb-3">
@@ -550,44 +517,6 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
           >
             Save payment defaults
           </button>
-        </div>
-        )}
-
-        {settingsTab === 'laboratory' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Lab Payments</h2>
-          </div>
-          {canSetLabPaymentDefault && (
-            <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-              <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
-                <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
-                  New lab orders start as Paid
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={labDefaultPaid}
-                  aria-label="New lab orders start as paid"
-                  onClick={() => setLabDefaultPaid(!labDefaultPaid)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    labDefaultPaid ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    labDefaultPaid ? 'translate-x-4.5' : 'translate-x-0.5'
-                  }`} />
-                </button>
-              </label>
-              <button
-                onClick={handleSaveLabDefaults}
-                className="mt-2 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-              >
-                Save laboratory defaults
-              </button>
-            </div>
-          )}
-
         </div>
         )}
 
@@ -1189,6 +1118,81 @@ export function GeneralSettings({ hospital, userRole }: GeneralSettingsProps) {
             className="mt-3 w-full px-3 h-8 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700"
           >
             Save Default Discounts
+          </button>
+        </div>
+        )}
+
+        {/* Standing payment status per receipt desk.
+
+            Beside Default Discount because the two answer the same question --
+            what a new receipt starts as -- and they used to be scattered across
+            the Reception and Laboratory tabs, so configuring a hospital meant
+            visiting three. Pharmacy keeps its own card: it has four document
+            types of its own.
+
+            Each row keeps the right that already governed it (appointments and
+            the laboratory their collection rights); the desks new here share
+            the Default Discount right. On the server a receipt only starts
+            Paid for a user who may collect for that desk. */}
+        {settingsTab === 'general' && (canManageDefaultDiscounts || canCollectAppointmentFees || canSetLabPaymentDefault) && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Wallet className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Default Payment Status</h2>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Switch on for a desk that takes the fee when the receipt is raised. Off means the receipt
+            opens Unpaid and is collected later, from the desk or from Accounts &gt; Payment Collection.
+          </p>
+
+          <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
+            {([
+              { key: 'appointments', label: 'Appointment Receipt', allowed: canCollectAppointmentFees },
+              { key: 'lab', label: 'Lab Receipt', allowed: canSetLabPaymentDefault },
+              { key: 'xray', label: 'X-Ray Receipt', allowed: canManageDefaultDiscounts },
+              { key: 'ultrasound', label: 'Ultrasound Receipt', allowed: canManageDefaultDiscounts },
+              { key: 'ecg', label: 'ECG Receipt', allowed: canManageDefaultDiscounts },
+              { key: 'dental', label: 'Dental Receipt', allowed: canManageDefaultDiscounts },
+              { key: 'room_booking', label: 'Room Booking Receipt', allowed: canManageDefaultDiscounts },
+              { key: 'surgery', label: 'Surgery Receipt', allowed: canManageDefaultDiscounts },
+            ] as const).filter((row) => row.allowed).map((row) => {
+              // The laboratory default lives in its own column; every other desk
+              // shares default_payment_statuses with appointments and pharmacy.
+              const on = row.key === 'lab' ? labDefaultPaid : paymentDefaults[row.key] === 'paid';
+              const toggle = () => {
+                if (row.key === 'lab') {
+                  setLabDefaultPaid(!labDefaultPaid);
+                } else {
+                  setPaymentDefaults((prev) => ({ ...prev, [row.key]: prev[row.key] === 'paid' ? 'pending' : 'paid' }));
+                }
+              };
+              return (
+                <div key={row.key} className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="text-xs text-gray-800 dark:text-gray-200">{row.label} starts as Paid</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${row.label} starts as paid`}
+                    onClick={toggle}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                      on ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      on ? 'translate-x-4.5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={handleSaveReceiptPaymentDefaults}
+            className="mt-3 w-full px-3 h-8 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700"
+          >
+            Save Payment Defaults
           </button>
         </div>
         )}

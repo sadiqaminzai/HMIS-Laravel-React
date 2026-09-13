@@ -549,6 +549,14 @@ export interface LabTest {
   updatedAt?: Date;
   updatedBy?: string;
   verificationToken?: string;
+  /** The receipt side of the order, for the Lab Orders details card. */
+  paymentMethod?: string | null;
+  paidBy?: string | null;
+  paidAt?: Date | null;
+  receiptNumber?: string | null;
+  isWalkIn?: boolean;
+  /** Every test billed on the order, with the price it was billed at. */
+  orderLines?: Array<{ testTemplateId: string; testName: string; price: number }>;
 }
 
 // Result for each parameter

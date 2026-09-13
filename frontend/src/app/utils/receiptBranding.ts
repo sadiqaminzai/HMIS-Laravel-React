@@ -17,7 +17,15 @@ export const POWERED_BY_TEXT = 'Powered by: SoftCare IT Solutions';
  * patient keeps, so it is the one place the numbers earn their space.
  */
 export const POWERED_BY_TEXT_WITH_PHONE =
-  'Powered by: SoftCare IT Solutions  0772 502020 | 0788 502020';
+  'Powered by: SoftCare IT Solutions  0772 50 20 20 | 0788 50 20 20';
+
+/**
+ * The company and its two numbers as separate parts, for a footer that sets
+ * them on their own line rather than squeezing them onto the brand line.
+ * Grouped in pairs the way they are read aloud over the phone.
+ */
+export const SOFTCARE_NAME = 'SoftCare IT Solutions';
+export const SOFTCARE_PHONES = ['0772 50 20 20', '0788 50 20 20'];
 
 /**
  * Markup for the print surfaces that build their document as an HTML string.

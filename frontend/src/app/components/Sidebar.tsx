@@ -86,24 +86,13 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    id: 'laboratory', // Group ID
+    // One entry with three tabs -- Lab Orders, Lab Results, Test Management --
+    // laid out like Dental, instead of two sub-menus.
+    id: '/lab-tests',
     translationKey: 'nav.laboratory',
     icon: <TestTube className="w-3.5 h-3.5" />,
     menuPermission: 'view_laboratory_menu',
-    subItems: [
-      {
-        id: '/lab-tests',
-        translationKey: 'nav.labTests',
-        icon: <FileText className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_lab_orders', 'manage_lab_orders', 'enter_lab_results', 'manage_lab_payments']
-      },
-      {
-        id: '/test-management',
-        translationKey: 'nav.testManagement',
-        icon: <TestTube className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_test_templates', 'manage_test_templates']
-      }
-    ]
+    anyPermissions: ['view_lab_orders', 'add_lab_orders', 'edit_lab_orders', 'delete_lab_orders', 'export_lab_orders', 'print_lab_orders', 'manage_lab_orders', 'update_lab_order_status', 'enter_lab_results', 'take_lab_payment', 'return_lab_payment', 'view_test_templates', 'add_test_templates', 'edit_test_templates', 'delete_test_templates', 'export_test_templates', 'print_test_templates', 'manage_test_templates']
   },
   {
     id: 'radiology', // Group ID
@@ -120,6 +109,7 @@ const menuItems: MenuItem[] = [
         translationKey: 'nav.ultrasound',
         icon: <ScanLine className="w-3.5 h-3.5" />,
         anyPermissions: [
+          'take_ultrasound_payment', 'edit_ultrasound_receipt',
           'manage_ultrasound_payments', 'print_ultrasound_receipt',
           'view_ultrasound_exams', 'add_ultrasound_receipt', 'submit_ultrasound_result', 'delete_ultrasound_exams',
           'export_ultrasound_exams', 'print_ultrasound_exams', 'manage_ultrasound_exams',
@@ -245,49 +235,55 @@ const menuItems: MenuItem[] = [
         id: '/reports/general',
         translationKey: 'nav.reportsGeneral',
         icon: <BarChart className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_general', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_general']
       },
       {
         id: '/reports/pharmacy',
         translationKey: 'nav.reportsPharmacy',
         icon: <Package className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_pharmacy', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_pharmacy_stock', 'view_reports_pharmacy_purchase', 'view_reports_pharmacy_sales', 'view_reports_pharmacy_expiry', 'view_reports_pharmacy_low_stock', 'view_reports_pharmacy_profit']
       },
       {
         id: '/reports/reception',
         translationKey: 'nav.reportsReception',
         icon: <UserCheck className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_reception', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_reception']
       },
       {
         id: '/reports/laboratory',
         translationKey: 'nav.reportsLaboratory',
         icon: <TestTube className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_laboratory', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_laboratory']
       },
       {
         id: '/reports/surgery',
         translationKey: 'nav.reportsSurgery',
         icon: <Stethoscope className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_surgery', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_surgery']
       },
       {
         id: '/reports/room-booking',
         translationKey: 'nav.reportsRoomBooking',
         icon: <BedDouble className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_room_booking', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_room_booking']
       },
       {
         id: '/reports/xray',
         translationKey: 'nav.reportsXray',
         icon: <ScanLine className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_xray', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_xray']
       },
       {
         id: '/reports/ultrasound',
         translationKey: 'nav.reportsUltrasound',
         icon: <Activity className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_ultrasound', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_ultrasound']
+      },
+      {
+        id: '/reports/ecg',
+        translationKey: 'nav.reportsEcg',
+        icon: <Activity className="w-3.5 h-3.5" />,
+        anyPermissions: ['view_reports_ecg']
       },
       {
         // Moved out of the Expenses menu: reading a report and typing an entry
@@ -296,13 +292,13 @@ const menuItems: MenuItem[] = [
         id: '/reports/expenses',
         translationKey: 'nav.reportsExpenses',
         icon: <Receipt className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_expenses', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_expenses']
       },
       {
         id: '/reports/other-income',
         translationKey: 'nav.reportsOtherIncome',
         icon: <Wallet className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_reports_other_income', 'view_reports', 'manage_reports']
+        anyPermissions: ['view_reports_other_income']
       },
       {
         // Last in the list on purpose: the desks above report across every
@@ -311,7 +307,7 @@ const menuItems: MenuItem[] = [
         id: '/patient-history',
         translationKey: 'nav.patientHistory',
         icon: <History className="w-3.5 h-3.5" />,
-        anyPermissions: ['view_patients', 'manage_patients', 'register_patients']
+        anyPermissions: ['view_reports_patient_history']
       }
     ]
   },

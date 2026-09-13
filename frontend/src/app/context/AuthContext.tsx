@@ -127,6 +127,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthLoading(false);
   }, []);
 
+  /*
+   * Pick up role changes without signing out.
+   *
+   * Permissions were read once, when the page loaded, so ticking a right for a
+   * role did nothing for anyone already logged in until they reloaded -- which
+   * reads exactly like the right not working. They are re-read when the tab
+   * comes back into focus and every few minutes, at most once every 30 seconds.
+   * A failed refresh keeps the current session; a real logout is still
+   * handled by the request interceptor.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastRefresh = Date.now();
+
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (Date.now() - lastRefresh < 30_000) return;
+      lastRefresh = Date.now();
+
+      api
+        .get('/me')
+        .then((response) => {
+          const authedUser = response.data.user as User;
+          const serialized = JSON.stringify(authedUser);
+          // Only when something changed, so an idle tab does not re-render the app.
+          if (serialized !== localStorage.getItem('auth_user')) {
+            localStorage.setItem('auth_user', serialized);
+            setUser(authedUser);
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setInterval(refresh, 5 * 60_000);
+
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      window.clearInterval(timer);
+    };
+  }, [isAuthenticated]);
+
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await api.post('/login', { email, password });

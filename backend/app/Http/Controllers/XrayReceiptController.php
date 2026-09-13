@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsReceiptLines;
+use App\Http\Controllers\Concerns\HandlesDeskPayments;
 use App\Models\XrayReceipt;
+use App\Models\XrayType;
 use App\Services\DiscountService;
 use App\Services\LedgerPostingService;
 use Illuminate\Database\QueryException;
@@ -17,10 +20,24 @@ use Illuminate\Validation\ValidationException;
  * Deliberately narrower than UltrasoundExamController: there is no report and
  * no work queue, so the whole module is one screen -- raise the charge, take
  * the money, print the receipt.
+ *
+ * A receipt carries one or more studies as lines (xray_receipt_details); the
+ * receipt itself holds what belongs to the whole bill. See BuildsReceiptLines
+ * for how each line is priced.
  */
 class XrayReceiptController extends Controller
 {
-    private const RELATIONS = ['patient', 'doctor'];
+    use BuildsReceiptLines, HandlesDeskPayments;
+
+    private const RELATIONS = ['patient', 'doctor', 'details'];
+
+    private const LINES = [
+        'catalogue' => XrayType::class,
+        'catalogueKey' => 'xray_type_id',
+        'nameKey' => 'study_name',
+        'feePermission' => 'set_xray_fee',
+        'label' => 'study',
+    ];
 
     public function __construct(
         private readonly LedgerPostingService $ledgerPostingService,
@@ -65,6 +82,7 @@ class XrayReceiptController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('study_name', 'like', "%{$search}%")
                     ->orWhere('referred_by', 'like', "%{$search}%")
+                    ->orWhereHas('details', fn ($d) => $d->where('study_name', 'like', "%{$search}%"))
                     ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', "%{$search}%")
                         ->orWhere('phone', 'like', "%{$search}%"));
             });
@@ -86,10 +104,14 @@ class XrayReceiptController extends Controller
         $data = $this->validatePayload($request, $hospitalId);
         $data['hospital_id'] = $hospitalId;
 
-        $this->enforceDiscountPermission($request, $data);
-        $this->applyDiscountRules($data);
+        $lines = $this->resolveReceiptLines($request, self::LINES, $hospitalId);
+        $data = array_merge($data, $this->summariseReceiptLines($lines, 'xray_type_id', 'study_name'));
 
-        $receipt = DB::transaction(function () use ($data, $request, $hospitalId) {
+        $this->enforceDiscountPermission($request, $data, null, 'xray');
+        $this->applyDiscountRules($data);
+        $this->applyDefaultPayment($request, $data, $hospitalId, 'xray', (float) $data['net_amount']);
+
+        $receipt = DB::transaction(function () use ($data, $lines, $request, $hospitalId) {
             $data['created_by'] = $request->user()->name ?? null;
             $data['updated_by'] = $request->user()->name ?? null;
 
@@ -104,7 +126,10 @@ class XrayReceiptController extends Controller
                 try {
                     $data['sequence_id'] = (int) ($nextSequence ?? 0) + 1;
 
-                    return XrayReceipt::create($data);
+                    $receipt = XrayReceipt::create($data);
+                    $receipt->details()->createMany($lines);
+
+                    return $receipt;
                 } catch (QueryException $e) {
                     if (!$this->isDuplicateSequenceError($e)) {
                         throw $e;
@@ -144,6 +169,9 @@ class XrayReceiptController extends Controller
         $data['updated_by'] = $request->user()->name ?? null;
         unset($data['sequence_id']);
 
+        $lines = $this->resolveReceiptLines($request, self::LINES, $hospitalId, $xrayReceipt->details()->get());
+        $data = array_merge($data, $this->summariseReceiptLines($lines, 'xray_type_id', 'study_name'));
+
         $this->enforceDiscountPermission($request, $data, $xrayReceipt);
         $this->applyDiscountRules($data);
 
@@ -158,7 +186,14 @@ class XrayReceiptController extends Controller
             $data['receipt_number']
         );
 
-        $xrayReceipt->update($data);
+        DB::transaction(function () use ($xrayReceipt, $data, $lines) {
+            $xrayReceipt->update($data);
+            // Replaced, not diffed: a line's identity is its position on the
+            // bill, and the fee a line keeps was already settled above.
+            $xrayReceipt->details()->delete();
+            $xrayReceipt->details()->createMany($lines);
+        });
+
         $this->ledgerPostingService->upsertXrayReceiptSnapshot($xrayReceipt->fresh());
 
         return response()->json($xrayReceipt->fresh()->load(self::RELATIONS));
@@ -169,12 +204,18 @@ class XrayReceiptController extends Controller
         $this->authorizeScope($request->user(), $xrayReceipt);
 
         $this->ledgerPostingService->voidXrayReceiptSnapshot($xrayReceipt, $request->user()->name ?? null);
-        $xrayReceipt->delete();
+
+        // The receipt is soft-deleted, which the foreign key's cascade never
+        // sees -- so its lines are removed here, as the receipt goes.
+        DB::transaction(function () use ($xrayReceipt) {
+            $xrayReceipt->details()->delete();
+            $xrayReceipt->delete();
+        });
 
         return response()->json(['message' => 'X-Ray receipt deleted']);
     }
 
-    /** Take payment at the counter. */
+    /** Take payment at the counter, or from Accounts > Payment Collection. */
     public function processPayment(Request $request, XrayReceipt $xrayReceipt)
     {
         $this->authorizeScope($request->user(), $xrayReceipt);
@@ -219,9 +260,9 @@ class XrayReceiptController extends Controller
     {
         $this->authorizeScope($request->user(), $xrayReceipt);
 
-        if (!($request->user()?->hasPermission('reverse_xray_payment') ?? false)) {
+        if (!$this->canReturnFor($request, 'xray')) {
             return response()->json([
-                'message' => 'Reversing an X-Ray payment requires the Reverse X-Ray Payment permission.',
+                'message' => 'Returning an X-Ray payment requires the Return X-Ray Payment permission.',
             ], 403);
         }
 
@@ -260,6 +301,10 @@ class XrayReceiptController extends Controller
             'patient' => $receipt->patient,
             'doctor' => $receipt->doctor,
             'study_name' => $receipt->study_name,
+            'details' => $receipt->details->map(fn ($line) => [
+                'study_name' => $line->study_name,
+                'fee' => (float) $line->fee,
+            ])->values(),
             'fee' => (float) ($receipt->fee ?? 0),
             'discount_percentage' => (float) ($receipt->discount_percentage ?? 0),
             'discount_amount' => (float) ($receipt->discount_amount ?? 0),
@@ -274,11 +319,15 @@ class XrayReceiptController extends Controller
     }
 
     /**
+     * The header fields. Lines are validated here and priced in
+     * BuildsReceiptLines; the header's fee, study name and type are derived
+     * from them, never trusted from the request.
+     *
      * @return array<string, mixed>
      */
     private function validatePayload(Request $request, int $hospitalId): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'patient_id' => [
                 'required',
                 Rule::exists('patients', 'id')->where(fn ($q) => $q->where('hospital_id', $hospitalId)),
@@ -289,24 +338,25 @@ class XrayReceiptController extends Controller
                     fn ($q) => $q->where('hospital_id', $hospitalId)->where('role', 'doctor')->whereNull('deleted_at')
                 ),
             ],
-            // The catalogue is the normal path, but study_name stays
-            // required: historical receipts have no type, and the printed
-            // label must survive a study later being renamed or removed.
-            'xray_type_id' => [
-                'nullable',
-                Rule::exists('xray_types', 'id')->where(
-                    fn ($q) => $q->where('hospital_id', $hospitalId)->whereNull('deleted_at')
-                ),
-            ],
-            'study_name' => ['required', 'string', 'max:191'],
+            'items' => ['required_without:study_name', 'array', 'min:1'],
+            'items.*.xray_type_id' => ['nullable', 'integer'],
+            'items.*.study_name' => ['nullable', 'string', 'max:191'],
+            'items.*.fee' => ['nullable', 'numeric', 'min:0'],
+            // The single-study shape older pages still send.
+            'xray_type_id' => ['nullable', 'integer'],
+            'study_name' => ['required_without:items', 'nullable', 'string', 'max:191'],
+            'fee' => ['nullable', 'numeric', 'min:0'],
             'performed_at' => ['required', 'date'],
             'referred_by' => ['nullable', 'string', 'max:191'],
             'notes' => ['nullable', 'string'],
-            'fee' => ['nullable', 'numeric', 'min:0'],
             'discount_enabled' => ['nullable', 'boolean'],
             'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        unset($validated['items'], $validated['xray_type_id'], $validated['study_name'], $validated['fee']);
+
+        return $validated;
     }
 
     /**
@@ -315,7 +365,7 @@ class XrayReceiptController extends Controller
      *
      * Disabling the input in the form is a hint; this is the control.
      */
-    private function enforceDiscountPermission(Request $request, array &$data, ?XrayReceipt $existing = null): void
+    private function enforceDiscountPermission(Request $request, array &$data, ?XrayReceipt $existing = null, ?string $defaultDesk = null): void
     {
         $user = $request->user();
 
@@ -326,6 +376,22 @@ class XrayReceiptController extends Controller
         $canDiscount = $user->hasAnyPermission(['add_discounts', 'edit_discounts', 'manage_discounts']);
 
         if (!$canDiscount) {
+            // A NEW receipt from someone without the discount right still gets the
+            // hospital's standing discount (Settings > General > Default Discount).
+            // That rate is hospital policy, not the clerk's choice -- stripping it
+            // meant the form previewed 50% off while the receipt was saved, and
+            // printed, at the full fee. Any other rate is still refused.
+            if ($existing === null && $defaultDesk !== null) {
+                $default = (float) (\App\Models\HospitalSetting::where('hospital_id', (int) ($data['hospital_id'] ?? 0))
+                    ->value('default_discount_' . $defaultDesk) ?? 0);
+
+                $data['discount_enabled'] = false;
+                $data['discount_percentage'] = max(0.0, min(100.0, $default));
+                $data['discount_amount'] = 0;
+
+                return;
+            }
+
             // Keep whatever was already stored; never accept a new discount.
             $data['discount_enabled'] = (bool) ($existing->discount_enabled ?? false);
             $data['discount_percentage'] = (float) ($existing->discount_percentage ?? 0);

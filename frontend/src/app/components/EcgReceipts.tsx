@@ -3,6 +3,8 @@ import { Activity, Loader2, Printer, Receipt, RotateCcw, Search, Wallet, X } fro
 import { toast } from 'sonner';
 import { Hospital, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { ReturnPaymentDialog } from './ReturnPaymentDialog';
+import { ReceiptDetailsModal, ReceiptDetails } from './ReceiptDetailsModal';
 import { usePatients } from '../context/PatientContext';
 import { useDoctors } from '../context/DoctorContext';
 import { useSettings } from '../context/SettingsContext';
@@ -20,6 +22,7 @@ import {
   DataTableHead,
   DeleteIcon,
   EditIcon,
+  ViewIcon,
   RowIcon,
   TableAction,
   TableEmpty,
@@ -107,10 +110,15 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
   const canCreate = hasPermission('add_ecg_receipts') || canManage;
   const canEdit = hasPermission('edit_ecg_receipts') || canManage;
   const canDelete = hasPermission('delete_ecg_receipts') || canManage;
-  const canTakePayment = hasPermission('manage_ecg_payments') || canManage;
+  // The desk's own Take Payment right. It used to fall back to Manage, so
+  // anyone who could manage receipts could also collect; Accounts > Payment
+  // Collection has its own right and is unaffected.
+  const canTakePayment = hasPermission('take_ecg_payment');
   // No fallback: undoing a payment is how cash gets taken and the trace erased,
   // so it is held explicitly or not at all.
-  const canReversePayment = hasPermission('reverse_ecg_payment');
+  const canReversePayment = hasPermission('return_ecg_payment');
+  // Without it the fee is the study's catalogue price, enforced on the server.
+  const canSetFee = hasPermission('set_ecg_fee');
   const canPrintReceipt = hasPermission('print_ecg_receipt') || canTakePayment;
   // The catalogue tab is its own permission family, so a cashier who may
   // raise receipts does not automatically get to reprice every service.
@@ -194,8 +202,8 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
 
   // Sorted and paged through the shared table, so this desk behaves like every
   // other listing. Newest first: the receipt just raised is the one being paid.
-  const sort = useTableSort<any>(filtered, 'performed_at', 'desc');
-  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows);
+  const sort = useTableSort<any>(filtered, 'created_at', 'desc');
+  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows, 20);
 
   useEffect(() => {
     setPage(1);
@@ -289,7 +297,7 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
         // A new receipt is dated today; editing keeps whatever was saved.
         performedAt: today(),
         // The percentage field, not discountEnabled -- that flag is a full
-        // waiver and would make every treatment free.
+        // waiver and would make every study free.
         discountPercentage: seeded > 0 ? String(seeded) : '',
       });
     }
@@ -374,19 +382,56 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
     }
   };
 
-  const reverse = async (row: EcgReceiptApi) => {
-    // The backend requires a reason; asking here keeps the reversal auditable
-    // rather than sending a placeholder.
-    const reason = window.prompt('Reason for reversing this payment:');
-    if (!reason) return;
+  // The receipt open in the read-only details card.
+  const [viewing, setViewing] = useState<EcgReceiptApi | null>(null);
+
+  /** Everything the details card shows, from the row and its study. */
+  const detailsFor = (row: EcgReceiptApi): ReceiptDetails => ({
+    title: 'ECG Receipt',
+    receiptNo: row.receipt_number || row.sequence_id || row.id,
+    date: formatOnlyDate(row.performed_at, hospital.timezone, hospital.calendarType),
+    paymentStatus: row.payment_status,
+    patient: row.patient,
+    doctorName: row.doctor?.name,
+    referredBy: row.referred_by,
+    itemsLabel: 'Study',
+    items: [{
+      name: row.service_name,
+      description: row.ecg_service?.description
+        ?? types.find((type) => String(type.id) === String(row.ecg_service_id ?? ''))?.description,
+      fee: row.fee,
+    }],
+    fee: row.fee,
+    discountAmount: row.discount_amount,
+    discountPercentage: row.discount_percentage,
+    fullWaiver: Boolean(row.discount_enabled),
+    netAmount: payable(row),
+    paidAmount: row.paid_amount,
+    paymentMethod: row.payment_method,
+    notes: row.notes,
+    history: [
+      { label: 'Created', who: row.created_by, when: row.created_at },
+      { label: 'Last updated', who: row.updated_by, when: row.updated_at },
+      { label: 'Payment taken', who: row.paid_by, when: row.paid_at },
+    ],
+  });
+
+  // The receipt whose payment is being returned, while the dialog asks.
+  const [returning, setReturning] = useState<EcgReceiptApi | null>(null);
+
+  /** Put a collected payment back, once the dialog has a reason for it. */
+  const confirmReturn = async (reason: string) => {
+    if (!returning) return;
+    const row = returning;
 
     setBusyId(row.id);
     try {
       await reverseEcgPayment(row.id, reason);
+      setReturning(null);
       await loadData();
-      toast.success('Payment reversed');
+      toast.success('Payment returned');
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Could not reverse the payment');
+      toast.error(error?.response?.data?.message || 'Could not return the payment');
     } finally {
       setBusyId(null);
     }
@@ -662,6 +707,9 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                         )}
                       </TableAction>
                     )}
+                    <TableAction tone="view" title="View details" onClick={() => setViewing(row)}>
+                      <ViewIcon />
+                    </TableAction>
                     {canPrintReceipt && (
                       <TableAction tone="edit" title="Print receipt" onClick={() => printReceipt(row)}>
                         <Printer className="w-3.5 h-3.5" />
@@ -677,7 +725,7 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                         tone="warning"
                         title="Reverse payment"
                         disabled={busyId === row.id}
-                        onClick={() => reverse(row)}
+                        onClick={() => setReturning(row)}
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </TableAction>
@@ -764,10 +812,11 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                     // A retired entry only appears here when this receipt
                     // already points at it, so say so rather than letting it
                     // look like a current choice.
-                    label:
-                      (Number(row.price || 0) > 0
-                        ? `${row.name} (${Number(row.price).toFixed(2)})`
-                        : row.name) + (row.is_active ? '' : ' - inactive'),
+                    label: row.name + (row.is_active ? '' : ' - inactive'),
+                    meta: [
+                      row.description?.trim() || null,
+                      Number(row.price || 0) > 0 ? `${Number(row.price).toFixed(2)} AFN` : null,
+                    ].filter(Boolean).join('  \u00b7  ') || undefined,
                   }))}
                   placeholder={activeTypes.length > 0 ? 'Search study...' : 'No ECG studies yet'}
                   disabled={activeTypes.length === 0}
@@ -777,7 +826,7 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                   <input
                     value={form.serviceName}
                     onChange={(e) => setForm((p) => ({ ...p, serviceName: e.target.value }))}
-                    placeholder="e.g. Root canal treatment"
+                    placeholder="e.g. Resting 12-lead ECG"
                     required
                     className={inputClass + ' mt-1.5'}
                   />
@@ -810,6 +859,8 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                   min={0}
                   step="0.01"
                   value={form.fee}
+                  disabled={!canSetFee}
+                  title={canSetFee ? undefined : "The study's price applies; changing it requires the Set ECG Fee permission"}
                   onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
                   // Money is settled to the fils on paper, so it reads that
                   // way in the form too. Normalised on blur rather than on
@@ -820,7 +871,7 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
                       fee: p.fee === '' ? '' : Number(p.fee || 0).toFixed(2),
                     }))
                   }
-                  className={inputClass}
+                  className={inputClass + ' disabled:opacity-60 disabled:cursor-not-allowed'}
                 />
               </div>
               {/* Percentage in, amount out -- hospitals announce campaigns as a
@@ -902,6 +953,24 @@ export function EcgReceipts({ hospital, userRole }: EcgReceiptsProps) {
           </div>
         </div>
       )}
+
+      <ReceiptDetailsModal
+        details={viewing ? detailsFor(viewing) : null}
+        onClose={() => setViewing(null)}
+        onPrint={viewing && canPrintReceipt ? () => printReceipt(viewing) : undefined}
+      />
+
+      <ReturnPaymentDialog
+        open={Boolean(returning)}
+        patientName={returning?.patient?.name}
+        itemName={returning?.service_name}
+        receiptNo={returning ? (returning.receipt_number || returning.sequence_id || returning.id) : null}
+        amount={Number(returning?.paid_amount ?? returning?.net_amount ?? 0)}
+        paidBy={returning?.paid_by}
+        busy={Boolean(returning && busyId === returning.id)}
+        onCancel={() => setReturning(null)}
+        onConfirm={confirmReturn}
+      />
 
       {paying && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">

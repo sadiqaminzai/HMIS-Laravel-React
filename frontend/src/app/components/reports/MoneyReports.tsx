@@ -162,13 +162,11 @@ export function MoneyReports({ hospital, kind }: MoneyReportsProps) {
     language: i18n.language,
   };
 
-  // The desk's own right, plus the two broad ones so existing roles keep
-  // working. All four tabs share it: they are four arrangements of one set of
-  // rows, not four different reports.
+  // The desk's own right -- the same one the server checks. All four tabs
+  // share it: they are four arrangements of one set of rows, not four
+  // different reports.
   const permissions = [
     kind === 'expense' ? 'view_reports_expenses' : 'view_reports_other_income',
-    'view_reports',
-    'manage_reports',
   ];
 
   const tabs: ModuleTab[] = [

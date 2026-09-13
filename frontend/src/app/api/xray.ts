@@ -15,6 +15,14 @@ export interface XrayReceiptApi {
   xray_type_id?: number | null;
   /** The printed label. Kept even with a type, so a rename cannot alter history. */
   study_name: string;
+  /** Every study on the receipt; the fields above are their summary. */
+  details?: Array<{
+    id: number;
+    xray_type_id: number | null;
+    study_name: string;
+    fee: number | string;
+    sort_order: number;
+  }>;
   performed_at: string;
   referred_by: string | null;
   notes: string | null;
@@ -43,8 +51,14 @@ export interface XrayReceiptPayload {
   hospital_id?: number | string;
   patient_id: number | string;
   doctor_id?: number | string | null;
+  /**
+   * The studies billed. The server prices each one (catalogue price unless
+   * the user may set fees) and derives the receipt's total from them.
+   */
+  items?: Array<{ xray_type_id: number | string | null; study_name: string; fee: number | null }>;
+  /** Single-study shape, still accepted for older pages. */
   xray_type_id?: number | string | null;
-  study_name: string;
+  study_name?: string;
   performed_at: string;
   referred_by?: string | null;
   notes?: string | null;

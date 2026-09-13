@@ -13,6 +13,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Doctor;
 use App\Models\Traits\Sequenceable;
+use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
@@ -169,7 +170,7 @@ class User extends Authenticatable
         }
 
         if ($this->roles()->exists()) {
-            return $this->spatieHasAnyPermission($names);
+            return $this->withFreshPermissionCache($names, fn () => $this->spatieHasAnyPermission($names));
         }
 
         $role = $this->effectiveRoleRecord();
@@ -251,7 +252,14 @@ class User extends Authenticatable
 
                 // Settings/Reports
                 'view_hospital_settings', 'manage_hospital_settings',
-                'view_reports', 'manage_reports',
+                // One right per report desk and pharmacy tab: the broad
+                // view_reports/manage_reports pair was retired (2026_09_27_000400).
+                'view_reports_general', 'view_reports_reception', 'view_reports_laboratory',
+                'view_reports_surgery', 'view_reports_room_booking', 'view_reports_xray',
+                'view_reports_ultrasound', 'view_reports_ecg', 'view_reports_expenses', 'view_reports_patient_history',
+                'view_reports_other_income',
+                'view_reports_pharmacy_stock', 'view_reports_pharmacy_purchase', 'view_reports_pharmacy_sales',
+                'view_reports_pharmacy_expiry', 'view_reports_pharmacy_low_stock', 'view_reports_pharmacy_profit',
             ],
 
             'doctor' => [
@@ -337,11 +345,13 @@ class User extends Authenticatable
         }
 
         if ($this->roles()->exists()) {
-            try {
-                return $this->spatieHasPermissionTo($permissionName);
-            } catch (\Throwable $e) {
-                return false;
-            }
+            return $this->withFreshPermissionCache([$permissionName], function () use ($permissionName) {
+                try {
+                    return $this->spatieHasPermissionTo($permissionName);
+                } catch (\Throwable $e) {
+                    return false;
+                }
+            });
         }
 
         $role = $this->effectiveRoleRecord();
@@ -371,7 +381,7 @@ class User extends Authenticatable
         }
 
         if ($this->roles()->exists()) {
-            return $this->spatieHasAnyPermission($names);
+            return $this->withFreshPermissionCache($names, fn () => $this->spatieHasAnyPermission($names));
         }
 
         $role = $this->effectiveRoleRecord();
@@ -388,5 +398,47 @@ class User extends Authenticatable
             ->where('permissions.status', 'active')
             ->whereIn('permissions.name', $names)
             ->exists();
+    }
+    /**
+     * Run a Spatie permission check, retrying once if its cache is stale.
+     *
+     * Spatie looks a permission up in its own cache before checking any role,
+     * and a name it cannot find there counts as not granted. A permission a
+     * migration inserted after that cache was built is therefore refused for up
+     * to 24 hours: the Roles screen shows it ticked, /me lists it (that list is
+     * read from the tables, not the cache), the button appears -- and the
+     * request behind the button is Forbidden. That is how the new Take and
+     * Return Payment rights failed on the live server after deploy.
+     *
+     * So a refusal is double-checked: if a name exists in the database but not
+     * in the cache, the cache is rebuilt and the check runs again. Only a
+     * refusal pays for the lookup, and the rebuild happens at most once per
+     * request, so a genuinely missing right costs one extra query, not a loop.
+     *
+     * @param  array<int, string>  $names
+     */
+    private function withFreshPermissionCache(array $names, callable $check): bool
+    {
+        if ($check()) {
+            return true;
+        }
+
+        static $refreshedThisRequest = false;
+
+        if ($refreshedThisRequest) {
+            return false;
+        }
+
+        $registrar = app(PermissionRegistrar::class);
+        $missing = array_values(array_diff($names, $registrar->getPermissions()->pluck('name')->all()));
+
+        if ($missing === [] || !Permission::query()->whereIn('name', $missing)->where('status', 'active')->exists()) {
+            return false;
+        }
+
+        $refreshedThisRequest = true;
+        $registrar->forgetCachedPermissions();
+
+        return (bool) $check();
     }
 }

@@ -142,13 +142,17 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
    * AppointmentManagement.
    */
   const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
-  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts, getDefaultPaymentStatuses } = useSettings();
 
   /** The rate a new booking starts at, from Settings > General > Default Discounts. */
   const seededRoomDiscount = () => {
     const percent = getDefaultDiscounts(currentHospital.id).roomBooking;
     return percent > 0 ? String(percent) : '0';
   };
+
+  /** The payment status a new booking starts on, from Settings > General > Default Payment Status. */
+  const seededRoomPayment = (): BookingItem['paymentStatus'] =>
+    getDefaultPaymentStatuses(currentHospital.id)?.room_booking === 'paid' ? 'paid' : 'pending';
   const { hospitals } = useHospitals();
   const { patients } = usePatients();
   const { doctors } = useDoctors();
@@ -294,7 +298,7 @@ export function RoomBookingManagement({ hospital, userRole }: RoomBookingManagem
       bedsToBook: '1',
       discountPercent: seededRoomDiscount(),
       status: 'Pending',
-      paymentStatus: 'pending',
+      paymentStatus: seededRoomPayment(),
       remarks: '',
       isActive: true,
     });

@@ -31,6 +31,7 @@ const DESK_PERMISSION: Record<ClinicalDesk, string> = {
   'room-booking': 'view_reports_room_booking',
   xray: 'view_reports_xray',
   ultrasound: 'view_reports_ultrasound',
+  ecg: 'view_reports_ecg',
 };
 
 const DESKS: Record<
@@ -60,6 +61,12 @@ const DESKS: Record<
     subtitle: 'Scans performed and fees collected, by period, doctor and exam type',
     serviceLabel: 'Exam Type',
     serviceTabLabel: 'Exam Type Wise',
+  },
+  ecg: {
+    title: 'ECG Reports',
+    subtitle: 'Studies performed and fees collected, by period, doctor and study',
+    serviceLabel: 'Study',
+    serviceTabLabel: 'Study Wise',
   },
 };
 
@@ -230,16 +237,16 @@ export function ClinicalReports({ hospital, desk }: ClinicalReportsProps) {
   };
 
   /*
-   * The desk's own permission, plus the two broad ones.
+   * The desk's own permission, and nothing broader.
    *
-   * `view_reports`/`manage_reports` are kept so existing roles keep working;
-   * `view_reports_surgery` and friends are the fine grain to grant instead when
-   * someone should see one desk and not the rest.
+   * The broad view_reports/manage_reports pair was retired: it opened every
+   * report at once, and the server now checks this same per-desk right, so a
+   * tab shown here is a tab the API will actually serve.
    *
    * All four tabs share it deliberately: they are four arrangements of the same
    * rows, so a right to see one is a right to see all four.
    */
-  const permissions = [DESK_PERMISSION[desk], 'view_reports', 'manage_reports'];
+  const permissions = [DESK_PERMISSION[desk]];
 
   const tabs: ModuleTab[] = [
     {

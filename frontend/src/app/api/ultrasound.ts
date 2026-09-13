@@ -28,6 +28,9 @@ export interface UltrasoundExamApi {
   report_body: string | null;
   impression: string | null;
   status: 'draft' | 'completed' | 'cancelled';
+  /** Whoever submitted the report, stamped by the server from the logged-in user. */
+  completed_by?: string | null;
+  completed_at?: string | null;
   /** Set at the reception counter, not by the reporting specialist. */
   payment_status: 'unpaid' | 'partial' | 'paid';
   fee: number | string;

@@ -268,7 +268,7 @@ export interface HospitalSetting {
   /** Which reports desk each income module's money is reported under. */
   reportModuleOwners: ReportModuleOwners;
   /** Payment status a new document of each type starts on. */
-  defaultPaymentStatuses: Record<'sales' | 'sales_return' | 'purchase' | 'purchase_return' | 'appointments', 'paid' | 'pending'>;
+  defaultPaymentStatuses: Record<'sales' | 'sales_return' | 'purchase' | 'purchase_return' | 'appointments' | 'xray' | 'ultrasound' | 'ecg' | 'dental' | 'room_booking' | 'surgery', 'paid' | 'pending'>;
   /** Whether pharmacy sales accept registered patients, walk-ins, or both. */
   pharmacyCustomerMode: PharmacyCustomerMode;
   pharmacyDefaultCustomer: PharmacyDefaultCustomer;
@@ -465,6 +465,12 @@ const SettingsContext = createContext<SettingsContextType>({
     purchase: 'pending',
     purchase_return: 'pending',
     appointments: 'pending',
+    xray: 'pending',
+    ultrasound: 'pending',
+    ecg: 'pending',
+    dental: 'pending',
+    room_booking: 'pending',
+    surgery: 'pending',
   }),
   getBarcodeLabel: () => ({ widthMm: 29, heightMm: 18 }),
   generatePatientId: () => 'P0001',
@@ -708,6 +714,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         purchase: raw.default_payment_statuses?.purchase ?? 'pending',
         purchase_return: raw.default_payment_statuses?.purchase_return ?? 'pending',
         appointments: raw.default_payment_statuses?.appointments ?? 'pending',
+        xray: raw.default_payment_statuses?.xray ?? 'pending',
+        ultrasound: raw.default_payment_statuses?.ultrasound ?? 'pending',
+        ecg: raw.default_payment_statuses?.ecg ?? 'pending',
+        dental: raw.default_payment_statuses?.dental ?? 'pending',
+        room_booking: raw.default_payment_statuses?.room_booking ?? 'pending',
+        surgery: raw.default_payment_statuses?.surgery ?? 'pending',
       },
       barcodeScanningEnabled: raw.barcode_scanning_enabled !== undefined
         ? Boolean(raw.barcode_scanning_enabled) : true,
@@ -749,6 +761,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         purchase: 'pending',
         purchase_return: 'pending',
         appointments: 'pending',
+        xray: 'pending',
+        ultrasound: 'pending',
+        ecg: 'pending',
+        dental: 'pending',
+        room_booking: 'pending',
+        surgery: 'pending',
       },
       barcodeScanningEnabled: true,
       barcodeLabel: { widthMm: 29, heightMm: 18 },

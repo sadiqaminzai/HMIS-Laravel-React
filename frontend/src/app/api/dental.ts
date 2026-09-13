@@ -42,6 +42,14 @@ export interface DentalReceiptApi {
   dental_service_id?: number | null;
   /** The printed label, copied at billing time so a rename cannot alter history. */
   service_name: string;
+  /** Every service on the receipt; the fields above are their summary. */
+  details?: Array<{
+    id: number;
+    dental_service_id: number | null;
+    service_name: string;
+    fee: number | string;
+    sort_order: number;
+  }>;
   performed_at: string;
   referred_by: string | null;
   notes: string | null;
@@ -78,8 +86,14 @@ export interface DentalReceiptPayload {
   hospital_id?: number | string;
   patient_id: number | string;
   doctor_id?: number | string | null;
+  /**
+   * The services billed. The server prices each one (catalogue price unless
+   * the user may set fees) and derives the receipt's total from them.
+   */
+  items?: Array<{ dental_service_id: number | string | null; service_name: string; fee: number | null }>;
+  /** Single-service shape, still accepted for older pages. */
   dental_service_id?: number | string | null;
-  service_name: string;
+  service_name?: string;
   performed_at: string;
   referred_by?: string | null;
   notes?: string | null;

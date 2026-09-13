@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Validator;
 
 class LabOrderController extends Controller
 {
+    use \App\Http\Controllers\Concerns\HandlesDeskPayments;
+
     public function __construct(private readonly LedgerPostingService $ledgerPostingService)
     {
     }
@@ -328,7 +330,7 @@ class LabOrderController extends Controller
             $startsPaid = HospitalSetting::where('hospital_id', $order->hospital_id)
                 ->value('lab_default_payment_status') === 'paid';
 
-            if ($startsPaid && $netAmount > 0 && ($request->user()?->hasPermission('manage_lab_payments') ?? false)) {
+            if ($startsPaid && $netAmount > 0 && $this->canCollectFor($request, 'lab')) {
                 $totals['payment_status'] = 'paid';
                 $totals['paid_amount'] = round($netAmount, 2);
                 $totals['payment_method'] = 'cash';
@@ -666,11 +668,12 @@ class LabOrderController extends Controller
      */
     public function resetPayment(Request $request, LabOrder $labOrder)
     {
-        // Route middleware already requires reverse_lab_payment; checked again
-        // here so the rule survives a route being re-pointed at this method.
-        if (!($request->user()?->hasPermission('reverse_lab_payment') ?? false)) {
+        // Route middleware already requires one of these; checked again here so
+        // the rule survives a route being re-pointed at this method. Either the
+        // desk's Return Payment or the Accounts Reverse right will do.
+        if (!$this->canReturnFor($request, 'lab')) {
             return response()->json([
-                'message' => 'Reversing a lab payment requires the Reverse Lab Payment permission.',
+                'message' => 'Returning a lab payment requires the Return Lab Payment permission.',
             ], 403);
         }
 

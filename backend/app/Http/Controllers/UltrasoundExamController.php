@@ -13,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class UltrasoundExamController extends Controller
 {
+    use \App\Http\Controllers\Concerns\HandlesDeskPayments;
+
     use \App\Http\Controllers\Concerns\HandlesReceiptDiscounts;
 
     private const RELATIONS = ['patient', 'doctor', 'ultrasoundType'];
@@ -95,8 +97,10 @@ class UltrasoundExamController extends Controller
 
         // Who may discount, then what the discount comes to. Both enforced
         // here: the form disables the field, but that is only a hint.
-        $this->enforceDiscountPermission($request, $data);
+        $this->enforceDiscountPermission($request, $data, null, 'ultrasound');
         $this->applyDiscountRules($data, 'fee');
+        $this->applyDefaultPayment($request, $data, $hospitalId, 'ultrasound', (float) ($data['net_amount'] ?? $data['fee'] ?? 0));
+        $this->stampCompletion($request, $data, null);
 
         $exam = DB::transaction(function () use ($data, $request, $hospitalId) {
             $data['created_by'] = $request->user()->name ?? null;
@@ -154,6 +158,22 @@ class UltrasoundExamController extends Controller
         $data['updated_by'] = $request->user()->name ?? null;
         unset($data['sequence_id']);
 
+        // Edit Receipt corrects the receipt, not the report. Without the right
+        // to submit results (or being the doctor), the clinical fields and the
+        // exam's status are kept exactly as stored, whatever the form sent.
+        $user = $request->user();
+        $mayWriteReport = $user !== null && (
+            $user->role === 'super_admin'
+            || $user->role === 'doctor'
+            || $user->hasPermission('submit_ultrasound_result')
+        );
+
+        if (!$mayWriteReport) {
+            foreach (['clinical_notes', 'report_body', 'impression', 'status'] as $field) {
+                $data[$field] = $ultrasoundExam->{$field};
+            }
+        }
+
         // The radiologist is whoever files the report, not a name chosen from a
         // list: the record should say who actually read the images. Only set
         // when the user is a doctor, since doctor_id is constrained to those.
@@ -202,10 +222,35 @@ class UltrasoundExamController extends Controller
             ], 422);
         }
 
+        $this->stampCompletion($request, $data, $ultrasoundExam);
+
         $ultrasoundExam->update($data);
         $this->ledgerPostingService->upsertUltrasoundExamSnapshot($ultrasoundExam->fresh());
 
         return response()->json($ultrasoundExam->fresh()->load(self::RELATIONS));
+    }
+
+    /**
+     * Record who filed the report, the moment it becomes completed.
+     *
+     * Always the logged-in user -- never a name from the form -- and only on
+     * the transition, so re-saving a finished report does not overwrite who
+     * actually wrote it. Moving a report back out of completed clears it.
+     */
+    private function stampCompletion(Request $request, array &$data, ?UltrasoundExam $existing): void
+    {
+        unset($data['completed_by'], $data['completed_at']);
+
+        $next = $data['status'] ?? $existing?->status;
+        $was = $existing?->status;
+
+        if ($next === 'completed' && $was !== 'completed') {
+            $data['completed_by'] = $request->user()?->name;
+            $data['completed_at'] = now();
+        } elseif ($next !== 'completed' && $was === 'completed') {
+            $data['completed_by'] = null;
+            $data['completed_at'] = null;
+        }
     }
 
     public function destroy(Request $request, UltrasoundExam $ultrasoundExam)
@@ -243,11 +288,14 @@ class UltrasoundExamController extends Controller
             return response()->json(['message' => 'This exam is already paid.'], 422);
         }
 
-        $fee = (float) ($ultrasoundExam->fee ?? 0);
+        // Settled against the net, not the fee. Comparing with the fee marked a
+        // discounted exam paid in full at its net -- which is exactly what
+        // Payment Collection sends -- as only partly paid.
+        $payable = $ultrasoundExam->payableAmount();
         $paid = (float) $data['paid_amount'];
 
         $ultrasoundExam->update([
-            'payment_status' => $paid >= $fee && $fee > 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
+            'payment_status' => $paid >= $payable && $payable > 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
             'paid_amount' => $paid,
             'payment_method' => $data['payment_method'],
             'paid_at' => now(),
@@ -275,9 +323,9 @@ class UltrasoundExamController extends Controller
     {
         $this->authorizeScope($request->user(), $ultrasoundExam);
 
-        if (!($request->user()?->hasPermission('reverse_ultrasound_payment') ?? false)) {
+        if (!$this->canReturnFor($request, 'ultrasound')) {
             return response()->json([
-                'message' => 'Reversing an ultrasound payment requires the Reverse Ultrasound Payment permission.',
+                'message' => 'Returning an ultrasound payment requires the Return Ultrasound Payment permission.',
             ], 403);
         }
 

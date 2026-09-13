@@ -48,6 +48,7 @@ const CATEGORY_TO_TAB: Record<string, string> = {
   // supervisor configuring a radiographer had to cross two tabs to do it.
   // They keep their own panels inside the tab.
   Ultrasound: 'Radiology',
+  ECG: 'Radiology',
 
   // --- Finance -----------------------------------------------------------
   // Taking and reversing money is finance work wherever the charge came from,
@@ -134,12 +135,33 @@ const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
   print_dental_receipt:          { resource: 'dental_receipts', label: 'Print' },
   print_ecg_receipt:             { resource: 'ecg_receipts', label: 'Print' },
   print_xray_receipt:            { resource: 'xray_receipts', label: 'Print' },
-  print_ultrasound_receipt:      { resource: 'ultrasound_exams', label: 'Print Receipt' },
+  print_ultrasound_receipt:      { resource: 'ultrasound_receipts', label: 'Print' },
   submit_ultrasound_result:      { resource: 'ultrasound_exams', label: 'Submit Result' },
-  add_ultrasound_receipt:        { resource: 'ultrasound_exams', label: 'Add Receipt' },
+  add_ultrasound_receipt:        { resource: 'ultrasound_receipts', label: 'Add' },
+  edit_ultrasound_receipt:       { resource: 'ultrasound_receipts', label: 'Edit' },
   delete_ultrasound_exams:       { resource: 'ultrasound_exams', label: 'Delete' },
-  delete_ultrasound_receipt:     { resource: 'ultrasound_exams', label: 'Delete Receipt' },
-  set_ultrasound_fee:            { resource: 'ultrasound_exams', label: 'Set Fee' },
+  delete_ultrasound_receipt:     { resource: 'ultrasound_receipts', label: 'Delete' },
+  set_ultrasound_fee:            { resource: 'ultrasound_receipts', label: 'Set Fee' },
+
+  /*
+   * Setting the price and taking the money at the desk itself.
+   *
+   * Take/Return Payment here are the desk's own buttons. They are separate
+   * from Accounts > Payment Collection (the Collect/Reverse rows on the
+   * Accounts tab) and from managing the desk's records -- holding Manage no
+   * longer implies collecting.
+   */
+  take_ultrasound_payment:       { resource: 'ultrasound_receipts', label: 'Take Payment' },
+  return_ultrasound_payment:     { resource: 'ultrasound_receipts', label: 'Return Payment' },
+  set_xray_fee:                  { resource: 'xray_receipts', label: 'Set Fee' },
+  take_xray_payment:             { resource: 'xray_receipts', label: 'Take Payment' },
+  return_xray_payment:           { resource: 'xray_receipts', label: 'Return Payment' },
+  set_ecg_fee:                   { resource: 'ecg_receipts', label: 'Set Fee' },
+  take_ecg_payment:              { resource: 'ecg_receipts', label: 'Take Payment' },
+  return_ecg_payment:            { resource: 'ecg_receipts', label: 'Return Payment' },
+  set_dental_fee:                { resource: 'dental_receipts', label: 'Set Fee' },
+  take_dental_payment:           { resource: 'dental_receipts', label: 'Take Payment' },
+  return_dental_payment:         { resource: 'dental_receipts', label: 'Return Payment' },
   complete_unpaid_ultrasound:    { resource: 'ultrasound_exams', label: 'Complete While Unpaid' },
   create_prescription:           { resource: 'prescriptions', label: 'Create' },
   print_prescription:            { resource: 'prescriptions', label: 'Print' },
@@ -160,14 +182,20 @@ const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
    * Ten one-checkbox panels made the Laboratory tab read as ten features; they
    * are all decisions about a lab order.
    */
-  enter_lab_results:             { resource: 'lab_orders', label: 'Enter Results' },
-  override_lab_result_lock:      { resource: 'lab_orders', label: 'Override Result Lock' },
-  update_lab_order_status:       { resource: 'lab_orders', label: 'Update Status' },
-  reverse_lab_order_status:      { resource: 'lab_orders', label: 'Reverse Status' },
+  // Lab Results tab: the laboratory's own work on an order.
+  enter_lab_results:             { resource: 'lab_results', label: 'Enter Results' },
+  override_lab_result_lock:      { resource: 'lab_results', label: 'Correct Closed Result' },
+  update_lab_order_status:       { resource: 'lab_results', label: 'Update Status' },
+  reverse_lab_order_status:      { resource: 'lab_results', label: 'Reverse Status' },
+  print_lab_results:             { resource: 'lab_results', label: 'Print Result' },
+  download_lab_results:          { resource: 'lab_results', label: 'Download Result (PDF)' },
+  // Lab Orders tab: the counter's side -- the order, its money and its paper.
   cancel_paid_lab_order:         { resource: 'lab_orders', label: 'Cancel Paid Order' },
-  view_unpaid_lab_orders:        { resource: 'lab_orders', label: 'View Unpaid' },
+  view_unpaid_lab_orders:        { resource: 'lab_orders', label: 'View Unpaid Receipts' },
   print_unpaid_lab_receipt:      { resource: 'lab_orders', label: 'Print Unpaid Receipt' },
   lab_test_order_discount:       { resource: 'lab_orders', label: 'Apply Discount' },
+  take_lab_payment:              { resource: 'lab_orders', label: 'Take Payment' },
+  return_lab_payment:            { resource: 'lab_orders', label: 'Return Payment' },
 
   // Surgery's two loose fee rights belong to the patient surgery record.
   edit_surgery_cost:             { resource: 'patient_surgeries', label: 'Edit Cost' },
@@ -224,12 +252,14 @@ const PERMISSION_PANEL: Record<string, { resource: string; label: string }> = {
   view_reports_room_booking: { resource: 'report_desks', label: 'Room Booking' },
   view_reports_xray:         { resource: 'report_desks', label: 'X-Ray' },
   view_reports_ultrasound:   { resource: 'report_desks', label: 'Ultrasound' },
+  view_reports_ecg:          { resource: 'report_desks', label: 'ECG' },
+  view_reports_patient_history: { resource: 'report_desks', label: 'Patient History' },
   view_reports_expenses:     { resource: 'report_desks', label: 'Expenses' },
   view_reports_other_income: { resource: 'report_desks', label: 'Other Income' },
 
-  // The pharmacy desk's own tabs. `view_reports_pharmacy` opens the desk and
-  // every tab on it, so it is listed first as the "all of these" grant.
-  view_reports_pharmacy:            { resource: 'report_pharmacy', label: 'Pharmacy Desk (all tabs)' },
+  // The pharmacy desk's own tabs, one right each. The desk-wide "all tabs"
+  // right was retired with the broad report rights: the panel's own checkbox
+  // already selects all six.
   view_reports_pharmacy_stock:      { resource: 'report_pharmacy', label: 'Available Stock' },
   view_reports_pharmacy_purchase:   { resource: 'report_pharmacy', label: 'Purchase' },
   view_reports_pharmacy_sales:      { resource: 'report_pharmacy', label: 'Sales' },
@@ -269,8 +299,12 @@ const RESOURCE_LABELS: Record<string, string> = {
   lab_orders: 'Lab Orders',
   lab_results: 'Lab Results',
   lab_payments: 'Lab Payments',
-  test_templates: 'Test Templates',
+  // Named after the tab it configures.
+  test_templates: 'Test Management',
   ultrasound_exams: 'Ultrasound Exams',
+  // Reception's side of ultrasound, split from the radiologist's exam rights
+  // so the two jobs are configured in two places, as on the X-Ray desk.
+  ultrasound_receipts: 'Ultrasound Receipts',
   ultrasound_receipt: 'Ultrasound Receipt',
   ultrasound_result: 'Ultrasound Result',
   ultrasound_types: 'Ultrasound Templates',
@@ -307,7 +341,6 @@ const RESOURCE_LABELS: Record<string, string> = {
   other_income_categories: 'Other Income Categories',
   discounts: 'Discounts',
   ledger: 'Ledger',
-  reports: 'Reports (General Rights)',
   report_desks: 'Reports — Which Desks',
   report_pharmacy: 'Reports — Pharmacy Tabs',
   backups: 'Backups',

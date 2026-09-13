@@ -28,8 +28,11 @@ trait HandlesReceiptDiscounts
      * On an update the existing values are put back rather than zeroed: a
      * receptionist without the right editing some other field on a discounted
      * receipt must not silently remove the discount a supervisor applied.
+     *
+     * $defaultDesk names the desk whose configured default discount a new
+     * receipt receives when the user may not choose one (see below).
      */
-    protected function enforceDiscountPermission(Request $request, array &$data, $existing = null): void
+    protected function enforceDiscountPermission(Request $request, array &$data, $existing = null, ?string $defaultDesk = null): void
     {
         $user = $request->user();
 
@@ -38,6 +41,22 @@ trait HandlesReceiptDiscounts
         }
 
         if ($user->hasAnyPermission(['add_discounts', 'edit_discounts', 'manage_discounts'])) {
+            return;
+        }
+
+        // A NEW receipt from someone without the discount right still gets the
+        // hospital's standing discount (Settings > General > Default Discount).
+        // That rate is hospital policy, not the clerk's choice -- stripping it
+        // meant the form previewed 50% off while the receipt was saved, and
+        // printed, at the full fee. Any other rate is still refused.
+        if ($existing === null && $defaultDesk !== null) {
+            $default = (float) (\App\Models\HospitalSetting::where('hospital_id', (int) ($data['hospital_id'] ?? 0))
+                ->value('default_discount_' . $defaultDesk) ?? 0);
+
+            $data['discount_enabled'] = false;
+            $data['discount_percentage'] = max(0.0, min(100.0, $default));
+            $data['discount_amount'] = 0;
+
             return;
         }
 

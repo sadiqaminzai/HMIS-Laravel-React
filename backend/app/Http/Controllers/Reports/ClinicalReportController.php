@@ -91,7 +91,19 @@ class ClinicalReportController extends Controller
                 ],
                 'doctorLabel' => "NULLIF(TRIM(xray_receipts.referred_by), '')",
                 'service' => 'COALESCE(xray_receipts.study_name, xray_types.name)',
+                // A receipt can carry several studies, so Study Wise groups the
+                // lines. See the service branch of deskReport() for how each
+                // line's share of the discount and payment is worked out.
+                'serviceLines' => [
+                    'table' => 'xray_receipt_details',
+                    'fk' => 'xray_receipt_id',
+                    'name' => 'xray_receipt_details.study_name',
+                    'fee' => 'xray_receipt_details.fee',
+                ],
                 'serviceLabel' => 'Study',
+                // A deleted receipt is soft-deleted, so it is still in the table:
+                // without this every tab of the report kept counting it.
+                'scope' => fn ($q) => $q->whereNull('xray_receipts.deleted_at'),
                 'title' => 'X-Ray Report',
             ],
             'ultrasound' => [
@@ -109,9 +121,51 @@ class ClinicalReportController extends Controller
                 'doctorLabel' => "NULLIF(TRIM(ultrasound_exams.referred_by), '')",
                 'service' => 'ultrasound_types.name',
                 'serviceLabel' => 'Exam Type',
+                // A deleted receipt is soft-deleted, so it is still in the table:
+                // without this every tab of the report kept counting it.
+                'scope' => fn ($q) => $q->whereNull('ultrasound_exams.deleted_at'),
                 'title' => 'Ultrasound Report',
             ],
+            'ecg' => [
+                'table' => 'ecg_receipts',
+                'date' => 'performed_at',
+                'gross' => 'COALESCE(ecg_receipts.fee, 0)',
+                'net' => 'COALESCE(ecg_receipts.net_amount, ecg_receipts.fee, 0)',
+                'discount' => 'COALESCE(ecg_receipts.discount_amount, 0)',
+                'paid' => 'COALESCE(ecg_receipts.paid_amount, 0)',
+                'joins' => [
+                    ['patients', 'patients.id', 'ecg_receipts.patient_id'],
+                    ['doctors', 'doctors.id', 'ecg_receipts.doctor_id'],
+                    ['ecg_services', 'ecg_services.id', 'ecg_receipts.ecg_service_id'],
+                ],
+                'doctorLabel' => "NULLIF(TRIM(ecg_receipts.referred_by), '')",
+                'service' => 'COALESCE(ecg_receipts.service_name, ecg_services.name)',
+                'serviceLabel' => 'Study',
+                // A deleted receipt is soft-deleted, so it is still in the table:
+                // without this every tab of the report kept counting it.
+                'scope' => fn ($q) => $q->whereNull('ecg_receipts.deleted_at'),
+                'title' => 'ECG Report',
+            ],
         ];
+    }
+
+    /** The right each desk's report is read under. */
+    private const DESK_PERMISSIONS = [
+        'surgery' => 'view_reports_surgery',
+        'room-booking' => 'view_reports_room_booking',
+        'xray' => 'view_reports_xray',
+        'ultrasound' => 'view_reports_ultrasound',
+        'ecg' => 'view_reports_ecg',
+    ];
+
+    private function mayReadDesk(Request $request, string $desk): bool
+    {
+        $user = $request->user();
+
+        return $user !== null && (
+            $user->role === 'super_admin'
+            || (isset(self::DESK_PERMISSIONS[$desk]) && $user->hasPermission(self::DESK_PERMISSIONS[$desk]))
+        );
     }
 
     public function surgery(Request $request)
@@ -134,6 +188,11 @@ class ClinicalReportController extends Controller
         return $this->deskReport($request, 'ultrasound');
     }
 
+    public function ecg(Request $request)
+    {
+        return $this->deskReport($request, 'ecg');
+    }
+
     /**
      * Doctors that actually appear on this desk in this period.
      *
@@ -152,6 +211,12 @@ class ClinicalReportController extends Controller
 
         if (!$definition) {
             return response()->json(['message' => 'Unknown report desk'], 404);
+        }
+
+        // The route admits any clinical desk right; this checks the desk asked
+        // for, so the surgery right cannot list the X-Ray desk's doctors.
+        if (!$this->mayReadDesk($request, $desk)) {
+            return response()->json(['message' => 'You do not have permission to view this report.'], 403);
         }
 
         $hospitalId = $this->hospitalId($request);
@@ -272,6 +337,41 @@ class ClinicalReportController extends Controller
                 ->get()
                 ->map(fn ($r) => [
                     'day' => (string) $r->day,
+                    'entries' => (int) $r->entries,
+                    'gross_total' => round((float) $r->gross_total, 2),
+                    'discount_total' => round((float) $r->discount_total, 2),
+                    'net_total' => round((float) $r->net_total, 2),
+                    'paid_total' => round((float) $r->paid_total, 2),
+                    'due_total' => round((float) $r->due_total, 2),
+                ]);
+        } elseif ($groupBy === 'service' && isset($definition['serviceLines'])) {
+            /*
+             * One row per LINE, for desks where a receipt carries several.
+             *
+             * The fee is the line's own. The discount, net and payment belong
+             * to the whole receipt, so each line takes its share in proportion
+             * to its fee -- a 300 study on a 600 receipt carries half the
+             * discount. The line totals therefore add up to exactly what the
+             * Detail tab shows, rather than every study claiming the full
+             * discount of the receipt it sits on.
+             */
+            $lines = $definition['serviceLines'];
+            $share = "COALESCE({$lines['fee']} / NULLIF({$gross}, 0), 0)";
+
+            $rows = (clone $base)
+                ->join($lines['table'], "{$lines['table']}.{$lines['fk']}", '=', "{$table}.id")
+                ->groupByRaw('service_name')
+                ->selectRaw("{$lines['name']} as service_name")
+                ->selectRaw('COUNT(*) as entries')
+                ->selectRaw("SUM({$lines['fee']}) as gross_total")
+                ->selectRaw("SUM(({$discount}) * {$share}) as discount_total")
+                ->selectRaw("SUM(({$net}) * {$share}) as net_total")
+                ->selectRaw("SUM(({$paid}) * {$share}) as paid_total")
+                ->selectRaw("SUM(({$due}) * {$share}) as due_total")
+                ->orderByDesc('net_total')
+                ->get()
+                ->map(fn ($r) => [
+                    'service_name' => $r->service_name ?: '-',
                     'entries' => (int) $r->entries,
                     'gross_total' => round((float) $r->gross_total, 2),
                     'discount_total' => round((float) $r->discount_total, 2),

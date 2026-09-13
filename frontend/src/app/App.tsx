@@ -122,29 +122,28 @@ function RouteLoadingFallback() {
  * Pharmacy, the four clinical desks and the two money desks all have purpose
  * built pages and are routed separately below.
  */
-const REPORT_DESKS: Array<{ path: string; module: 'overall' | 'reception' | 'lab' }> = [
-  { path: '/reports/general', module: 'overall' },
-  { path: '/reports/reception', module: 'reception' },
-  { path: '/reports/laboratory', module: 'lab' },
+const REPORT_DESKS: Array<{ path: string; module: 'overall' | 'reception' | 'lab'; permission: string }> = [
+  { path: '/reports/general', module: 'overall', permission: 'view_reports_general' },
+  { path: '/reports/reception', module: 'reception', permission: 'view_reports_reception' },
+  { path: '/reports/laboratory', module: 'lab', permission: 'view_reports_laboratory' },
 ];
 
 /** The desks driven by ClinicalReports, which differ only in their desk key. */
-const CLINICAL_REPORT_DESKS: Array<'surgery' | 'room-booking' | 'xray' | 'ultrasound'> = [
+const CLINICAL_REPORT_DESKS: Array<'surgery' | 'room-booking' | 'xray' | 'ultrasound' | 'ecg'> = [
   'surgery',
   'room-booking',
   'xray',
   'ultrasound',
+  'ecg',
 ];
 
-const REPORT_PERMISSIONS = [
-  'view_reports',
-  'add_reports',
-  'edit_reports',
-  'delete_reports',
-  'export_reports',
-  'print_reports',
-  'manage_reports',
-];
+/**
+ * Each report route is gated on its own right -- the one the reports API
+ * checks. The broad view_reports/manage_reports set used to open every desk
+ * here while the server refused the per-desk rights, so neither agreed with
+ * the other.
+ */
+const PHARMACY_REPORT_PERMISSIONS = ['view_reports_pharmacy_stock', 'view_reports_pharmacy_purchase', 'view_reports_pharmacy_sales', 'view_reports_pharmacy_expiry', 'view_reports_pharmacy_low_stock', 'view_reports_pharmacy_profit'];
 
 function RouteScopedProviders({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -504,7 +503,7 @@ function AppContent() {
             <Route
               path="/patient-history"
               element={
-                <RequirePermission anyOf={["view_patients", "manage_patients", "register_patients"]}>
+                <RequirePermission anyOf={["view_reports_patient_history"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <PatientHistoryLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
@@ -666,7 +665,7 @@ function AppContent() {
             <Route
               path="/lab-tests"
               element={
-                <RequirePermission anyOf={["view_lab_orders", "add_lab_orders", "edit_lab_orders", "delete_lab_orders", "export_lab_orders", "print_lab_orders", "manage_lab_orders", "update_lab_order_status", "enter_lab_results", "manage_lab_payments"]}>
+                <RequirePermission anyOf={["view_lab_orders", "add_lab_orders", "edit_lab_orders", "delete_lab_orders", "export_lab_orders", "print_lab_orders", "manage_lab_orders", "update_lab_order_status", "enter_lab_results", "take_lab_payment", "return_lab_payment", "view_test_templates", "add_test_templates", "edit_test_templates", "delete_test_templates", "export_test_templates", "print_test_templates", "manage_test_templates"]}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <LabTestManagementNewLazy hospital={currentHospital} userRole={currentRole} currentUserId={currentUser.doctorId || currentUser.id} />
                   </Suspense>
@@ -933,12 +932,12 @@ function AppContent() {
               page are redirected to General rather than 404-ing.
             */}
             <Route path="/reports" element={<Navigate to="/reports/general" replace />} />
-            {REPORT_DESKS.map(({ path, module }) => (
+            {REPORT_DESKS.map(({ path, module, permission }) => (
               <Route
                 key={path}
                 path={path}
                 element={
-                  <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                  <RequirePermission anyOf={[permission]}>
                     <Suspense fallback={<RouteLoadingFallback />}>
                       <ReportsLazy
                         hospital={currentHospital}
@@ -953,7 +952,7 @@ function AppContent() {
             <Route
               path="/reports/pharmacy"
               element={
-                <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                <RequirePermission anyOf={PHARMACY_REPORT_PERMISSIONS}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <PharmacyReportsLazy hospital={currentHospital} userRole={currentRole} />
                   </Suspense>
@@ -965,7 +964,7 @@ function AppContent() {
                 key={desk}
                 path={`/reports/${desk}`}
                 element={
-                  <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                  <RequirePermission anyOf={[`view_reports_${desk.replace('-', '_')}`]}>
                     <Suspense fallback={<RouteLoadingFallback />}>
                       <ClinicalReportsLazy
                         hospital={currentHospital}
@@ -980,7 +979,7 @@ function AppContent() {
             <Route
               path="/reports/expenses"
               element={
-                <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                <RequirePermission anyOf={['view_reports_expenses']}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <MoneyReportsLazy hospital={currentHospital} userRole={currentRole} kind="expense" />
                   </Suspense>
@@ -990,7 +989,7 @@ function AppContent() {
             <Route
               path="/reports/other-income"
               element={
-                <RequirePermission anyOf={REPORT_PERMISSIONS}>
+                <RequirePermission anyOf={['view_reports_other_income']}>
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <MoneyReportsLazy
                       hospital={currentHospital}

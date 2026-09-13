@@ -96,8 +96,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Patients
 	Route::get('patients', [PatientController::class, 'index'])->middleware('permission_or_doctor:view_patients,manage_patients,register_patients');
 	// One patient's whole record across every module, newest first.
-	Route::get('patients/{patient}/history', [PatientHistoryController::class, 'show'])->middleware('permission_or_doctor:view_patients,manage_patients,register_patients');
-	Route::get('patients/{patient}/history/{module}/{id}', [PatientHistoryController::class, 'event'])->middleware('permission_or_doctor:view_patients,manage_patients,register_patients');
+	Route::get('patients/{patient}/history', [PatientHistoryController::class, 'show'])->middleware('permission:view_reports_patient_history');
+	Route::get('patients/{patient}/history/{module}/{id}', [PatientHistoryController::class, 'event'])->middleware('permission:view_reports_patient_history');
 	Route::get('patients/{patient}', [PatientController::class, 'show'])->middleware('permission_or_doctor:view_patients,manage_patients,register_patients');
 	Route::post('patients', [PatientController::class, 'store'])->middleware('permission:add_patients,register_patients,manage_patients');
 	Route::match(['PUT', 'PATCH'], 'patients/{patient}', [PatientController::class, 'update'])->middleware('permission:edit_patients,manage_patients');
@@ -318,13 +318,17 @@ Route::middleware('auth:sanctum')->group(function () {
 	// aggregated whatever the first `per_page: 200` rows happened to be, which
 	// on a 900-line formulary is a report that stops at the letter D without
 	// saying so.
-	Route::prefix('reports/pharmacy')->middleware('permission:view_reports,manage_reports')->group(function () {
-		Route::get('available-stock', [PharmacyReportController::class, 'availableStock']);
-		Route::get('purchases', [PharmacyReportController::class, 'purchases']);
-		Route::get('sales', [PharmacyReportController::class, 'sales']);
-		Route::get('short-expiry', [PharmacyReportController::class, 'shortExpiry']);
-		Route::get('low-stock', [PharmacyReportController::class, 'lowStock']);
-		Route::get('profit', [PharmacyReportController::class, 'profit']);
+	//
+	// One right per report. These used to sit behind view_reports/manage_reports
+	// as a group, so a role granted only "Low Stock" saw the tab and was then
+	// refused by the server -- the per-tab rights never actually opened anything.
+	Route::prefix('reports/pharmacy')->group(function () {
+		Route::get('available-stock', [PharmacyReportController::class, 'availableStock'])->middleware('permission:view_reports_pharmacy_stock');
+		Route::get('purchases', [PharmacyReportController::class, 'purchases'])->middleware('permission:view_reports_pharmacy_purchase');
+		Route::get('sales', [PharmacyReportController::class, 'sales'])->middleware('permission:view_reports_pharmacy_sales');
+		Route::get('short-expiry', [PharmacyReportController::class, 'shortExpiry'])->middleware('permission:view_reports_pharmacy_expiry');
+		Route::get('low-stock', [PharmacyReportController::class, 'lowStock'])->middleware('permission:view_reports_pharmacy_low_stock');
+		Route::get('profit', [PharmacyReportController::class, 'profit'])->middleware('permission:view_reports_pharmacy_profit');
 	});
 
 	// Reports module -- clinical desks and the two money desks.
@@ -332,15 +336,21 @@ Route::middleware('auth:sanctum')->group(function () {
 	// `{desk}/doctors` populates the Doctor filter from the rows the desk
 	// actually holds for the chosen period, so the dropdown never offers a
 	// doctor whose selection returns nothing.
-	Route::prefix('reports')->middleware('permission:view_reports,manage_reports')->group(function () {
-		Route::get('surgery', [ClinicalReportController::class, 'surgery']);
-		Route::get('room-booking', [ClinicalReportController::class, 'roomBooking']);
-		Route::get('xray', [ClinicalReportController::class, 'xray']);
-		Route::get('ultrasound', [ClinicalReportController::class, 'ultrasound']);
-		Route::get('expenses', [ClinicalReportController::class, 'expenses']);
-		Route::get('other-income', [ClinicalReportController::class, 'otherIncome']);
+	//
+	// Each desk is gated on its own right. The doctor filter is shared, so the
+	// route admits anyone holding any clinical desk and the controller then
+	// checks the desk actually requested.
+	Route::prefix('reports')->group(function () {
+		Route::get('surgery', [ClinicalReportController::class, 'surgery'])->middleware('permission:view_reports_surgery');
+		Route::get('room-booking', [ClinicalReportController::class, 'roomBooking'])->middleware('permission:view_reports_room_booking');
+		Route::get('xray', [ClinicalReportController::class, 'xray'])->middleware('permission:view_reports_xray');
+		Route::get('ultrasound', [ClinicalReportController::class, 'ultrasound'])->middleware('permission:view_reports_ultrasound');
+		Route::get('ecg', [ClinicalReportController::class, 'ecg'])->middleware('permission:view_reports_ecg');
+		Route::get('expenses', [ClinicalReportController::class, 'expenses'])->middleware('permission:view_reports_expenses');
+		Route::get('other-income', [ClinicalReportController::class, 'otherIncome'])->middleware('permission:view_reports_other_income');
 		Route::get('{desk}/doctors', [ClinicalReportController::class, 'doctors'])
-			->whereIn('desk', ['surgery', 'room-booking', 'xray', 'ultrasound']);
+			->middleware('permission:view_reports_surgery,view_reports_room_booking,view_reports_xray,view_reports_ultrasound,view_reports_ecg')
+			->whereIn('desk', ['surgery', 'room-booking', 'xray', 'ultrasound', 'ecg']);
 	});
 
 	// Stocks (read-only)
@@ -386,13 +396,13 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('lab-orders', [LabOrderController::class, 'store'])->middleware('permission_or_doctor:add_lab_orders,manage_lab_orders');
 	Route::match(['PUT', 'PATCH'], 'lab-orders/{labOrder}', [LabOrderController::class, 'update'])->middleware('permission:edit_lab_orders,manage_lab_orders,update_lab_order_status');
 	Route::delete('lab-orders/{labOrder}', [LabOrderController::class, 'destroy'])->middleware('permission:delete_lab_orders,manage_lab_orders');
-	Route::post('lab-orders/{labOrder}/payment', [LabOrderController::class, 'processPayment'])->middleware('permission:manage_lab_payments,manage_lab_orders');
-	Route::post('lab-orders/{labOrder}/reset-payment', [LabOrderController::class, 'resetPayment'])->middleware('permission:reverse_lab_payment');
+	Route::post('lab-orders/{labOrder}/payment', [LabOrderController::class, 'processPayment'])->middleware('permission:take_lab_payment,manage_lab_payments');
+	Route::post('lab-orders/{labOrder}/reset-payment', [LabOrderController::class, 'resetPayment'])->middleware('permission:return_lab_payment,reverse_lab_payment');
 	Route::post('lab-orders/{labOrder}/collect-sample', [LabOrderController::class, 'collectSample'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::post('lab-orders/{labOrder}/cancel', [LabOrderController::class, 'cancel'])->middleware('permission:manage_lab_orders,update_lab_order_status');
 	Route::post('lab-order-items/{labOrderItem}/results', [LabOrderController::class, 'enterResults'])->middleware('permission:enter_lab_results,manage_lab_orders');
 	Route::get('lab-orders/{labOrder}/receipt', [LabOrderController::class, 'getReceipt'])->middleware('permission:print_lab_orders,view_lab_orders,manage_lab_orders');
-	Route::get('lab-orders/{labOrder}/report', [LabOrderController::class, 'getReport'])->middleware('permission:export_lab_orders,print_lab_orders,view_lab_orders,manage_lab_orders');
+	Route::get('lab-orders/{labOrder}/report', [LabOrderController::class, 'getReport'])->middleware('permission:export_lab_orders,print_lab_orders,view_lab_orders,manage_lab_orders,print_lab_results,download_lab_results');
 
 	// Radiology - Ultrasound report templates
 	Route::get('ultrasound-types', [UltrasoundTypeController::class, 'index'])->middleware('permission_or_doctor:view_ultrasound_types,manage_ultrasound_types,view_ultrasound_exams,manage_ultrasound_exams');
@@ -406,10 +416,10 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'show'])->middleware('permission_or_doctor:view_ultrasound_exams,manage_ultrasound_exams');
 	Route::get('ultrasound-exams/{ultrasoundExam}/report', [UltrasoundExamController::class, 'report'])->middleware('permission_or_doctor:print_ultrasound_exams,export_ultrasound_exams,view_ultrasound_exams,manage_ultrasound_exams');
 	Route::post('ultrasound-exams', [UltrasoundExamController::class, 'store'])->middleware('permission_or_doctor:add_ultrasound_receipt,manage_ultrasound_exams');
-	Route::match(['PUT', 'PATCH'], 'ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'update'])->middleware('permission_or_doctor:submit_ultrasound_result');
+	Route::match(['PUT', 'PATCH'], 'ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'update'])->middleware('permission_or_doctor:submit_ultrasound_result,edit_ultrasound_receipt');
 	Route::delete('ultrasound-exams/{ultrasoundExam}', [UltrasoundExamController::class, 'destroy'])->middleware('permission:delete_ultrasound_receipt,delete_ultrasound_exams,manage_ultrasound_exams');
-	Route::post('ultrasound-exams/{ultrasoundExam}/payment', [UltrasoundExamController::class, 'processPayment'])->middleware('permission:manage_ultrasound_payments,manage_ultrasound_exams');
-	Route::post('ultrasound-exams/{ultrasoundExam}/reverse-payment', [UltrasoundExamController::class, 'reversePayment'])->middleware('permission:reverse_ultrasound_payment');
+	Route::post('ultrasound-exams/{ultrasoundExam}/payment', [UltrasoundExamController::class, 'processPayment'])->middleware('permission:take_ultrasound_payment,manage_ultrasound_payments');
+	Route::post('ultrasound-exams/{ultrasoundExam}/reverse-payment', [UltrasoundExamController::class, 'reversePayment'])->middleware('permission:return_ultrasound_payment,reverse_ultrasound_payment');
 	Route::get('ultrasound-exams/{ultrasoundExam}/receipt', [UltrasoundExamController::class, 'receipt'])->middleware('permission:print_ultrasound_receipt,manage_ultrasound_payments,manage_ultrasound_exams');
 
 	// Radiology - X-Ray receipts (a cash desk only: the film is reported
@@ -426,8 +436,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('dental-receipts', [DentalReceiptController::class, 'store'])->middleware('permission:add_dental_receipts,manage_dental_receipts');
 	Route::match(['PUT', 'PATCH'], 'dental-receipts/{dentalReceipt}', [DentalReceiptController::class, 'update'])->middleware('permission:edit_dental_receipts,manage_dental_receipts');
 	Route::delete('dental-receipts/{dentalReceipt}', [DentalReceiptController::class, 'destroy'])->middleware('permission:delete_dental_receipts,manage_dental_receipts');
-	Route::post('dental-receipts/{dentalReceipt}/payment', [DentalReceiptController::class, 'processPayment'])->middleware('permission:manage_dental_payments,manage_dental_receipts');
-	Route::post('dental-receipts/{dentalReceipt}/reverse-payment', [DentalReceiptController::class, 'reversePayment'])->middleware('permission:reverse_dental_payment');
+	Route::post('dental-receipts/{dentalReceipt}/payment', [DentalReceiptController::class, 'processPayment'])->middleware('permission:take_dental_payment,manage_dental_payments');
+	Route::post('dental-receipts/{dentalReceipt}/reverse-payment', [DentalReceiptController::class, 'reversePayment'])->middleware('permission:return_dental_payment,reverse_dental_payment');
 	Route::get('dental-receipts/{dentalReceipt}/receipt', [DentalReceiptController::class, 'receipt'])->middleware('permission:print_dental_receipt,manage_dental_payments,manage_dental_receipts');
 
 	// ECG: a study catalogue and the receipts raised against it. Grouped
@@ -444,8 +454,8 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('ecg-receipts', [EcgReceiptController::class, 'store'])->middleware('permission:add_ecg_receipts,manage_ecg_receipts');
 	Route::match(['PUT', 'PATCH'], 'ecg-receipts/{ecgReceipt}', [EcgReceiptController::class, 'update'])->middleware('permission:edit_ecg_receipts,manage_ecg_receipts');
 	Route::delete('ecg-receipts/{ecgReceipt}', [EcgReceiptController::class, 'destroy'])->middleware('permission:delete_ecg_receipts,manage_ecg_receipts');
-	Route::post('ecg-receipts/{ecgReceipt}/payment', [EcgReceiptController::class, 'processPayment'])->middleware('permission:manage_ecg_payments,manage_ecg_receipts');
-	Route::post('ecg-receipts/{ecgReceipt}/reverse-payment', [EcgReceiptController::class, 'reversePayment'])->middleware('permission:reverse_ecg_payment');
+	Route::post('ecg-receipts/{ecgReceipt}/payment', [EcgReceiptController::class, 'processPayment'])->middleware('permission:take_ecg_payment,manage_ecg_payments');
+	Route::post('ecg-receipts/{ecgReceipt}/reverse-payment', [EcgReceiptController::class, 'reversePayment'])->middleware('permission:return_ecg_payment,reverse_ecg_payment');
 	Route::get('ecg-receipts/{ecgReceipt}/receipt', [EcgReceiptController::class, 'receipt'])->middleware('permission:print_ecg_receipt,manage_ecg_payments,manage_ecg_receipts');
 
 	Route::get('xray-types', [XrayTypeController::class, 'index'])->middleware('permission:view_xray_types,manage_xray_types,view_xray_receipts,manage_xray_receipts');
@@ -459,9 +469,9 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::post('xray-receipts', [XrayReceiptController::class, 'store'])->middleware('permission:add_xray_receipts,manage_xray_receipts');
 	Route::match(['PUT', 'PATCH'], 'xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'update'])->middleware('permission:edit_xray_receipts,manage_xray_receipts');
 	Route::delete('xray-receipts/{xrayReceipt}', [XrayReceiptController::class, 'destroy'])->middleware('permission:delete_xray_receipts,manage_xray_receipts');
-	Route::post('xray-receipts/{xrayReceipt}/payment', [XrayReceiptController::class, 'processPayment'])->middleware('permission:manage_xray_payments,manage_xray_receipts');
+	Route::post('xray-receipts/{xrayReceipt}/payment', [XrayReceiptController::class, 'processPayment'])->middleware('permission:take_xray_payment,manage_xray_payments');
 	// Reversal stands alone: collecting must not imply being able to undo.
-	Route::post('xray-receipts/{xrayReceipt}/reverse-payment', [XrayReceiptController::class, 'reversePayment'])->middleware('permission:reverse_xray_payment');
+	Route::post('xray-receipts/{xrayReceipt}/reverse-payment', [XrayReceiptController::class, 'reversePayment'])->middleware('permission:return_xray_payment,reverse_xray_payment');
 	Route::get('xray-receipts/{xrayReceipt}/receipt', [XrayReceiptController::class, 'receipt'])->middleware('permission:print_xray_receipt,manage_xray_payments,manage_xray_receipts');
 
 	// Audit Log (read-only; entries are written by the application itself)

@@ -23,6 +23,7 @@ use Illuminate\Validation\ValidationException;
 class EcgReceiptController extends Controller
 {
     use \App\Http\Controllers\Concerns\HandlesReceiptDiscounts;
+    use \App\Http\Controllers\Concerns\HandlesDeskPayments;
 
     private const RELATIONS = ['patient', 'doctor', 'ecgService'];
 
@@ -89,8 +90,17 @@ class EcgReceiptController extends Controller
         $data = $this->validatePayload($request, $hospitalId);
         $data['hospital_id'] = $hospitalId;
 
-        $this->enforceDiscountPermission($request, $data);
+        // The fee is financial: without Set ECG Fee it is the study's catalogue
+        // price, whatever the form sent. Disabling the input is only a hint.
+        if (!$this->mayTypeFee($request)) {
+            $data['fee'] = !empty($data['ecg_service_id'])
+                ? (float) (\App\Models\EcgService::where('hospital_id', $hospitalId)->whereKey($data['ecg_service_id'])->value('price') ?? 0)
+                : 0;
+        }
+
+        $this->enforceDiscountPermission($request, $data, null, 'ecg');
         $this->applyDiscountRules($data, 'fee');
+        $this->applyDefaultPayment($request, $data, $hospitalId, 'ecg', (float) $data['net_amount']);
 
         $receipt = DB::transaction(function () use ($data, $request, $hospitalId) {
             $data['created_by'] = $request->user()->name ?? null;
@@ -146,6 +156,15 @@ class EcgReceiptController extends Controller
         $data['hospital_id'] = $hospitalId;
         $data['updated_by'] = $request->user()->name ?? null;
         unset($data['sequence_id']);
+
+        // Without Set ECG Fee the stored fee stands -- unless the study itself
+        // was changed, in which case the new study's price applies.
+        if (!$this->mayTypeFee($request)) {
+            $sameStudy = (int) ($data['ecg_service_id'] ?? 0) === (int) ($ecgReceipt->ecg_service_id ?? 0);
+            $data['fee'] = $sameStudy || empty($data['ecg_service_id'])
+                ? (float) ($ecgReceipt->fee ?? 0)
+                : (float) (\App\Models\EcgService::where('hospital_id', $hospitalId)->whereKey($data['ecg_service_id'])->value('price') ?? 0);
+        }
 
         $this->enforceDiscountPermission($request, $data, $ecgReceipt);
         $this->applyDiscountRules($data, 'fee');
@@ -222,9 +241,9 @@ class EcgReceiptController extends Controller
     {
         $this->authorizeScope($request->user(), $ecgReceipt);
 
-        if (!($request->user()?->hasPermission('reverse_ecg_payment') ?? false)) {
+        if (!$this->canReturnFor($request, 'ecg')) {
             return response()->json([
-                'message' => 'Reversing an ECG payment requires the Reverse ECG Payment permission.',
+                'message' => 'Returning an ECG payment requires the Return ECG Payment permission.',
             ], 403);
         }
 
@@ -310,6 +329,14 @@ class EcgReceiptController extends Controller
             'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
+    }
+
+    /** May this user type a fee rather than take the study's price? */
+    private function mayTypeFee(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user !== null && ($user->role === 'super_admin' || $user->hasPermission('set_ecg_fee'));
     }
 
     private function resolveHospitalId(Request $request): int

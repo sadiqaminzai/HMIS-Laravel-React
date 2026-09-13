@@ -4,6 +4,8 @@ import { Hospital } from '../types';
 import { UltrasoundExamApi, payUltrasoundExam, reverseUltrasoundPayment, deleteUltrasoundExam } from '../api/ultrasound';
 import { toast } from 'sonner';
 import { POWERED_BY_TEXT } from '../utils/receiptBranding';
+import { ReturnPaymentDialog } from './ReturnPaymentDialog';
+import { ReceiptDetailsModal, ReceiptDetails } from './ReceiptDetailsModal';
 import { formatOnlyDate } from '../utils/date';
 import {
   CellNumber,
@@ -11,6 +13,8 @@ import {
   DataTableBody,
   DataTableCard,
   DataTableHead,
+  EditIcon,
+  ViewIcon,
   RowIcon,
   TableAction,
   TableEmpty,
@@ -29,6 +33,9 @@ interface Props {
   canReversePayment: boolean;
   canPrintReceipt: boolean;
   canDelete: boolean;
+  /** Edit Receipt: corrects the receipt, never the report. */
+  canEdit: boolean;
+  onEdit: (exam: UltrasoundExamApi) => void;
   onChanged: () => void;
 }
 
@@ -40,6 +47,14 @@ const money = (value: number | string | null | undefined) =>
 /** Payment state to pill colour, shared with the X-Ray desk. */
 const paymentTone = (status: string): 'green' | 'amber' | 'red' =>
   status === 'paid' ? 'green' : status === 'partial' ? 'amber' : 'red';
+
+/**
+ * What the patient owes: the fee less any discount.
+ *
+ * The desk used to collect, print and total the gross fee, so a discounted
+ * exam was charged in full and printed without its discount.
+ */
+const payable = (exam: UltrasoundExamApi) => Number(exam.net_amount ?? exam.fee ?? 0);
 
 /**
  * The reception counter's view of ultrasound.
@@ -56,6 +71,8 @@ export function UltrasoundReceipts({
   canReversePayment,
   canPrintReceipt,
   canDelete,
+  canEdit,
+  onEdit,
   onChanged,
 }: Props) {
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -73,15 +90,15 @@ export function UltrasoundReceipts({
 
   // Sorted and paged like every other listing. Newest first by default, which
   // is what a counter wants: the receipt just raised is the one being settled.
-  const sort = useTableSort<any>(exams, 'examined_at', 'desc');
-  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows);
+  const sort = useTableSort<any>(exams, 'created_at', 'desc');
+  const { page, setPage, totalPages, pageRows } = usePagination<any>(sort.rows, 20);
 
   const takePayment = async (exam: UltrasoundExamApi) => {
     setBusyId(exam.id);
     setError(null);
     try {
       await payUltrasoundExam(exam.id, {
-        paid_amount: Number(exam.fee ?? 0),
+        paid_amount: payable(exam),
         payment_method: method,
       });
       setPayingExam(null);
@@ -116,19 +133,64 @@ export function UltrasoundReceipts({
     }
   };
 
-  const reverse = async (exam: UltrasoundExamApi) => {
-    // The backend requires a reason; asking for it here keeps the reversal
-    // auditable rather than sending a placeholder.
-    const reason = window.prompt('Reason for reversing this payment:');
-    if (!reason) return;
+  // The exam open in the read-only details card.
+  const [viewingExam, setViewingExam] = useState<UltrasoundExamApi | null>(null);
+
+  /** Everything the details card shows, from the exam and its type. */
+  const detailsFor = (exam: UltrasoundExamApi): ReceiptDetails => ({
+    title: 'Ultrasound Receipt',
+    receiptNo: String(exam.receipt_number || exam.sequence_id || exam.id).replace(/^US-/, ''),
+    date: formatOnlyDate(exam.examined_at, hospital.timezone, hospital.calendarType),
+    paymentStatus: exam.payment_status,
+    patient: exam.patient,
+    doctorName: exam.doctor?.name,
+    referredBy: exam.referred_by,
+    itemsLabel: 'Exam',
+    items: [{
+      name: exam.ultrasound_type?.name ?? 'Ultrasound',
+      description: exam.ultrasound_type?.description,
+      fee: exam.fee,
+    }],
+    fee: exam.fee,
+    discountAmount: exam.discount_amount,
+    discountPercentage: exam.discount_percentage,
+    fullWaiver: Boolean(exam.discount_enabled),
+    netAmount: payable(exam),
+    paidAmount: exam.paid_amount,
+    paymentMethod: exam.payment_method,
+    notes: exam.clinical_notes,
+    // The report itself stays with the radiologist's tab; the card only says
+    // where the exam stands and who finished it.
+    extra: [
+      { label: 'Exam Status', value: <span className="capitalize">{exam.status}</span> },
+    ],
+    history: [
+      { label: 'Created', who: exam.created_by, when: exam.created_at },
+      { label: 'Last updated', who: exam.updated_by, when: exam.updated_at },
+      { label: 'Payment taken', who: exam.paid_by, when: exam.paid_at },
+      { label: 'Report completed', who: exam.completed_by, when: exam.completed_at },
+    ],
+  });
+
+  // The exam whose payment is being returned, while the dialog asks.
+  const [returningExam, setReturningExam] = useState<UltrasoundExamApi | null>(null);
+
+  /** Put a collected payment back, once the dialog has a reason for it. */
+  const confirmReturn = async (reason: string) => {
+    if (!returningExam) return;
+    const exam = returningExam;
 
     setBusyId(exam.id);
     setError(null);
     try {
       await reverseUltrasoundPayment(exam.id, reason);
+      setReturningExam(null);
       onChanged();
+      toast.success('Payment returned');
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not reverse the payment.');
+      const message = err?.response?.data?.message || 'Could not return the payment.';
+      setError(message);
+      toast.error(message);
     } finally {
       setBusyId(null);
     }
@@ -147,6 +209,8 @@ export function UltrasoundReceipts({
 
     const receiptNo = String(exam.receipt_number || exam.sequence_id || exam.id).replace(/^US-/, '');
     const paid = exam.payment_status === 'paid';
+    const discount = Number(exam.discount_amount ?? 0);
+    const percent = Number(exam.discount_percentage ?? 0);
 
     win.document.write(`<!DOCTYPE html>
 <html>
@@ -204,7 +268,9 @@ export function UltrasoundReceipts({
       <span class="v">${money(exam.fee)}</span>
     </div>
 
-    <div class="total"><span>TOTAL</span><span>${money(exam.fee)}</span></div>
+    ${discount > 0 ? `<div class="line"><span class="v">Discount${percent > 0 ? ` (${percent}%)` : ''}</span><span class="v">-${money(discount)}</span></div>` : ''}
+
+    <div class="total"><span>TOTAL</span><span>${money(payable(exam))}</span></div>
 
     ${paid ? '' : '<div style="text-align:center;font-weight:700;text-transform:uppercase;letter-spacing:0.15em;border:1px solid #000;padding:2px 0;margin:6px 0;font-size:0.9em">Unpaid</div>'}
 
@@ -246,6 +312,8 @@ export function UltrasoundReceipts({
           <Th>Patient</Th>
           <Th>Ultrasound Type</Th>
           <Th sort={sort} field="fee" align="right">Fee</Th>
+          <Th align="right">Discount</Th>
+          <Th sort={sort} field="net_amount" align="right">Net</Th>
           <Th sort={sort} field="payment_status">Payment</Th>
           <Th align="center">Actions</Th>
         </DataTableHead>
@@ -273,7 +341,20 @@ export function UltrasoundReceipts({
                 <TablePill tone="purple">{exam.ultrasound_type?.name ?? '-'}</TablePill>
               </td>
               <td className="px-4 py-2 text-right">
-                <CellNumber tone="money">{money(exam.fee)}</CellNumber>
+                <CellNumber>{money(exam.fee)}</CellNumber>
+              </td>
+              <td className="px-4 py-2 text-right">
+                {Number(exam.discount_amount ?? 0) > 0 ? (
+                  <span className="text-[10px] font-medium text-orange-600 dark:text-orange-400">
+                    {money(exam.discount_amount)}
+                    {Number(exam.discount_percentage ?? 0) > 0 && ` (${Number(exam.discount_percentage)}%)`}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-400">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2 text-right">
+                <CellNumber tone="money">{money(payable(exam))}</CellNumber>
               </td>
               <td className="px-4 py-2">
                 <TablePill tone={paymentTone(exam.payment_status)}>{exam.payment_status}</TablePill>
@@ -297,9 +378,17 @@ export function UltrasoundReceipts({
                       )}
                     </TableAction>
                   )}
+                  <TableAction tone="view" title="View details" onClick={() => setViewingExam(exam)}>
+                    <ViewIcon />
+                  </TableAction>
                   {canPrintReceipt && (
                     <TableAction tone="edit" title="Print receipt" onClick={() => printReceipt(exam)}>
                       <Printer className="w-3.5 h-3.5" />
+                    </TableAction>
+                  )}
+                  {canEdit && (
+                    <TableAction tone="primary" title="Edit receipt" onClick={() => onEdit(exam)}>
+                      <EditIcon />
                     </TableAction>
                   )}
                   {canReversePayment && exam.payment_status === 'paid' && (
@@ -307,7 +396,7 @@ export function UltrasoundReceipts({
                       tone="delete"
                       title="Reverse payment"
                       disabled={busyId === exam.id}
-                      onClick={() => reverse(exam)}
+                      onClick={() => setReturningExam(exam)}
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                     </TableAction>
@@ -332,7 +421,7 @@ export function UltrasoundReceipts({
 
           {exams.length === 0 && (
             <TableEmpty
-              colSpan={6}
+              colSpan={8}
               message="No ultrasound receipts yet"
               hint="Receipts appear here once reception raises one."
               icon={<ScanLine className="w-6 h-6 text-gray-400" />}
@@ -341,6 +430,24 @@ export function UltrasoundReceipts({
         </DataTableBody>
       </DataTableCard>
 
+      <ReceiptDetailsModal
+        details={viewingExam ? detailsFor(viewingExam) : null}
+        onClose={() => setViewingExam(null)}
+        onPrint={viewingExam && canPrintReceipt ? () => printReceipt(viewingExam) : undefined}
+      />
+
+      <ReturnPaymentDialog
+        open={Boolean(returningExam)}
+        patientName={returningExam?.patient?.name}
+        itemName={returningExam?.ultrasound_type?.name}
+        receiptNo={returningExam ? String(returningExam.receipt_number || returningExam.sequence_id || returningExam.id).replace(/^US-/, '') : null}
+        amount={Number(returningExam?.paid_amount ?? returningExam?.net_amount ?? returningExam?.fee ?? 0)}
+        paidBy={returningExam?.paid_by}
+        busy={Boolean(returningExam && busyId === returningExam.id)}
+        onCancel={() => setReturningExam(null)}
+        onConfirm={confirmReturn}
+      />
+
       {payingExam && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-sm p-4">
@@ -348,7 +455,13 @@ export function UltrasoundReceipts({
             <p className="text-xs text-gray-600 dark:text-gray-300">
               {payingExam.patient?.name} &mdash; {payingExam.ultrasound_type?.name}
             </p>
-            <p className="mt-2 text-lg font-bold text-gray-900 dark:text-white">{money(payingExam.fee)}</p>
+            {Number(payingExam.discount_amount ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-orange-600 dark:text-orange-400">
+                Fee {money(payingExam.fee)} less discount {money(payingExam.discount_amount)}
+                {Number(payingExam.discount_percentage ?? 0) > 0 && ` (${Number(payingExam.discount_percentage)}%)`}
+              </p>
+            )}
+            <p className="mt-2 text-lg font-bold text-gray-900 dark:text-white">{money(payable(payingExam))}</p>
 
             <label className="block mt-3 text-xs text-gray-600 dark:text-gray-300">
               Payment Method
@@ -363,7 +476,7 @@ export function UltrasoundReceipts({
               </select>
             </label>
 
-            {Number(payingExam.fee ?? 0) <= 0 && (
+            {payable(payingExam) <= 0 && (
               <p className="mt-2 text-xs text-amber-600">
                 This exam has no fee set. Set the fee on the exam before taking payment.
               </p>
@@ -378,7 +491,7 @@ export function UltrasoundReceipts({
               </button>
               <button
                 onClick={() => takePayment(payingExam)}
-                disabled={busyId === payingExam.id || Number(payingExam.fee ?? 0) <= 0}
+                disabled={busyId === payingExam.id || payable(payingExam) <= 0}
                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
                 Confirm &amp; Print

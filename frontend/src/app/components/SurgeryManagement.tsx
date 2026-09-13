@@ -222,7 +222,16 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
    * AppointmentManagement.
    */
   const today = (tz: string = currentHospital.timezone || 'Asia/Kabul') => getISODateInTimeZone(tz);
-  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts } = useSettings();
+  const { getPrintPaperSize, loadHospitalSetting, getDefaultDiscounts, getDefaultPaymentStatuses } = useSettings();
+
+  /**
+   * The payment status a new surgery starts on, from Settings > General >
+   * Default Payment Status. It used to be hard-wired to Paid here while the
+   * server fell back to Pending, so a user without the payment-status right
+   * saw Paid in the form and saved Pending. Both now read the same setting.
+   */
+  const seededSurgeryPayment = (): 'paid' | 'pending' =>
+    getDefaultPaymentStatuses(currentHospital.id)?.surgery === 'paid' ? 'paid' : 'pending';
 
   /**
    * What the discount field starts at on a new surgery.
@@ -977,7 +986,7 @@ export function SurgeryManagement({ hospital, userRole }: SurgeryManagementProps
           <button onClick={loadAll} className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />{t('ui.refresh')}</button>
           {activeTab === 'types' && canAddTypes && <AddButton onClick={() => { setEditingType(null); setTypeForm({ name: '', description: '', isActive: true }); setIsTypeModalOpen(true); }} label={t('ui.addType')} />}
           {activeTab === 'surgeries' && canAddSurgeries && <AddButton onClick={() => { setEditingSurgery(null); setSurgeryForm({ name: '', typeId: '', cost: '0', description: '', isActive: true }); setIsSurgeryModalOpen(true); }} label="Add Surgery" />}
-          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: today(), status: 'scheduled', paymentStatus: 'paid', cost: '', ...seededSurgeryDiscount(), notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
+          {activeTab === 'patientSurgeries' && canAddPatientSurgeries && <AddButton onClick={() => { setEditingPatientSurgery(null); setPatientSurgeryForm({ patientId: '', doctorId: '', surgeryId: '', surgeryDate: today(), status: 'scheduled', paymentStatus: seededSurgeryPayment(), cost: '', ...seededSurgeryDiscount(), notes: '', isActive: true }); setIsPatientSurgeryModalOpen(true); }} label="Add Patient Surgery" />}
           {activeTab === 'dischargeSummary' && canEditPatientSurgeries && <AddButton onClick={openNewDischargeModal} label="Add Discharge" />}
         </div>
       </div>

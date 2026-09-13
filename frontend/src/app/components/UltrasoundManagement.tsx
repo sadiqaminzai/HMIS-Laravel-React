@@ -173,15 +173,25 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
   // The narrow right: remove a receipt without also being able to edit every
   // exam and its result, which is what Manage would have granted.
   const canDeleteReceipt = hasPermission('delete_ultrasound_receipt');
+  // Correcting a receipt (patient, type, date, referrer) without the right to
+  // touch the report; the server keeps the clinical fields as stored.
+  const canEditReceipt = hasPermission('edit_ultrasound_receipt');
   const canPrintExams = hasPermission('print_ultrasound_exams') || canManageExams;
 
   // Reception's side of the module. Kept separate from the exam permissions
   // so the desk that takes the fee never needs rights over the clinical report.
-  const canTakeUltrasoundPayment = hasPermission('manage_ultrasound_payments') || canManageExams;
-  const canReverseUltrasoundPayment = hasPermission('reverse_ultrasound_payment');
+  //
+  // Take and Return Payment are the desk's own rights. They used to fall back
+  // to manage_ultrasound_exams, so a radiologist who could manage exams also
+  // got the cashier's button -- and ninety payments were recorded under her
+  // name. Accounts > Payment Collection has its own rights and is unaffected.
+  const canTakeUltrasoundPayment = hasPermission('take_ultrasound_payment');
+  const canReverseUltrasoundPayment = hasPermission('return_ultrasound_payment');
   const canPrintUltrasoundReceipt =
     hasPermission('print_ultrasound_receipt') || canTakeUltrasoundPayment;
-  const canViewReceipts = canTakeUltrasoundPayment || canPrintUltrasoundReceipt;
+  // Seeing the receipts is not collecting them: someone who manages exams
+  // keeps the list, without the payment buttons.
+  const canViewReceipts = canTakeUltrasoundPayment || canPrintUltrasoundReceipt || canManageExams || canEditReceipt;
 
 
   /**
@@ -726,6 +736,8 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
           canReversePayment={canReverseUltrasoundPayment}
           canPrintReceipt={canPrintUltrasoundReceipt}
           canDelete={canDeleteReceipt || canDeleteExams || canManageExams}
+          canEdit={canEditReceipt}
+          onEdit={(exam) => openExamModal(exam)}
           onChanged={loadData}
         />
       ) : (
@@ -792,6 +804,11 @@ export function UltrasoundManagement({ hospital, userRole, initialTab }: Ultraso
                 <TablePill tone={exam.status === 'completed' ? 'green' : exam.status === 'cancelled' ? 'red' : 'amber'}>
                   {exam.status}
                 </TablePill>
+                {/* Who filed the report -- the receipts tab separately shows who
+                    took the money, so the two names can no longer be confused. */}
+                {exam.status === 'completed' && exam.completed_by && (
+                  <div className="text-[10px] text-gray-500 mt-0.5">by {exam.completed_by}</div>
+                )}
               </td>
               <td className="px-4 py-2 text-center">
                 <div className="flex items-center justify-center gap-1.5">

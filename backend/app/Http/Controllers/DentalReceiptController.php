@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsReceiptLines;
+use App\Http\Controllers\Concerns\HandlesDeskPayments;
 use App\Models\DentalReceipt;
+use App\Models\DentalService;
 use App\Services\LedgerPostingService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -17,12 +20,25 @@ use Illuminate\Validation\ValidationException;
  * is a service catalogue plus one screen -- raise the charge, take the money,
  * print the receipt. The discount half comes from HandlesReceiptDiscounts, so
  * dental, ultrasound and room bookings all apply a discount identically.
+ *
+ * A receipt carries one or more services as lines (dental_receipt_details);
+ * the receipt itself holds what belongs to the whole bill. See
+ * BuildsReceiptLines for how each line is priced.
  */
 class DentalReceiptController extends Controller
 {
     use \App\Http\Controllers\Concerns\HandlesReceiptDiscounts;
+    use BuildsReceiptLines, HandlesDeskPayments;
 
-    private const RELATIONS = ['patient', 'doctor', 'dentalService'];
+    private const RELATIONS = ['patient', 'doctor', 'dentalService', 'details'];
+
+    private const LINES = [
+        'catalogue' => DentalService::class,
+        'catalogueKey' => 'dental_service_id',
+        'nameKey' => 'service_name',
+        'feePermission' => 'set_dental_fee',
+        'label' => 'service',
+    ];
 
     public function __construct(
         private readonly LedgerPostingService $ledgerPostingService
@@ -66,6 +82,7 @@ class DentalReceiptController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('service_name', 'like', "%{$search}%")
                     ->orWhere('referred_by', 'like', "%{$search}%")
+                    ->orWhereHas('details', fn ($d) => $d->where('service_name', 'like', "%{$search}%"))
                     ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', "%{$search}%")
                         ->orWhere('phone', 'like', "%{$search}%"));
             });
@@ -87,10 +104,14 @@ class DentalReceiptController extends Controller
         $data = $this->validatePayload($request, $hospitalId);
         $data['hospital_id'] = $hospitalId;
 
-        $this->enforceDiscountPermission($request, $data);
-        $this->applyDiscountRules($data, 'fee');
+        $lines = $this->resolveReceiptLines($request, self::LINES, $hospitalId);
+        $data = array_merge($data, $this->summariseReceiptLines($lines, 'dental_service_id', 'service_name'));
 
-        $receipt = DB::transaction(function () use ($data, $request, $hospitalId) {
+        $this->enforceDiscountPermission($request, $data, null, 'dental');
+        $this->applyDiscountRules($data, 'fee');
+        $this->applyDefaultPayment($request, $data, $hospitalId, 'dental', (float) $data['net_amount']);
+
+        $receipt = DB::transaction(function () use ($data, $lines, $request, $hospitalId) {
             $data['created_by'] = $request->user()->name ?? null;
             $data['updated_by'] = $request->user()->name ?? null;
 
@@ -105,7 +126,10 @@ class DentalReceiptController extends Controller
                 try {
                     $data['sequence_id'] = (int) ($nextSequence ?? 0) + 1;
 
-                    return DentalReceipt::create($data);
+                    $receipt = DentalReceipt::create($data);
+                    $receipt->details()->createMany($lines);
+
+                    return $receipt;
                 } catch (QueryException $e) {
                     if (!$this->isDuplicateSequenceError($e)) {
                         throw $e;
@@ -145,6 +169,9 @@ class DentalReceiptController extends Controller
         $data['updated_by'] = $request->user()->name ?? null;
         unset($data['sequence_id']);
 
+        $lines = $this->resolveReceiptLines($request, self::LINES, $hospitalId, $dentalReceipt->details()->get());
+        $data = array_merge($data, $this->summariseReceiptLines($lines, 'dental_service_id', 'service_name'));
+
         $this->enforceDiscountPermission($request, $data, $dentalReceipt);
         $this->applyDiscountRules($data, 'fee');
 
@@ -159,7 +186,12 @@ class DentalReceiptController extends Controller
             $data['receipt_number']
         );
 
-        $dentalReceipt->update($data);
+        DB::transaction(function () use ($dentalReceipt, $data, $lines) {
+            $dentalReceipt->update($data);
+            $dentalReceipt->details()->delete();
+            $dentalReceipt->details()->createMany($lines);
+        });
+
         $this->ledgerPostingService->upsertDentalReceiptSnapshot($dentalReceipt->fresh());
 
         return response()->json($dentalReceipt->fresh()->load(self::RELATIONS));
@@ -170,12 +202,18 @@ class DentalReceiptController extends Controller
         $this->authorizeScope($request->user(), $dentalReceipt);
 
         $this->ledgerPostingService->voidDentalReceiptSnapshot($dentalReceipt, $request->user()->name ?? null);
-        $dentalReceipt->delete();
 
-        return response()->json(['message' => 'dental receipt deleted']);
+        // The receipt is soft-deleted, which the foreign key's cascade never
+        // sees -- so its lines are removed here, as the receipt goes.
+        DB::transaction(function () use ($dentalReceipt) {
+            $dentalReceipt->details()->delete();
+            $dentalReceipt->delete();
+        });
+
+        return response()->json(['message' => 'Dental receipt deleted']);
     }
 
-    /** Take payment at the counter. */
+    /** Take payment at the counter, or from Accounts > Payment Collection. */
     public function processPayment(Request $request, DentalReceipt $dentalReceipt)
     {
         $this->authorizeScope($request->user(), $dentalReceipt);
@@ -190,7 +228,7 @@ class DentalReceiptController extends Controller
         }
 
         // Settled against the discounted amount -- the fee alone would leave a
-        // discounted study looking permanently underpaid.
+        // discounted treatment looking permanently underpaid.
         $payable = $dentalReceipt->payableAmount();
         $paid = (float) $data['paid_amount'];
 
@@ -220,9 +258,9 @@ class DentalReceiptController extends Controller
     {
         $this->authorizeScope($request->user(), $dentalReceipt);
 
-        if (!($request->user()?->hasPermission('reverse_dental_payment') ?? false)) {
+        if (!$this->canReturnFor($request, 'dental')) {
             return response()->json([
-                'message' => 'Reversing an dental payment requires the Reverse Dental Payment permission.',
+                'message' => 'Returning a dental payment requires the Return Dental Payment permission.',
             ], 403);
         }
 
@@ -261,6 +299,10 @@ class DentalReceiptController extends Controller
             'patient' => $receipt->patient,
             'doctor' => $receipt->doctor,
             'service_name' => $receipt->service_name,
+            'details' => $receipt->details->map(fn ($line) => [
+                'service_name' => $line->service_name,
+                'fee' => (float) $line->fee,
+            ])->values(),
             'fee' => (float) ($receipt->fee ?? 0),
             'discount_percentage' => (float) ($receipt->discount_percentage ?? 0),
             'discount_amount' => (float) ($receipt->discount_amount ?? 0),
@@ -275,11 +317,15 @@ class DentalReceiptController extends Controller
     }
 
     /**
+     * The header fields. Lines are validated here and priced in
+     * BuildsReceiptLines; the header's fee, service name and catalogue entry
+     * are derived from them, never trusted from the request.
+     *
      * @return array<string, mixed>
      */
     private function validatePayload(Request $request, int $hospitalId): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'patient_id' => [
                 'required',
                 Rule::exists('patients', 'id')->where(fn ($q) => $q->where('hospital_id', $hospitalId)),
@@ -290,24 +336,25 @@ class DentalReceiptController extends Controller
                     fn ($q) => $q->where('hospital_id', $hospitalId)->where('role', 'doctor')->whereNull('deleted_at')
                 ),
             ],
-            // The catalogue is the normal path, but service_name stays
-            // required: historical receipts have no type, and the printed
-            // label must survive a study later being renamed or removed.
-            'dental_service_id' => [
-                'nullable',
-                Rule::exists('dental_services', 'id')->where(
-                    fn ($q) => $q->where('hospital_id', $hospitalId)->whereNull('deleted_at')
-                ),
-            ],
-            'service_name' => ['required', 'string', 'max:191'],
+            'items' => ['required_without:service_name', 'array', 'min:1'],
+            'items.*.dental_service_id' => ['nullable', 'integer'],
+            'items.*.service_name' => ['nullable', 'string', 'max:191'],
+            'items.*.fee' => ['nullable', 'numeric', 'min:0'],
+            // The single-service shape older pages still send.
+            'dental_service_id' => ['nullable', 'integer'],
+            'service_name' => ['required_without:items', 'nullable', 'string', 'max:191'],
+            'fee' => ['nullable', 'numeric', 'min:0'],
             'performed_at' => ['required', 'date'],
             'referred_by' => ['nullable', 'string', 'max:191'],
             'notes' => ['nullable', 'string'],
-            'fee' => ['nullable', 'numeric', 'min:0'],
             'discount_enabled' => ['nullable', 'boolean'],
             'discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        unset($validated['items'], $validated['dental_service_id'], $validated['service_name'], $validated['fee']);
+
+        return $validated;
     }
 
     private function resolveHospitalId(Request $request): int

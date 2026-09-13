@@ -5,6 +5,8 @@ import { Hospital, LabTest, Patient, TestResult, TestTemplate, UserRole } from '
 import { Toast } from './Toast';
 import { LabReportPrintNew } from './LabReportPrintNew';
 import { LabReportTemplate } from './LabReportTemplate';
+import { TestManagement } from './TestManagement';
+import { ReceiptDetailsModal, ReceiptDetails } from './ReceiptDetailsModal';
 import { LabInvoicePrint } from './LabInvoicePrint';
 import { LabResultEntryNew } from './LabResultEntryNew';
 import { HospitalSelector, useHospitalFilter } from './HospitalSelector';
@@ -32,7 +34,7 @@ interface LabTestManagementNewProps {
 }
 
 /** The three desks the lab workflow passes through, in order. */
-type LabStage = 'orders' | 'payments' | 'processing';
+type LabStage = 'orders' | 'processing' | 'tests';
 
 const mapOrderStatus = (orderStatus: string, paymentStatus: string): LabTest['status'] => {
   if (paymentStatus !== 'paid') return 'unpaid';
@@ -72,6 +74,7 @@ const mapOrderToLabTest = (order: LabOrder, lookups: LabLookups): LabTest => {
   const testTypes: string[] = [];
   const testResults: TestResult[] = [];
   const orderItems: LabTest['orderItems'] = [];
+  const orderLines: NonNullable<LabTest['orderLines']> = [];
   const completedBy =
     order.items?.map((item) => item.completedBy).find((name) => Boolean(name)) ||
     order.items
@@ -147,6 +150,12 @@ const mapOrderToLabTest = (order: LabOrder, lookups: LabLookups): LabTest => {
     }
     if (effectiveTestType && !testTypes.includes(effectiveTestType)) testTypes.push(effectiveTestType);
     orderItems.push({ id: String(item.id), testTemplateId: String(item.testTemplateId), requiresResult, parameters, results });
+    // The price billed on the order, not today's catalogue price.
+    orderLines.push({
+      testTemplateId: String(item.testTemplateId),
+      testName: effectiveTestName,
+      price: Number((item as any).price ?? template?.price ?? 0),
+    });
   });
 
   const patient = patientById.get(String(order.patientId));
@@ -208,6 +217,12 @@ const mapOrderToLabTest = (order: LabOrder, lookups: LabLookups): LabTest => {
     updatedAt: order.updatedAt || undefined,
     updatedBy: order.updatedBy || undefined,
     verificationToken: order.verificationToken || undefined,
+    paymentMethod: order.paymentMethod ?? null,
+    paidBy: order.paidBy ?? null,
+    paidAt: order.paidAt ?? null,
+    receiptNumber: order.receiptNumber ?? null,
+    isWalkIn: Boolean(order.isWalkIn),
+    orderLines,
   };
 };
 
@@ -251,10 +266,18 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const canPrintUnpaidReceipt = hasPermission('print_unpaid_lab_receipt') || canManageOrders;
   const canUpdateStatus = hasPermission('update_lab_order_status');
   const canEnterResults = hasPermission('enter_lab_results');
-  const canManagePayments = hasPermission('manage_lab_payments');
-  // Undoing a settled payment is a separate act from taking one, and the
-  // backend rejects it without this permission.
-  const canReversePayment = hasPermission('reverse_lab_payment');
+  // The finished report is the laboratory's paper, not the counter's receipt,
+  // so it has its own rights on the Lab Results panel.
+  const canPrintResults = hasPermission('print_lab_results') || canManageOrders;
+  const canDownloadResults = hasPermission('download_lab_results') || canManageOrders;
+  // The desk's own Take / Return Payment rights, as on the radiology desks.
+  // They used to be the Accounts "Collect" right, and the server also let
+  // anyone who managed lab orders collect. Accounts > Payment Collection keeps
+  // its own rights to the same endpoint.
+  const canManagePayments = hasPermission('take_lab_payment');
+  const canReversePayment = hasPermission('return_lab_payment');
+  const canViewOrders = hasPermission('view_lab_orders') || canManageOrders;
+  const canViewTestTemplates = ['view_test_templates', 'add_test_templates', 'edit_test_templates', 'delete_test_templates', 'export_test_templates', 'print_test_templates', 'manage_test_templates'].some((p) => hasPermission(p));
   // No `|| canManageOrders` fallback here, unlike the flags above. The backend
   // accepts a discount only from a holder of lab_test_order_discount, so
   // widening it here let a user with manage_lab_orders type a discount, watch
@@ -289,6 +312,35 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   const [invoiceMode, setInvoiceMode] = useState<'pay' | 'reprint'>('pay');
   const [selectedTest, setSelectedTest] = useState<LabTest | null>(null);
   const [isTestDropdownOpen, setIsTestDropdownOpen] = useState(false);
+  const testPickerRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * Close the test list on Escape or a click outside it, as the other pickers
+   * do. Escape is caught in the capture phase and stopped there, so closing
+   * the list does not also close the order form around it.
+   */
+  useEffect(() => {
+    if (!isTestDropdownOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setIsTestDropdownOpen(false);
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      if (testPickerRef.current && !testPickerRef.current.contains(event.target as Node)) {
+        setIsTestDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [isTestDropdownOpen]);
   const [testSearchKeyword, setTestSearchKeyword] = useState('');
   const [patientSearchKeyword, setPatientSearchKeyword] = useState('');
   const [isPatientDropdownOpen, setIsPatientDropdownOpen] = useState(false);
@@ -330,7 +382,22 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           await new Promise((resolve) => setTimeout(resolve, 100));
           const element = pdfContainerRef.current!;
           const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-          const dataUrl = await toPng(element, { backgroundColor: '#ffffff', quality: 1.0, pixelRatio: 2 });
+          // The hospital logo is served from the API's origin. Turning the page
+          // into an image means fetching it again, and a cross-origin fetch the
+          // server does not allow used to reject the whole capture -- "Failed to
+          // generate PDF" -- although the same report prints fine. A blank
+          // placeholder stands in for an image that cannot be fetched, web fonts
+          // are left to the browser, and as a last resort the capture is retried
+          // without images so the result itself always downloads.
+          const BLANK_PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+          const captureOptions = { backgroundColor: '#ffffff', quality: 1.0, pixelRatio: 2, cacheBust: true, skipFonts: true, imagePlaceholder: BLANK_PIXEL };
+          let dataUrl: string;
+          try {
+            dataUrl = await toPng(element, captureOptions);
+          } catch (firstError) {
+            console.warn('PDF capture failed with images, retrying without them:', firstError);
+            dataUrl = await toPng(element, { ...captureOptions, filter: (node) => !(node instanceof HTMLImageElement) });
+          }
           const imgWidth = 210;
           const pageHeight = 297;
           const originalWidth = element.offsetWidth;
@@ -396,6 +463,18 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   /** Mirrors the latch above, so buttons can disable themselves. */
   const [actionBusy, setActionBusy] = useState(false);
 
+  useEffect(() => {
+    const allowed: Record<LabStage, boolean> = {
+      orders: canViewOrders || canAddOrders,
+      processing: canEnterResults || canUpdateStatus,
+      tests: canViewTestTemplates,
+    };
+    if (!allowed[activeStage]) {
+      const first = (['orders', 'processing', 'tests'] as LabStage[]).find((key) => allowed[key]);
+      if (first) setActiveStage(first);
+    }
+  }, [activeStage, canViewOrders, canAddOrders, canEnterResults, canUpdateStatus, canViewTestTemplates]);
+
   /**
    * One page, filtered by the desk currently in view.
    *
@@ -410,9 +489,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     setLoading(true);
     try {
       const stageParams =
-        activeStage === 'payments'
-          ? { excludeCancelled: true }
-          : activeStage === 'processing'
+        activeStage === 'processing'
             // Paid work that the lab still has to key a result for. Orders made
             // up entirely of analyser-reported tests never enter this queue.
             ? { excludeCancelled: true, paymentStatus: 'paid', hasResultWork: true }
@@ -560,17 +637,12 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
   /**
    * Which orders belong to the desk currently in view.
    *
-   * Payments shows only what is owed; Processing only what has been paid for,
-   * which is the same rule the backend enforces when a result is entered.
+   * Lab Results shows only what has been paid for, which is the same rule the
+   * backend enforces when a result is entered.
    */
   const stageFilteredLabTests = getFilteredLabTests().filter((test) => {
     // mapOrderStatus already collapses "not paid for" into status 'unpaid',
     // so the queues key off that rather than re-deriving it from paymentStatus.
-    if (activeStage === 'payments') {
-      // Both states belong to this desk: unpaid is the work queue, paid is the
-      // record of what was collected and where a receipt is reprinted from.
-      return test.status !== 'cancelled';
-    }
     if (activeStage === 'processing') {
       // An order made up entirely of analyser-reported tests has nothing for
       // the technician to do, so it never enters this queue -- it is still
@@ -581,14 +653,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     return true;
   });
 
-  const filteredLabTests =
-    activeStage === 'payments'
-      ? [...stageFilteredLabTests].sort((a, b) => {
-          const aOwed = a.status === 'unpaid' ? 0 : 1;
-          const bOwed = b.status === 'unpaid' ? 0 : 1;
-          return aOwed - bOwed;
-        })
-      : stageFilteredLabTests;
+  const filteredLabTests = stageFilteredLabTests;
   // The server already returned exactly this page, filtered and counted.
   const totalPages = Math.max(1, Math.ceil(serverTotal / itemsPerPage));
   const paginatedLabTests = filteredLabTests;
@@ -903,9 +968,72 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
     setOpenStatusDropdown(null);
   };
 
+  // The order open in the read-only receipt card (Lab Orders tab).
+  const [viewingOrder, setViewingOrder] = useState<LabTest | null>(null);
+
+  /**
+   * The eye icon means different things on the two queues.
+   *
+   * On Lab Orders it is the counter's question -- what was ordered, for whom,
+   * what it cost and who handled it -- so it opens the receipt card. On Lab
+   * Results it stays the results view, which is where results belong; the
+   * orders tab used to show that same results view, duplicating the other tab
+   * and hiding the receipt details the counter actually needed.
+   */
   const openViewModal = (test: LabTest) => {
+    if (activeStage === 'orders') {
+      setViewingOrder(test);
+      return;
+    }
     setSelectedTest(test);
     setShowViewModal(true);
+  };
+
+  /** Everything the Lab Orders card shows, from the order and the test catalogue. */
+  const orderDetailsFor = (test: LabTest): ReceiptDetails => {
+    // total_amount is what the patient owes; the discount was taken off it.
+    const net = Number(test.totalAmount ?? 0);
+    const discount = Number(test.discountAmount ?? 0);
+    const gross = Math.round((net + discount) * 100) / 100;
+    const ageUnit = test.patientAgeUnit === 'month' ? ' months' : test.patientAgeUnit === 'day' ? ' days' : ' years';
+
+    return {
+      title: 'Lab Order Receipt',
+      receiptNo: test.receiptNumber || test.testNumber,
+      date: formatDate(test.createdAt, currentHospital.timezone, currentHospital.calendarType),
+      paymentStatus: test.paymentStatus || (test.status === 'unpaid' ? 'unpaid' : 'paid'),
+      patient: {
+        name: test.patientName,
+        patient_id: test.patientDisplayId || (test.isWalkIn ? 'Walk-in' : null),
+        age: test.patientAge || test.patientAge === 0 ? `${test.patientAge}${ageUnit}` : null,
+        gender: test.patientGender,
+        phone: test.patientPhone,
+      },
+      doctorName: test.doctorName,
+      itemsLabel: 'Tests Ordered',
+      items: (test.orderLines ?? []).map((line) => ({
+        name: line.testName,
+        description: testTemplates.find((tpl) => String(tpl.id) === line.testTemplateId)?.description,
+        fee: line.price,
+      })),
+      fee: gross,
+      discountAmount: discount,
+      discountPercentage: gross > 0 ? Math.round((discount / gross) * 10000) / 100 : 0,
+      netAmount: net,
+      paidAmount: test.paidAmount,
+      paymentMethod: test.paymentMethod,
+      notes: test.instructions,
+      extra: [
+        { label: 'Order No', value: test.testNumber },
+        { label: 'Priority', value: <span className="capitalize">{test.priority}</span> },
+        { label: 'Order Status', value: <span className="capitalize">{String(test.status).replace('_', ' ')}</span> },
+      ],
+      history: [
+        { label: 'Created', who: test.createdBy, when: test.createdAt },
+        { label: 'Last updated', who: test.updatedBy, when: test.updatedAt },
+        { label: 'Payment taken', who: test.paidBy, when: test.paidAt },
+      ],
+    };
   };
 
   const handleSubmitResults = (results: TestResult[], remarks: string) =>
@@ -1111,9 +1239,12 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           tab, and reception never sees results. */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
         {([
-          { key: 'orders' as LabStage, label: 'Lab Orders', icon: <FlaskConical className="w-3.5 h-3.5" />, allowed: true },
-          { key: 'payments' as LabStage, label: 'Payments', icon: <Wallet className="w-3.5 h-3.5" />, allowed: canManagePayments },
-          { key: 'processing' as LabStage, label: 'Result Processing', icon: <Microscope className="w-3.5 h-3.5" />, allowed: canEnterResults || canUpdateStatus },
+          // Payments moved to Accounts > Payment Collection; the paid toggle on
+          // each order covers taking money at the desk. Test Management, once a
+          // sub-menu of its own, is the third tab.
+          { key: 'orders' as LabStage, label: 'Lab Orders', icon: <FlaskConical className="w-3.5 h-3.5" />, allowed: canViewOrders || canAddOrders },
+          { key: 'processing' as LabStage, label: 'Lab Results', icon: <Microscope className="w-3.5 h-3.5" />, allowed: canEnterResults || canUpdateStatus },
+          { key: 'tests' as LabStage, label: 'Test Management', icon: <Beaker className="w-3.5 h-3.5" />, allowed: canViewTestTemplates },
         ]).filter((tab) => tab.allowed).map((tab) => (
           <button
             key={tab.key}
@@ -1130,20 +1261,20 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
         ))}
       </div>
 
+      {activeStage === 'tests' ? (
+        <TestManagement hospital={hospital} userRole={userRole} />
+      ) : (
+      <>
       {/* Compact Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-            {activeStage === 'payments'
-              ? 'Lab Payments'
-              : activeStage === 'processing'
-                ? 'Result Processing'
-                : t('modules.labTestsTitle')}
+            {activeStage === 'processing'
+              ? 'Lab Results'
+              : t('modules.labTestsTitle')}
           </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            {activeStage === 'payments'
-              ? 'Collect fees and reprint receipts. Unpaid orders are listed first.'
-              : activeStage === 'processing'
+            {activeStage === 'processing'
                 ? 'Paid orders ready for the laboratory. Enter and complete results.'
                 : `${t('modules.labTestsSubtitle')} ${isAllHospitals ? t('modules.allHospitals') : currentHospital.name}`}
           </p>
@@ -1398,13 +1529,15 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                       </td>
                       <td className="px-4 py-2 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => openViewModal(test)}
-                            className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                            title={t('ui.viewDetails')}
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
+                          {canViewOrders && (
+                            <button
+                              onClick={() => openViewModal(test)}
+                              className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                              title={t('ui.viewDetails')}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canEditOrders && activeStage === 'orders' && (
                             <button
                               onClick={() => openEditModal(test)}
@@ -1415,29 +1548,29 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPayment && (activeStage === 'orders' || activeStage === 'payments') && (
+                          {(canPayment || canReversePayment) && activeStage === 'orders' && (
                             <button
                               type="button"
                               role="switch"
                               aria-checked={test.status !== 'unpaid'}
                               onClick={() => {
                                 if (test.status === 'unpaid') {
-                                  handleMarkPaid(test);
+                                  if (canPayment) handleMarkPaid(test);
                                 } else if (canReversePayment) {
                                   setReverseTarget(test);
                                 }
                               }}
-                              disabled={test.status !== 'unpaid' && !canReversePayment}
+                              disabled={test.status === 'unpaid' ? !canPayment : !canReversePayment}
                               title={
                                 test.status === 'unpaid'
-                                  ? 'Mark as paid'
+                                  ? (canPayment ? 'Mark as paid' : 'Unpaid')
                                   : canReversePayment
                                     ? 'Reverse payment to unpaid'
                                     : 'Paid'
                               }
                               className={`relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${
                                 test.status !== 'unpaid' ? 'bg-emerald-500' : 'bg-amber-400'
-                              } ${test.status !== 'unpaid' && !canReversePayment ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                              } ${(test.status === 'unpaid' ? !canPayment : !canReversePayment) ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
                             >
                               <span
                                 className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
@@ -1447,27 +1580,18 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
 
-                          {canPayment && activeStage === 'payments' && test.status === 'unpaid' && (
-                            <button
-                              onClick={() => handlePayAndPrint(test)}
-                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                              title="Pay & Print Invoice"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                          )}
 
                           {/* Reprint the receipt for an order already paid.
                               Gated on print permission rather than payment, so
                               reception can re-issue paper without being able to
                               settle orders. */}
-                          {canPrintOrders && activeStage !== 'processing' && (test.status !== 'unpaid' || canPrintUnpaidReceipt) && (
+                          {canPrintOrders && activeStage === 'orders' && (test.status !== 'unpaid' || canPrintUnpaidReceipt) && (
                             <button
                               onClick={() => handleReprintReceipt(test)}
                               className="p-1.5 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-md transition-colors"
                               title={t('ui.printReceipt')}
                             >
-                              <Receipt className="w-3.5 h-3.5" />
+                              <Printer className="w-3.5 h-3.5" />
                             </button>
                           )}
                           
@@ -1497,7 +1621,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPrintOrders && activeStage === 'processing' && test.status === 'completed' && (
+                          {canPrintResults && activeStage === 'processing' && test.status === 'completed' && (
                             <button
                               onClick={() => { setSelectedTest(test); setShowPrintModal(true); }}
                               className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
@@ -1507,7 +1631,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                             </button>
                           )}
                           
-                          {canPrintOrders && activeStage === 'processing' && test.status === 'completed' && (
+                          {canDownloadResults && activeStage === 'processing' && test.status === 'completed' && (
                             <button
                               onClick={() => setPdfTest(test)}
                               className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -1586,6 +1710,8 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {toast && (
         <Toast
@@ -1754,7 +1880,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                   </div>
                 )}
                 {/* Test Selection */}
-                <div className="relative md:col-span-2">
+                <div ref={testPickerRef} className="relative md:col-span-2">
                   <label className="block text-[10px] font-medium text-gray-700 dark:text-gray-300 mb-0.5">
                     Select Tests <span className="text-red-500">*</span>
                   </label>
@@ -1778,6 +1904,7 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                         type="text"
                         value={testSearchKeyword}
                         onChange={(e) => setTestSearchKeyword(e.target.value)}
+                        autoFocus
                         placeholder="Search tests by name, code, or type"
                         className="w-full px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
@@ -1811,6 +1938,45 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
                           );
                         })
                       )}
+                    </div>
+                  )}
+                  {/* What is on the order, in the order it was picked. The button
+                      above only said how many; nobody could see which without
+                      opening the list and scrolling it. */}
+                  {formData.selectedTests.length > 0 && (
+                    <div className="mt-1.5 rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <ul className="divide-y divide-gray-100 dark:divide-gray-700/60 max-h-40 overflow-y-auto">
+                        {formData.selectedTests.map((id, index) => {
+                          const tpl: any = testTemplates.find((t) => String(t.id) === String(id));
+                          return (
+                            <li key={id} className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-gray-800">
+                              <span className="w-5 text-[10px] text-gray-400 tabular-nums">{index + 1}.</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{tpl?.testName || tpl?.test_name || 'Test'}</p>
+                                {(tpl?.testCode || tpl?.test_code) && (
+                                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Code: {tpl?.testCode || tpl?.test_code}</p>
+                                )}
+                              </div>
+                              <span className="text-xs tabular-nums text-gray-900 dark:text-white">{Number(tpl?.price || tpl?.cost || 0).toFixed(2)}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleTestSelection(String(id))}
+                                className="p-1 text-gray-400 hover:text-red-600"
+                                title="Remove this test"
+                                aria-label={`Remove ${tpl?.testName || tpl?.test_name || 'test'}`}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700 text-xs">
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formData.selectedTests.length} test{formData.selectedTests.length === 1 ? '' : 's'} selected
+                        </span>
+                        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{selectedTestsSubtotal.toFixed(2)}</span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1918,7 +2084,17 @@ export function LabTestManagementNew({ hospital, userRole, currentUserId }: LabT
           </div>
       )}
 
-      {/* View Modal */}
+      <ReceiptDetailsModal
+        details={viewingOrder ? orderDetailsFor(viewingOrder) : null}
+        onClose={() => setViewingOrder(null)}
+        onPrint={
+          viewingOrder && canPrintOrders && (viewingOrder.status !== 'unpaid' || canPrintUnpaidReceipt)
+            ? () => handleReprintReceipt(viewingOrder)
+            : undefined
+        }
+      />
+
+      {/* View Modal (Lab Results) */}
       {showViewModal && selectedTest && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
           {/* Capped at 90vh with the body scrolling inside it. Uncapped, a test

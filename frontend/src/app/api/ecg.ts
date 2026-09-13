@@ -8,7 +8,7 @@ import api from '../../api/axios';
 export interface EcgServiceApi {
   id: number;
   hospital_id: number;
-  /** English service name, e.g. "Root canal treatment". */
+  /** English service name, e.g. "Resting 12-lead ECG". */
   name: string;
   code: string | null;
   /** The hospital's own wording, typically Pashto, plus any pricing note. */

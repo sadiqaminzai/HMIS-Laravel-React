@@ -9,7 +9,7 @@ import type { ReportEnvelope } from './pharmacyReports';
  * why they share one row type rather than four near-identical ones.
  */
 
-export type ClinicalDesk = 'surgery' | 'room-booking' | 'xray' | 'ultrasound';
+export type ClinicalDesk = 'surgery' | 'room-booking' | 'xray' | 'ultrasound' | 'ecg';
 
 export interface ClinicalReportParams {
   hospital_id?: number;
